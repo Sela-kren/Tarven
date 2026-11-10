@@ -67,6 +67,7 @@ export class Walker {
   /** Eases the legs back to standing. */
   settle(dt: number): void {
     this.swing -= this.swing * Math.min(1, 12 * dt);
+    this.body.advance(dt);
     this.body.pose(this.stride, this.swing);
   }
 }
