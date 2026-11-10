@@ -9,6 +9,7 @@
  *
  * Kept apart from the rules so the writing is easy to change.
  */
+import { HIGH_RESPECT, LOW_RESPECT, type Mood } from "./mood";
 import type { GuestKind } from "./tavern";
 
 /** Which body the player chose, so compliments fit who they're flirting with. */
@@ -28,9 +29,16 @@ export interface Persona {
   protected: number;
   informed: number;
   sold: number;
+  /** Hidden from the player for now: nothing shows these and nothing changes them yet. 0 to 10. */
+  lust: number;
+  desires: number;
+  /** How popular you've become, from 0 to 100. Guests start to idolize you as it climbs. */
+  fame: number;
+  /** How the room regards you, from -10 to 10. Low, and they stop seeing an innkeeper and start seeing something else. */
+  respect: number;
 }
 
-export const PERSONA_KEYS = ["flirt", "kindness", "greed", "drinks", "protected", "informed", "sold"] as const;
+export const PERSONA_KEYS = ["flirt", "kindness", "greed", "drinks", "protected", "informed", "sold", "lust", "desires", "fame", "respect"] as const;
 
 const LIMITS: Record<keyof Persona, [number, number]> = {
   flirt: [0, 10],
@@ -40,10 +48,14 @@ const LIMITS: Record<keyof Persona, [number, number]> = {
   protected: [0, 99],
   informed: [0, 99],
   sold: [0, 99],
+  lust: [0, 10],
+  desires: [0, 10],
+  fame: [0, 100],
+  respect: [-10, 10],
 };
 
 export function newPersona(): Persona {
-  return { flirt: 0, kindness: 0, greed: 0, drinks: 0, protected: 0, informed: 0, sold: 0 };
+  return { flirt: 0, kindness: 0, greed: 0, drinks: 0, protected: 0, informed: 0, sold: 0, lust: 0, desires: 0, fame: 0, respect: 0 };
 }
 
 /** Changes a reputation in place, keeping each part within its limits. */
@@ -81,6 +93,10 @@ export interface BanterContext {
   drunk: number;
   /** Who's speaking. */
   kind: GuestKind;
+  /** The state the speaker is in, and how much lust and longing they carry, when it's one guest talking. */
+  mood?: Mood;
+  lust?: number;
+  desires?: number;
 }
 
 type When = (c: BanterContext) => boolean;
@@ -147,6 +163,7 @@ const warm: When = (c) => c.persona.flirt >= 3 && c.persona.flirt <= 5;
 const bold: When = (c) => c.persona.flirt >= 6;
 const female: When = (c) => c.body === "Female";
 const male: When = (c) => c.body === "Male";
+const disrespected: When = (c) => c.persona.respect <= LOW_RESPECT;
 const both = (a: When, b: When): When => (c) => a(c) && b(c);
 const villager: When = (c) => c.kind === "farmer" || c.kind === "fugitive";
 
@@ -214,6 +231,10 @@ export const COMPLIMENTS: Line[] = [
   { id: "c.m.prove", text: "\"They say you flirt back. Prove it, handsome.\"", when: both(male, bold) },
   { id: "c.m.barrel", text: "\"Smile at me like that again and I'll have to buy the whole barrel.\"", when: both(male, bold) },
   { id: "c.m.sleeves", text: "\"Roll those sleeves up a little more and I'll pay double.\"", when: both(male, bold) },
+  // They've stopped respecting you, and it shows.
+  { id: "c.smut.price", text: "\"How much for the evening? Everyone on the pass says you've got a price.\"", when: disrespected },
+  { id: "c.smut.knee", text: "\"Come and sit on this knee. I hear it's your usual seat.\"", when: disrespected },
+  { id: "c.smut.door", text: "\"Leave your door on the latch tonight, eh? Everyone says you do.\"", when: disrespected },
   // What they've heard about you colours it.
   { id: "c.kind", text: "\"A kind heart and a face like that. The village is lucky to have you.\"", when: (c) => c.persona.kindness >= 4 },
   { id: "c.greed", text: "\"Pretty as a coin, and they say just as easy to buy.\"", when: (c) => c.persona.greed >= 4 },
@@ -243,6 +264,8 @@ export const REMARKS: Line[] = [
   { id: "r.night", text: "\"Still standing! Folk bet you wouldn't last a week up here.\"", when: (c) => c.night >= 1 },
   { id: "r.drinker", text: "\"Is it true you drank a soldier under the table?\"", when: (c) => c.persona.drinks >= 5 },
   { id: "r.flirt", text: "\"Half the pass is in love with the innkeeper, they say.\"", when: bold },
+  { id: "r.smut", text: "\"You know what they call this place now? Ask the soldiers. They laugh when they say it.\"", when: disrespected },
+  { id: "r.respected", text: "\"Folk mind their manners in here now. That's your doing.\"", when: (c) => c.persona.respect >= HIGH_RESPECT },
   { id: "r.cold", text: "\"They say you're hard to get a smile out of. I'll keep trying.\"", when: (c) => c.persona.flirt === 0 && c.night >= 1 },
 ];
 
@@ -253,7 +276,7 @@ const SHAMELESS: Reply = {
   gold: 5,
   trust: 0,
   heat: 0,
-  persona: { flirt: 2 },
+  persona: { flirt: 2, respect: -2 },
 };
 const PRICE: Reply = {
   id: "flirt.price",
@@ -271,7 +294,7 @@ const PLAY_ALONG: Reply = {
   gold: 3,
   trust: 0,
   heat: 0,
-  persona: { flirt: 1 },
+  persona: { flirt: 1, respect: -1 },
 };
 const THANKS: Reply = {
   id: "flirt.thanks",
@@ -280,7 +303,7 @@ const THANKS: Reply = {
   gold: 0,
   trust: 0,
   heat: 0,
-  persona: { flirt: -1 },
+  persona: { flirt: -1, respect: 1 },
 };
 const MANNERS: Reply = {
   id: "flirt.manners",
@@ -289,7 +312,7 @@ const MANNERS: Reply = {
   gold: 0,
   trust: 0,
   heat: 0,
-  persona: { flirt: -2 },
+  persona: { flirt: -2, respect: 2 },
 };
 
 /**
@@ -381,7 +404,7 @@ export const FAVORS: Favor[] = [
     ask: "\"The captain's holding a feast at the fort. Come as my guest? You'd turn every head in the hall.\"",
     agree: reply("f.feast.yes", "\"Save me a seat.\"", "He beams like a boy. The garrison will be kinder to you for it. (-1 heat)", {
       heat: -1,
-      persona: { flirt: 1 },
+      persona: { flirt: 1, respect: -1 },
     }),
     refuse: reply("f.feast.no", "\"I've a tavern to run.\"", "He sulks into his cup for the rest of the night."),
     when: (c) => c.persona.flirt >= 4,

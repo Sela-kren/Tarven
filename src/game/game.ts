@@ -35,6 +35,8 @@ import {
   DESK_NAME,
   DESK_SPOT,
   makeBell,
+  WASH_TUB_NAME,
+  WASH_TUB_SPOT,
 } from "./furnishings";
 import { BuildMode } from "./buildmode";
 import { GuestActor, Walker } from "./guests";
@@ -70,12 +72,16 @@ import {
   ENDINGS,
   HEAT_MAX,
   NIGHTS,
+  STOCK_COST,
+  STOCK_PACK,
   Tavern,
   TRAY_SIZE,
   TRUST_MAX,
   UPGRADE_COST,
   UPGRADES,
+  WARE_NAMES,
   type GuestKind,
+  type Held,
   type Item,
   type Phase,
   type Prompt,
@@ -84,6 +90,7 @@ import {
   type Target,
   type TavernSave,
   type UpgradeId,
+  type Ware,
 } from "./tavern";
 import { makeSeat, type World } from "./world";
 
@@ -109,6 +116,8 @@ const DISHES_RANGE = 1.3;
 const FLOOR_MESS_RANGE = 1.1;
 const FLOOR_MESS_ARROW_HEIGHT = 1.4;
 const LISTEN_RANGE = 2.2;
+/** Talk about you can be made out from this close. Further off, it's only whispering. */
+const OVERHEAR_RANGE = 4.5;
 const ITEM_SCALE = 1.6;
 const TOAST_SECONDS = 5;
 const POT_WARNING_SECONDS = 5;
@@ -161,7 +170,7 @@ const BELL_ROCK = 0.22;
 /** The barrels the barrel station takes casks from. */
 const BARRELS = ["Barrel_0", "Barrel_1", "Barrel_2"];
 /** Room objects the game outlines or moves, which the room must keep whole instead of merging. */
-export const WHOLE_PIECES = [...BARRELS, BED_NAME, BEDROOM_DOOR_NAME, BIN_NAME, DESK_NAME, FRONT_DOOR_NAME];
+export const WHOLE_PIECES = [...BARRELS, BED_NAME, BEDROOM_DOOR_NAME, BIN_NAME, DESK_NAME, FRONT_DOOR_NAME, WASH_TUB_NAME];
 /** How close you need to be to the bedroom door, and how fast it swings (per second, eased). */
 const BEDROOM_DOOR_RANGE = 1.3;
 const BEDROOM_DOOR_SWING_RATE = 7;
@@ -203,7 +212,7 @@ const OUTFIT_SLOTS: Record<string, "top" | "legs" | "hair"> = {
 
 /** Who the player can be, by sibling index: the male body, then the female one. */
 const PLAYER_LABELS = ["Male", "Female"];
-const STATIONS: Station[] = ["tap", "bread", "pot", "barrel", "bin"];
+const STATIONS: Station[] = ["tap", "bread", "pot", "barrel", "bin", "wash"];
 
 interface Assets {
   male: Object3D;
@@ -245,7 +254,7 @@ function targetKey(target: Target): string {
 }
 
 /** The prop model of a station: Station_Tap, Station_Bread, Station_Pot. */
-const STATION_NODES: Record<Exclude<Station, "barrel" | "bin">, string> = {
+const STATION_NODES: Record<Exclude<Station, "barrel" | "bin" | "wash">, string> = {
   tap: "Station_Tap",
   bread: "Station_Bread",
   pot: "Station_Pot",
@@ -346,9 +355,12 @@ export class Game {
   /** What is outlined now, and the outline made for it when it is a guest. */
   private highlighted: string | null = null;
   private guestOutline: Outline | null = null;
+  /** The drawn mess that outline is on, since a pile is redrawn when more is added to it. */
+  private outlinedMess: Object3D | null = null;
 
   private readonly tapIcon = new Icon();
   private readonly potIcon = new Icon();
+  private readonly washIcon = new Icon();
   private readonly targetArrow = new Icon(0.5);
   // A carried dish is hidden by the body whenever a sibling faces away from the camera.
   private readonly heldIcons = [new Icon(0.45), new Icon(0.45)];
@@ -440,6 +452,7 @@ export class Game {
       pot: requireNode(props, "Spot_Pot").getWorldPosition(new Vector3()),
       barrel: requireNode(props, "Spot_Barrel").getWorldPosition(new Vector3()),
       bin: BIN_SPOT.clone(),
+      wash: WASH_TUB_SPOT.clone(),
     };
     this.potStew = requireNode(props, "Station_PotStew") as Mesh;
     this.potStewMaterial = this.potStew.material as Material;
@@ -456,7 +469,13 @@ export class Game {
     };
     for (const station of STATIONS) {
       const objects =
-        station === "barrel" ? BARRELS.map(piece) : station === "bin" ? [piece(BIN_NAME)] : [requireNode(props, STATION_NODES[station])];
+        station === "barrel"
+          ? BARRELS.map(piece)
+          : station === "bin"
+            ? [piece(BIN_NAME)]
+            : station === "wash"
+              ? [piece(WASH_TUB_NAME)]
+              : [requireNode(props, STATION_NODES[station])];
       this.targetOutlines.set(targetKey({ kind: "station", station }), outline(objects));
     }
     this.targetOutlines.set(targetKey({ kind: "bell" }), outline([this.bell]));
@@ -506,9 +525,11 @@ export class Game {
 
     this.tapIcon.sprite.position.copy(this.spots.tap).setY(STATION_ICON_HEIGHT);
     this.potIcon.sprite.position.copy(this.spots.pot).setY(STATION_ICON_HEIGHT);
+    this.washIcon.sprite.position.copy(this.spots.wash).setY(STATION_ICON_HEIGHT);
     scene.add(
       this.tapIcon.sprite,
       this.potIcon.sprite,
+      this.washIcon.sprite,
       this.targetArrow.sprite,
       this.heldIcons[0].sprite,
       this.heldIcons[1].sprite,
@@ -603,6 +624,7 @@ export class Game {
       ["the barrels", this.spots.barrel],
       ["the bread", this.spots.bread],
       ["the scrap bin", this.spots.bin],
+      ["the wash tub", this.spots.wash],
       ["the bedroom", BY_THE_BEDROOM_DOOR],
       ["the middle of the room", VISITOR_STOP],
     ];
@@ -692,17 +714,21 @@ export class Game {
   }
 
   /** Ale is carried on a tray with its cups on top; anything else is held on its own. */
-  private makeHeld(item: Item, count: number): Object3D {
-    if (item !== "ale") return this.makeItem(item);
+  private makeHeld(item: Held, count: number): Object3D {
+    if (item !== "ale" && item !== "dirty") return this.makeItem(item);
     const tray = new Group();
     const board = new Mesh(this.trayGeometry, this.trayMaterial);
     board.castShadow = false;
     tray.add(board);
-    TRAY_CUPS.slice(0, count).forEach(([x, z]) => {
-      const cup = this.makeItem("ale");
-      cup.position.set(x, 0, z);
-      tray.add(cup);
-    });
+    if (item === "dirty") {
+      tray.add(this.messLayer.dirtyStack(count));
+    } else {
+      TRAY_CUPS.slice(0, count).forEach(([x, z]) => {
+        const cup = this.makeItem("ale");
+        cup.position.set(x, 0, z);
+        tray.add(cup);
+      });
+    }
     // Positioned by the sibling at the carry point; this inner group moves it out a little further.
     const held = new Group();
     tray.position.z = TRAY_REACH;
@@ -738,6 +764,7 @@ export class Game {
       burnt: "alert",
     };
     this.potIcon.show(potIcons[tavern.potState]);
+    this.washIcon.show(tavern.tub.length > 0 ? "dirty" : null);
     this.potStew.visible = tavern.potState !== "empty";
     this.potStew.material = tavern.potState === "burnt" ? this.burntMaterial : this.potStewMaterial;
   }
@@ -812,7 +839,9 @@ export class Game {
   /** Outlines what E would use, or nothing. */
   private highlight(target: Target | null): void {
     const key = target && targetKey(target);
-    if (key === this.highlighted) return;
+    const mess = target?.kind === "mess" ? this.messLayer.root(target.id) : null;
+    if (key === this.highlighted && mess === this.outlinedMess) return;
+    this.outlinedMess = mess;
     if (this.highlighted) this.targetOutlines.get(this.highlighted)?.forEach((outline) => outline.show(null));
     this.guestOutline?.dispose();
     this.guestOutline = null;
@@ -868,6 +897,10 @@ export class Game {
       count: tavern.carryCount[this.active],
       traySize: TRAY_SIZE,
       drunk: drunkLabel(tavern.drunk),
+      cups: tavern.cleanWare.cup,
+      cupsOwned: tavern.stock.cup,
+      dishes: tavern.cleanWare.dish,
+      dishesOwned: tavern.stock.dish,
     });
   }
 
@@ -1385,6 +1418,14 @@ export class Game {
         this.showDawn();
       },
     }));
+    const wares = (Object.keys(WARE_NAMES) as Ware[]).map((ware): Button => ({
+      label: `${STOCK_PACK} more ${WARE_NAMES[ware]} (${STOCK_COST} gold): you own ${tavern.stock[ware]}`,
+      disabled: !tavern.canBuyStock(),
+      onPick: () => {
+        tavern.buyStock(ware);
+        this.showDawn();
+      },
+    }));
     this.openPanel(
       `Morning after night ${tavern.nightIndex + 1}`,
       [
@@ -1394,6 +1435,7 @@ export class Game {
       ],
       [
         ...upgrades,
+        ...wares,
         {
           label: tavern.isLastNight ? "Face the baron" : "Start the next day",
           // Already faded through the night on the way to bed.
@@ -1406,6 +1448,7 @@ export class Game {
   private advanceNight(): void {
     const { tavern } = this;
     tavern.nextNight();
+    this.chatter.reset();
     if (tavern.phase === "ended" && tavern.ending) {
       const ending = ENDINGS[tavern.ending];
       this.openPanel(
@@ -1466,7 +1509,9 @@ export class Game {
     }
 
     const listening = this.listeningTo();
-    tavern.tick(dt, { listeningTo: listening, night: this.clock.isNight });
+    const { position } = player;
+    const atTub = Math.hypot(position.x - this.spots.wash.x, position.z - this.spots.wash.z) <= STATION_RANGE;
+    tavern.tick(dt, { listeningTo: listening, night: this.clock.isNight, scrubber: atTub ? this.active : null });
 
     const refreshed = this.findTarget();
     if (refreshed?.prompt.actionable) {
@@ -1493,7 +1538,9 @@ export class Game {
     if (this.screen === "play") {
       for (const [id, actor] of this.actors) {
         const said = this.chatter.saying(id);
-        if (said) speakers.push({ id, said, at: actor.speechAnchor(new Vector3()) });
+        if (!said) continue;
+        const hushed = said.aboutYou && actor.group.position.distanceTo(this.focus) > OVERHEAR_RANGE;
+        speakers.push({ id, said, at: actor.speechAnchor(new Vector3()), hushed });
       }
     }
     this.camera.updateMatrixWorld();
@@ -1571,7 +1618,14 @@ export class Game {
     } else if (this.screen === "play") {
       this.updatePlay(dt);
       const { tavern } = this;
-      this.chatter.update(dt, tavern.guests, tavern.plan.parties, (party) => tavern.partyChatting(party));
+      this.chatter.update(
+        dt,
+        tavern.guests,
+        tavern.plan.parties,
+        (party) => tavern.partyChatting(party),
+        (seat) => tavern.tableOf(seat),
+        (kind) => tavern.banterContext(kind),
+      );
     } else if (this.screen === "visitor") {
       this.updateVisitor(dt);
     }

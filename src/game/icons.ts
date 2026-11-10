@@ -1,7 +1,7 @@
 import { CanvasTexture, NearestFilter, Sprite, SpriteMaterial, SRGBColorSpace, Texture } from "three";
-import type { Item } from "./tavern";
+import type { Held } from "./tavern";
 
-export type IconName = Item | "dots" | "alert" | "arrow";
+export type IconName = Held | "dots" | "alert" | "arrow";
 
 type Draw = (rect: (color: string, x: number, y: number, w: number, h: number) => void) => void;
 
@@ -50,6 +50,19 @@ const ART: Record<IconName, { bubble: boolean; draw: Draw }> = {
       r(CRUST, 4, 3, 8, 10);
       r(METAL, 4, 5, 8, 1);
       r(METAL, 4, 10, 8, 1);
+    },
+  },
+  dirty: {
+    bubble: true,
+    draw: (r) => {
+      r(BOWL, 2, 7, 12, 3);
+      r(BOWL, 4, 10, 8, 2);
+      r(STEW, 3, 7, 2, 1);
+      r(STEW, 7, 8, 2, 1);
+      r(STEW, 11, 7, 2, 2);
+      r(BOWL, 4, 3, 8, 3);
+      r(STEW, 6, 4, 2, 1);
+      r(STEW, 9, 3, 1, 2);
     },
   },
   dots: {

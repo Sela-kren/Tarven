@@ -3,7 +3,7 @@
  * Each stat is a small pixel-art icon with its number, drawn as SVG so it stays sharp at any size.
  */
 import { pixelSvg } from "./icons";
-import type { Item, PotState } from "./tavern";
+import type { Held, PotState } from "./tavern";
 
 export interface HudState {
   gold: number;
@@ -14,9 +14,14 @@ export interface HudState {
   heatMax: number;
   tap: number;
   pot: PotState;
-  held: Item | null;
+  held: Held | null;
   /** How many of `held`: cups on the ale tray, otherwise 1. */
   count: number;
+  /** Clean cups and dishes, and how many the tavern owns. */
+  cups: number;
+  cupsOwned: number;
+  dishes: number;
+  dishesOwned: number;
   traySize: number;
   /** How drunk you are, in a word, or "" when sober. */
   drunk: string;
@@ -96,6 +101,42 @@ const KEG = pixelSvg(
   { K: OUTLINE, B: "#b4752c", H: "#8d8d94", T: "#c9c1ac" },
 );
 
+const CUP = pixelSvg(
+  [
+    "............",
+    ".KKKKKKKK...",
+    ".KFFFFFFK...",
+    ".KMMMMMMKKK.",
+    ".KMLMMMMK.K.",
+    ".KMLMMMMK.K.",
+    ".KMLMMMMK.K.",
+    ".KMMMMMMKKK.",
+    ".KMMMMMMK...",
+    ".KDDDDDDK...",
+    ".KKKKKKKK...",
+    "............",
+  ],
+  { K: OUTLINE, F: "#f4ead0", M: "#8d8d94", L: "#c9c9d0", D: "#5e5e66" },
+);
+
+const DISH = pixelSvg(
+  [
+    "............",
+    "............",
+    "............",
+    "KKKKKKKKKKKK",
+    "KLLLLLLLLLLK",
+    "KCCCCCCCCCCK",
+    ".KCCCCCCCCK.",
+    ".KCCCCCCCDK.",
+    "..KCCCCCDK..",
+    "...KKKKKK...",
+    "............",
+    "............",
+  ],
+  { K: OUTLINE, C: "#c9c1ac", L: "#f0e8d4", D: "#8a7a66" },
+);
+
 /** One icon and its number. */
 class Stat {
   readonly el = document.createElement("span");
@@ -135,6 +176,8 @@ export class StatsHud {
   private readonly trust: Stat;
   private readonly heat: Stat;
   private readonly tap: Stat;
+  private readonly cups: Stat;
+  private readonly dishes: Stat;
   private readonly drunk = document.createElement("span");
 
   constructor(root: HTMLElement) {
@@ -145,6 +188,8 @@ export class StatsHud {
     this.trust = new Stat(row, "Trust", HEART);
     this.heat = new Stat(row, "Heat", FLAME);
     this.tap = new Stat(row, "Ale left in the tap", KEG);
+    this.cups = new Stat(row, "Clean cups", CUP);
+    this.dishes = new Stat(row, "Clean dishes", DISH);
     // A small badge after the stats while you're drunk; hidden when sober.
     this.drunk.className = "drunk";
     this.drunk.hidden = true;
@@ -158,6 +203,8 @@ export class StatsHud {
     // The last two steps before the baron's men come are shown in red.
     this.heat.set(String(state.heat), `/${state.heatMax}`, undefined, state.heat >= state.heatMax - 2);
     this.tap.set(String(state.tap), "", undefined, state.tap === 0);
+    this.cups.set(String(state.cups), `/${state.cupsOwned}`, undefined, state.cups === 0);
+    this.dishes.set(String(state.dishes), `/${state.dishesOwned}`, undefined, state.dishes === 0);
     if (this.drunk.textContent !== state.drunk) this.drunk.textContent = state.drunk;
     this.drunk.hidden = !state.drunk;
   }

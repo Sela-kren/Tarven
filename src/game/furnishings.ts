@@ -319,6 +319,29 @@ export function addBin(root: Object3D): void {
     .into(root);
 }
 
+/** The wash tub, kept whole so it can be outlined. */
+export const WASH_TUB_NAME = "Wash_Tub";
+/** Where the tub stands: on the floor past the east end of the bar, just south of the barrels. */
+export const WASH_TUB_SPOT = new Vector3(6.4, 0, -2.2);
+
+/** A half-barrel of soapy water, where dirty cups and dishes get scrubbed. */
+export function addWashTub(root: Object3D): void {
+  const m = roomMaterials(root);
+  const water = flat("T_washwater", 0x7f9aa0);
+  const suds = flat("T_suds", 0xe8e4d6);
+  const { x, z } = WASH_TUB_SPOT;
+  const tub = new Piece(WASH_TUB_NAME, true)
+    .add(new CylinderGeometry(0.34, 0.28, 0.55, 12, 1, true).translate(x, 0.275, z), m("T_wood"))
+    .add(new CylinderGeometry(0.28, 0.28, 0.02, 12).translate(x, 0.01, z), m("T_wood"))
+    .add(new CylinderGeometry(0.31, 0.31, 0.02, 12).translate(x, 0.46, z), water)
+    .add(new CylinderGeometry(0.295, 0.295, 0.05, 12, 1, true).translate(x, 0.12, z), m("T_iron"))
+    .add(new CylinderGeometry(0.345, 0.345, 0.05, 12, 1, true).translate(x, 0.5, z), m("T_iron"));
+  for (const [dx, dz, size] of [[-0.12, 0.08, 0.09], [0.1, -0.1, 0.07], [0.05, 0.13, 0.06], [-0.04, -0.03, 0.05]]) {
+    tub.add(new CylinderGeometry(size, size, 0.03, 7).translate(x + dx, 0.48, z + dz), suds);
+  }
+  tub.into(root);
+}
+
 /** A brass service bell on a wooden foot, standing at the origin. */
 export function makeBell(): Object3D {
   const brass = flat("T_brass", COLORS.brass);

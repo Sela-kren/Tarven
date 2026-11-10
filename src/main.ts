@@ -9,7 +9,7 @@ import {
 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { Soundscape } from "./game/audio";
-import { addBedroom, addBin, addFrontDoorway, BEDROOM_FROM_X, BEDROOM_SOUTH_Z, BEDROOM_VIEW } from "./game/furnishings";
+import { addBedroom, addBin, addFrontDoorway, addWashTub, BEDROOM_FROM_X, BEDROOM_SOUTH_Z, BEDROOM_VIEW } from "./game/furnishings";
 import { Game, WHOLE_PIECES } from "./game/game";
 import { claimFurniture } from "./game/houseview";
 import { Input } from "./game/input";
@@ -61,6 +61,7 @@ async function start(): Promise<void> {
 
   addBedroom(worldFile.scene);
   addBin(worldFile.scene);
+  addWashTub(worldFile.scene);
   addFrontDoorway(worldFile.scene);
   const claimed = claimFurniture(worldFile.scene);
   const world = setupWorld(worldFile.scene, [...WHOLE_PIECES, ...claimed.whole]);

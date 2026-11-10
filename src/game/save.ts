@@ -1,5 +1,5 @@
 import { isHouseLayout } from "./house";
-import { NIGHTS, UPGRADES, type Mess, type MessKind, type TavernSave, type UpgradeId } from "./tavern";
+import { NIGHTS, UPGRADES, type Mess, type MessKind, type TavernSave, type UpgradeId, type Ware } from "./tavern";
 
 /** Bump when the saved shape changes; older saves are then ignored rather than misread. */
 const SAVE_VERSION = 1;
@@ -23,6 +23,7 @@ const isInt = (value: unknown, min: number, max: number): value is number =>
   Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
 
 const MESS_KINDS: readonly MessKind[] = ["dishes", "spill", "dust"];
+const isWare = (value: unknown): value is Ware => value === "cup" || value === "dish";
 
 function isMess(raw: unknown): raw is Mess {
   if (!raw || typeof raw !== "object") return false;
@@ -32,7 +33,9 @@ function isMess(raw: unknown): raw is Mess {
     MESS_KINDS.includes(mess.kind as MessKind) &&
     Array.isArray(mess.spots) &&
     mess.spots.length > 0 &&
-    mess.spots.every((spot) => isInt(spot, 0, 1e3))
+    mess.spots.every((spot) => isInt(spot, 0, 1e3)) &&
+    // Saves from before the washing up have no list of what's in the pile.
+    (mess.wares === undefined || (Array.isArray(mess.wares) && mess.wares.length === mess.spots.length && mess.wares.every(isWare)))
   );
 }
 
@@ -51,6 +54,9 @@ function validate(raw: unknown): SaveData | null {
   if (!Array.isArray(messes) || !messes.every(isMess)) return null;
   // Saves from before the building plans have none, which means the building as it started.
   if (tavern.layout !== undefined && !isHouseLayout(tavern.layout)) return null;
+  // Saves from before the washing up have neither of these, and start with the usual set.
+  if (tavern.stock !== undefined && !(isInt(tavern.stock.cup, 0, 1e3) && isInt(tavern.stock.dish, 0, 1e3))) return null;
+  if (tavern.tub !== undefined && !(Array.isArray(tavern.tub) && tavern.tub.every(isWare))) return null;
   return {
     version: data.version,
     savedAt: data.savedAt,

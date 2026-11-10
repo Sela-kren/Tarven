@@ -33,6 +33,15 @@ function playNight(t: Tavern, serve: boolean): void {
   t.nextNight();
 }
 
+/** Clears every mess, taking the dishes to the tub and scrubbing them. */
+function cleanEverything(t: Tavern): void {
+  for (const mess of [...t.messes]) {
+    t.interact(0, messAt(mess));
+    if (t.carrying[0] === "dirty") t.interact(0, station("wash"));
+  }
+  for (let i = 0; i < 500 && t.tub.length > 0; i++) t.tick(0.1, { ...idle, scrubber: 0 });
+}
+
 describe("the morning mess", () => {
   it("the first day starts clean", () => {
     expect(tavern().messes).toHaveLength(0);
@@ -73,8 +82,9 @@ describe("the morning mess", () => {
     t.interact(0, messAt(first));
     expect(t.messes).toHaveLength(count - 1);
     expect(t.prompt(0, messAt(first))).toBeNull();
+    if (t.carrying[0] === "dirty") t.interact(0, station("wash"));
 
-    for (const mess of [...t.messes]) t.interact(0, messAt(mess));
+    cleanEverything(t);
     expect(t.messes).toHaveLength(0);
     expect(t.takeMessages().at(-1)).toBe("The tavern is spotless.");
   });
@@ -82,7 +92,7 @@ describe("the morning mess", () => {
   it("makes guests less patient in a dirty room", () => {
     const clean = tavern();
     playNight(clean, true);
-    for (const mess of [...clean.messes]) clean.interact(0, messAt(mess));
+    cleanEverything(clean);
     const dirty = tavern();
     playNight(dirty, true);
     expect(dirty.messPatience).toBeLessThan(1);

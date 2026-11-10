@@ -74,6 +74,66 @@
   border-color: #24520f;
 }
 
+/* The speaker's state, in small print over the words. */
+#speech .status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin-bottom: 2px;
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--mood, #6b4a10);
+}
+
+#speech .status[hidden] {
+  display: none;
+}
+
+#speech .status span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+#speech .status svg {
+  width: 9px;
+  height: 9px;
+  flex: none;
+}
+
+#speech .status .about {
+  color: #3d4f8f;
+}
+
+#speech .mood-happy { --mood: #2f7a1c; }
+#speech .mood-angry { --mood: #b0200f; }
+#speech .mood-lust { --mood: #c02a72; }
+#speech .mood-idolize { --mood: #a06a00; }
+#speech .mood-drunk { --mood: #7a4a1c; }
+#speech .mood-gloomy { --mood: #4a5a78; }
+#speech .mood-scared { --mood: #6a3f9a; }
+#speech .mood-scheming { --mood: #1f6a66; }
+
+/* Table talk takes on the speaker's state; calls and thanks keep their own colours. */
+#speech .bubble.chat:not(.mood-calm, .hushed),
+#speech .bubble.chat:not(.mood-calm, .hushed)::after {
+  border-color: var(--mood);
+}
+
+/* Talk about you from too far off: you can see the whispering, but not the words. */
+#speech .bubble.hushed {
+  font-weight: normal;
+  font-style: italic;
+  color: rgba(28, 20, 14, 0.65);
+  background: rgba(240, 228, 196, 0.55);
+  border-color: rgba(28, 20, 14, 0.3);
+  box-shadow: none;
+}
+
+#speech .bubble.hushed::after {
+  border-color: rgba(28, 20, 14, 0.3);
+}
+
 @keyframes bubble-pop {
   from {
     transform: translate(-50%, -100%) scale(0.6);

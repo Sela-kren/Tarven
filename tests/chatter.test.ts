@@ -14,6 +14,9 @@ const guest = (id: number, kind: GuestKind, changes: Partial<Guest> = {}): Guest
   rumor: false,
   listened: 0,
   party: null,
+  mood: "calm",
+  lust: 0,
+  desires: 0,
   ...changes,
 });
 
@@ -142,5 +145,77 @@ describe("a party at a table", () => {
     const alone = [guest(1, "farmer", { party: 0, status: "eating" })];
     run(chatter, alone, 20, [PARTY]);
     expect(chatter.saying(1)).toBeNull();
+  });
+
+  it("starts the night's script again after a reset", () => {
+    const chatter = new Chatter(() => 0);
+    const party = seated();
+    run(chatter, party, 30, [PARTY]);
+    chatter.reset();
+    const heard = new Set<string>();
+    run(chatter, party, 3, [PARTY], () => {
+      const said = chatter.saying(1);
+      if (said) heard.add(said.text);
+    });
+    expect([...heard]).toEqual(["Snow is coming."]);
+  });
+});
+
+describe("guests who came alone", () => {
+  /** Who said what, in order, without repeats from one frame to the next. */
+  function listen(chatter: Chatter, guests: Guest[], seconds: number): { id: number; text: string }[] {
+    const heard: { id: number; text: string }[] = [];
+    run(chatter, guests, seconds, [], () => {
+      for (const g of guests) {
+        const said = chatter.saying(g.id);
+        const last = heard[heard.length - 1];
+        if (said && !(last?.id === g.id && last.text === said.text)) heard.push({ id: g.id, text: said.text });
+      }
+    });
+    return heard;
+  }
+
+  it("answer each other, taking turns", () => {
+    const chatter = new Chatter(() => 0);
+    const heard = listen(chatter, [guest(1, "farmer", { status: "eating" }), guest(2, "soldier", { status: "eating" })], 12);
+    expect(heard.length).toBeGreaterThanOrEqual(2);
+    expect(heard[0].id).not.toBe(heard[1].id);
+  });
+
+  it("don't talk with nobody to talk to", () => {
+    const chatter = new Chatter(() => 0);
+    expect(listen(chatter, [guest(1, "farmer", { status: "eating" })], 12)).toEqual([]);
+  });
+
+  it("prefer someone at their own table", () => {
+    const chatter = new Chatter(() => 0);
+    const guests = [guest(1, "farmer", { status: "eating" }), guest(2, "soldier", { status: "eating" }), guest(3, "smuggler", { status: "eating" })];
+    const tables = ["", "A", "B", "A"];
+    const speakers = new Set<number>();
+    for (let i = 0; i < 90; i++) {
+      chatter.update(0.1, guests, [], () => false, (seat) => tables[seat]);
+      for (const g of guests) if (chatter.saying(g.id)) speakers.add(g.id);
+    }
+    expect([...speakers].sort()).toEqual([1, 3]);
+  });
+
+  it("stop mid-conversation when one of them leaves", () => {
+    const chatter = new Chatter(() => 0);
+    const pair = [guest(1, "farmer", { status: "eating" }), guest(2, "soldier", { status: "eating" })];
+    run(chatter, pair, 2);
+    expect(chatter.saying(1)?.tone).toBe("chat");
+    pair[1].status = "leaving";
+    run(chatter, pair, 10);
+    expect(chatter.saying(1)).toBeNull();
+    expect(chatter.saying(2)).toBeNull();
+  });
+
+  it("ask for their order before they start chatting", () => {
+    const chatter = new Chatter(() => 0);
+    const pair = [guest(1, "farmer"), guest(2, "soldier")];
+    run(chatter, pair, 2, [], () => {
+      for (const g of pair) expect(chatter.saying(g.id)?.tone).not.toBe("chat");
+    });
+    expect(chatter.saying(1)?.tone).toBe("call");
   });
 });

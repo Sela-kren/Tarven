@@ -98,6 +98,7 @@ describe("service", () => {
   it("serves the right item, pays with a tip, and clears the hands", () => {
     const t = opened();
     const guest = firstGuestSeated(t);
+    guest.mood = "calm";
     t.interact(0, station("tap"));
     run(t, 2);
     t.interact(0, station("tap"));
@@ -331,15 +332,29 @@ describe("dawn and endings", () => {
 /** Plays like a person working alone: every trip across the room costs time, and the pot needs starting. */
 function playWholeGame(pickChoice: number, tripTime: number): Tavern {
   const t = opened();
+  // How long each guest takes is random; a fixed sequence keeps the result the same every run.
+  let roll = 12345;
+  t.random = () => (roll = (Math.imul(roll, 1664525) + 1013904223) >>> 0) / 0x100000000;
   const dt = 0.1;
   const sourceOf: Record<Item, Station> = { ale: "tap", bread: "bread", stew: "pot", cask: "barrel" };
+  const hasWareFor = (order: Item) =>
+    order === "ale" ? t.aleReady > 0 || t.pourLeft !== null || t.cleanWare.cup > 0 : t.cleanWare.dish > 0;
 
   while (t.phase !== "ended") {
-    if (t.phase === "day") openForNight(t);
+    if (t.phase === "day") {
+      // Whatever was left from last night gets washed before opening.
+      for (const mess of t.messes.filter((m) => m.kind === "dishes")) {
+        t.interact(0, { kind: "mess", id: mess.id });
+        t.interact(0, station("wash"));
+      }
+      while (t.tub.length > 0) t.tick(dt, { listeningTo: null, night: false, scrubber: 0 });
+      openForNight(t);
+    }
     let busy = 0;
+    let scrubber: number | null = null;
     for (let steps = 0; t.phase === "service" && steps < 20000; steps++) {
       const rumorGuest = t.guests.find((g) => g.rumor && (g.status === "waiting" || g.status === "eating"));
-      t.tick(dt, { listeningTo: rumorGuest?.id ?? null, night: true });
+      t.tick(dt, { listeningTo: rumorGuest?.id ?? null, night: true, scrubber });
       for (const guest of [...t.guests]) {
         if (guest.status === "arriving") t.guestArrived(guest.id);
         if (guest.status === "leaving") t.guestLeft(guest.id);
@@ -348,9 +363,13 @@ function playWholeGame(pickChoice: number, tripTime: number): Tavern {
       busy -= dt;
       if (busy > 0) continue;
 
+      scrubber = null;
       const held = t.carrying[0];
       const waiting = t.guests.filter((g) => g.status === "waiting").sort((a, b) => a.patience - b.patience);
-      if (held === "cask") {
+      if (held === "dirty") {
+        t.interact(0, station("wash"));
+        busy = tripTime;
+      } else if (held === "cask") {
         t.interact(0, station("tap"));
         busy = tripTime;
       } else if (held) {
@@ -358,6 +377,14 @@ function playWholeGame(pickChoice: number, tripTime: number): Tavern {
         if (guest) t.interact(0, { kind: "guest", id: guest.id });
         else t.interact(0, station(sourceOf[held]));
         busy = 0.3;
+      } else if (waiting.length === 0 || !hasWareFor(waiting[0].order)) {
+        // Nobody to serve, or nothing clean to serve them on: wash up.
+        const pile = t.messes.find((m) => m.kind === "dishes");
+        if (t.tub.length > 0) scrubber = 0;
+        else if (pile) {
+          t.interact(0, { kind: "mess", id: pile.id });
+          busy = tripTime;
+        }
       } else if (waiting.length > 0) {
         const want = waiting[0].order;
         if (want === "ale" && t.aleReady === 0) {

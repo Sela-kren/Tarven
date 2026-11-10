@@ -23,7 +23,7 @@ import {
 } from "three";
 import type { Rect } from "./collision";
 import { solidRetroMaterial } from "./retro";
-import type { Mess } from "./tavern";
+import { messWares, type Mess, type Ware } from "./tavern";
 import type { Seat } from "./world";
 
 /** Spacing of the places dust can settle, and how far they keep from furniture and walls. */
@@ -36,6 +36,10 @@ const DECAL_Y = 0.012;
 const VANISH_SECONDS = 0.3;
 /** How far a puddle lies from its seat, towards the table. */
 const SPILL_REACH = 0.3;
+/** A carried stack of dirty bowls: how many are drawn, how far apart, and how large. */
+const STACK_SHOWN = 5;
+const STACK_STEP = 0.06;
+const STACK_SCALE = 1.6;
 
 const COLORS = {
   clay: 0x8a7a66,
@@ -225,14 +229,18 @@ export class MessLayer {
     const spots: Vector3[] = [];
 
     if (mess.kind === "dishes") {
-      const seats = mess.spots.flatMap((index) => this.seats[index] ?? []);
+      const wares = messWares(mess);
+      const places = mess.spots.flatMap((index, i) => {
+        const seat = this.seats[index];
+        return seat ? [{ seat, ware: wares[i] }] : [];
+      });
       // Centred on the table, so it shrinks away into the table rather than towards the room's middle.
       const middle = new Vector3();
-      for (const seat of seats) middle.add(seat.plate);
-      if (seats.length > 0) middle.divideScalar(seats.length).setY(0);
+      for (const { seat } of places) middle.add(seat.plate);
+      if (places.length > 0) middle.divideScalar(places.length).setY(0);
       root.position.copy(middle);
-      for (const seat of seats) {
-        const place = this.dirtyPlace(seat, random);
+      for (const { seat, ware } of places) {
+        const place = this.dirtyPlace(seat, ware, random);
         place.position.sub(middle);
         root.add(place);
         spots.push(seat.plate.clone().setY(0));
@@ -256,25 +264,41 @@ export class MessLayer {
     return { root, spots, vanishing: null };
   }
 
-  /** What one guest left on the table: a bowl scraped not quite clean, crumbs, and sometimes a tipped cup. */
-  private dirtyPlace(seat: Seat, random: () => number): Object3D {
+  /** A stack of dirty bowls for carrying to the tub, sitting at the origin. Drawn no higher than a few, however many it is. */
+  dirtyStack(count: number): Object3D {
+    const stack = new Group();
+    for (let i = 0; i < Math.min(count, STACK_SHOWN); i++) {
+      const bowl = this.mesh(this.bowl, this.materials.clay);
+      bowl.castShadow = false;
+      bowl.position.y = i * STACK_STEP;
+      bowl.scale.setScalar(STACK_SCALE);
+      stack.add(bowl);
+    }
+    return stack;
+  }
+
+  /** What one guest left on the table: a cup, sometimes tipped, or a bowl scraped not quite clean, with crumbs. */
+  private dirtyPlace(seat: Seat, ware: Ware, random: () => number): Object3D {
     const place = new Group();
     place.position.copy(seat.plate);
     place.rotation.y = seat.heading;
 
-    const bowl = this.mesh(this.bowl, this.materials.clay);
-    bowl.position.set((random() - 0.5) * 0.06, 0, (random() - 0.5) * 0.06);
-    const crust = this.mesh(this.bowlCrust, this.materials.crust);
-    crust.position.y = 0.02;
-    crust.scale.setScalar(0.6 + random() * 0.4);
-    bowl.add(crust);
-    place.add(bowl);
+    if (ware === "dish") {
+      const bowl = this.mesh(this.bowl, this.materials.clay);
+      bowl.position.set((random() - 0.5) * 0.06, 0, (random() - 0.5) * 0.06);
+      const crust = this.mesh(this.bowlCrust, this.materials.crust);
+      crust.position.y = 0.02;
+      crust.scale.setScalar(0.6 + random() * 0.4);
+      bowl.add(crust);
+      place.add(bowl);
 
-    for (let i = 0; i < 3 + Math.floor(random() * 3); i++) {
-      const crumb = this.mesh(this.crumb, this.materials.crumb);
-      crumb.position.set((random() - 0.5) * 0.3, 0.006, (random() - 0.5) * 0.22);
-      crumb.rotation.y = random() * Math.PI;
-      place.add(crumb);
+      for (let i = 0; i < 3 + Math.floor(random() * 3); i++) {
+        const crumb = this.mesh(this.crumb, this.materials.crumb);
+        crumb.position.set((random() - 0.5) * 0.3, 0.006, (random() - 0.5) * 0.22);
+        crumb.rotation.y = random() * Math.PI;
+        place.add(crumb);
+      }
+      return place;
     }
 
     const cup = new Group();

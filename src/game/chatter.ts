@@ -3,12 +3,17 @@
  *
  * A guest calls out their order when they sit down, again when they're tired of waiting, thanks you when
  * served, and grumbles on the way out if they gave up. A party at a table talks among itself: first the
- * night's scripted chat, line by line, each said by the right person, then idle table talk. Only one person
- * at a table speaks at a time, so the bubbles read like a conversation instead of a crowd.
+ * night's scripted chat, line by line, each said by the right person, then idle back-and-forth. Guests who
+ * came alone strike up short exchanges with each other, with whoever shares their table if they can. Only
+ * one person in any conversation speaks at a time, so the bubbles read like talk instead of a crowd.
  *
  * Kept apart from the rendering so it can be tested, and the writing changed, on its own.
  */
-import { SPEAKERS } from "./banter";
+import { SPEAKERS, type BanterContext } from "./banter";
+import { ABOUT_YOU, LEERING_CALLS, LEERING_THANKS, SMUTTY_GOSSIP } from "./gossip";
+import { feltMood, LOW_RESPECT, STRONG_DESIRE, type Mood } from "./mood";
+import { CLASHES, DESIRE_TALKS, DESIRE_THANKS, MOOD_LINES, MOOD_TALKS } from "./moodtalk";
+import { ANYONE, EXCHANGES, type Exchange } from "./tabletalk";
 import type { Guest, GuestKind, Item, PartyPlan } from "./tavern";
 
 /** How a line is said, which colours its bubble. */
@@ -22,6 +27,10 @@ export interface Said {
   age: number;
   /** How long the bubble stays up. */
   duration: number;
+  /** The state the speaker is in, shown on the bubble. */
+  mood: Mood;
+  /** Whether they're talking about the innkeeper, which can only be made out from close by. */
+  aboutYou: boolean;
 }
 
 /** Letters per second a bubble types out at. */
@@ -95,42 +104,56 @@ const FAREWELLS: Record<GuestKind, string[]> = {
   fugitive: ["Thank you for the warmth.", "Goodnight..."],
 };
 
-/** What a table talks about once the night's scripted chat has been said. */
-const TABLE_TALK: Record<GuestKind, string[]> = {
-  farmer: [
-    "The ewes won't last another winter like the last.",
-    "My family says I drink too much. I say they count too well.",
-    "Have you seen the price of salt?",
-    "The mill wheel's frozen again.",
-  ],
-  soldier: [
-    "Another week of guard duty. Wonderful.",
-    "The sergeant snores like a bear.",
-    "When do we get paid, anyway?",
-    "This beats the fort's slop, I'll say that.",
-  ],
-  smuggler: [
-    "Roads are watched tonight. Keep it down.",
-    "The north path's clear, for now.",
-    "Drink up. We leave before first light.",
-    "Never trust a toll man who smiles.",
-  ],
-  fugitive: [
-    "Did you hear that? ...No. Nothing.",
-    "How far is the border from here?",
-    "Don't look at the door. Just drink.",
-    "I haven't slept in two days.",
-  ],
-};
 
+/** How often a new conversation is about the innkeeper. */
+const ABOUT_YOU_CHANCE = 0.2;
+/** How often, on top of that, someone in a mood lets it set the subject. */
+const MOOD_TALK_CHANCE = 0.25;
+/** And how often someone who wants something badly talks about that. */
+const DESIRE_TALK_CHANCE = 0.1;
+/** At low respect, how often a conversation is smutty gossip about you, and how often a guest leers at you. */
+const SMUT_CHANCE = 0.3;
+const LEER_CHANCE = 0.5;
+/** How often someone with a strong longing lets it show when they're served. */
+const DESIRE_THANKS_CHANCE = 0.4;
 /** A short beat between lines at a table. */
 const TABLE_GAP = 0.6;
 /** The pause before the table's idle talk starts. */
 const IDLE_PAUSE = 2.5;
-/** Idle talk is quieter: a random pause of up to this long between lines. */
-const IDLE_GAP = 4;
+/** Idle talk is quieter: a random pause of up to this long between one exchange and the next. */
+const IDLE_GAP = 2.5;
+/** How many pairs of solo guests can be talking at once, so the room stays readable. */
+const MAX_ROOM_TALKS = 2;
+/** The pause before another pair strikes up, and the random extra on top of it. */
+const ROOM_GAP = 1.5;
+const ROOM_GAP_SPREAD = 2.5;
 /** After sitting down, a guest waits this long (plus a little, so a party doesn't all shout at once) to call. */
 const CALL_DELAY = 0.6;
+
+/** One line of a conversation, and who says it. */
+interface ScriptLine {
+  guestId: number;
+  text: string;
+  aboutYou?: boolean;
+}
+
+/** What a conversation will be about, and who starts it. */
+interface Topic {
+  options: readonly Exchange[];
+  first: Guest;
+  second: Guest;
+  aboutYou: boolean;
+}
+
+/** About how long a conversation takes to say. */
+function spokenFor(lines: Exchange): number {
+  return lines.reduce((total, line) => total + lineDuration(line) + TABLE_GAP, 0);
+}
+
+/** How long a guest is sure to stay. Nobody leaves before they've been served. */
+function stayLeft(guest: Guest): number {
+  return guest.status === "eating" ? guest.eatLeft : Infinity;
+}
 
 /** Removes the quotation marks around a line from a script. */
 export function unquote(text: string): string {
@@ -141,10 +164,10 @@ export function unquote(text: string): string {
  * Which party member says each scripted line, matched by what they're called ("Other farmer" is a farmer)
  * and failing that, whoever hasn't spoken yet. Lines with no speaker are left out.
  */
-export function assignSpeakers(chat: readonly string[], members: readonly Guest[]): { guestId: number; text: string }[] {
+export function assignSpeakers(chat: readonly string[], members: readonly Guest[]): ScriptLine[] {
   const unmatched = [...members];
   const speakers = new Map<string, number>();
-  const lines: { guestId: number; text: string }[] = [];
+  const lines: ScriptLine[] = [];
   for (const raw of chat) {
     const match = /^([A-Z][A-Za-z ]{0,24}): (".*)$/.exec(raw);
     if (!match || members.length === 0) continue;
@@ -168,11 +191,21 @@ interface GuestState {
   /** Counts down to their first call after sitting. */
   callIn: number;
   said: Said | null;
+  mood: Mood;
 }
 
 interface TableState {
   /** The next scripted line, or past the end once it's all been said. */
   next: number;
+  wait: number;
+  /** The rest of the back-and-forth they're in the middle of, once the script is done. */
+  idle: ScriptLine[];
+}
+
+/** Two guests who came alone, passing the time. */
+interface RoomTalk {
+  members: [number, number];
+  lines: ScriptLine[];
   wait: number;
 }
 
@@ -180,6 +213,14 @@ interface TableState {
 export class Chatter {
   private readonly guests = new Map<number, GuestState>();
   private readonly tables = new Map<number, TableState>();
+  private roomTalks: RoomTalk[] = [];
+  /** Counts down to the next pair of solo guests striking up. */
+  private roomWait = ROOM_GAP;
+  /** Conversations already had, kept from night to night, so none comes round again until the rest are used. */
+  private readonly usedExchanges = new Set<Exchange>();
+  private lastExchange: Exchange | null = null;
+  /** What guests have heard about the innkeeper. */
+  private facts: ((kind: GuestKind) => BanterContext) | null = null;
 
   constructor(private readonly random: () => number = Math.random) {}
 
@@ -197,21 +238,103 @@ export class Chatter {
   reset(): void {
     this.guests.clear();
     this.tables.clear();
+    this.roomTalks = [];
+    this.roomWait = ROOM_GAP;
   }
 
-  private pick(lines: readonly string[]): string {
-    return lines[Math.floor(this.random() * lines.length) % lines.length];
+  private pick<T>(items: readonly T[]): T {
+    return items[Math.floor(this.random() * items.length) % items.length];
   }
 
-  private say(state: GuestState, text: string, tone: Tone): void {
-    state.said = { text, tone, age: 0, duration: lineDuration(text) };
+  private say(state: GuestState, text: string, tone: Tone, aboutYou = false): void {
+    state.said = { text, tone, age: 0, duration: lineDuration(text), mood: state.mood, aboutYou };
+  }
+
+  /** Decides what two guests talk about: the innkeeper, whatever mood they're in, or their own lives. */
+  private topic(a: Guest, b: Guest): Topic {
+    const [first, second] = EXCHANGES[`${a.kind}/${b.kind}`] ? [a, b] : [b, a];
+    let roll = this.random();
+
+    const facts = this.facts?.(first.kind);
+    if (facts && facts.persona.respect <= LOW_RESPECT) {
+      if (roll < SMUT_CHANCE) {
+        const gossip = SMUTTY_GOSSIP.filter((talk) => !talk.when || talk.when(facts)).map((talk) => talk.lines);
+        return { options: gossip, first, second, aboutYou: true };
+      }
+      roll = (roll - SMUT_CHANCE) / (1 - SMUT_CHANCE);
+    }
+    const known = facts ? ABOUT_YOU.filter((talk) => !talk.when || talk.when(facts)).map((talk) => talk.lines) : [];
+    if (known.length > 0 && roll < ABOUT_YOU_CHANCE) return { options: known, first, second, aboutYou: true };
+
+    const moody = [first, second].filter((guest) => feltMood(guest) !== "calm");
+    if (moody.length > 0 && roll < ABOUT_YOU_CHANCE + MOOD_TALK_CHANCE) {
+      if (moody.length === 2 && feltMood(first) !== feltMood(second)) {
+        const [earlier, later] = feltMood(first) < feltMood(second) ? [first, second] : [second, first];
+        const clash = CLASHES[`${feltMood(earlier)}/${feltMood(later)}`];
+        if (clash) return { options: clash, first: earlier, second: later, aboutYou: false };
+      }
+      const speaker = this.pick(moody);
+      const mood = feltMood(speaker);
+      const talks = MOOD_TALKS[mood];
+      if (talks) {
+        const aboutYou = mood === "lust" || mood === "idolize";
+        return { options: talks, first: speaker, second: speaker === first ? second : first, aboutYou };
+      }
+    }
+
+    const longing = [first, second].filter((guest) => guest.desires >= STRONG_DESIRE);
+    if (longing.length > 0 && roll >= ABOUT_YOU_CHANCE + MOOD_TALK_CHANCE && roll < ABOUT_YOU_CHANCE + MOOD_TALK_CHANCE + DESIRE_TALK_CHANCE) {
+      const speaker = this.pick(longing);
+      return { options: DESIRE_TALKS[speaker.kind], first: speaker, second: speaker === first ? second : first, aboutYou: false };
+    }
+    return { options: [...EXCHANGES[`${first.kind}/${second.kind}`], ...ANYONE], first, second, aboutYou: false };
+  }
+
+  /** Whether this guest, who has heard what's said about you, is going to be crude about it. */
+  private leers(guest: Guest): boolean {
+    const facts = this.facts?.(guest.kind);
+    return Boolean(facts && facts.persona.respect <= LOW_RESPECT && guest.mood !== "angry" && this.random() < LEER_CHANCE);
+  }
+
+  /** One of `options` that fits in `seconds`, and that hasn't been had yet if there is one. */
+  private choose(options: readonly Exchange[], seconds: number): Exchange {
+    const fits = options.filter((lines) => spokenFor(lines) <= seconds);
+    const shortest = options.reduce((best, lines) => (spokenFor(lines) < spokenFor(best) ? lines : best));
+    const pool = fits.length > 0 ? fits : [shortest];
+    let fresh = pool.filter((lines) => !this.usedExchanges.has(lines));
+    if (fresh.length === 0) {
+      // All said: they can come round again, but not the one that was only just had.
+      for (const lines of pool) this.usedExchanges.delete(lines);
+      fresh = pool.length > 1 ? pool.filter((lines) => lines !== this.lastExchange) : pool;
+    }
+    const chosen = this.pick(fresh);
+    this.usedExchanges.add(chosen);
+    this.lastExchange = chosen;
+    return chosen;
+  }
+
+  /** A back-and-forth for two guests, short enough to finish in the `seconds` they have left together. */
+  private exchange(a: Guest, b: Guest, seconds: number): ScriptLine[] {
+    const { options, first, second, aboutYou } = this.topic(a, b);
+    const chosen = this.choose(options, seconds);
+    const concernsYou = aboutYou || chosen.some((line) => /innkeeper/i.test(line));
+    return chosen.map((text, turn) => ({ guestId: (turn % 2 === 0 ? first : second).id, text, aboutYou: concernsYou }));
   }
 
   /**
-   * Moves everyone's talk on by `dt` seconds. `parties` are the night's party scripts, and `chatting` says
-   * whether a party is sitting together.
+   * Moves everyone's talk on by `dt` seconds. `parties` are the night's party scripts, `chatting` says
+   * whether a party is sitting together, `tableOf` names the table at a seat, so neighbours talk first,
+   * and `facts` is what guests have heard about the innkeeper.
    */
-  update(dt: number, guests: readonly Guest[], parties: readonly PartyPlan[], chatting: (party: number) => boolean): void {
+  update(
+    dt: number,
+    guests: readonly Guest[],
+    parties: readonly PartyPlan[],
+    chatting: (party: number) => boolean,
+    tableOf: (seat: number) => string = () => "",
+    facts: ((kind: GuestKind) => BanterContext) | null = null,
+  ): void {
+    this.facts = facts;
     // Forget anyone who's gone.
     const present = new Set(guests.map((g) => g.id));
     for (const id of this.guests.keys()) if (!present.has(id)) this.guests.delete(id);
@@ -219,9 +342,11 @@ export class Chatter {
     for (const guest of guests) {
       let state = this.guests.get(guest.id);
       if (!state) {
-        state = { status: guest.status, called: 0, callIn: CALL_DELAY + this.random() * 1.2, said: null };
+        state = { status: guest.status, called: 0, callIn: CALL_DELAY + this.random() * 1.2, said: null, mood: feltMood(guest) };
         this.guests.set(guest.id, state);
       }
+      state.mood = feltMood(guest);
+      const moodLines = MOOD_LINES[state.mood];
       if (state.said) {
         state.said.age += dt;
         if (state.said.age >= state.said.duration) state.said = null;
@@ -232,12 +357,17 @@ export class Chatter {
       const kind = guest.kind;
       // Changes of state get said straight away, over whatever they were saying.
       if (was === "waiting" && guest.status === "eating") {
-        this.say(state, this.pick(THANKS[kind]), "thanks");
+        const longing = guest.desires >= STRONG_DESIRE && guest.mood !== "angry" && this.random() < DESIRE_THANKS_CHANCE;
+        const plain = this.leers(guest) ? LEERING_THANKS[kind] : (moodLines?.thanks[kind] ?? THANKS[kind]);
+        const thanks = longing ? DESIRE_THANKS[kind] : plain;
+        this.say(state, this.pick(thanks), guest.mood === "angry" ? "angry" : "thanks");
         continue;
       }
       if (was !== "leaving" && guest.status === "leaving") {
         if (was === "waiting") this.say(state, this.pick(WALKOUTS[kind]), "angry");
-        else if (this.random() < 0.5) this.say(state, this.pick(FAREWELLS[kind]), "chat");
+        else if (this.random() < 0.5) {
+          this.say(state, this.pick(moodLines?.farewells ?? FAREWELLS[kind]), guest.mood === "angry" ? "angry" : "chat");
+        }
         continue;
       }
       if (guest.status !== "waiting" || state.said) continue;
@@ -250,7 +380,8 @@ export class Chatter {
         state.callIn -= dt;
         if (state.callIn <= 0 && quietTable) {
           state.called = 1;
-          this.say(state, fill(this.pick(CALLS[kind]), guest.order), "call");
+          const calls = this.leers(guest) ? LEERING_CALLS[kind] : (moodLines?.calls[kind] ?? CALLS[kind]);
+          this.say(state, fill(this.pick(calls), guest.order), "call");
         }
       } else if (state.called === 1 && left < 0.5 && quietTable) {
         state.called = 2;
@@ -263,6 +394,7 @@ export class Chatter {
     }
 
     this.updateTables(dt, guests, parties, chatting);
+    this.updateRoom(dt, guests, tableOf);
   }
 
   private updateTables(
@@ -276,30 +408,67 @@ export class Chatter {
       const members = guests.filter((g) => g.party === party && (g.status === "waiting" || g.status === "eating"));
       let table = this.tables.get(party);
       if (!table) {
-        table = { next: 0, wait: 1 + this.random() };
+        table = { next: 0, wait: 1 + this.random(), idle: [] };
         this.tables.set(party, table);
       }
       if (this.tableBusy(members)) return;
       table.wait -= dt;
       if (table.wait > 0) return;
 
-      const script = assignSpeakers(plan.chat, members);
-      let speaker: Guest | undefined;
-      let text: string;
-      if (table.next < script.length) {
-        const line = script[table.next];
-        speaker = members.find((g) => g.id === line.guestId);
-        text = line.text;
-      } else {
-        speaker = members[Math.floor(this.random() * members.length) % members.length];
-        text = this.pick(TABLE_TALK[speaker.kind]);
+      const script = assignSpeakers([...plan.chat, ...(plan.overheard ?? [])], members);
+      const scripted = table.next < script.length;
+      if (!scripted && table.idle.length === 0) {
+        const first = this.pick(members);
+        // A table stays until the last of them has finished.
+        const seconds = Math.max(...members.map(stayLeft));
+        table.idle = this.exchange(first, this.pick(members.filter((g) => g !== first)), seconds);
       }
+      const line = scripted ? script[table.next] : table.idle.shift()!;
       table.next++;
-      const state = speaker && this.guests.get(speaker.id);
-      if (!state) return;
-      this.say(state, text, /innkeeper/i.test(text) ? "call" : "chat");
-      table.wait =
-        table.next === script.length ? IDLE_PAUSE : table.next > script.length ? TABLE_GAP + this.random() * IDLE_GAP : TABLE_GAP;
+      const state = this.guests.get(line.guestId);
+      if (!state || !members.some((g) => g.id === line.guestId)) return;
+      // In the night's script, naming the innkeeper means calling them over. In idle talk it's gossip.
+      this.say(state, line.text, scripted && /innkeeper/i.test(line.text) ? "call" : "chat", line.aboutYou);
+      if (table.next < script.length) table.wait = TABLE_GAP;
+      else if (table.next === script.length) table.wait = IDLE_PAUSE;
+      else table.wait = table.idle.length > 0 ? TABLE_GAP : TABLE_GAP + this.random() * IDLE_GAP;
     });
+  }
+
+  /** Whether a guest is free to strike up a conversation: seated, quiet, and has already asked for their order. */
+  private canTalk(guest: Guest): boolean {
+    const state = this.guests.get(guest.id);
+    if (!state || state.said) return false;
+    return guest.status === "eating" || (guest.status === "waiting" && state.called >= 1);
+  }
+
+  /** Guests who came alone: carries on the exchanges under way, and starts another when there's a pair free. */
+  private updateRoom(dt: number, guests: readonly Guest[], tableOf: (seat: number) => string): void {
+    const seated = (id: number) => guests.some((g) => g.id === id && (g.status === "waiting" || g.status === "eating"));
+    this.roomTalks = this.roomTalks.filter((talk) => {
+      if (!talk.members.every(seated)) return false;
+      if (talk.members.some((id) => this.saying(id))) return true;
+      talk.wait -= dt;
+      if (talk.wait > 0) return true;
+      const line = talk.lines.shift();
+      const state = line && this.guests.get(line.guestId);
+      if (!line || !state) return false;
+      this.say(state, line.text, "chat", line.aboutYou);
+      talk.wait = TABLE_GAP;
+      return true;
+    });
+
+    this.roomWait -= dt;
+    if (this.roomWait > 0 || this.roomTalks.length >= MAX_ROOM_TALKS) return;
+    const busy = new Set(this.roomTalks.flatMap((talk) => talk.members));
+    const free = guests.filter((g) => g.party === null && !busy.has(g.id) && this.canTalk(g));
+    if (free.length < 2) return;
+    const first = this.pick(free);
+    const others = free.filter((g) => g !== first);
+    const neighbours = others.filter((g) => tableOf(g.seat) === tableOf(first.seat));
+    const second = this.pick(neighbours.length > 0 ? neighbours : others);
+    const seconds = Math.min(stayLeft(first), stayLeft(second));
+    this.roomTalks.push({ members: [first.id, second.id], lines: this.exchange(first, second, seconds), wait: 0 });
+    this.roomWait = ROOM_GAP + this.random() * ROOM_GAP_SPREAD;
   }
 }

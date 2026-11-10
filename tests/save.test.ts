@@ -49,6 +49,46 @@ describe("tavern snapshot", () => {
   });
 });
 
+describe("hidden stats", () => {
+  it("start at zero and last through a save", () => {
+    const t = new Tavern(SEATS);
+    expect(t.persona.lust).toBe(0);
+    expect(t.persona.desires).toBe(0);
+    t.persona.lust = 4;
+    t.persona.desires = 7;
+
+    const loaded = new Tavern(SEATS);
+    loaded.restore(t.snapshot());
+    expect(loaded.persona.lust).toBe(4);
+    expect(loaded.persona.desires).toBe(7);
+  });
+
+  it("load as zero from a save made before they existed", () => {
+    const t = new Tavern(SEATS);
+    const save = t.snapshot();
+    const older = { ...save.persona! } as Partial<NonNullable<typeof save.persona>>;
+    delete older.lust;
+    delete older.desires;
+    t.persona.lust = 5;
+    t.restore({ ...save, persona: older as NonNullable<typeof save.persona> });
+    expect(t.persona.lust).toBe(0);
+    expect(t.persona.desires).toBe(0);
+  });
+
+  it("are carried by each guest, within their limits", () => {
+    const t = new Tavern(SEATS);
+    t.open();
+    for (let i = 0; i < 600 && t.guests.length === 0; i++) t.tick(0.1, { listeningTo: null, night: true });
+    expect(t.guests.length).toBeGreaterThan(0);
+    for (const guest of t.guests) {
+      expect(guest.lust).toBeGreaterThanOrEqual(0);
+      expect(guest.lust).toBeLessThanOrEqual(10);
+      expect(guest.desires).toBeGreaterThanOrEqual(0);
+      expect(guest.desires).toBeLessThanOrEqual(10);
+    }
+  });
+});
+
 describe("save slots", () => {
   it("reads back what was written", () => {
     const t = new Tavern(SEATS);

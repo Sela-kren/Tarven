@@ -39,6 +39,31 @@ describe("parties", () => {
     expect(new Set(party.map((g) => TABLES[g.seat])).size).toBe(1);
   });
 
+  it("stay at the table until the last of them has finished eating", () => {
+    const t = atNight(0, 18);
+    const [first, second] = partyOf(t, 0);
+    first.status = "eating";
+    first.eatLeft = 0.5;
+    second.status = "eating";
+    second.eatLeft = 3;
+    run(t, 1);
+    expect(first.status).toBe("eating");
+    run(t, 3);
+    expect(first.status).toBe("leaving");
+    expect(second.status).toBe("leaving");
+  });
+
+  it("let the others go once a guest at the table has walked out", () => {
+    const t = atNight(0, 18);
+    const [first, second] = partyOf(t, 0);
+    first.status = "eating";
+    first.eatLeft = 0.5;
+    second.patience = 1;
+    run(t, 2);
+    expect(second.status).toBe("leaving");
+    expect(first.status).toBe("leaving");
+  });
+
   it("invite you over only once two are seated, and only with empty hands", () => {
     const t = new Tavern(TABLES.length, TABLES);
     t.open();
@@ -173,7 +198,7 @@ describe("a drink as a tip", () => {
   it("opens a conversation with the guest, who offers you a drink", () => {
     const t = tipped();
     expect(t.inConversation).toBe(true);
-    expect(t.talkLines[0].speaker).toBe("Farmer");
+    expect(t.talkLines[0].speaker).toMatch(/^Farmer/);
     expect(t.talkChoices[0].label).toBe("Drink it, on them");
     const gold = t.gold;
     t.chooseTalk(0);
@@ -217,10 +242,11 @@ describe("a drink as a tip", () => {
   });
 
   it("asks a favor instead, sometimes, and the favor depends on who's asking and what they've heard", () => {
-    // The first roll opens the conversation; rolls of 0.7 after it skip the compliment, so the farmer asks a favor.
+    // The first rolls decide how the guest feels walking in and open the conversation; rolls of 0.7 after
+    // those skip the compliment, so the farmer asks a favor.
     const favorRolls = (t: Tavern) => {
-      let first = true;
-      t.random = () => (first ? ((first = false), 0) : 0.7);
+      let rolls = 0;
+      t.random = () => (rolls++ < 4 ? 0 : 0.7);
     };
     const asked = tipped(favorRolls);
     expect(said(asked).some((text) => text.includes("letter"))).toBe(true);
