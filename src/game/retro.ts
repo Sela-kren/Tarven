@@ -141,6 +141,8 @@ export class RetroPipeline {
         tScene: { value: this.target.texture },
         uScale: { value: 1 },
         uLevels: { value: COLOR_LEVELS },
+        uDrunk: { value: 0 },
+        uTime: { value: 0 },
       },
       vertexShader: /* glsl */ `
         void main() {
@@ -150,6 +152,14 @@ export class RetroPipeline {
         uniform sampler2D tScene;
         uniform float uScale;
         uniform float uLevels;
+        uniform float uDrunk;
+        uniform float uTime;
+
+        // Drunk vision, at full drunkenness: how many game pixels the rows ripple and the double image drifts,
+        // and how strong the double image is.
+        const float DRUNK_WAVE = 2.5;
+        const float DRUNK_DOUBLE = 5.0;
+        const float DRUNK_GHOST = 0.45;
 
         const float BAYER[16] = float[16](
            0.0,  8.0,  2.0, 10.0,
@@ -164,7 +174,17 @@ export class RetroPipeline {
 
         void main() {
           ivec2 pixel = ivec2(gl_FragCoord.xy / uScale);
-          vec3 color = linearToSrgb(clamp(texelFetch(tScene, pixel, 0).rgb, 0.0, 1.0));
+          vec3 scene = texelFetch(tScene, pixel, 0).rgb;
+          if (uDrunk > 0.0) {
+            // Drunk: the rows ripple sideways, and a second, faded copy of the room drifts around the first.
+            ivec2 last = textureSize(tScene, 0) - 1;
+            float wave = sin(float(pixel.y) * 0.06 + uTime * 2.0) * uDrunk * DRUNK_WAVE;
+            ivec2 wavy = clamp(pixel + ivec2(int(round(wave)), 0), ivec2(0), last);
+            vec2 drift = vec2(sin(uTime * 0.8), cos(uTime * 0.6)) * uDrunk * DRUNK_DOUBLE;
+            ivec2 ghost = clamp(wavy + ivec2(round(drift)), ivec2(0), last);
+            scene = mix(texelFetch(tScene, wavy, 0).rgb, texelFetch(tScene, ghost, 0).rgb, DRUNK_GHOST * uDrunk);
+          }
+          vec3 color = linearToSrgb(clamp(scene, 0.0, 1.0));
           float threshold = BAYER[(pixel.x & 3) + ((pixel.y & 3) << 2)] / 16.0 - 0.46875;
           color = floor((color + threshold / uLevels) * uLevels + 0.5) / uLevels;
           gl_FragColor = vec4(color, 1.0);
@@ -190,6 +210,12 @@ export class RetroPipeline {
     this.target.setSize(width, height);
     snapResolution.value.set(Math.round((SNAP_HEIGHT * width) / height), SNAP_HEIGHT);
     this.postMaterial.uniforms.uScale.value = scale;
+  }
+
+  /** Wobbles the picture: `amount` from 0 (sober, untouched) to 1. `time` in seconds keeps it moving. */
+  setDrunk(amount: number, time: number): void {
+    this.postMaterial.uniforms.uDrunk.value = amount;
+    this.postMaterial.uniforms.uTime.value = time;
   }
 
   render(scene: Scene, camera: Camera): void {

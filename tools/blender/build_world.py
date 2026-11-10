@@ -617,6 +617,10 @@ HAIR_UPDO = [
 ]
 
 FEMALE = {
+    # "medieval": chemise, laced bodice, long skirt, apron and leather shoes.
+    # "modern": the original white tee, red track pants and white sneakers, kept for later.
+    "outfit": "medieval",
+    "jiggle": True,  # spring bones for the bust, belly, glutes and skirt hem
     "name": "Female", "tunic": "tee_white", "hair": "hair_f", "skin": "skin_f", "pants": "pants_red",
     "belt": "waistband", "shoe": "shoe_w", "sole": "sole_w", "splay": 0.28, "leg_splay": 0.05,
     "arm_sides": 8, "cuff_bands": 0, "midriff_bands": 2, "bare_arm_bands": 2, "bare_forearm": True,
@@ -1910,7 +1914,215 @@ def character_joints(spec):
     if "strands" in spec:
         for side, sx in (("L", -1), ("R", 1)):
             joints[f"Strand_{side}"] = ("Head", (sx * 0.085 * kx, 0.02 * ky, chin + 0.12 * kz))
+    if spec.get("jiggle"):
+        for label, (parent, head, *_rest) in JIGGLE_REGIONS.items():
+            joints[label] = (parent, head)
+    if spec.get("outfit") == "medieval":
+        # The long skirt hangs from panels round the hips, each one jointed at the knee. The game swings
+        # them out of the legs' way, so the legs never pass through the cloth.
+        for i in range(SKIRT_PANELS):
+            joints[f"Skirt{i}"] = ("Hips", skirt_rim(spec, i, SKIRT_PIVOT))
+            joints[f"SkirtHem{i}"] = (f"Skirt{i}", skirt_rim(spec, i, SKIRT_KNEE))
     return {f"{name}_{label}": (f"{name}_{parent}" if parent else None, head) for label, (parent, head) in joints.items()}
+
+
+# ---------------------------------------------------------------- secondary motion
+
+# Soft parts the game moves on springs. Each bone takes part of the weight of the skin and cloth around it:
+# bone: (parent, centre, radii of the region, most weight it takes, side: 1 front only, -1 back only).
+JIGGLE_REGIONS = {
+    "Bust": ("Torso", (0.0, 0.075, 1.15), (0.14, 0.1, 0.095), 1.0, 1),
+    "Belly": ("Hips", (0.0, 0.06, 0.99), (0.11, 0.09, 0.08), 0.75, 1),
+    "Glute_L": ("Hips", (-0.065, -0.08, 0.83), (0.09, 0.09, 0.11), 0.9, -1),
+    "Glute_R": ("Hips", (0.065, -0.08, 0.83), (0.09, 0.09, 0.11), 0.9, -1),
+}
+
+
+def move_weight(obj, index, bone, share):
+    """Hands this share of a vertex's weight to bone, taking it evenly from the bones it already has."""
+    if share <= 0:
+        return
+    # Read the weights first: writing them while looping over the vertex's groups skips and repeats some.
+    current = [(g.group, g.weight) for g in obj.data.vertices[index].groups]
+    total = sum(w for _, w in current)
+    target = obj.vertex_groups.get(bone) or obj.vertex_groups.new(name=bone)
+    kept = 0.0
+    for group, weight in current:
+        if group == target.index:
+            kept = weight
+        else:
+            obj.vertex_groups[group].add([index], weight * (1 - share), "REPLACE")
+    target.add([index], kept + (total - kept) * share, "REPLACE")
+
+
+def add_jiggle_weights(name, layers):
+    for obj in layers:
+        for v in obj.data.vertices:
+            x, y, z = v.co
+            for label, (_, (cx, cy, cz), (rx, ry, rz), most, side) in JIGGLE_REGIONS.items():
+                if side * y <= 0.02:
+                    continue
+                d2 = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 + ((z - cz) / rz) ** 2
+                if d2 < 1:
+                    # Full weight through the middle of the mass, fading smoothly to nothing at its edge.
+                    t = 1 - math.sqrt(d2)
+                    move_weight(obj, v.index, f"{name}_{label}", most * min(1.0, t * t * (3 - 2 * t) * 1.6))
+
+
+# ---------------------------------------------------------------- the medieval outfit
+
+MEDIEVAL_COLOURS = (("linen", (0.86, 0.8, 0.68)), ("bodice", (0.36, 0.08, 0.09)), ("skirt", (0.17, 0.24, 0.14)),
+                    ("apron", (0.9, 0.87, 0.8)), ("hose", (0.2, 0.15, 0.13)), ("sole_dark", (0.16, 0.1, 0.07)))
+BODICE = (0.955, 1.17)  # bottom and top of the laced bodice
+# A tavern wench's chemise: a wide neckline worn off the shoulders, sleeves pushed up to the elbow.
+NECKLINE = (1.21, 1.25)  # where the chemise stops at the front and at the back
+SLEEVE_END = 0.05  # below the elbow
+SLEEVE_PUFF = 0.012
+SKIRT_TOP, SKIRT_HEM, SKIRT_SIDES = 0.99, 0.2, 16
+# The skirt's panels: how many round the body, where they hang from (just above the hip joints) and
+# where each bends (about knee height). The skirt fades onto the panels between these heights.
+SKIRT_PANELS, SKIRT_PIVOT, SKIRT_KNEE = 8, 0.84, 0.48
+SKIRT_HANG = (0.9, 0.8)  # from the hips onto the panels
+SKIRT_BEND = (0.58, 0.38)  # from the upper panels onto the lower ones
+
+
+def profile_at(spec, z):
+    """(half width, front, back) of the worn trunk at height z, held at the ends of the table."""
+    table = spec["skin_profile"]
+    if z <= table[0][0]:
+        return table[0][1:]
+    for (z0, *low), (z1, *high) in zip(table, table[1:]):
+        if z <= z1:
+            t = (z - z0) / (z1 - z0)
+            return tuple(a + (b - a) * t for a, b in zip(low, high))
+    return table[-1][1:]
+
+
+def medieval_cloth(spec, m, skin):
+    """The worn skin's faces the medieval outfit covers: chemise sleeves and yoke, bodice, and hose."""
+    faces = []
+    for f, mat in skin.faces:
+        if mat is m["stripe"]:
+            continue
+        weights = {}
+        for i in f:
+            for bone, w in skin.weights[i].items():
+                weights[bone] = weights.get(bone, 0.0) + w
+        bone = max(weights, key=weights.get)
+        cy = sum(skin.points[i][1] for i in f) / len(f)
+        cz = sum(skin.points[i][2] for i in f) / len(f)
+        if bone.startswith("UpperArm"):
+            faces.append((f, m["linen"]))
+        elif bone.startswith("ForeArm"):
+            if cz > spec["elbow_z"] - SLEEVE_END:
+                faces.append((f, m["linen"]))
+        elif bone.startswith(("Thigh", "Shin")):
+            faces.append((f, m["hose"]))
+        elif bone in ("Hips", "Torso"):
+            if cz < BODICE[0]:
+                faces.append((f, m["hose"]))  # under the skirt
+            elif cz < BODICE[1]:
+                faces.append((f, m["bodice"]))
+            elif cz < (NECKLINE[0] if cy > 0 else NECKLINE[1]):
+                faces.append((f, m["linen"]))
+    return faces
+
+
+def skirt_outline(spec, z):
+    """(half width, front, back) of the long skirt: close at the waist, flaring from the hips to the hem."""
+    if z >= 0.841:
+        w, f, b = profile_at(spec, z)
+        return w + 0.014, f + 0.02, b + 0.03
+    w, f, b = profile_at(spec, 0.841)
+    t = (0.841 - z) / (0.841 - SKIRT_HEM)
+    return w + 0.014 + 0.1 * t, f + 0.02 + 0.14 * t, b + 0.03 + 0.1 * t
+
+
+def skirt_point(spec, a, z):
+    """The point of the skirt at angle a round the body (0 at the right side, a quarter turn at the front)."""
+    w, f, b = skirt_outline(spec, z)
+    return math.cos(a) * w, math.sin(a) * (f if math.sin(a) > 0 else b), z
+
+
+def skirt_rim(spec, panel, z):
+    return skirt_point(spec, 2 * math.pi * panel / SKIRT_PANELS, z)
+
+
+def skirt_weights(a, z):
+    """The skirt hangs from the hips, then from the two panels either side of it, bending at the knee."""
+    def ease(t):
+        t = min(1.0, max(0.0, t))
+        return t * t * (3 - 2 * t)
+
+    hang = ease((SKIRT_HANG[0] - z) / (SKIRT_HANG[0] - SKIRT_HANG[1]))
+    bend = ease((SKIRT_BEND[0] - z) / (SKIRT_BEND[0] - SKIRT_BEND[1]))
+    at = (a / (2 * math.pi) % 1) * SKIRT_PANELS
+    first = int(at) % SKIRT_PANELS
+    share = at - int(at)
+    weights = {"Hips": 1 - hang}
+    for panel, part in ((first, 1 - share), ((first + 1) % SKIRT_PANELS, share)):
+        if part > 0:
+            weights[f"Skirt{panel}"] = weights.get(f"Skirt{panel}", 0) + hang * (1 - bend) * part
+            weights[f"SkirtHem{panel}"] = weights.get(f"SkirtHem{panel}", 0) + hang * bend * part
+    return {bone: w for bone, w in weights.items() if w > 0}
+
+
+def build_skirt(spec, m):
+    """Skirt, apron, waist belt and bodice laces, as one more skinned layer."""
+    extra = Skin()
+    sides = SKIRT_SIDES
+    zs = [SKIRT_TOP, 0.94, 0.88, 0.82, 0.7, 0.58, 0.46, 0.34, 0.26, SKIRT_HEM]
+    for r, z in enumerate(zs):
+        for k in range(sides):
+            a = 2 * math.pi * k / sides
+            extra.add(f"skirt{r}_{k}", 0, skirt_point(spec, a, z), skirt_weights(a, z))
+    for r in range(len(zs) - 1):
+        for k in range(sides):
+            extra.face((f"skirt{r}_{k}", f"skirt{r + 1}_{k}", f"skirt{r + 1}_{(k + 1) % sides}", f"skirt{r}_{(k + 1) % sides}"),
+                       0, m["skirt"])
+
+    # The apron is the skirt's front panel moved out a little, with the very same weights, so the two
+    # always bend together and the skirt never shows through.
+    apron_rows = zs.index(0.46) + 1
+    apron_columns = range(sides // 8, sides * 3 // 8 + 1)  # 45 to 135 degrees round the front
+    for r in range(apron_rows):
+        for k in apron_columns:
+            x, y, z = extra.points[extra.at(f"skirt{r}_{k}", 0)]
+            reach = 0.012 / math.hypot(x, y)
+            extra.add(f"apron{r}_{k}", 0, (x * (1 + reach), y * (1 + reach), z), skirt_weights(2 * math.pi * k / sides, z))
+    for r in range(apron_rows - 1):
+        for k in list(apron_columns)[:-1]:
+            extra.face((f"apron{r}_{k}", f"apron{r + 1}_{k}", f"apron{r + 1}_{k + 1}", f"apron{r}_{k + 1}"), 0, m["apron"])
+
+    # A leather belt over the top of the skirt and apron.
+    for r, z in enumerate((0.962, 1.0)):
+        w, f, b = profile_at(spec, z)
+        for k in range(sides):
+            a = 2 * math.pi * k / sides
+            reach = 0.026
+            x, y = math.cos(a) * (w + reach), math.sin(a) * ((f if math.sin(a) > 0 else b) + reach)
+            extra.add(f"belt{r}_{k}", 0, (x, y, z), {"Hips": 1.0})
+    for k in range(sides):
+        extra.face((f"belt1_{k}", f"belt0_{k}", f"belt0_{(k + 1) % sides}", f"belt1_{(k + 1) % sides}"), 0, m["leather"])
+
+    # Laces up the front of the bodice: a dark seam with short crossing ties.
+    blend_start, blend_span = spec.get("trunk_blend", (0.985, 0.05))
+
+    def trunk(z):
+        t = min(1.0, max(0.0, (z - blend_start) / blend_span))
+        return {"Hips": 1 - t, "Torso": t}
+
+    def lace_box(key, cx, cz, half_w, half_h):
+        y = profile_at(spec, cz)[1] + CLOTH_GAP + 0.004
+        corners = [(-half_w, -half_h), (-half_w, half_h), (half_w, half_h), (half_w, -half_h)]  # facing forwards
+        for i, (dx, dz) in enumerate(corners):
+            extra.add(f"{key}_{i}", 0, (cx + dx, y, cz + dz), trunk(cz + dz))
+        extra.face([f"{key}_{i}" for i in range(4)], 0, m["leather"])
+
+    lace_box("seam", 0.0, 1.06, 0.004, 0.085)
+    for i, z in enumerate((0.99, 1.025, 1.06, 1.095, 1.13)):
+        lace_box(f"tie{i}", 0.0, z, 0.018, 0.0035)
+    return extra
 
 
 def skin_character(c, m, spec, root):
@@ -1943,8 +2155,18 @@ def skin_character(c, m, spec, root):
         normal = normals.get(index)
         return tuple(a + b * CLOTH_GAP for a, b in zip(skin.points[index], normal)) if normal else skin.points[index]
 
-    worn = [(f, mat) for f, mat in skin.faces if mat is not bare]
-    cloth, cloth_kept = skin.mesh(f"{name}_Cloth", worn, outwards)
+    medieval = spec.get("outfit") == "medieval"
+    worn = medieval_cloth(spec, m, skin) if medieval else [(f, mat) for f, mat in skin.faces if mat is not bare]
+
+    def puffed(index):
+        """The chemise's sleeves stand out from the arm."""
+        weights = skin.weights[index]
+        normal = normals.get(index)
+        if not normal or not max(weights, key=weights.get).startswith("UpperArm"):
+            return outwards(index)
+        return tuple(a + b * (CLOTH_GAP + SLEEVE_PUFF) for a, b in zip(skin.points[index], normal))
+
+    cloth, cloth_kept = skin.mesh(f"{name}_Cloth", worn, puffed if medieval else outwards)
     cloth_obj = skin.link(c, cloth, cloth_kept, name, f"{name}_Cloth")
 
     def bind(obj, group, indices=None):
@@ -1975,14 +2197,27 @@ def skin_character(c, m, spec, root):
     for key in limbs:
         bind(parts[label(key)], label(key))
     join(body_obj, [parts[label(key)] for key in ["Head", "Torso"] + limbs])
-    bind(parts[label("Hips")], label("Hips"))
-    join(cloth_obj, [parts[label("Hips")]])
+    if medieval:
+        # The track pants' drawstring goes; the skirt, apron, belt and laces take its place.
+        bpy.data.objects.remove(parts[label("Hips")])
+        extra = build_skirt(spec, m)
+        skirt, skirt_kept = extra.mesh(f"{name}_Skirt", extra.faces)
+        join(cloth_obj, [extra.link(c, skirt, skirt_kept, name, f"{name}_Skirt")])
+    else:
+        bind(parts[label("Hips")], label("Hips"))
+        join(cloth_obj, [parts[label("Hips")]])
 
     shoes = parts[label("Shin_R")]
     shoes.name = shoes.data.name = f"{name}_Shoes"
     bind(shoes, label("Shin_R"))
     bind(parts[label("Shin_L")], label("Shin_L"))
     join(shoes, [parts[label("Shin_L")]])
+    if medieval:
+        # The same shoe shape, in leather, with the sock cuff in the stockings' colour.
+        swap = {"T_shoe_w": m["leather"], "T_sole_w": m["sole_dark"], "T_pants_red": m["hose"]}
+        for i, mat in enumerate(shoes.data.materials):
+            if mat and mat.name in swap:
+                shoes.data.materials[i] = swap[mat.name]
 
     # Loose strands stay fixed at the root and hang more freely towards the tips.
     locks = [parts[label(f"Strand_{side}")] for side in "LR" if label(f"Strand_{side}") in parts]
@@ -2001,6 +2236,9 @@ def skin_character(c, m, spec, root):
         others.append(parts[label("Bun")])
     if others:
         join(hair, others)
+
+    if spec.get("jiggle"):
+        add_jiggle_weights(name, (body_obj, cloth_obj))
 
     armature = bpy.data.armatures.new(f"{name}_Bones")
     rig = bpy.data.objects.new(f"{name}_Armature", armature)
@@ -2115,6 +2353,11 @@ def main():
                         ("lip_m", (0.62, 0.4, 0.33)), ("eye_line", (0.07, 0.05, 0.05)), ("iris_m", (0.1, 0.13, 0.15)),
                         ("eye_m", (0.78, 0.74, 0.68)),
                         ("hair_m", (0.055, 0.07, 0.08)), ("hair_m_warm", (0.13, 0.09, 0.075))):
+        mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
+    rng.bit_generator.state = random_state
+    # The female's medieval outfit, likewise without moving the random numbers.
+    random_state = rng.bit_generator.state
+    for key, colour in MEDIEVAL_COLOURS:
         mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
     rng.bit_generator.state = random_state
     for spec, blender_x in ((MALE, -0.6), (FEMALE, 0.6)):

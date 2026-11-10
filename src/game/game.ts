@@ -1,7 +1,9 @@
 import {
   Box3,
   Camera,
+  CylinderGeometry,
   Group,
+  MathUtils,
   Material,
   Mesh,
   Object3D,
@@ -13,10 +15,35 @@ import {
   WebGLRenderer,
 } from "three";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
-import type { Rect, Vec2 } from "./collision";
+import { falloff, footfalls, musicFor, nextSoundLevel, type Soundscape } from "./audio";
+import { resolveCircle, type Rect, type Vec2 } from "./collision";
+import {
+  BED_NAME,
+  BED_SPOT,
+  BEDROOM_DOOR_NAME,
+  BEDROOM_DOOR_OPEN,
+  BEDROOM_DOOR_OPEN_ANGLE,
+  BEDROOM_DOOR_SHUT,
+  BEDROOM_DOOR_SPOT,
+  BEDROOM_FROM_X,
+  BELL_SPOT,
+  BIN_NAME,
+  BIN_SPOT,
+  FRONT_DOOR_HINGE,
+  FRONT_DOOR_NAME,
+  FRONT_DOOR_OPEN_ANGLE,
+  DESK_NAME,
+  DESK_SPOT,
+  makeBell,
+} from "./furnishings";
+import { BuildMode } from "./buildmode";
 import { GuestActor, Walker } from "./guests";
+import { cloneLayout, emptyLayout, footprint, HousePlan, seatSpecs, type HouseLayout, type Placed } from "./house";
+import { HouseView } from "./houseview";
+import { StatsHud } from "./hud";
 import { Icon, type IconName } from "./icons";
 import type { Input } from "./input";
+import { findDustSpots, MessLayer } from "./mess";
 import { Outline, outlineMaterial } from "./outline";
 import { renderPortrait } from "./portraits";
 import {
@@ -30,46 +57,73 @@ import {
   type SaveData,
 } from "./save";
 import { INTRO, StoryBox } from "./story";
+import { Chatter } from "./chatter";
+import { DialogueBox } from "./dialogue";
+import { SpeechBubbles, type Speaker } from "./speech";
+import { formatHour, type WorldClock } from "./time";
 import { NavGrid } from "./path";
-import { Body, Sibling } from "./player";
+import { Body, Sibling, WALK_STYLE_NAMES } from "./player";
 import { applyRetroLook, solidRetroMaterial } from "./retro";
 import {
   DEBT,
+  drunkLabel,
   ENDINGS,
   HEAT_MAX,
   NIGHTS,
   Tavern,
+  TRAY_SIZE,
   TRUST_MAX,
   UPGRADE_COST,
   UPGRADES,
   type GuestKind,
   type Item,
+  type Phase,
   type Prompt,
   type Station,
+  type TalkLine,
   type Target,
   type TavernSave,
   type UpgradeId,
 } from "./tavern";
-import type { World } from "./world";
+import { makeSeat, type World } from "./world";
 
 const ROOM: Rect = { minX: -7, maxX: 7, minZ: -5, maxZ: 5 };
+/** How far the follow camera moves around the original room. */
+const CAMERA_LIMIT_X = 0.5;
+const CAMERA_LIMIT_Z = 1;
 const DOOR: Vec2 = { x: -1.5, z: -4.4 };
 const VISITOR_STOP: Vec2 = { x: -1.5, z: -3 };
+/** Everyone comes in from out of sight behind the wall, straight through the door to just inside it. */
+const ENTRANCE: readonly Vec2[] = [{ x: -1.5, z: -6.5 }, { x: -1.5, z: -3.5 }];
+/** The middle of the front doorway, and how near someone walking must be for it to open. */
+const FRONT_DOORWAY: Vec2 = { x: -1.5, z: -5 };
+const FRONT_DOOR_REACH = 2.2;
+const FRONT_DOOR_SWING_SECONDS = 0.5;
+/** How long the shut door stays shut after the last guest leaves, before the last-call visitor comes in. */
+const VISITOR_WAIT_SECONDS = 2.5;
 const GUEST_CLEARANCE = 0.28;
 const STATION_RANGE = 1.35;
 const GUEST_RANGE = 1.7;
+/** How close you need to be to dirty dishes on a table, or to a mess on the floor. */
+const DISHES_RANGE = 1.3;
+const FLOOR_MESS_RANGE = 1.1;
+const FLOOR_MESS_ARROW_HEIGHT = 1.4;
 const LISTEN_RANGE = 2.2;
-const HELPER_RANGE = 1.6;
-const SIBLING_HALF_SIZE = 0.22;
 const ITEM_SCALE = 1.6;
 const TOAST_SECONDS = 5;
 const POT_WARNING_SECONDS = 5;
 const STATION_ICON_HEIGHT = 2;
 const STATION_ARROW_HEIGHT = 2.6;
 const GUEST_ARROW_HEIGHT = 3;
-const SIBLING_MARK_HEIGHT = 2.6;
 const HELD_ICON_HEIGHT = 2.15;
 const BURNT_COLOR = 0x120c08;
+/** The round tray ale is carried on: its size, and where its cups stand (x across, z away from the body). */
+const TRAY_RADIUS = 0.24;
+const TRAY_THICKNESS = 0.03;
+const TRAY_COLOR = 0x6e5a40;
+/** Pushes the tray out a little from where a single dish is held, so its back edge clears the body. */
+const TRAY_REACH = -0.06;
+const TRAY_CUPS: [number, number][] = [[0, -0.1], [-0.11, 0.07], [0.11, 0.07]];
 
 // Character select: a close shot of both siblings standing side by side, facing the camera.
 const SELECT_EYE = new Vector3(0, 1.55, 6.2);
@@ -83,10 +137,44 @@ const SELECT_LIGHT_INTENSITY = 9;
 const OUTLINE_WIDTH = 0.026;
 /** How fast the story's room shot drifts from side to side. */
 const ROOM_SHOT_DRIFT = 0.12;
-/** How far each story sprite turns towards the middle of the screen. */
+/** How far the story sprite turns away from facing straight out, so it doesn't look flat. */
 const SPRITE_TURN = 0.3;
 /** How long the screen takes to go black, and then to come back, when the night starts. */
 const FADE_SECONDS = 0.45;
+
+// The day's schedule on the world clock. The day passes slowly, then waits in the late afternoon
+// until you open the doors; the sun then goes down over a few seconds.
+const MORNING_HOUR = 8;
+const AFTERNOON_HOLD_HOUR = 17;
+/** Game hours per real second while the tavern is closed: morning to late afternoon in about four minutes. */
+const DAY_HOURS_PER_SECOND = 0.04;
+const NIGHT_HOUR = 21;
+const SUNSET_SECONDS = 5;
+/** How close you need to be to the middle of the bed to get into it. */
+const BED_RANGE = 1.6;
+const BED_ARROW_HEIGHT = 1.7;
+/** Outline around whatever E would use, in world units. */
+const TARGET_OUTLINE_WIDTH = 0.022;
+/** How long the bell rocks after it rings, and how far. */
+const BELL_RING_SECONDS = 0.8;
+const BELL_ROCK = 0.22;
+/** The barrels the barrel station takes casks from. */
+const BARRELS = ["Barrel_0", "Barrel_1", "Barrel_2"];
+/** Room objects the game outlines or moves, which the room must keep whole instead of merging. */
+export const WHOLE_PIECES = [...BARRELS, BED_NAME, BEDROOM_DOOR_NAME, BIN_NAME, DESK_NAME, FRONT_DOOR_NAME];
+/** How close you need to be to the bedroom door, and how fast it swings (per second, eased). */
+const BEDROOM_DOOR_RANGE = 1.3;
+const BEDROOM_DOOR_SWING_RATE = 7;
+const DESK_RANGE = 1.5;
+/** How far the camera pulls back to look at the plans. */
+const BUILD_ZOOM = 1.4;
+const SIBLING_RADIUS = 0.3;
+/** How far past the room's walls the follow camera has to reach for the room to fill the screen. */
+const CAMERA_INSET_X = 6.5;
+const CAMERA_INSET_Z = 4;
+/** Places that must always be possible to walk to from the front door, whatever gets built. */
+const BEHIND_THE_BAR: Vec2 = { x: 3.2, z: -3.85 };
+const BY_THE_BEDROOM_DOOR: Vec2 = { x: 6.5, z: 0 };
 
 const ITEM_NODES: Record<Item, string> = {
   ale: "Item_Ale",
@@ -95,11 +183,13 @@ const ITEM_NODES: Record<Item, string> = {
   cask: "Item_Cask",
 };
 
-const OUTFITS: Record<GuestKind, { top: number; legs: number; hair: number }> = {
+const OUTFITS: Record<GuestKind | "visitor", { top: number; legs: number; hair: number }> = {
   farmer: { top: 0x8a7a3e, legs: 0x4c3a24, hair: 0x4a3420 },
   smuggler: { top: 0x24242e, legs: 0x18181e, hair: 0x101012 },
   soldier: { top: 0x8c2020, legs: 0x3a3a40, hair: 0x2b2018 },
   fugitive: { top: 0xbcb4a2, legs: 0x6a6252, hair: 0x9a8c7a },
+  // Whoever comes in at last call, dressed unlike any guest so nobody takes them for one who stayed behind.
+  visitor: { top: 0x2f5590, legs: 0x1c1c22, hair: 0x2b2018 },
 };
 
 /** Which part of an outfit each character material belongs to. */
@@ -111,17 +201,16 @@ const OUTFIT_SLOTS: Record<string, "top" | "legs" | "hair"> = {
   T_hair_f: "hair",
 };
 
-const SIBLING_NAMES = ["Brother", "Sister"];
-const STATIONS: Station[] = ["tap", "bread", "pot", "barrel"];
-const HELPER_TEXT: Partial<Record<Station, string>> = {
-  tap: "pouring ale",
-  pot: "minding the pot",
-};
+/** Who the player can be, by sibling index: the male body, then the female one. */
+const PLAYER_LABELS = ["Male", "Female"];
+const STATIONS: Station[] = ["tap", "bread", "pot", "barrel", "bin"];
 
 interface Assets {
   male: Object3D;
   female: Object3D;
   props: Object3D;
+  /** Where the furniture stood in the room as it was loaded. */
+  furniture: Placed[];
 }
 
 interface Button {
@@ -136,18 +225,69 @@ function element(id: string): HTMLElement {
   return found;
 }
 
+/** What the clock says the tavern is doing. */
+const PHASE_LABELS: Record<Phase, string> = {
+  day: "Closed",
+  dusk: "Opening",
+  service: "Open",
+  lastcall: "Last call",
+  bedtime: "Shut for the night",
+  dawn: "Morning",
+  ended: "",
+};
+
+/** A name for a target that stays the same from frame to frame. */
+function targetKey(target: Target): string {
+  if (target.kind === "station") return `station:${target.station}`;
+  if (target.kind === "guest") return `guest:${target.id}`;
+  if (target.kind === "mess") return `mess:${target.id}`;
+  return target.kind;
+}
+
+/** The prop model of a station: Station_Tap, Station_Bread, Station_Pot. */
+const STATION_NODES: Record<Exclude<Station, "barrel" | "bin">, string> = {
+  tap: "Station_Tap",
+  bread: "Station_Bread",
+  pot: "Station_Pot",
+};
+
 function requireNode(root: Object3D, name: string): Object3D {
   const node = root.getObjectByName(name);
   if (!node) throw new Error(`props.glb is missing "${name}"`);
   return node;
 }
 
+/** How far the hearth and the stew pot carry, in metres. The fire stays faintly audible all over the main room. */
+const FIRE_REACH = 11;
+const FIRE_ROOM_LEVEL = 0.2;
+const FIRE_BEDROOM_LEVEL = 0.05;
+const STEW_REACH = 6;
+/** How many guests make a full room, and how much of them you hear from the bedroom. */
+const CROWD_FULL = 6;
+const CROWD_BEDROOM_LEVEL = 0.3;
+const RUNNING_STEP_LOUDNESS = 1.6;
+
 export class Game {
   readonly tavern: Tavern;
   readonly siblings: [Sibling, Sibling];
   active = 0;
 
-  private screen: "title" | "select" | "fade" | "story" | "play" | "visitor" | "panel" | "paused" = "title";
+  private screen: "title" | "select" | "fade" | "story" | "play" | "talk" | "visitor" | "panel" | "paused" | "build" = "title";
+  private readonly dialogue = new DialogueBox(
+    {
+      root: element("talk"),
+      guest: element("talk-guest"),
+      you: element("talk-you"),
+      name: element("talk-name"),
+      text: element("talk-text"),
+      next: element("talk-next"),
+      choices: element("talk-choices"),
+    },
+    (line) => this.portraitFor(line),
+  );
+  /** Standing portraits for conversations: yours, and one per kind of guest and body. */
+  private playerPortrait: HTMLCanvasElement | null = null;
+  private readonly guestPortraits = new Map<string, HTMLCanvasElement>();
   /** What to return to when the pause menu closes. */
   private pausedFrom: "play" | "visitor" = "play";
   private afterFade: (() => void) | null = null;
@@ -166,9 +306,20 @@ export class Game {
   private readonly hoverOutline = outlineMaterial(0xf0e4c4, OUTLINE_WIDTH);
   private readonly chosenOutline = outlineMaterial(0xffd23a, OUTLINE_WIDTH);
   private readonly outlines: Outline[];
-  private readonly nav: NavGrid;
+  private nav: NavGrid;
+  private readonly houseView: HouseView;
+  private readonly defaultLayout: HouseLayout;
+  private plan: HousePlan;
+  /** Everything that blocks walking and never moves, so the rest can be added back when the plan changes. */
+  private readonly staticColliders: Rect[];
+  private readonly build: BuildMode;
   private readonly actors = new Map<number, GuestActor>();
+  /** What the guests are saying out loud, and the bubbles that show it over their heads. */
+  private readonly chatter = new Chatter();
+  private readonly speech = new SpeechBubbles(element("speech"));
   private readonly guestLayer = new Group();
+  /** What the night left to clean up, drawn in the room. */
+  private readonly messLayer: MessLayer;
   private readonly itemTemplates: Record<Item, Object3D>;
   private readonly guestModels: { male: Object3D; female: Object3D };
   private readonly recolors = new Map<string, Material>();
@@ -176,17 +327,37 @@ export class Game {
   private readonly potStew: Mesh;
   private readonly potStewMaterial: Material;
   private readonly burntMaterial = solidRetroMaterial("T_burnt", BURNT_COLOR);
-  private readonly carried: [Item | null, Item | null] = [null, null];
-  private readonly siblingColliders: Rect[];
+  /** What each sibling's hands show now, as "item:count", so a change of either rebuilds the model. */
+  private readonly carried: [string | null, string | null] = [null, null];
+  private readonly trayGeometry = new CylinderGeometry(TRAY_RADIUS, TRAY_RADIUS - 0.02, TRAY_THICKNESS, 12).translate(
+    0,
+    -TRAY_THICKNESS / 2,
+    0,
+  );
+  private readonly trayMaterial = solidRetroMaterial("T_tray", TRAY_COLOR);
+  private readonly bell: Object3D;
+  private bellRinging = 0;
+  private readonly bedroomDoor: Object3D;
+  /** The rectangle the bedroom door blocks right now, kept in the world's colliders. */
+  private bedroomDoorBlock: Rect | null = null;
+  /** Outlines around each thing you can use, keyed by `targetKey`. */
+  private readonly targetOutlines = new Map<string, Outline[]>();
+  private readonly targetOutline = outlineMaterial(0xf0e4c4, TARGET_OUTLINE_WIDTH);
+  /** What is outlined now, and the outline made for it when it is a guest. */
+  private highlighted: string | null = null;
+  private guestOutline: Outline | null = null;
 
   private readonly tapIcon = new Icon();
   private readonly potIcon = new Icon();
   private readonly targetArrow = new Icon(0.5);
-  private readonly activeMark = new Icon(0.42);
   // A carried dish is hidden by the body whenever a sibling faces away from the camera.
   private readonly heldIcons = [new Icon(0.45), new Icon(0.45)];
 
-  private readonly statsEl = element("stats");
+  private readonly stats = new StatsHud(element("stats"));
+  private readonly clockTimeEl = element("clock-time");
+  private readonly clockDayEl = element("clock-day");
+  private readonly clockSkyEl = element("clock-sky");
+  private readonly clockMarkerEl = element("clock-marker");
   private readonly promptEl = element("prompt");
   private readonly toastEl = element("toast");
   private readonly panelEl = element("panel");
@@ -201,18 +372,11 @@ export class Game {
       text: element("story-text"),
       next: element("story-next"),
       cg: element("story-cg"),
-      sprites: [element("story-sprite-0"), element("story-sprite-1")],
+      sprite: element("story-sprite"),
     },
     {
-      name: (speaker) => {
-        const index = speaker === "you" ? this.active : 1 - this.active;
-        return speaker === "you" ? `${SIBLING_NAMES[index]} (you)` : SIBLING_NAMES[index];
-      },
-      sprite: (speaker) => (speaker === "narrator" ? null : speaker === "you" ? this.active : 1 - this.active),
-      fill: (text) =>
-        text
-          .replaceAll("{other}", `your ${SIBLING_NAMES[1 - this.active].toLowerCase()}`)
-          .replaceAll("{debt}", String(DEBT)),
+      player: () => this.active,
+      fill: (text) => text.replaceAll("{debt}", String(DEBT)),
     },
   );
 
@@ -222,6 +386,11 @@ export class Game {
   /** Tonight as it opened: what a save holds. */
   private checkpoint: TavernSave;
   private visitor: Walker | null = null;
+  private visitorWalking = false;
+  private visitorWait = 0;
+  private readonly frontDoorHinge = new Group();
+  /** 0 is shut, 1 is wide open. */
+  private frontDoorOpen = 0;
   private toastLeft = 0;
   private time = 0;
 
@@ -232,14 +401,29 @@ export class Game {
     assets: Assets,
     private readonly camera: Camera,
     private readonly renderer: WebGLRenderer,
+    /** The world's time of day, shared with the lighting. */
+    private readonly clock: WorldClock,
+    private readonly audio: Soundscape,
   ) {
+    this.bell = makeBell();
+    this.bell.position.copy(BELL_SPOT);
+    assets.props.add(this.bell);
+
     applyRetroLook(assets.male);
     applyRetroLook(assets.female);
     applyRetroLook(assets.props);
 
-    this.tavern = new Tavern(world.seats.length);
+    this.houseView = new HouseView(world);
+    this.staticColliders = [...world.colliders];
+    this.defaultLayout = emptyLayout(assets.furniture);
+    this.plan = new HousePlan(cloneLayout(this.defaultLayout));
+    this.nav = this.applyPlan();
+
+    const dustSpots = findDustSpots(world.colliders, ROOM);
+    this.tavern = new Tavern(world.seats.length, world.seats.map((seat) => seat.table), dustSpots.length);
+    this.messLayer = new MessLayer(world.seats, dustSpots);
+    scene.add(this.messLayer.group);
     this.checkpoint = this.tavern.snapshot();
-    this.nav = new NavGrid(world.colliders, GUEST_CLEARANCE, ROOM);
 
     const { props } = assets;
     props.updateMatrixWorld(true);
@@ -255,12 +439,35 @@ export class Game {
       bread: requireNode(props, "Spot_Bread").getWorldPosition(new Vector3()),
       pot: requireNode(props, "Spot_Pot").getWorldPosition(new Vector3()),
       barrel: requireNode(props, "Spot_Barrel").getWorldPosition(new Vector3()),
+      bin: BIN_SPOT.clone(),
     };
     this.potStew = requireNode(props, "Station_PotStew") as Mesh;
     this.potStewMaterial = this.potStew.material as Material;
     this.potStew.castShadow = false;
     this.potStew.visible = false;
     scene.add(props);
+
+    // Made after the retro look is applied, which would otherwise make the outlines cast shadows.
+    const outline = (objects: Object3D[]) => objects.map((object) => new Outline(object, this.targetOutline, true));
+    const piece = (name: string) => {
+      const found = world.pieces.get(name);
+      if (!found) throw new Error(`The room did not keep "${name}" whole`);
+      return found;
+    };
+    for (const station of STATIONS) {
+      const objects =
+        station === "barrel" ? BARRELS.map(piece) : station === "bin" ? [piece(BIN_NAME)] : [requireNode(props, STATION_NODES[station])];
+      this.targetOutlines.set(targetKey({ kind: "station", station }), outline(objects));
+    }
+    this.targetOutlines.set(targetKey({ kind: "bell" }), outline([this.bell]));
+    this.targetOutlines.set(targetKey({ kind: "bed" }), outline([piece(BED_NAME)]));
+    this.bedroomDoor = piece(BEDROOM_DOOR_NAME);
+    this.targetOutlines.set(targetKey({ kind: "door" }), outline([this.bedroomDoor]));
+    this.targetOutlines.set(targetKey({ kind: "desk" }), outline([piece(DESK_NAME)]));
+    this.updateBedroomDoor(Infinity);
+    this.frontDoorHinge.position.copy(FRONT_DOOR_HINGE);
+    world.root.add(this.frontDoorHinge);
+    this.frontDoorHinge.attach(piece(FRONT_DOOR_NAME));
 
     // Copied first, because each Sibling moves its body out of the loaded model.
     this.guestModels = { male: cloneSkinned(assets.male), female: cloneSkinned(assets.female) };
@@ -288,15 +495,14 @@ export class Game {
     window.addEventListener("pointermove", (event) => this.pointAt(event, false));
     window.addEventListener("click", (event) => this.pointAt(event, true));
     this.selectStartEl.addEventListener("click", () => this.beginNight());
-    this.storyEl.addEventListener("click", () => this.story.advance());
+    this.storyEl.addEventListener("click", () => this.advanceStory());
     element("story-skip").addEventListener("click", (event) => {
       event.stopPropagation();
+      this.audio.play("page");
       this.story.finish();
     });
     // Leaving the window mid-night pauses, so guests don't walk out while you're away.
     window.addEventListener("blur", () => this.pause());
-
-    this.siblingColliders = [...world.colliders, { minX: 0, maxX: 0, minZ: 0, maxZ: 0 }];
 
     this.tapIcon.sprite.position.copy(this.spots.tap).setY(STATION_ICON_HEIGHT);
     this.potIcon.sprite.position.copy(this.spots.pot).setY(STATION_ICON_HEIGHT);
@@ -304,11 +510,22 @@ export class Game {
       this.tapIcon.sprite,
       this.potIcon.sprite,
       this.targetArrow.sprite,
-      this.activeMark.sprite,
       this.heldIcons[0].sprite,
       this.heldIcons[1].sprite,
     );
 
+    this.build = new BuildMode(element("build"), scene, this.houseView, input, {
+      camera,
+      plan: () => this.plan,
+      gold: () => this.tavern.gold,
+      addGold: (amount) => (this.tavern.gold += amount),
+      blockers: () => this.staticColliders,
+      routeProblem: () => this.routeProblem(),
+      leave: () => this.closeBuild(),
+    });
+
+    // The story and the first day start on a bright morning.
+    clock.setTime(0, MORNING_HOUR);
     this.showTitle();
   }
 
@@ -330,6 +547,94 @@ export class Game {
     return this.selectShot;
   }
 
+  /** Where the camera looks in build mode, or null when it follows the player. */
+  get buildFocus(): Vector3 | null {
+    return this.screen === "build" ? this.build.focus : null;
+  }
+
+  get cameraZoom(): number {
+    return this.screen === "build" ? BUILD_ZOOM : 1;
+  }
+
+  /** How far the follow camera may go, so all of a bigger house can be seen. */
+  get cameraLimits(): Rect {
+    const { minX, maxX, minZ, maxZ } = this.plan.bounds();
+    return {
+      minX: Math.min(-CAMERA_LIMIT_X, minX + CAMERA_INSET_X),
+      maxX: Math.max(CAMERA_LIMIT_X, maxX - CAMERA_INSET_X),
+      minZ: Math.min(-CAMERA_LIMIT_Z, minZ + CAMERA_INSET_Z),
+      maxZ: Math.max(CAMERA_LIMIT_Z, maxZ - CAMERA_INSET_Z),
+    };
+  }
+
+  /** The rectangles the plan puts in the way: its walls and furniture. */
+  private planColliders(): Rect[] {
+    const { plan } = this;
+    return [
+      ...plan.outerWalls().map((wall) => wall.rect),
+      ...plan.drawnWalls().map((wall) => wall.rect),
+      ...plan.layout.furniture.map(footprint),
+    ];
+  }
+
+  /** Draws the plan and makes the room behave like it: walls and furniture block, seats go where the chairs are. */
+  private applyPlan(): NavGrid {
+    const { colliders, seats } = this.world;
+    this.houseView.rebuild(this.plan);
+    colliders.length = 0;
+    colliders.push(...this.staticColliders, ...this.planColliders());
+    if (this.bedroomDoorBlock) colliders.push(this.bedroomDoorBlock);
+
+    const nav = new NavGrid(colliders, GUEST_CLEARANCE, this.plan.bounds());
+    seats.length = 0;
+    for (const spec of seatSpecs(this.plan.layout.furniture)) {
+      const seat = makeSeat(spec);
+      if (nav.findPath(DOOR, seat.approach)) seats.push(seat);
+    }
+    return nav;
+  }
+
+  /** What the current plan cuts off from the front door, in words, or null if everything can still be reached. */
+  private routeProblem(): string | null {
+    const nav = new NavGrid([...this.staticColliders, ...this.planColliders()], GUEST_CLEARANCE, this.plan.bounds());
+    const places: [string, Vec2][] = [
+      ["the bar", BEHIND_THE_BAR],
+      ["the fireplace", this.spots.pot],
+      ["the barrels", this.spots.barrel],
+      ["the bread", this.spots.bread],
+      ["the scrap bin", this.spots.bin],
+      ["the bedroom", BY_THE_BEDROOM_DOOR],
+      ["the middle of the room", VISITOR_STOP],
+    ];
+    const cut = places.find(([, place]) => !nav.findPath(DOOR, place));
+    return cut ? `That would block the way to ${cut[0]}.` : null;
+  }
+
+  private openBuild(): void {
+    this.setPrompt("");
+    this.targetArrow.show(null);
+    this.highlight(null);
+    this.screen = "build";
+    document.body.classList.add("building");
+    this.build.enter();
+  }
+
+  /** Leaves build mode: the room takes on the new plan and the game is saved with it. */
+  private closeBuild(): void {
+    document.body.classList.remove("building");
+    this.screen = "play";
+    this.nav = this.applyPlan();
+    this.tavern.setSeats(this.world.seats.map((seat) => seat.table));
+    this.tavern.layout = cloneLayout(this.plan.layout);
+    // Anyone standing where something now stands gets moved aside.
+    for (const sibling of this.siblings) {
+      const clear = resolveCircle(sibling.position, SIBLING_RADIUS, this.world.colliders, 8);
+      sibling.position.setX(clear.x).setZ(clear.z);
+    }
+    this.checkpoint = this.tavern.snapshot();
+    writeSave("auto", this.active, this.checkpoint);
+  }
+
   private makeItem(item: Item): Object3D {
     const copy = this.itemTemplates[item].clone(true);
     copy.traverse((object) => (object.castShadow = false));
@@ -346,7 +651,7 @@ export class Game {
     return material;
   }
 
-  private makeGuestBody(kind: GuestKind, female: boolean): Body {
+  private makeGuestBody(kind: GuestKind | "visitor", female: boolean): Body {
     const model = cloneSkinned(female ? this.guestModels.female : this.guestModels.male);
     const outfit = OUTFITS[kind];
     model.traverse((object) => {
@@ -370,7 +675,7 @@ export class Game {
           guest,
           this.world.seats[guest.seat],
           this.nav,
-          DOOR,
+          ENTRANCE,
           (item) => this.makeItem(item),
           this.guestLayer,
         );
@@ -378,6 +683,7 @@ export class Game {
         this.guestLayer.add(actor.group);
       }
       if (actor.update(dt, tavern)) {
+        if (this.highlighted === targetKey({ kind: "guest", id: guest.id })) this.highlight(null);
         this.guestLayer.remove(actor.group);
         actors.delete(guest.id);
         tavern.guestLeft(guest.id);
@@ -385,12 +691,32 @@ export class Game {
     }
   }
 
+  /** Ale is carried on a tray with its cups on top; anything else is held on its own. */
+  private makeHeld(item: Item, count: number): Object3D {
+    if (item !== "ale") return this.makeItem(item);
+    const tray = new Group();
+    const board = new Mesh(this.trayGeometry, this.trayMaterial);
+    board.castShadow = false;
+    tray.add(board);
+    TRAY_CUPS.slice(0, count).forEach(([x, z]) => {
+      const cup = this.makeItem("ale");
+      cup.position.set(x, 0, z);
+      tray.add(cup);
+    });
+    // Positioned by the sibling at the carry point; this inner group moves it out a little further.
+    const held = new Group();
+    tray.position.z = TRAY_REACH;
+    held.add(tray);
+    return held;
+  }
+
   private syncCarried(): void {
     this.siblings.forEach((sibling, index) => {
       const item = this.tavern.carrying[index];
-      if (item === this.carried[index]) return;
-      this.carried[index] = item;
-      sibling.hold(item ? this.makeItem(item) : null);
+      const key = item && `${item}:${this.tavern.carryCount[index]}`;
+      if (key === this.carried[index]) return;
+      this.carried[index] = key;
+      sibling.hold(item ? this.makeHeld(item, this.tavern.carryCount[index]) : null);
       this.heldIcons[index].show(item);
     });
   }
@@ -416,14 +742,6 @@ export class Game {
     this.potStew.material = tavern.potState === "burnt" ? this.burntMaterial : this.potStewMaterial;
   }
 
-  private helperStation(): Station | null {
-    const position = this.siblings[1 - this.active].position;
-    for (const station of ["tap", "pot"] as const) {
-      if (position.distanceTo(this.spots[station]) <= HELPER_RANGE) return station;
-    }
-    return null;
-  }
-
   private findTarget(): { target: Target; at: Vector3; height: number; prompt: Prompt } | null {
     const position = this.siblings[this.active].position;
     let best: { target: Target; at: Vector3; height: number; prompt: Prompt; score: number } | null = null;
@@ -435,7 +753,8 @@ export class Game {
       if (!prompt) return;
       // Anything you can actually do beats a status message, and serving a guest
       // beats putting the item back on a station that happens to be closer.
-      const score = distance + (prompt.actionable ? 0 : 100) - (target.kind === "guest" ? 50 : 0);
+      const serving = target.kind === "guest" && this.tavern.carrying[this.active] !== null;
+      const score = distance + (prompt.actionable ? 0 : 100) - (serving ? 50 : 0);
       if (!best || score < best.score) best = { target, at, height, prompt, score };
     };
 
@@ -445,7 +764,77 @@ export class Game {
     for (const guest of this.tavern.guests) {
       consider({ kind: "guest", id: guest.id }, this.world.seats[guest.seat].position, GUEST_ARROW_HEIGHT, GUEST_RANGE);
     }
+    for (const mess of this.tavern.messes) {
+      const spots = this.messLayer.spots(mess.id);
+      if (spots.length === 0) continue;
+      const nearest = spots.reduce((a, b) => (a.distanceToSquared(position) <= b.distanceToSquared(position) ? a : b));
+      const onTable = mess.kind === "dishes";
+      consider(
+        { kind: "mess", id: mess.id },
+        nearest,
+        onTable ? STATION_ARROW_HEIGHT : FLOOR_MESS_ARROW_HEIGHT,
+        onTable ? DISHES_RANGE : FLOOR_MESS_RANGE,
+      );
+    }
+    consider({ kind: "bell" }, BELL_SPOT, STATION_ARROW_HEIGHT, STATION_RANGE);
+    consider({ kind: "bed" }, BED_SPOT, BED_ARROW_HEIGHT, BED_RANGE);
+    consider({ kind: "door" }, BEDROOM_DOOR_SPOT, STATION_ARROW_HEIGHT, BEDROOM_DOOR_RANGE);
+    consider({ kind: "desk" }, DESK_SPOT, STATION_ARROW_HEIGHT, DESK_RANGE);
     return best;
+  }
+
+  /** Opens the front door for anyone walking up to it, and shuts it once they're through. */
+  private updateFrontDoor(dt: number): void {
+    const near = ({ x, z }: Vec2) => Math.hypot(x - FRONT_DOORWAY.x, z - FRONT_DOORWAY.z) < FRONT_DOOR_REACH;
+    const wanted =
+      (this.visitor !== null && this.visitorWalking && near(this.visitor.group.position)) ||
+      [...this.actors.values()].some((actor) => actor.walking && near(actor.group.position));
+    const step = dt / FRONT_DOOR_SWING_SECONDS;
+    this.frontDoorOpen = MathUtils.clamp(this.frontDoorOpen + (wanted ? step : -step), 0, 1);
+    this.frontDoorHinge.rotation.y = FRONT_DOOR_OPEN_ANGLE * MathUtils.smoothstep(this.frontDoorOpen, 0, 1);
+  }
+
+  /** Swings the bedroom door towards open or shut, and moves what it blocks to match. `dt` of Infinity snaps it. */
+  private updateBedroomDoor(dt: number): void {
+    const open = this.tavern.doorOpen;
+    const target = open ? BEDROOM_DOOR_OPEN_ANGLE : 0;
+    const door = this.bedroomDoor;
+    door.rotation.y += (target - door.rotation.y) * (1 - Math.exp(-BEDROOM_DOOR_SWING_RATE * dt));
+
+    const block = open ? BEDROOM_DOOR_OPEN : BEDROOM_DOOR_SHUT;
+    if (block === this.bedroomDoorBlock) return;
+    const { colliders } = this.world;
+    if (this.bedroomDoorBlock) colliders.splice(colliders.indexOf(this.bedroomDoorBlock), 1);
+    colliders.push(block);
+    this.bedroomDoorBlock = block;
+  }
+
+  /** Outlines what E would use, or nothing. */
+  private highlight(target: Target | null): void {
+    const key = target && targetKey(target);
+    if (key === this.highlighted) return;
+    if (this.highlighted) this.targetOutlines.get(this.highlighted)?.forEach((outline) => outline.show(null));
+    this.guestOutline?.dispose();
+    this.guestOutline = null;
+    this.highlighted = key;
+    if (!target || !key) return;
+    if (target.kind === "guest" || target.kind === "mess") {
+      const root = target.kind === "guest" ? this.actors.get(target.id)?.bodyRoot : this.messLayer.root(target.id);
+      if (root) {
+        this.guestOutline = new Outline(root, this.targetOutline, target.kind === "mess");
+        this.guestOutline.show(this.targetOutline);
+      }
+      return;
+    }
+    this.targetOutlines.get(key)?.forEach((outline) => outline.show(this.targetOutline));
+  }
+
+  /** Rocks the bell for a moment after it rings. */
+  private updateBell(dt: number): void {
+    if (this.bellRinging <= 0) return;
+    this.bellRinging = Math.max(0, this.bellRinging - dt);
+    const fade = this.bellRinging / BELL_RING_SECONDS;
+    this.bell.rotation.z = Math.sin(this.bellRinging * 45) * BELL_ROCK * fade * fade;
   }
 
   private listeningTo(): number | null {
@@ -458,27 +847,40 @@ export class Game {
     return null;
   }
 
-  private updateSiblingMarks(): void {
-    const position = this.siblings[this.active].position;
-    this.activeMark.show(this.screen === "play" ? "you" : null);
-    this.activeMark.sprite.position.set(position.x, SIBLING_MARK_HEIGHT, position.z);
+  private updateHeldIcons(): void {
     this.siblings.forEach((sibling, index) => {
       this.heldIcons[index].sprite.position.set(sibling.position.x, HELD_ICON_HEIGHT, sibling.position.z);
     });
   }
 
-  private updateHud(helper: Station | null): void {
+  private updateHud(): void {
     const { tavern } = this;
-    const hands = (index: number) => tavern.carrying[index] ?? "empty hands";
-    const you = `${SIBLING_NAMES[this.active]} (you): ${hands(this.active)}`;
-    const other = 1 - this.active;
-    const job = (helper && HELPER_TEXT[helper]) ?? hands(other);
-    const text =
-      `Night ${tavern.nightIndex + 1}/${NIGHTS.length}   Gold ${tavern.gold}/${DEBT}   ` +
-      `Trust ${tavern.trust}/${TRUST_MAX}   Heat ${tavern.heat}/${HEAT_MAX}   ` +
-      `Tap ${tavern.tapLeft}   Pot ${tavern.potState}\n` +
-      `${you}   |   ${SIBLING_NAMES[other]}: ${job}`;
-    if (this.statsEl.textContent !== text) this.statsEl.textContent = text;
+    this.stats.update({
+      gold: tavern.gold,
+      debt: DEBT,
+      trust: tavern.trust,
+      trustMax: TRUST_MAX,
+      heat: tavern.heat,
+      heatMax: HEAT_MAX,
+      tap: tavern.tapLeft,
+      pot: tavern.potState,
+      held: tavern.carrying[this.active],
+      count: tavern.carryCount[this.active],
+      traySize: TRAY_SIZE,
+      drunk: drunkLabel(tavern.drunk),
+    });
+  }
+
+  /** The world clock in the corner: the time, the sun or moon, the day, and whether the tavern is open. */
+  private updateClock(): void {
+    const { hour } = this.clock;
+    const time = formatHour(hour);
+    if (this.clockTimeEl.textContent !== time) this.clockTimeEl.textContent = time;
+    const day = `Day ${this.tavern.nightIndex + 1} of ${NIGHTS.length} · ${PHASE_LABELS[this.tavern.phase]}`;
+    if (this.clockDayEl.textContent !== day) this.clockDayEl.textContent = day;
+    const sky = this.clock.daylight > 0.5 ? "sun" : "moon";
+    if (this.clockSkyEl.className !== sky) this.clockSkyEl.className = sky;
+    this.clockMarkerEl.style.left = `${((hour / 24) * 100).toFixed(1)}%`;
   }
 
   private setPrompt(text: string): void {
@@ -512,7 +914,7 @@ export class Game {
       el.type = "button";
       el.textContent = `${index + 1}. ${button.label}`;
       el.disabled = Boolean(button.disabled);
-      el.addEventListener("click", () => button.onPick());
+      el.addEventListener("click", () => this.pressButton(button));
       box.append(el);
     });
     this.panelEl.replaceChildren(box);
@@ -536,17 +938,52 @@ export class Game {
     this.panelBack = back;
   }
 
+  private pressButton(button: Button): void {
+    this.audio.play("click");
+    button.onPick();
+  }
+
   private handlePanelKeys(): void {
     const buttons = this.panelButtons;
     const pick = buttons.findIndex((_, index) => this.input.pressed(`Digit${index + 1}`));
-    if (pick >= 0 && !buttons[pick].disabled) buttons[pick].onPick();
-    else if (buttons.length === 1 && this.input.pressed("Enter")) buttons[0].onPick();
+    if (pick >= 0 && !buttons[pick].disabled) this.pressButton(buttons[pick]);
+    else if (buttons.length === 1 && this.input.pressed("Enter")) this.pressButton(buttons[0]);
   }
 
-  /** Opens a night. Every night starts here, so this is where the autosave is taken. */
-  private startPlaying(): void {
+  /** Music and effects levels. Changing one also unmutes, so the change can be heard. */
+  private showSoundMenu(back: () => void): void {
+    const { settings } = this.audio;
+    const percent = (level: number) => (level === 0 ? "Off" : `${Math.round(level * 100)}%`);
+    const reopen = () => this.showSoundMenu(back);
+    this.openMenu(
+      "Sound",
+      ["Each press steps the level up. M mutes everything at any time."],
+      [
+        {
+          label: `Music: ${percent(settings.music)}`,
+          onPick: () => {
+            this.audio.change({ music: nextSoundLevel(settings.music), muted: false });
+            reopen();
+          },
+        },
+        {
+          label: `Effects: ${percent(settings.effects)}`,
+          onPick: () => {
+            this.audio.change({ effects: nextSoundLevel(settings.effects), muted: false });
+            reopen();
+          },
+        },
+      ],
+      back,
+    );
+  }
+
+  /** Starts a day with the tavern closed. Every day starts here, so this is where the autosave is taken. */
+  private startDay(): void {
     this.closePanel();
     this.screen = "play";
+    this.clock.setTime(this.tavern.nightIndex, MORNING_HOUR);
+    this.clock.run(DAY_HOURS_PER_SECOND, AFTERNOON_HOLD_HOUR);
     this.checkpoint = this.tavern.snapshot();
     writeSave("auto", this.active, this.checkpoint);
   }
@@ -562,24 +999,25 @@ export class Game {
       [
         { label: "New game", onPick: () => this.showCharacterSelect() },
         {
-          label: latest ? `Continue: ${describeSave(latest.data, SIBLING_NAMES)}` : "Continue",
+          label: latest ? `Continue: ${describeSave(latest.data, PLAYER_LABELS)}` : "Continue",
           disabled: !latest,
           onPick: () => latest && this.loadGame(latest.data),
         },
         { label: "Load game", disabled: !latest, onPick: () => this.showLoadMenu(() => this.showTitle()) },
+        { label: "Sound", onPick: () => this.showSoundMenu(() => this.showTitle()) },
       ],
     );
   }
 
-  /** Lists the save slots; picking one saves the start of tonight there. */
+  /** Lists the save slots; picking one saves the start of today there. */
   private showSaveMenu(back: () => void, notice?: string): void {
     const night = this.tavern.nightIndex + 1;
     this.openMenu(
       "Save game",
-      [notice ?? `Saving keeps your progress from the start of tonight (Night ${night}).`],
+      [notice ?? `Saving keeps your progress from the start of today (Day ${night}).`],
       MANUAL_SLOTS.map((slot) => {
         const existing = readSave(slot);
-        const label = `${slotName(slot)}: ${existing ? describeSave(existing, SIBLING_NAMES) : "empty"}`;
+        const label = `${slotName(slot)}: ${existing ? describeSave(existing, PLAYER_LABELS) : "empty"}`;
         const save = () => {
           const saved = writeSave(slot, this.active, this.checkpoint);
           this.showSaveMenu(back, saved ? `Saved to ${slotName(slot)}.` : "Could not save: this browser is blocking storage.");
@@ -587,7 +1025,7 @@ export class Game {
         return {
           label,
           onPick: existing
-            ? () => this.confirm(`Overwrite ${slotName(slot)}?`, describeSave(existing, SIBLING_NAMES), save, () => this.showSaveMenu(back))
+            ? () => this.confirm(`Overwrite ${slotName(slot)}?`, describeSave(existing, PLAYER_LABELS), save, () => this.showSaveMenu(back))
             : save,
         };
       }),
@@ -600,16 +1038,16 @@ export class Game {
     const midNight = this.screen === "paused";
     this.openMenu(
       "Load game",
-      ["Each save starts at the beginning of a night."],
+      ["Each save starts at the beginning of a day."],
       SLOTS.map((slot) => {
         const data = readSave(slot);
         const load = () => data && this.loadGame(data);
         return {
-          label: `${slotName(slot)}: ${data ? describeSave(data, SIBLING_NAMES) : "empty"}`,
+          label: `${slotName(slot)}: ${data ? describeSave(data, PLAYER_LABELS) : "empty"}`,
           disabled: !data,
           onPick:
             midNight && data
-              ? () => this.confirm(`Load ${slotName(slot)}?`, "Anything you have done since tonight began will be lost.", load, () => this.showLoadMenu(back))
+              ? () => this.confirm(`Load ${slotName(slot)}?`, "Anything you have done since today began will be lost.", load, () => this.showLoadMenu(back))
               : load,
         };
       }),
@@ -630,7 +1068,11 @@ export class Game {
       this.removeVisitor();
       for (const actor of this.actors.values()) this.guestLayer.remove(actor.group);
       this.actors.clear();
+      this.chatter.reset();
       this.tavern.restore(data.tavern);
+      this.plan = new HousePlan(cloneLayout(data.tavern.layout ?? this.defaultLayout));
+      this.nav = this.applyPlan();
+      this.tavern.setSeats(this.world.seats.map((seat) => seat.table));
       this.active = data.active;
       this.chosen = data.active;
       this.toastEl.textContent = "";
@@ -648,10 +1090,11 @@ export class Game {
 
   private choose(index: number): void {
     if (this.screen !== "select") return;
+    if (this.chosen !== index) this.audio.play("click");
     this.chosen = index;
     this.active = index;
     this.selectStartEl.disabled = false;
-    this.selectStartEl.textContent = `Start as the ${SIBLING_NAMES[index].toLowerCase()}`;
+    this.selectStartEl.textContent = `Start as ${PLAYER_LABELS[index].toLowerCase()}`;
   }
 
   /** Which sibling sits under the pointer, judged by a box around each body. */
@@ -694,41 +1137,46 @@ export class Game {
 
   private beginNight(): void {
     if (this.screen !== "select" || this.chosen === null) return;
+    this.audio.play("click");
     this.fadeTo(() => this.startStory());
   }
 
-  /** The visual novel intro: how the siblings came to own the tavern. */
+  /** The visual novel intro: how you came to own the tavern. */
   private startStory(): void {
     this.selectEl.classList.remove("open");
     this.outlines.forEach((outline) => outline.dispose());
     this.siblings.forEach((sibling, index) => sibling.position.copy(this.spawnPoints[index]));
-    // Standing sprites from the real models, each turned a little towards the middle of the screen.
-    this.story.setSprites([
-      renderPortrait(this.renderer, this.siblings[0].root, SPRITE_TURN),
-      renderPortrait(this.renderer, this.siblings[1].root, -SPRITE_TURN),
-    ]);
-    // The tavern behind the dialog shows empty; the siblings appear as sprites instead.
+    // A standing sprite of the player's character, rendered from the real model.
+    this.story.setSprite(renderPortrait(this.renderer, this.siblings[this.active].root, SPRITE_TURN));
+    // The tavern behind the dialog shows empty; the player appears as a sprite instead.
     this.siblings.forEach((sibling) => (sibling.root.visible = false));
     this.screen = "story";
     this.story.start(INTRO, () => this.fadeTo(() => this.enterTavern()));
   }
 
+  private advanceStory(): void {
+    this.audio.play("page");
+    this.story.advance();
+  }
+
   private updateStory(dt: number): void {
     const { input } = this;
-    if (input.pressed("Space") || input.pressed("Enter") || input.pressed("KeyE")) this.story.advance();
+    if (input.pressed("Space") || input.pressed("Enter") || input.pressed("KeyE")) this.advanceStory();
     this.story.update(dt);
   }
 
   private enterTavern(): void {
     this.staging = false;
+    this.tavern.playerBody = this.active === 1 ? "Female" : "Male";
     document.body.classList.remove("staging");
+    // Only the character the player picked works the night; the other stays out of the game.
     this.siblings.forEach((sibling, index) => {
       sibling.position.copy(this.spawnPoints[index]);
-      sibling.root.visible = true; // In case the story was skipped before they appeared.
+      sibling.root.visible = index === this.active;
     });
     // Removed while the screen is black, so the shader rebuild for one less light is not seen.
     this.stageLight.removeFromParent();
-    this.startPlaying();
+    this.startDay();
   }
 
   /** Stops the night and opens the pause menu. Only works mid-night. */
@@ -744,11 +1192,12 @@ export class Game {
     const back = () => this.showPauseMenu();
     this.openPanel(
       "Paused",
-      ["WASD / arrows: move   Shift: run   E: use / serve   C: swap sibling"],
+      ["WASD / arrows: move   Shift: run   E: use / serve"],
       [
         { label: "Resume (Esc)", onPick: () => this.resume() },
         { label: "Save game", onPick: () => this.showSaveMenu(back) },
         { label: "Load game", disabled: !latestSave(), onPick: () => this.showLoadMenu(back) },
+        { label: "Sound", onPick: () => this.showSoundMenu(back) },
         {
           label: "Quit to the title",
           onPick: () => this.confirm("Quit to the title?", "Anything you have not saved will be lost.", () => location.reload(), back),
@@ -781,22 +1230,52 @@ export class Game {
     });
   }
 
-  private startVisitor(): void {
-    this.screen = "visitor";
+  /** Hides the prompt, arrow and outline while the player can't act. */
+  private clearTarget(): void {
     this.setPrompt("");
     this.targetArrow.show(null);
-    const visitor = new Walker(this.makeGuestBody("soldier", false));
-    visitor.group.position.set(DOOR.x, 0, DOOR.z);
-    visitor.setPath(this.nav.findPath(DOOR, VISITOR_STOP) ?? [VISITOR_STOP]);
+    this.highlight(null);
+  }
+
+  private startVisitor(): void {
+    this.screen = "visitor";
+    this.clearTarget();
+    this.visitorWait = VISITOR_WAIT_SECONDS;
+    this.toastEl.textContent = "The last guest is gone.";
+    this.toastLeft = TOAST_SECONDS;
+  }
+
+  private letVisitorIn(): void {
+    const visitor = new Walker(this.makeGuestBody("visitor", false));
+    const doorstep = ENTRANCE[ENTRANCE.length - 1];
+    visitor.group.position.set(ENTRANCE[0].x, 0, ENTRANCE[0].z);
+    visitor.setPath([...ENTRANCE, ...(this.nav.findPath(doorstep, VISITOR_STOP) ?? [VISITOR_STOP])]);
     this.guestLayer.add(visitor.group);
     this.visitor = visitor;
-    this.toastEl.textContent = "The last guest is gone. Then the door opens again.";
+    this.visitorWalking = true;
+    this.toastEl.textContent = "Then the door opens again.";
     this.toastLeft = TOAST_SECONDS;
+    this.audio.play("visitor");
+  }
+
+  /** The closed room after the last guest: the door shuts, a beat passes, someone comes in, the door shuts behind them. */
+  private updateVisitor(dt: number): void {
+    this.siblings.forEach((sibling) => sibling.rest(dt));
+    if (!this.visitor) {
+      if (this.frontDoorOpen === 0) this.visitorWait -= dt;
+      if (this.visitorWait <= 0) this.letVisitorIn();
+      return;
+    }
+    this.visitorWalking = !this.visitor.walk(dt);
+    if (this.visitorWalking) return;
+    this.visitor.turnTo(Math.PI, dt);
+    if (this.frontDoorOpen === 0) this.showLastCall();
   }
 
   private removeVisitor(): void {
     if (this.visitor) this.guestLayer.remove(this.visitor.group);
     this.visitor = null;
+    this.visitorWalking = false;
   }
 
   private showLastCall(): void {
@@ -812,10 +1291,88 @@ export class Game {
         onPick: () => {
           tavern.chooseLastCall(index);
           this.removeVisitor();
-          this.showDawn();
+          // The tavern shuts, and the player walks to bed.
+          this.closePanel();
+          this.screen = "play";
         },
       })),
     );
+  }
+
+  /**
+   * A conversation, with a party at their table or a guest who tipped you a drink: their lines play out in
+   * the dialog box, then you choose. Time stands still meanwhile. `lines` defaults to the whole conversation.
+   */
+  private showTalk(lines = this.tavern.talkLines): void {
+    this.clearTarget();
+    this.screen = "talk";
+    this.dialogue.start(lines, this.tavern.talkChoices, (index) => this.pickTalk(index));
+  }
+
+  private pickTalk(index: number): void {
+    const { tavern } = this;
+    this.audio.play("click");
+    tavern.chooseTalk(index);
+    if (!tavern.inConversation) {
+      this.dialogue.close();
+      this.screen = "play";
+      return;
+    }
+    // Only the answer to what you picked plays; the conversation before it has been seen.
+    this.showTalk(tavern.talkReplyLines);
+  }
+
+  /** Esc, or the last choice: get back to work. */
+  private leaveTalk(): void {
+    if (this.dialogue.open) this.pickTalk(this.tavern.talkChoices.length - 1);
+  }
+
+  private updateTalk(dt: number): void {
+    const { input, dialogue } = this;
+    if (input.pressed("Space") || input.pressed("Enter") || input.pressed("KeyE")) dialogue.advance();
+    for (let i = 0; i < 5; i++) if (input.pressed(`Digit${i + 1}`)) dialogue.choose(i);
+    dialogue.update(dt);
+    this.siblings.forEach((sibling) => sibling.rest(dt));
+  }
+
+  /** Who is speaking a line: your own portrait, the guest's, or none for narration. */
+  private portraitFor(line: TalkLine): HTMLCanvasElement | null {
+    if (line.speaker === "You") {
+      this.playerPortrait ??= renderPortrait(this.renderer, this.siblings[this.active].root, -SPRITE_TURN);
+      return this.playerPortrait;
+    }
+    const guest = this.tavern.talkGuests.find((g) => g.id === line.guestId) ?? this.tavern.talkGuests[0];
+    if (!guest) return null;
+    // Guests are drawn standing, fresh from a body of the same kind, rather than as they sit.
+    const female = guest.id % 2 === 0;
+    const key = `${guest.kind}:${female}`;
+    let portrait = this.guestPortraits.get(key);
+    if (!portrait) {
+      const body = this.makeGuestBody(guest.kind, female);
+      body.pose(0, 0);
+      portrait = renderPortrait(this.renderer, body.root, SPRITE_TURN);
+      this.guestPortraits.set(key, portrait);
+    }
+    return portrait;
+  }
+
+  /** Sleeps away the rest of the day: wakes in the late afternoon, where the day waits for the bell. */
+  private takeNap(): void {
+    this.clearTarget();
+    this.audio.play("cloth");
+    this.fadeTo(() => {
+      this.clock.setTime(this.tavern.nightIndex, Math.max(this.clock.hour, AFTERNOON_HOLD_HOUR));
+      this.screen = "play";
+    });
+  }
+
+  private goToSleep(): void {
+    this.clearTarget();
+    this.audio.play("cloth");
+    this.fadeTo(() => {
+      this.clock.setTime(this.tavern.nightIndex + 1, MORNING_HOUR);
+      this.showDawn();
+    });
   }
 
   private showDawn(): void {
@@ -829,7 +1386,7 @@ export class Game {
       },
     }));
     this.openPanel(
-      `Dawn after night ${tavern.nightIndex + 1}`,
+      `Morning after night ${tavern.nightIndex + 1}`,
       [
         tavern.lastResult,
         `Served ${tavern.served}, ${tavern.walkouts} walked out, earned ${tavern.earned} gold.`,
@@ -838,7 +1395,8 @@ export class Game {
       [
         ...upgrades,
         {
-          label: tavern.isLastNight ? "Face the baron" : "Open for the next night",
+          label: tavern.isLastNight ? "Face the baron" : "Start the next day",
+          // Already faded through the night on the way to bed.
           onPick: () => this.advanceNight(),
         },
       ],
@@ -859,62 +1417,139 @@ export class Game {
         ],
       );
     } else {
-      this.startPlaying();
+      this.startDay();
     }
   }
 
   private updatePlay(dt: number): void {
     const { tavern, input } = this;
-    if (input.pressed("KeyC")) this.active = 1 - this.active;
+    const player = this.siblings[this.active];
+    const strideBefore = player.strideAngle;
+    if (player.move(dt, input, this.world.colliders, tavern.drunk)) tavern.stumble(this.active);
+    if (footfalls(strideBefore, player.strideAngle) > 0) this.audio.play("step", input.run ? RUNNING_STEP_LOUDNESS : 1);
 
-    const other = this.siblings[1 - this.active];
-    const blocker = this.siblingColliders[this.siblingColliders.length - 1];
-    blocker.minX = other.position.x - SIBLING_HALF_SIZE;
-    blocker.maxX = other.position.x + SIBLING_HALF_SIZE;
-    blocker.minZ = other.position.z - SIBLING_HALF_SIZE;
-    blocker.maxZ = other.position.z + SIBLING_HALF_SIZE;
-    this.siblings[this.active].move(dt, input, this.siblingColliders);
-    other.rest(dt);
+    // O steps the sister's walk through its five styles, whoever is being played.
+    if (input.pressed("KeyO")) {
+      const sister = this.siblings.find((sibling) => sibling.walkStyle !== null);
+      const level = sister?.cycleWalkStyle();
+      if (level) {
+        this.toastEl.textContent = `Walk style ${level} of 5: ${WALK_STYLE_NAMES[level - 1]}`;
+        this.toastLeft = TOAST_SECONDS;
+      }
+    }
 
     const found = this.findTarget();
-    if (found && found.prompt.actionable && input.pressed("KeyE")) tavern.interact(this.active, found.target);
+    if (found && found.prompt.actionable && input.pressed("KeyE")) {
+      tavern.interact(this.active, found.target);
+      if (tavern.inConversation) {
+        this.showTalk();
+        return;
+      }
+      // Ringing the bell opens the tavern and sends the world clock on to nightfall.
+      if (found.target.kind === "bell" && tavern.phase === "dusk") {
+        this.clock.transitionTo(NIGHT_HOUR, SUNSET_SECONDS);
+        this.bellRinging = BELL_RING_SECONDS;
+        this.audio.playBell();
+      }
+      if (found.target.kind === "desk") {
+        this.openBuild();
+        return;
+      }
+      if (found.target.kind === "bed" && tavern.phase === "dawn") {
+        this.goToSleep();
+        return;
+      }
+      if (found.target.kind === "bed" && tavern.phase === "day") {
+        this.takeNap();
+        return;
+      }
+    }
 
-    const helper = this.helperStation();
     const listening = this.listeningTo();
-    tavern.tick(dt, { helper, listeningTo: listening });
+    tavern.tick(dt, { listeningTo: listening, night: this.clock.isNight });
 
     const refreshed = this.findTarget();
     if (refreshed?.prompt.actionable) {
       this.setPrompt(`E: ${refreshed.prompt.label}`);
       this.targetArrow.show("arrow");
       this.targetArrow.sprite.position.set(refreshed.at.x, refreshed.height, refreshed.at.z);
+      this.highlight(refreshed.target);
     } else {
       this.setPrompt(refreshed?.prompt.label ?? (listening !== null && !tavern.heardRumor ? "Listening..." : ""));
       this.targetArrow.show(null);
+      this.highlight(null);
     }
 
-    this.updateHud(helper);
+    this.updateHud();
     if (tavern.phase === "lastcall") this.startVisitor();
   }
 
+  /**
+   * Places the speech bubbles over whoever's talking. Called once the camera has moved for the frame, so
+   * they stay fixed to the guests. A conversation or menu has the screen, so they wait until it's closed.
+   */
+  renderSpeech(): void {
+    const speakers: Speaker[] = [];
+    if (this.screen === "play") {
+      for (const [id, actor] of this.actors) {
+        const said = this.chatter.saying(id);
+        if (said) speakers.push({ id, said, at: actor.speechAnchor(new Vector3()) });
+      }
+    }
+    this.camera.updateMatrixWorld();
+    this.speech.render(speakers, this.camera);
+  }
+
+  /** Plays what the rules cued and sets the music and the room's ambience for this moment. */
+  private updateSound(): void {
+    const { audio, tavern, focus } = this;
+    for (const cue of tavern.takeCues()) audio.play(cue);
+    audio.setPaused(this.screen === "paused");
+    audio.setMusic(musicFor(this.staging, tavern.phase, tavern.nightIndex));
+
+    // The room is only heard once you are in it. The stew pot hangs over the hearth, so both are heard from there.
+    const fromHearth = focus.distanceTo(this.spots.pot);
+    const inBedroom = focus.x > BEDROOM_FROM_X;
+    const crowd = tavern.phase === "service" ? Math.sqrt(Math.min(1, tavern.guests.length / CROWD_FULL)) : 0;
+    const bubbling = tavern.potState === "cooking" || tavern.potState === "ready";
+    const fire = inBedroom ? FIRE_BEDROOM_LEVEL : Math.max(FIRE_ROOM_LEVEL, falloff(fromHearth, FIRE_REACH));
+    audio.setLayer("fire", this.staging ? 0 : fire);
+    audio.setLayer("crowd", this.staging ? 0 : crowd * (inBedroom ? CROWD_BEDROOM_LEVEL : 1));
+    audio.setLayer("stew", !this.staging && bubbling ? falloff(fromHearth, STEW_REACH) : 0);
+  }
+
   update(dt: number): void {
+    if (this.input.pressed("KeyM")) {
+      const muted = this.audio.toggleMute();
+      if (!this.staging && this.screen !== "paused") {
+        this.toastEl.textContent = muted ? "Sound off" : "Sound on";
+        this.toastLeft = TOAST_SECONDS;
+      }
+    }
     // Paused: nothing moves, not even the guests.
     if (this.screen === "paused") {
       if (this.input.pressed("Escape")) (this.panelBack ?? (() => this.resume()))();
       else this.handlePanelKeys();
+      this.updateSound();
       this.input.endFrame();
       return;
     }
-    // Esc steps back out of a menu, or pauses the night.
+    // Esc steps back out of a menu or a conversation, or pauses the night.
     if (this.input.pressed("Escape")) {
-      if (this.panelBack) this.panelBack();
+      if (this.screen === "talk") this.leaveTalk();
+      else if (this.screen === "build") this.build.escape();
+      else if (this.panelBack) this.panelBack();
       else this.pause();
     }
 
     this.time += dt;
+    // Time stands still while you're looking at the plans.
+    if (this.screen !== "build") this.clock.update(dt);
 
     if (this.screen === "story") {
       this.updateStory(dt);
+    } else if (this.screen === "talk") {
+      this.updateTalk(dt);
     } else if (this.screen === "panel" || this.screen === "title") {
       this.handlePanelKeys();
       this.siblings.forEach((sibling) => sibling.rest(dt));
@@ -929,22 +1564,32 @@ export class Game {
         next?.();
         this.fadeEl.classList.remove("on");
       }
+    } else if (this.screen === "build") {
+      this.build.update(dt);
+      this.siblings.forEach((sibling) => sibling.rest(dt));
+      this.updateHud();
     } else if (this.screen === "play") {
       this.updatePlay(dt);
-    } else if (this.visitor) {
-      this.siblings.forEach((sibling) => sibling.rest(dt));
-      if (this.visitor.walk(dt)) {
-        this.visitor.turnTo(Math.PI, dt);
-        this.showLastCall();
-      }
+      const { tavern } = this;
+      this.chatter.update(dt, tavern.guests, tavern.plan.parties, (party) => tavern.partyChatting(party));
+    } else if (this.screen === "visitor") {
+      this.updateVisitor(dt);
     }
 
     this.syncGuests(dt);
+    this.messLayer.sync(this.tavern.messes, dt);
+    this.updateBell(dt);
+    this.updateBedroomDoor(dt);
+    this.updateFrontDoor(dt);
     this.syncCarried();
     this.syncStations();
-    this.updateSiblingMarks();
+    this.updateHeldIcons();
     // The night's opening message waits until the select scene is over.
-    if (!this.staging) this.updateToast(dt);
+    if (!this.staging) {
+      this.updateToast(dt);
+      this.updateClock();
+    }
+    this.updateSound();
     this.input.endFrame();
   }
 }

@@ -2,6 +2,7 @@ import { Box3, BufferGeometry, Material, Mesh, Object3D, PointLight, Vector3 } f
 import { TessellateModifier } from "three/addons/modifiers/TessellateModifier.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Rect } from "./collision";
+import type { SeatSpec } from "./house";
 import { applyRetroLook } from "./retro";
 
 interface LightStyle {
@@ -23,7 +24,9 @@ const MAX_WORLD_EDGE = 0.8;
 const MAX_TESSELLATE_PASSES = 12;
 
 /** Meshes that glow should not block the light they are supposed to be giving off. */
-const NO_SHADOW_CASTERS = new Set(["Floor", "Rug", "Window", "Fire", "BarLantern"]);
+const NO_SHADOW_CASTERS = new Set([
+  "Floor", "Rug", "Window", "Fire", "BarLantern", "Bedroom_Floor", "Bedroom_Rug", "Bedroom_Window",
+]);
 
 interface FlickerLight {
   light: PointLight;
@@ -43,59 +46,57 @@ export interface Seat {
   approach: Vector3;
   /** Where food lands on the table in front of this seat. */
   plate: Vector3;
+  /** The table this seat is at ("A", "B", "C"), or "Bar" for a bar stool. */
+  table: string;
 }
 
 const CHAIR_HEIGHT = 0.5;
 const STOOL_HEIGHT = 0.61;
 const TABLE_HEIGHT = 0.79;
 const BAR_HEIGHT = 1.1;
-const BAR_Z = -2.9;
 const APPROACH_DISTANCE = 0.6;
 const PLATE_REACH = 0.55;
 
 export interface World {
+  /** The loaded room. */
+  root: Object3D;
   colliders: Rect[];
   spawn: Vector3;
+  /** Filled in from the building plan. */
   seats: Seat[];
+  /** Objects left whole instead of merged into the room, by name, so the game can outline them. */
+  pieces: Map<string, Object3D>;
   update(time: number): void;
 }
 
-/** Works out each seat from the names of the chairs, stools and tables in the room. */
-function findSeats(root: Object3D): Seat[] {
-  const seats: Seat[] = [];
-  root.traverse((object) => {
-    const match = /^(Chair|Stool)_(A|B|C|Bar)/.exec(object.name);
-    // Each material of a model is a child with a similar name; only the parent is the seat.
-    if (!match || !object.userData.collide) return;
+/** Turns a seat from the building plan into the positions guests and dishes use. */
+export function makeSeat(spec: SeatSpec): Seat {
+  const position = new Vector3(spec.x, 0, spec.z);
+  const toTarget = new Vector3(spec.targetX - spec.x, 0, spec.targetZ - spec.z).normalize();
+  const plate = position.clone().addScaledVector(toTarget, PLATE_REACH);
+  plate.y = spec.atBar ? BAR_HEIGHT : TABLE_HEIGHT;
+  return {
+    position,
+    heading: Math.atan2(-toTarget.x, -toTarget.z),
+    height: spec.kind === "chair" ? CHAIR_HEIGHT : STOOL_HEIGHT,
+    approach: position.clone().addScaledVector(toTarget, -APPROACH_DISTANCE),
+    plate,
+    table: spec.table,
+  };
+}
 
-    const position = object.getWorldPosition(new Vector3());
-    const atBar = match[2] === "Bar";
-    const target = new Vector3(position.x, 0, BAR_Z);
-    if (!atBar) {
-      const table = root.getObjectByName(`Table_${match[2]}`);
-      if (!table) throw new Error(`No table found for ${object.name}`);
-      table.getWorldPosition(target);
-    }
-
-    const toTarget = target.clone().sub(position).setY(0).normalize();
-    const plate = position.clone().addScaledVector(toTarget, PLATE_REACH);
-    plate.y = atBar ? BAR_HEIGHT : TABLE_HEIGHT;
-    seats.push({
-      position,
-      heading: Math.atan2(-toTarget.x, -toTarget.z),
-      height: match[1] === "Chair" ? CHAIR_HEIGHT : STOOL_HEIGHT,
-      approach: position.clone().addScaledVector(toTarget, -APPROACH_DISTANCE),
-      plate,
-    });
-  });
-  return seats;
+/** Cuts a piece of the building up so its textures warp like the rest of the room, and frees the original. */
+export function tessellateForRetro(geometry: BufferGeometry): BufferGeometry {
+  const cut = new TessellateModifier(MAX_WORLD_EDGE, MAX_TESSELLATE_PASSES).modify(geometry);
+  geometry.dispose();
+  return cut;
 }
 
 /**
  * Combines the static room into one mesh per material. Every separate mesh is a
  * draw call, repeated for each shadow-map face, so this is the main performance win.
  */
-function mergeStaticMeshes(root: Object3D): void {
+function mergeStaticMeshes(root: Object3D, pieces: ReadonlySet<Object3D>): void {
   interface Bucket {
     material: Material;
     castShadow: boolean;
@@ -104,9 +105,22 @@ function mergeStaticMeshes(root: Object3D): void {
   const buckets = new Map<string, Bucket>();
   const sources: Mesh[] = [];
 
+  const tessellator = new TessellateModifier(MAX_WORLD_EDGE, MAX_TESSELLATE_PASSES);
+  const insidePiece = (object: Object3D): boolean => {
+    for (let at: Object3D | null = object; at; at = at.parent) if (pieces.has(at)) return true;
+    return false;
+  };
+
   root.updateMatrixWorld(true);
   root.traverse((object) => {
     if (!(object instanceof Mesh) || Array.isArray(object.material)) return;
+    if (insidePiece(object)) {
+      // Left where it is, but cut up the same way so its textures warp like the rest of the room.
+      const geometry: BufferGeometry = object.geometry;
+      object.geometry = tessellator.modify(geometry);
+      geometry.dispose();
+      return;
+    }
     const material: Material = object.material;
     const key = `${material.uuid}:${object.castShadow}`;
     let bucket = buckets.get(key);
@@ -123,7 +137,6 @@ function mergeStaticMeshes(root: Object3D): void {
     source.geometry.dispose();
   }
 
-  const tessellator = new TessellateModifier(MAX_WORLD_EDGE, MAX_TESSELLATE_PASSES);
   for (const { material, castShadow, geometries } of buckets.values()) {
     const merged = mergeGeometries(geometries);
     if (!merged) throw new Error(`Could not merge meshes using ${material.name}`);
@@ -137,7 +150,8 @@ function mergeStaticMeshes(root: Object3D): void {
   }
 }
 
-export function setupWorld(root: Object3D): World {
+/** `whole` names the objects to keep apart from the merged room, such as furniture the player uses. */
+export function setupWorld(root: Object3D, whole: readonly string[] = []): World {
   applyRetroLook(root);
   root.updateMatrixWorld(true);
 
@@ -158,8 +172,13 @@ export function setupWorld(root: Object3D): World {
     if (object.userData.light) anchors.push(object);
   });
 
-  const seats = findSeats(root);
-  mergeStaticMeshes(root);
+  const pieces = new Map<string, Object3D>();
+  for (const name of whole) {
+    const piece = root.getObjectByName(name);
+    if (!piece) throw new Error(`world.glb is missing "${name}"`);
+    pieces.set(name, piece);
+  }
+  mergeStaticMeshes(root, new Set(pieces.values()));
 
   anchors.forEach((anchor, index) => {
     const style = LIGHT_STYLES[String(anchor.userData.light)];
@@ -177,9 +196,11 @@ export function setupWorld(root: Object3D): World {
   });
 
   return {
+    root,
     colliders,
     spawn,
-    seats,
+    seats: [],
+    pieces,
     update(time) {
       for (const { light, base, amount, phase } of flickers) {
         const wobble = Math.sin(time * 9 + phase) * 0.5 + Math.sin(time * 23.7 + phase * 2) * 0.5;

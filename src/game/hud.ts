@@ -1,0 +1,164 @@
+/**
+ * The stats in the top corner: gold, trust, heat and the tap.
+ * Each stat is a small pixel-art icon with its number, drawn as SVG so it stays sharp at any size.
+ */
+import { pixelSvg } from "./icons";
+import type { Item, PotState } from "./tavern";
+
+export interface HudState {
+  gold: number;
+  debt: number;
+  trust: number;
+  trustMax: number;
+  heat: number;
+  heatMax: number;
+  tap: number;
+  pot: PotState;
+  held: Item | null;
+  /** How many of `held`: cups on the ale tray, otherwise 1. */
+  count: number;
+  traySize: number;
+  /** How drunk you are, in a word, or "" when sober. */
+  drunk: string;
+}
+
+const OUTLINE = "#1c140e";
+
+const COIN = pixelSvg(
+  [
+    "...KKKKKK...",
+    "..KGGGGGGK..",
+    ".KGLLGGGGDK.",
+    "KGLGGGGGGGDK",
+    "KGLGGDDGGGDK",
+    "KGGGGDDGGGDK",
+    "KGGGGDDGGGDK",
+    "KGGGGDDGGGDK",
+    "KGGGGGGGGGDK",
+    ".KGGGGGGGDK.",
+    "..KDDDDDDK..",
+    "...KKKKKK...",
+  ],
+  { K: OUTLINE, G: "#ffd23a", L: "#fff3b0", D: "#c08a20" },
+);
+
+const HEART = pixelSvg(
+  [
+    "............",
+    ".KKK....KKK.",
+    "KRRRK..KRRRK",
+    "KRPRRKKRRRRK",
+    "KRPRRRRRRRRK",
+    "KRRRRRRRRRRK",
+    ".KRRRRRRRRK.",
+    "..KRRRRRRK..",
+    "...KRRRRK...",
+    "....KRRK....",
+    ".....KK.....",
+    "............",
+  ],
+  { K: OUTLINE, R: "#d9301f", P: "#ff8a70" },
+);
+
+const FLAME = pixelSvg(
+  [
+    ".....K......",
+    "....KOK.....",
+    "....KOOK....",
+    "...KOOOK.K..",
+    "..KOOYOOKOK.",
+    "..KOYYOOOOK.",
+    ".KOOYYYOOOK.",
+    ".KOYYWYYOOK.",
+    ".KOYYWWYYOK.",
+    ".KROYYYYORK.",
+    "..KRROORRK..",
+    "...KKKKKK...",
+  ],
+  { K: OUTLINE, O: "#f08a24", Y: "#ffd23a", W: "#fff3b0", R: "#c8200f" },
+);
+
+const KEG = pixelSvg(
+  [
+    "............",
+    "..KKKKKKK...",
+    ".KBBBBBBBK..",
+    ".KHHHHHHHK..",
+    "KBBBBBBBBBK.",
+    "KBBBBBBBBBKK",
+    "KBBBBBBBBBTT",
+    "KBBBBBBBBBKT",
+    "KBBBBBBBBBK.",
+    ".KHHHHHHHK..",
+    ".KBBBBBBBK..",
+    "..KKKKKKK...",
+  ],
+  { K: OUTLINE, B: "#b4752c", H: "#8d8d94", T: "#c9c1ac" },
+);
+
+/** One icon and its number. */
+class Stat {
+  readonly el = document.createElement("span");
+  private readonly icon = document.createElement("span");
+  private readonly value = document.createElement("b");
+  private readonly of = document.createElement("small");
+  private shown = "";
+
+  constructor(
+    parent: HTMLElement,
+    private readonly name: string,
+    icon: string,
+  ) {
+    this.el.className = "stat";
+    this.icon.className = "icon";
+    this.icon.innerHTML = icon;
+    this.of.className = "of";
+    this.el.append(this.icon, this.value, this.of);
+    parent.append(this.el);
+  }
+
+  set(value: string, of = "", icon?: string, warn = false): void {
+    const key = `${value}|${of}|${icon ?? ""}|${warn}`;
+    if (key === this.shown) return;
+    this.shown = key;
+    this.value.textContent = value;
+    this.of.textContent = of;
+    if (icon) this.icon.innerHTML = icon;
+    this.el.classList.toggle("warn", warn);
+    this.el.title = `${this.name}: ${value}${of}`;
+    this.el.setAttribute("aria-label", this.el.title);
+  }
+}
+
+export class StatsHud {
+  private readonly gold: Stat;
+  private readonly trust: Stat;
+  private readonly heat: Stat;
+  private readonly tap: Stat;
+  private readonly drunk = document.createElement("span");
+
+  constructor(root: HTMLElement) {
+    root.replaceChildren();
+    const row = document.createElement("div");
+    row.className = "row";
+    this.gold = new Stat(row, "Gold", COIN);
+    this.trust = new Stat(row, "Trust", HEART);
+    this.heat = new Stat(row, "Heat", FLAME);
+    this.tap = new Stat(row, "Ale left in the tap", KEG);
+    // A small badge after the stats while you're drunk; hidden when sober.
+    this.drunk.className = "drunk";
+    this.drunk.hidden = true;
+    row.append(this.drunk);
+    root.append(row);
+  }
+
+  update(state: HudState): void {
+    this.gold.set(String(state.gold), `/${state.debt}`);
+    this.trust.set(String(state.trust), `/${state.trustMax}`);
+    // The last two steps before the baron's men come are shown in red.
+    this.heat.set(String(state.heat), `/${state.heatMax}`, undefined, state.heat >= state.heatMax - 2);
+    this.tap.set(String(state.tap), "", undefined, state.tap === 0);
+    if (this.drunk.textContent !== state.drunk) this.drunk.textContent = state.drunk;
+    this.drunk.hidden = !state.drunk;
+  }
+}

@@ -1,7 +1,7 @@
 import { CanvasTexture, NearestFilter, Sprite, SpriteMaterial, SRGBColorSpace, Texture } from "three";
 import type { Item } from "./tavern";
 
-export type IconName = Item | "dots" | "alert" | "arrow" | "you";
+export type IconName = Item | "dots" | "alert" | "arrow";
 
 type Draw = (rect: (color: string, x: number, y: number, w: number, h: number) => void) => void;
 
@@ -76,18 +76,41 @@ const ART: Record<IconName, { bubble: boolean; draw: Draw }> = {
       r("#ffe27a", 7, 10, 2, 2);
     },
   },
-  you: {
-    bubble: false,
-    draw: (r) => {
-      r("#7fe0ff", 7, 4, 2, 2);
-      r("#7fe0ff", 5, 6, 6, 2);
-      r("#7fe0ff", 7, 8, 2, 2);
-    },
-  },
 };
 
 const SIZE = 16;
 const textures = new Map<IconName, Texture>();
+
+const svg = (size: number, rects: string[]) =>
+  `<svg viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges" aria-hidden="true">${rects.join("")}</svg>`;
+const svgRect = (color: string, x: number, y: number, w: number, h: number) =>
+  `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${color}"/>`;
+
+/** An icon's art without its speech bubble, as SVG markup for the page, so the HUD matches the room. */
+export function iconSvg(name: IconName): string {
+  const rects: string[] = [];
+  ART[name].draw((color, x, y, w, h) => rects.push(svgRect(color, x, y, w, h)));
+  return svg(SIZE, rects);
+}
+
+/**
+ * Pixel art drawn as text, as SVG markup: one string per row, one character per pixel, coloured by `palette`.
+ * A character missing from the palette, or "." anywhere, is left clear.
+ */
+export function pixelSvg(rows: readonly string[], palette: Record<string, string>): string {
+  const rects: string[] = [];
+  rows.forEach((row, y) => {
+    // Runs of the same colour along a row become one rectangle.
+    for (let x = 0; x < row.length; ) {
+      let end = x + 1;
+      while (end < row.length && row[end] === row[x]) end++;
+      const color = palette[row[x]];
+      if (color) rects.push(svgRect(color, x, y, end - x, 1));
+      x = end;
+    }
+  });
+  return svg(rows.length, rects);
+}
 
 function textureFor(name: IconName): Texture {
   const existing = textures.get(name);

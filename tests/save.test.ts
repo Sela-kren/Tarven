@@ -23,7 +23,7 @@ beforeEach(() => {
 });
 
 describe("tavern snapshot", () => {
-  it("restores what lasts between nights and opens that night empty", () => {
+  it("restores what lasts between nights and opens that day, closed and empty", () => {
     const t = new Tavern(SEATS);
     t.gold = 64;
     t.trust = 7;
@@ -34,15 +34,18 @@ describe("tavern snapshot", () => {
     const saved = t.snapshot();
 
     const loaded = new Tavern(SEATS);
-    for (let i = 0; i < 100; i++) loaded.tick(0.1, { helper: null, listeningTo: null });
+    loaded.open();
+    for (let i = 0; i < 100; i++) loaded.tick(0.1, { listeningTo: null, night: true });
     loaded.carrying[0] = "ale";
     loaded.restore(saved);
 
     expect(loaded.snapshot()).toEqual(saved);
-    expect(loaded.phase).toBe("service");
+    expect(loaded.phase).toBe("day");
     expect(loaded.guests).toHaveLength(0);
     expect(loaded.carrying).toEqual([null, null]);
-    expect(loaded.takeMessages()).toEqual([loaded.plan.intro]);
+    const messages = loaded.takeMessages();
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatch(/^Day 2\./);
   });
 });
 

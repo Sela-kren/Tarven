@@ -1,4 +1,5 @@
-import { BackSide, Color, Mesh, MeshBasicMaterial, Object3D, SkinnedMesh } from "three";
+import { BackSide, BufferGeometry, Color, Mesh, MeshBasicMaterial, Object3D, SkinnedMesh } from "three";
+import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 
 /** A solid colour drawn on the back faces of a copy pushed out along the normals: an inverted-hull outline. */
 export function outlineMaterial(color: number, width: number): MeshBasicMaterial {
@@ -13,11 +14,26 @@ export function outlineMaterial(color: number, width: number): MeshBasicMaterial
   return material;
 }
 
+/**
+ * A copy of a flat-shaded mesh with its corners joined and its normals averaged, so pushing it out along
+ * the normals grows it evenly instead of pulling its faces apart at every hard edge.
+ */
+function smoothHull(geometry: BufferGeometry): BufferGeometry {
+  const positions = new BufferGeometry();
+  positions.setAttribute("position", geometry.getAttribute("position"));
+  if (geometry.index) positions.setIndex(geometry.index);
+  const welded = mergeVertices(positions);
+  welded.computeVertexNormals();
+  return welded;
+}
+
 /** A hidden outline around every mesh under `root`. Show it by setting `visible` and swapping `material`. */
 export class Outline {
   private readonly hulls: Mesh[] = [];
+  private readonly ownGeometry: BufferGeometry[] = [];
 
-  constructor(root: Object3D, material: MeshBasicMaterial) {
+  /** `smooth` rebuilds the normals of rigid, hard-edged meshes such as furniture; skinned meshes keep theirs. */
+  constructor(root: Object3D, material: MeshBasicMaterial, smooth = false) {
     const sources: Mesh[] = [];
     root.traverse((object) => {
       if (object instanceof Mesh) sources.push(object);
@@ -29,6 +45,10 @@ export class Outline {
         skinned.bindMode = source.bindMode;
         skinned.bind(source.skeleton, source.bindMatrix);
         hull = skinned;
+      } else if (smooth) {
+        const geometry = smoothHull(source.geometry);
+        this.ownGeometry.push(geometry);
+        hull = new Mesh(geometry, material);
       } else {
         hull = new Mesh(source.geometry, material);
       }
@@ -56,5 +76,7 @@ export class Outline {
   dispose(): void {
     for (const hull of this.hulls) hull.removeFromParent();
     this.hulls.length = 0;
+    for (const geometry of this.ownGeometry) geometry.dispose();
+    this.ownGeometry.length = 0;
   }
 }

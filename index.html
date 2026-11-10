@@ -9,18 +9,26 @@
   <body>
     <div id="status">Loading...</div>
     <div id="stats"></div>
+    <div id="clock" aria-label="Time of day">
+      <div id="clock-sky"></div>
+      <div class="clock-text">
+        <div id="clock-time"></div>
+        <div id="clock-day"></div>
+      </div>
+      <div id="clock-track"><div id="clock-marker"></div></div>
+    </div>
+    <div id="speech" aria-hidden="true"></div>
     <div id="toast" role="status" aria-live="polite"></div>
     <div id="prompt"></div>
-    <div id="hud">WASD / arrows: move &nbsp; Shift: run &nbsp; E: use / serve &nbsp; C: swap sibling &nbsp; Esc: pause</div>
+    <div id="hud">WASD / arrows: move &nbsp; Shift: run &nbsp; E: use / serve &nbsp; O: walk style &nbsp; M: mute &nbsp; Esc: pause</div>
     <div id="select" aria-label="Character select">
       <h1>Who are you?</h1>
-      <p class="hint">Click a sibling (or press 1 / 2) to choose. You can swap during the night with C.</p>
-      <button type="button" id="select-start" disabled>Choose a sibling</button>
+      <p class="hint">Click a character (or press 1 / 2) to choose who you play.</p>
+      <button type="button" id="select-start" disabled>Choose a character</button>
     </div>
     <div id="story" aria-live="polite">
       <div id="story-cg"></div>
-      <div class="sprite" id="story-sprite-0"></div>
-      <div class="sprite" id="story-sprite-1"></div>
+      <div class="sprite" id="story-sprite"></div>
       <button type="button" id="story-skip">Skip &#9656;&#9656;</button>
       <div class="box">
         <div id="story-name"></div>
@@ -28,6 +36,17 @@
         <div id="story-next">&#9660;</div>
       </div>
     </div>
+    <div id="talk" role="dialog" aria-live="polite" aria-label="Conversation">
+      <div class="portrait" id="talk-guest"></div>
+      <div class="portrait" id="talk-you"></div>
+      <div class="box">
+        <div id="talk-name"></div>
+        <p id="talk-text"></p>
+        <div id="talk-next">&#9660;</div>
+        <div id="talk-choices"></div>
+      </div>
+    </div>
+    <div id="build" aria-label="House plans"></div>
     <div id="panel" role="dialog" aria-modal="true"></div>
     <div id="fade"></div>
     <script type="module" src="/src/main.ts"></script>

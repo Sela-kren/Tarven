@@ -1,3 +1,21 @@
+import { cloneLayout, type HouseLayout } from "./house";
+import {
+  complimentReplies,
+  COMPLIMENTS,
+  FAVORS,
+  newPersona,
+  OFFERS,
+  pickLine,
+  readPersona,
+  REMARKS,
+  shiftPersona,
+  SPEAKERS,
+  type BanterContext,
+  type Persona,
+  type PlayerBody,
+  type Reply,
+} from "./banter";
+
 /**
  * The rules of the game, with no graphics. The view layer tells this class what
  * the player did and reads the state back, which keeps the rules unit-testable.
@@ -5,11 +23,29 @@
 
 export type Item = "ale" | "bread" | "stew" | "cask";
 export type GuestKind = "farmer" | "smuggler" | "soldier" | "fugitive";
-export type Station = "tap" | "bread" | "pot" | "barrel";
-export type Phase = "service" | "lastcall" | "dawn" | "ended";
+export type Station = "tap" | "bread" | "pot" | "barrel" | "bin";
+/** A day: closed while it's light, "dusk" once the bell rings and the tavern waits for nightfall, then
+ * the night's service and last call. "bedtime" is the closed tavern after last call, until you go to bed,
+ * and "dawn" is the morning after. The world clock, not the tavern, decides when night falls. */
+export type Phase = "day" | "dusk" | "service" | "lastcall" | "bedtime" | "dawn" | "ended";
 export type GuestStatus = "arriving" | "waiting" | "eating" | "leaving";
 export type PotState = "empty" | "cooking" | "ready" | "burnt";
-export type Target = { kind: "station"; station: Station } | { kind: "guest"; id: number };
+export type Target =
+  | { kind: "station"; station: Station }
+  | { kind: "guest"; id: number }
+  | { kind: "mess"; id: number }
+  | { kind: "bell" }
+  | { kind: "bed" }
+  | { kind: "door" }
+  | { kind: "desk" };
+/** A sound the rules ask for. What each one actually sounds like is up to the audio layer. */
+export type Cue =
+  | "pour" | "aleReady" | "takeAle" | "takeBread" | "takeStew" | "takeCask" | "putDown" | "refill"
+  | "stewStart" | "stewReady" | "stewBurnt" | "serve" | "tip" | "buy" | "drink" | "guestIn" | "walkOut"
+  | "doorOpen" | "doorClose" | "smashTray" | "smashOne" | "drop" | "dishes" | "wipe" | "rumor";
+const TAKE_CUES: Record<Item, Cue> = { ale: "takeAle", bread: "takeBread", stew: "takeStew", cask: "takeCask" };
+/** What a night leaves behind: dirty dishes on the tables, ale on the floor, and dust tracked in. */
+export type MessKind = "dishes" | "spill" | "dust";
 export type UpgradeId = "quicktap" | "bigpot" | "cushions";
 export type EndingId = "arrested" | "overthrow" | "kept" | "lost";
 
@@ -21,18 +57,68 @@ export const UPGRADE_COST = 20;
 
 const START_TRUST = 3;
 const TAP_SIZE = 8;
-const ALE_SHELF = 2;
 const POUR_TIME = 1.5;
 const QUICK_POUR_TIME = 0.8;
 const STEW_TIME = 8;
-const HELPER_COOK_SPEED = 1.5;
-const BURN_TIME = 16;
+/** How long ready stew keeps before it burns. Long enough for one person to serve a pot's worth. */
+const BURN_TIME = 40;
 const POT_BOWLS = 3;
 const BIG_POT_BOWLS = 5;
 const EAT_TIME = 8;
 const RUMOR_EAT_TIME = 14;
 const LISTEN_TIME = 3;
 const CUSHION_PATIENCE = 1.25;
+// The morning after. Every guest leaves something to clean up, and a dirty room wears on the next night's guests.
+/** Patches of dust the night's crowd always tracks in, plus one more for every few guests. */
+const DUST_BASE = 3;
+const GUESTS_PER_DUST = 3;
+/** How much patience guests lose in a filthy room, and how many messes count as filthy. */
+const MESS_PATIENCE_LOSS = 0.3;
+const MESS_FOR_FULL_LOSS = 8;
+
+/** Ale goes on a tray, which holds this many cups. Everything else is carried one at a time. */
+export const TRAY_SIZE = 3;
+
+// Drinking. Drunkenness runs from 0 (sober) to 1 (can barely stand).
+export const DRUNK_MAX = 1;
+/** How much one drink with a table adds. */
+const DRINK_STRENGTH = 0.3;
+/** How fast you sober up, per second. One drink wears off in about half a minute. */
+const SOBER_RATE = 0.01;
+/** How many drinks one table will pour for you. */
+const DRINKS_PER_TABLE = 2;
+/** Past this, nobody pours you another. */
+const TOO_DRUNK = 0.85;
+/** What each guest at a table pays towards a jug of ale. */
+const JUG_PAY = 3;
+/** How much slower ale pours when you're drunk: half as slow again at the worst. */
+const DRUNK_FUMBLE = 0.5;
+/** How often a guest you served well offers you a drink as their tip, and gets talking. */
+const TIP_CHAT_CHANCE = 0.35;
+/** Of those, how many pay you a compliment; the rest ask a favor. */
+const COMPLIMENT_SHARE = 0.6;
+/** What a guest adds when you drink the one they bought you. */
+const TIP_DRINK_BONUS = 2;
+/** How often a guest also brings up something they've heard about you, when there's something to bring up. */
+const REMARK_CHANCE = 0.6;
+
+/** "Name: \"Words\"" becomes the name and the words; anything else is narration. */
+function splitSpeaker(text: string): TalkLine {
+  const match = /^([A-Z][A-Za-z ]{0,24}): (".*)$/.exec(text);
+  return match ? { speaker: match[1], text: match[2] } : { speaker: null, text };
+}
+
+const narrate = (text: string): TalkLine => ({ speaker: null, text });
+/** The player's own words. */
+const you = (text: string): TalkLine => ({ speaker: "You", text });
+
+/** A word for how drunk the player is, or "" when sober. */
+export function drunkLabel(level: number): string {
+  if (level >= 0.75) return "Hammered";
+  if (level >= 0.45) return "Drunk";
+  if (level >= 0.15) return "Tipsy";
+  return "";
+}
 /** Serving with more than this share of patience left earns the tip. */
 const TIP_THRESHOLD = 0.5;
 
@@ -78,26 +164,57 @@ interface Arrival {
   kind: GuestKind;
   order: Item;
   rumor?: boolean;
+  /** Guests with the same party come in together, sit at one table, and talk. An index into the night's parties. */
+  party?: number;
+}
+
+/** A group of guests who come in together and talk over a table. */
+export interface PartyPlan {
+  /** What they're saying as you walk up, one line per speaker. */
+  chat: string[];
+  /** What they say as they pour you one. */
+  offer: string;
+  /** What a drink loosens out of them. If the night's rumor is at this table, it comes out too. */
+  gossip: string;
 }
 
 export interface NightPlan {
   intro: string;
   guests: Arrival[];
+  parties: PartyPlan[];
   lastCall: LastCall;
 }
 
-const arrive = (at: number, kind: GuestKind, order: Item, rumor = false): Arrival => ({ at, kind, order, rumor });
+const arrive = (at: number, kind: GuestKind, order: Item, rumor = false, party?: number): Arrival => ({
+  at,
+  kind,
+  order,
+  rumor,
+  party,
+});
 
 export const NIGHTS: NightPlan[] = [
   {
-    intro: "Night 1. Ale is at the bar, bread is in the basket on the crates. E to act, C to swap siblings.",
+    intro: "Night 1. Ale is at the bar, bread is in the basket on the crates. Press E to act.",
     guests: [
       arrive(3, "farmer", "ale"),
       arrive(10, "soldier", "ale"),
-      arrive(17, "farmer", "bread"),
+      arrive(17, "farmer", "bread", false, 0),
+      arrive(17, "farmer", "ale", false, 0),
       arrive(25, "smuggler", "ale", true),
       arrive(33, "fugitive", "bread"),
       arrive(42, "soldier", "bread"),
+    ],
+    parties: [
+      {
+        chat: [
+          "Farmer: \"Snow's coming early to the pass this year. I can smell it.\"",
+          "Other farmer: \"Snow or no snow, the baron's men will still want their toll.\"",
+          "Farmer: \"Innkeeper! Sit with us a moment, you look like you need it.\"",
+        ],
+        offer: "The farmer slides a cup across. \"To the harvest, what's left of it.\"",
+        gossip: "\"Between us, half the valley's behind on what they owe. The baron can't foreclose on all of us.\"",
+      },
     ],
     lastCall: {
       visitor: "The baron's tax collector",
@@ -115,17 +232,39 @@ export const NIGHTS: NightPlan[] = [
     },
   },
   {
-    intro: "Night 2. Stew is on the menu. Start the pot at the fire early, and leave a sibling there so it won't burn.",
+    intro: "Night 2. Stew is on the menu. Start the pot at the fire early, and serve it before it burns.",
     guests: [
       arrive(2, "farmer", "stew"),
       arrive(7, "soldier", "ale"),
       arrive(12, "smuggler", "stew"),
       arrive(17, "farmer", "bread"),
-      arrive(23, "fugitive", "stew", true),
-      arrive(29, "soldier", "ale"),
+      arrive(23, "fugitive", "stew", true, 0),
+      arrive(23, "smuggler", "ale", false, 0),
+      arrive(29, "soldier", "ale", false, 1),
+      arrive(29, "soldier", "bread", false, 1),
       arrive(35, "farmer", "ale"),
       arrive(41, "smuggler", "bread"),
       arrive(48, "soldier", "stew"),
+    ],
+    parties: [
+      {
+        chat: [
+          "Smuggler: \"Keep your voice down. Half this room drinks with the garrison.\"",
+          "Pale stranger: \"I know. I know. I just need to get over the ridge.\"",
+          "Smuggler: \"Innkeeper. Join us. A friendly face makes a quiet table.\"",
+        ],
+        offer: "The smuggler pours without asking. \"Drink. Nobody listens to a table that's laughing.\"",
+        gossip: "The stranger's hands stop shaking after a second cup, and they lean in close.",
+      },
+      {
+        chat: [
+          "Soldier: \"Three weeks on this road and not one decent bed.\"",
+          "Other soldier: \"Shut it. The sergeant's got ears in every tavern on the pass.\"",
+          "Soldier: \"Innkeeper! Drink with the baron's finest, eh?\"",
+        ],
+        offer: "The soldier bangs a cup down in front of you. \"To the baron! May he choke on it.\"",
+        gossip: "\"Word is the baron's short of silver himself. That's why he's squeezing every inn on the road.\"",
+      },
     ],
     lastCall: {
       visitor: "A bounty hunter",
@@ -143,20 +282,43 @@ export const NIGHTS: NightPlan[] = [
     },
   },
   {
-    intro: "Night 3. The last night before the baron collects. The road is busy, so keep both siblings working.",
+    intro: "Night 3. The last night before the baron collects. The road is busy, so keep moving.",
     guests: [
       arrive(2, "soldier", "ale"),
       arrive(6, "farmer", "stew"),
       arrive(10, "smuggler", "ale"),
-      arrive(15, "farmer", "bread", true),
+      arrive(15, "farmer", "bread", true, 0),
+      arrive(15, "farmer", "ale", false, 0),
+      arrive(15, "smuggler", "stew", false, 0),
       arrive(20, "soldier", "stew"),
       arrive(24, "fugitive", "ale"),
       arrive(29, "smuggler", "stew"),
       arrive(34, "farmer", "ale"),
-      arrive(38, "soldier", "bread"),
+      arrive(38, "soldier", "bread", false, 1),
+      arrive(38, "soldier", "ale", false, 1),
       arrive(43, "fugitive", "stew"),
       arrive(48, "farmer", "bread"),
       arrive(54, "smuggler", "ale"),
+    ],
+    parties: [
+      {
+        chat: [
+          "Old farmer: \"Tomorrow the debt falls due, and then we'll see who owns this valley.\"",
+          "Young farmer: \"Hush, grandfather. Not here.\"",
+          "Stranger: \"Let the innkeeper sit. Whose side are you on, friend?\"",
+        ],
+        offer: "The old farmer fills your cup to the brim. \"Drink, and then tell me we can trust you.\"",
+        gossip: "\"Every family on the pass is in it now. All they need is one night and one place.\"",
+      },
+      {
+        chat: [
+          "Soldier: \"The captain wants names by morning. Names, or it's our hides.\"",
+          "Other soldier: \"Then let's drink till we've forgotten our own.\"",
+          "Soldier: \"Innkeeper! You hear everything. Have one on the baron.\"",
+        ],
+        offer: "\"Go on, it's the baron's coin.\" The soldier tops your cup up twice.",
+        gossip: "\"Half the garrison wouldn't lift a sword if the village came for the baron. Don't tell the captain I said so.\"",
+      },
     ],
     lastCall: {
       visitor: "The baron's captain",
@@ -178,7 +340,7 @@ export const NIGHTS: NightPlan[] = [
 export const ENDINGS: Record<EndingId, { title: string; text: string }> = {
   arrested: {
     title: "Arrested",
-    text: "The baron has heard enough about the tavern on the pass. Soldiers break down the door, and the two of you are marched away in irons.",
+    text: "The baron has heard enough about the tavern on the pass. Soldiers break down the door, and you are marched away in irons.",
   },
   overthrow: {
     title: "The Village Rises",
@@ -205,6 +367,45 @@ export interface Guest {
   eatLeft: number;
   rumor: boolean;
   listened: number;
+  /** The party this guest came in with, as an index into the night's parties, or null for someone alone. */
+  party: number | null;
+}
+
+/** Something to clean up. */
+export interface Mess {
+  id: number;
+  kind: MessKind;
+  /**
+   * Dishes: the seats at one table that were eaten at. A spill: the one seat it's under. Dust: which of
+   * the room's dust spots it lies on (the game decides where those are).
+   */
+  spots: number[];
+}
+
+/** One option in a conversation at a table. */
+export interface TalkChoice {
+  label: string;
+  disabled: boolean;
+}
+
+/** One thing said in a conversation: who says it ("You" for the player, null for narration) and what. */
+export interface TalkLine {
+  speaker: string | null;
+  text: string;
+  /** The guest speaking, so the game can show them. */
+  guestId?: number;
+}
+
+/** A guest who has tipped you with a drink, and has something to say while you're there. */
+interface TipChat {
+  speaker: string;
+  guestId: number;
+  lines: TalkLine[];
+  replies: Reply[];
+  drank: boolean;
+  answered: boolean;
+  /** What was just said, after their lines. */
+  reply: TalkLine[];
 }
 
 /** The state that lasts between nights. */
@@ -215,13 +416,19 @@ export interface TavernSave {
   heat: number;
   upgrades: UpgradeId[];
   tapLeft: number;
+  /** What last night left to clean up. Older saves have none. */
+  messes?: Mess[];
+  /** Who the player has become. Older saves start from nothing. */
+  persona?: Persona;
+  /** The building as you've changed it. Older saves, and an untouched building, have none. */
+  layout?: HouseLayout;
 }
 
 export interface TickContext {
-  /** Station the sibling you are not controlling is standing at, if any. */
-  helper: Station | null;
-  /** Guest the sibling you are controlling is close enough to overhear. */
+  /** Guest the player is close enough to overhear. */
   listeningTo: number | null;
+  /** Whether night has fallen, from the world clock. Once the doors are open, it starts the night. */
+  night: boolean;
 }
 
 export interface Prompt {
@@ -235,10 +442,33 @@ interface Action {
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const MESS_LABELS: Record<MessKind, string> = {
+  dishes: "Clear the dirty dishes",
+  spill: "Mop up the spilt ale",
+  dust: "Sweep up the dust",
+};
+const MESS_DONE: Record<MessKind, string> = {
+  dishes: "Dishes cleared.",
+  spill: "Floor mopped.",
+  dust: "Swept.",
+};
+
+/** The numbers 0 to count - 1 in an order that looks random but is always the same for a seed. */
+function shuffled(count: number, seed: number): number[] {
+  const out = Array.from({ length: count }, (_, i) => i);
+  let state = seed >>> 0 || 1;
+  for (let i = count - 1; i > 0; i--) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    const j = state % (i + 1);
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
 const STATION_OF_ITEM: Record<Item, Station> = { ale: "tap", bread: "bread", stew: "pot", cask: "barrel" };
 
 export class Tavern {
-  phase: Phase = "service";
+  phase: Phase = "day";
   nightIndex = 0;
   gold = 0;
   trust = START_TRUST;
@@ -246,8 +476,13 @@ export class Tavern {
   clock = 0;
 
   readonly guests: Guest[] = [];
+  /** What each sibling has in their hands. */
   readonly carrying: [Item | null, Item | null] = [null, null];
+  /** How many of it: up to TRAY_SIZE cups of ale on a tray, otherwise 1. 0 with empty hands. */
+  readonly carryCount: [number, number] = [0, 0];
   readonly upgrades = new Set<UpgradeId>();
+  /** What's still to be cleaned up. Left alone, it carries on into the next day. */
+  readonly messes: Mess[] = [];
 
   tapLeft = TAP_SIZE;
   aleReady = 0;
@@ -255,6 +490,33 @@ export class Tavern {
   potState: PotState = "empty";
   potTimer = 0;
   potBowls = 0;
+
+  /** The building as you've changed it, or null while it's as it started. Only changes during the day. */
+  layout: HouseLayout | null = null;
+  /** The bedroom door. It stays however you left it, night to night. */
+  doorOpen = false;
+  /** Whether you've napped today. */
+  napped = false;
+  /** How drunk you are, from 0 to DRUNK_MAX. Wears off with time, and sleep clears it. */
+  drunk = 0;
+  /** The party you're talking with, or null. While set, the game shows the conversation. */
+  talkingTo: number | null = null;
+  /** What was just said at the table, after the opening chat. */
+  private talkReply: TalkLine[] = [];
+  /** A guest talking to you over the drink they tipped you, or null. */
+  private tipChat: TipChat | null = null;
+  /** Who the player is, so what guests say fits them. The game sets it. */
+  playerBody: PlayerBody = "Male";
+  /** Where chance comes from: which guests offer a drink, and what they say. Tests replace it. */
+  random: () => number = Math.random;
+  /** The player's reputation, which changes what guests say. It lasts from night to night. */
+  persona: Persona = newPersona();
+  /** Lines guests have already said, so they say something new next time. */
+  private readonly saidLines = new Set<string>();
+  /** What a party was saying as you sat down with them. */
+  private talkOpening: TalkLine[] = [];
+  /** How each party has treated you tonight: drinks poured, and whether you sold them a jug. */
+  private readonly partyState = new Map<number, { drinks: number; jug: boolean }>();
 
   heardRumor = false;
   served = 0;
@@ -265,10 +527,54 @@ export class Tavern {
 
   private nextArrival = 0;
   private nextGuestId = 1;
+  private nextMessId = 1;
+  /** Seats eaten at tonight, which leave dirty dishes. */
+  private readonly eatenAt = new Set<number>();
+  /** Seats where ale went on the floor tonight. */
+  private readonly spiltAt = new Set<number>();
   private readonly messages: string[] = [];
+  private readonly cues: Cue[] = [];
 
-  constructor(private readonly seatCount: number) {
-    this.say(this.plan.intro);
+  /** `seatTables` names the table each seat is at, so a party can sit together. "Bar" stools are not a table. */
+  /** `dustSpots` is how many places in the room dust can settle; with none, nights leave no dust. */
+  constructor(
+    private seatCount: number,
+    private seatTables: readonly string[] = [],
+    private readonly dustSpots = 0,
+  ) {
+    this.openDay();
+  }
+
+  /** Replaces the seats, after furniture has moved. Only safe with no guests in the room. */
+  setSeats(tables: readonly string[]): void {
+    this.seatCount = tables.length;
+    this.seatTables = tables;
+  }
+
+  /** Rings the bell to open for the night. The night's guests start coming once night has fallen. */
+  open(): void {
+    if (this.phase !== "day") return;
+    this.phase = "dusk";
+    this.say(
+      this.messes.length > 0
+        ? "You ring the bell and open up, mess and all. Guests won't wait as long in a dirty room."
+        : "You ring the bell and open up. The sun goes down over Tarven.",
+    );
+  }
+
+  /** Goes to bed after last call and sleeps until morning. */
+  sleep(): void {
+    if (this.phase !== "bedtime") return;
+    this.phase = "dawn";
+    this.drunk = 0;
+  }
+
+  /** Naps through the rest of the day while closed. Only once a day; the clock is moved on by the game. */
+  nap(): void {
+    if (this.phase !== "day" || this.napped) return;
+    this.napped = true;
+    this.drunk = 0;
+    this.say("You wake up in the late afternoon. Ring the bell when you're ready.");
   }
 
   get plan(): NightPlan {
@@ -288,8 +594,17 @@ export class Tavern {
     return this.messages.splice(0);
   }
 
+  /** Sounds waiting to be played. Reading them empties the queue. */
+  takeCues(): Cue[] {
+    return this.cues.splice(0);
+  }
+
   private say(text: string): void {
     this.messages.push(text);
+  }
+
+  private cue(sound: Cue): void {
+    this.cues.push(sound);
   }
 
   private adjust(gold: number, trust: number, heat: number): void {
@@ -298,8 +613,12 @@ export class Tavern {
     this.heat = clamp(this.heat + heat, 0, HEAT_MAX);
   }
 
+  private takenSeats(): Set<number> {
+    return new Set(this.guests.filter((g) => g.status !== "leaving").map((g) => g.seat));
+  }
+
   private freeSeat(): number | null {
-    const taken = new Set(this.guests.filter((g) => g.status !== "leaving").map((g) => g.seat));
+    const taken = this.takenSeats();
     // Stepping by 5 spreads guests around the room instead of filling it in order.
     for (let i = 0; i < this.seatCount; i++) {
       const seat = (this.nextGuestId * 5 + i) % this.seatCount;
@@ -308,13 +627,38 @@ export class Tavern {
     return null;
   }
 
+  /**
+   * A seat for someone in a party, beside the rest of the party if one of them is already in. Otherwise the
+   * smallest table that fits them all, then side by side at the bar, then wherever most of them fit together.
+   */
+  private partySeat(party: number): number | null {
+    const taken = this.takenSeats();
+    const free = (table: string) =>
+      this.seatTables.flatMap((name, seat) => (name === table && !taken.has(seat) ? [seat] : []));
+    const friend = this.guests.find((g) => g.party === party && g.status !== "leaving");
+    const friendTable = friend && this.seatTables[friend.seat];
+    if (friendTable) return free(friendTable)[0] ?? this.freeSeat();
+
+    const size = this.plan.guests.filter((a) => a.party === party).length;
+    const rank = ({ name, seats }: { name: string; seats: number[] }) =>
+      seats.length >= size ? (name === "Bar" ? 1000 : 0) + seats.length : 2000 - seats.length;
+    const best = [...new Set(this.seatTables)]
+      .map((name) => ({ name, seats: free(name) }))
+      .filter(({ seats }) => seats.length > 0)
+      .sort((a, b) => rank(a) - rank(b))[0];
+    return best?.seats[0] ?? this.freeSeat();
+  }
+
   private spawnArrivals(): void {
     const arrivals = this.plan.guests;
     while (this.nextArrival < arrivals.length && arrivals[this.nextArrival].at <= this.clock) {
-      const seat = this.freeSeat();
+      const next = arrivals[this.nextArrival];
+      const seat = next.party === undefined ? this.freeSeat() : this.partySeat(next.party);
       if (seat === null) return; // Tries again next tick, once someone leaves.
-      const { kind, order, rumor } = arrivals[this.nextArrival++];
-      const maxPatience = GUEST_KINDS[kind].patience * (this.upgrades.has("cushions") ? CUSHION_PATIENCE : 1);
+      this.nextArrival++;
+      const { kind, order, rumor, party } = next;
+      const maxPatience =
+        GUEST_KINDS[kind].patience * (this.upgrades.has("cushions") ? CUSHION_PATIENCE : 1) * this.messPatience;
       this.guests.push({
         id: this.nextGuestId++,
         kind,
@@ -326,54 +670,53 @@ export class Tavern {
         eatLeft: rumor ? RUMOR_EAT_TIME : EAT_TIME,
         rumor: Boolean(rumor),
         listened: 0,
+        party: party ?? null,
       });
+      this.cue("guestIn");
     }
   }
 
   private startPour(): void {
     this.tapLeft--;
-    this.pourLeft = this.upgrades.has("quicktap") ? QUICK_POUR_TIME : POUR_TIME;
+    this.cue("pour");
+    // Drunk hands fumble the tap.
+    this.pourLeft = (this.upgrades.has("quicktap") ? QUICK_POUR_TIME : POUR_TIME) * (1 + DRUNK_FUMBLE * this.drunk);
   }
 
   private startStew(): void {
     this.potState = "cooking";
     this.potTimer = STEW_TIME;
+    this.cue("stewStart");
   }
 
-  private updateTap(dt: number, helper: Station | null): void {
-    if (this.pourLeft !== null) {
-      this.pourLeft -= dt;
-      if (this.pourLeft <= 0) {
-        this.pourLeft = null;
-        this.aleReady++;
-      }
-    }
-    if (helper === "tap" && this.pourLeft === null && this.aleReady < ALE_SHELF && this.tapLeft > 0) {
-      this.startPour();
+  private updateTap(dt: number): void {
+    if (this.pourLeft === null) return;
+    this.pourLeft -= dt;
+    if (this.pourLeft <= 0) {
+      this.pourLeft = null;
+      this.aleReady++;
+      this.cue("aleReady");
     }
   }
 
-  private updatePot(dt: number, helper: Station | null): void {
-    const tending = helper === "pot";
+  private updatePot(dt: number): void {
     if (this.potState === "cooking") {
-      this.potTimer -= dt * (tending ? HELPER_COOK_SPEED : 1);
+      this.potTimer -= dt;
       if (this.potTimer <= 0) {
         this.potState = "ready";
         this.potTimer = BURN_TIME;
         this.potBowls = this.upgrades.has("bigpot") ? BIG_POT_BOWLS : POT_BOWLS;
         this.say("The stew is ready.");
+        this.cue("stewReady");
       }
-    } else if (this.potState === "ready" && !tending) {
+    } else if (this.potState === "ready") {
       this.potTimer -= dt;
       if (this.potTimer <= 0) {
         this.potState = "burnt";
         this.potBowls = 0;
         this.say("The stew has burnt!");
+        this.cue("stewBurnt");
       }
-    } else if (tending && this.potState === "burnt") {
-      this.potState = "empty";
-    } else if (tending && this.potState === "empty") {
-      this.startStew();
     }
   }
 
@@ -393,6 +736,7 @@ export class Tavern {
         if (guest.listened >= LISTEN_TIME) {
           this.heardRumor = true;
           this.say(`Overheard: ${this.plan.lastCall.rumor}`);
+          this.cue("rumor");
         }
       }
     }
@@ -401,16 +745,30 @@ export class Tavern {
   private walkOut(guest: Guest): void {
     guest.status = "leaving";
     this.walkouts++;
+    // They knock their cup over on the way out.
+    this.spiltAt.add(guest.seat);
     this.adjust(0, -1, GUEST_KINDS[guest.kind].walkoutHeat);
     this.say(`A ${guest.kind} walked out without paying.`);
+    this.cue("walkOut");
   }
 
   tick(dt: number, context: TickContext): void {
+    this.drunk = Math.max(0, this.drunk - SOBER_RATE * dt);
+    if (this.phase === "day" || this.phase === "dusk") {
+      // Closed, but the tap and the pot still work, so you can get ready.
+      this.updateTap(dt);
+      this.updatePot(dt);
+      if (this.phase === "dusk" && context.night) {
+        this.phase = "service";
+        this.say(this.plan.intro);
+      }
+      return;
+    }
     if (this.phase !== "service") return;
     this.clock += dt;
     this.spawnArrivals();
-    this.updateTap(dt, context.helper);
-    this.updatePot(dt, context.helper);
+    this.updateTap(dt);
+    this.updatePot(dt);
     this.updateGuests(dt, context.listeningTo);
 
     if (this.nextArrival === this.plan.guests.length && this.guests.length === 0) {
@@ -432,18 +790,167 @@ export class Tavern {
     const rules = GUEST_KINDS[guest.kind];
     const tipped = guest.patience / guest.maxPatience > TIP_THRESHOLD;
     const amount = rules.pay + (tipped ? rules.tip : 0);
-    this.carrying[sibling] = null;
+    this.takeOne(sibling);
     guest.status = "eating";
+    this.eatenAt.add(guest.seat);
     this.served++;
     this.earned += amount;
     this.adjust(amount, rules.trust, 0);
     this.say(tipped ? `+${amount} gold, with a tip.` : `+${amount} gold.`);
+    this.cue(tipped ? "tip" : "serve");
+    if (tipped && this.random() < TIP_CHAT_CHANCE) this.startTipChat(guest);
+  }
+
+  /** A pleased guest buys you a drink, and with the drink in them, flatters you or asks a favor. */
+  private startTipChat(guest: Guest): void {
+    const context = this.banterContext(guest.kind);
+    const pick = <T extends { id: string; when?: (c: BanterContext) => boolean }>(lines: readonly T[]) =>
+      pickLine(lines, context, this.saidLines, this.random);
+    const speaker = SPEAKERS[guest.kind];
+    const line = (text: string): TalkLine => ({ speaker, text, guestId: guest.id });
+
+    const lines = [line(pick(OFFERS)?.text ?? "\"Have one on me!\"")];
+    const remark = pick(REMARKS);
+    if (remark && this.random() < REMARK_CHANCE) lines.push(line(remark.text));
+
+    let replies: Reply[];
+    const favor = pick(FAVORS.filter((f) => f.kinds.includes(guest.kind)));
+    const compliment = pick(COMPLIMENTS);
+    if (compliment && (this.random() < COMPLIMENT_SHARE || !favor)) {
+      lines.push(line(compliment.text));
+      replies = complimentReplies(context);
+    } else if (favor) {
+      lines.push(line(favor.ask));
+      replies = [favor.agree, favor.refuse];
+    } else {
+      return;
+    }
+    this.talkingTo = null;
+    this.tipChat = { speaker, guestId: guest.id, lines, replies, drank: false, answered: false, reply: [] };
+  }
+
+  /** What guests can know and notice about the player, for choosing what they say. */
+  private banterContext(kind: GuestKind): BanterContext {
+    return {
+      body: this.playerBody,
+      persona: this.persona,
+      trust: this.trust,
+      heat: this.heat,
+      gold: this.gold,
+      debt: DEBT,
+      night: this.nightIndex,
+      drunk: this.drunk,
+      kind,
+    };
+  }
+
+  /** You took a drink with a guest. */
+  private takeDrink(): void {
+    this.drunk = Math.min(DRUNK_MAX, this.drunk + DRINK_STRENGTH);
+    shiftPersona(this.persona, { drinks: 1 });
+    this.cue("drink");
+  }
+
+  /** Whether a conversation is open: with a party at their table, or with a guest who tipped you a drink. */
+  get inConversation(): boolean {
+    return this.talkingTo !== null || this.tipChat !== null;
+  }
+
+  /** The options with a tipping guest: drink what they bought you, answer them, and get back to work. */
+  private tipOptions(chat: TipChat): (TalkChoice & { run: () => void })[] {
+    const options: (TalkChoice & { run: () => void })[] = [];
+    if (!chat.drank) {
+      const tooDrunk = this.drunk >= TOO_DRUNK;
+      options.push({
+        label: tooDrunk ? "Drink it (you've had more than enough)" : "Drink it, on them",
+        disabled: tooDrunk,
+        run: () => {
+          chat.drank = true;
+          this.takeDrink();
+          this.gold += TIP_DRINK_BONUS;
+          this.earned += TIP_DRINK_BONUS;
+          chat.reply = [
+            you("\"Cheers!\""),
+            narrate(`You drink with them. They're delighted, and add a coin for luck. (+${TIP_DRINK_BONUS} gold)`),
+          ];
+        },
+      });
+    }
+    if (!chat.answered) {
+      for (const reply of chat.replies) {
+        options.push({
+          label: reply.label,
+          disabled: false,
+          run: () => {
+            chat.answered = true;
+            this.adjust(reply.gold, reply.trust, reply.heat);
+            this.earned += Math.max(0, reply.gold);
+            shiftPersona(this.persona, reply.persona);
+            // Spoken answers are said aloud; the others are things you do.
+            chat.reply = reply.label.startsWith("\"") ? [you(reply.label), narrate(reply.result)] : [narrate(reply.result)];
+          },
+        });
+      }
+    }
+    options.push({ label: "Get back to work", disabled: false, run: () => (this.tipChat = null) });
+    return options;
+  }
+
+  /** Takes one thing out of a sibling's hands: one cup off the tray, or the whole of anything else. */
+  private takeOne(sibling: number): void {
+    this.carryCount[sibling] = Math.max(0, this.carryCount[sibling] - 1);
+    if (this.carryCount[sibling] === 0) this.carrying[sibling] = null;
+  }
+
+  private emptyHands(sibling: number): void {
+    this.carrying[sibling] = null;
+    this.carryCount[sibling] = 0;
   }
 
   private stationAction(station: Station, sibling: number): Action | null {
     const held = this.carrying[sibling];
-    const take = (item: Item) => { this.carrying[sibling] = item; };
-    const drop = () => { this.carrying[sibling] = null; };
+    const count = this.carryCount[sibling];
+    const take = (item: Item) => {
+      this.carrying[sibling] = item;
+      this.carryCount[sibling] = 1;
+      this.cue(TAKE_CUES[item]);
+    };
+    const drop = () => {
+      this.emptyHands(sibling);
+      this.cue("putDown");
+    };
+
+    // The bin takes anything you picked up by mistake, except a cask, which goes back on the barrels.
+    if (station === "bin") {
+      if (!held) return null;
+      if (held === "cask") return { label: "A cask won't fit in the bin. Put it back on the barrels" };
+      return { label: count > 1 ? `Throw away the ${count} ales` : `Throw away the ${held}`, run: drop };
+    }
+
+    // With room on the tray, the tap fills it: put a poured cup on, or pour another.
+    // Once it's full, or there's nothing to pour, a cup goes back instead.
+    if (station === "tap" && held === "ale") {
+      if (count < TRAY_SIZE && this.aleReady > 0) {
+        return {
+          label: `Put another ale on the tray (${count + 1}/${TRAY_SIZE})`,
+          run: () => {
+            this.aleReady--;
+            this.carryCount[sibling]++;
+            this.cue("takeAle");
+          },
+        };
+      }
+      if (count < TRAY_SIZE && this.pourLeft !== null) return { label: "Pouring..." };
+      if (count < TRAY_SIZE && this.tapLeft > 0) return { label: "Pour another ale", run: () => this.startPour() };
+      return {
+        label: count > 1 ? "Put an ale back" : "Put ale back",
+        run: () => {
+          this.takeOne(sibling);
+          this.aleReady++;
+          this.cue("putDown");
+        },
+      };
+    }
 
     if (held && STATION_OF_ITEM[held] === station) {
       return {
@@ -464,7 +971,7 @@ export class Tavern {
 
     if (station === "tap") {
       if (held === "cask") {
-        return { label: "Refill the tap", run: () => { drop(); this.tapLeft = TAP_SIZE; } };
+        return { label: "Refill the tap", run: () => { this.emptyHands(sibling); this.cue("refill"); this.tapLeft = TAP_SIZE; } };
       }
       if (held) return null;
       if (this.aleReady > 0) return { label: "Take ale", run: () => { this.aleReady--; take("ale"); } };
@@ -482,9 +989,10 @@ export class Tavern {
       case "empty":
         return { label: "Start the stew", run: () => this.startStew() };
       case "cooking":
-        return { label: "Stew is cooking..." };
+        // Started by mistake, or not needed after all: tip it out and the pot is free again.
+        return { label: "Stop cooking and tip out the stew", run: () => { this.potState = "empty"; this.potTimer = 0; this.cue("stewStart"); } };
       case "burnt":
-        return { label: "Scrape out the burnt pot", run: () => { this.potState = "empty"; } };
+        return { label: "Scrape out the burnt pot", run: () => { this.potState = "empty"; this.cue("stewStart"); } };
       case "ready":
         return {
           label: `Take stew (${this.potBowls} left)`,
@@ -498,12 +1006,229 @@ export class Tavern {
   }
 
   private action(sibling: number, target: Target): Action | null {
-    if (this.phase !== "service") return null;
-    if (target.kind === "station") return this.stationAction(target.station, sibling);
+    if (target.kind === "bell") {
+      if (this.phase === "day") return { label: "Ring the bell to open for the night", run: () => this.open() };
+      return this.phase === "dusk" ? { label: "The sun is going down..." } : null;
+    }
+    if (target.kind === "door") {
+      return {
+        label: this.doorOpen ? "Close the door" : "Open the door",
+        run: () => {
+          this.doorOpen = !this.doorOpen;
+          this.cue(this.doorOpen ? "doorOpen" : "doorClose");
+        },
+      };
+    }
+    if (target.kind === "desk") {
+      if (this.phase !== "day") return this.phase === "dusk" ? { label: "No time for plans now" } : null;
+      // Dirty dishes and spills are tied to the seats they're at, so those have to go first.
+      if (this.messes.some((mess) => mess.kind !== "dust")) return { label: "Clear the dishes and spills before changing the room" };
+      return { label: "Open the house plans", run: () => undefined };
+    }
+    if (target.kind === "bed") {
+      if (this.phase === "bedtime") return { label: "Sleep until morning", run: () => this.sleep() };
+      if (this.phase === "day") {
+        return this.napped ? { label: "You've already rested today" } : { label: "Nap until evening", run: () => this.nap() };
+      }
+      return this.phase === "dusk" ? { label: "Too early for bed" } : null;
+    }
+    if (target.kind === "mess") {
+      const mess = this.messes.find((m) => m.id === target.id);
+      if (!mess || this.phase === "lastcall" || this.phase === "bedtime") return null;
+      if (this.carrying[sibling]) return { label: "Put down what you're carrying to clean" };
+      return { label: MESS_LABELS[mess.kind], run: () => this.clean(mess.id) };
+    }
+    const open = this.phase === "service";
+    if (target.kind === "station") {
+      return open || this.phase === "day" || this.phase === "dusk" ? this.stationAction(target.station, sibling) : null;
+    }
+    if (!open) return null;
 
     const guest = this.guests.find((g) => g.id === target.id);
-    if (guest?.status !== "waiting" || this.carrying[sibling] !== guest.order) return null;
-    return { label: `Serve ${guest.order}`, run: () => this.serve(guest, sibling) };
+    if (!guest) return null;
+    if (guest.status === "waiting" && this.carrying[sibling] === guest.order) {
+      return { label: `Serve ${guest.order}`, run: () => this.serve(guest, sibling) };
+    }
+    // A party at their table will talk to you, if your hands are free.
+    const { party } = guest;
+    if (party !== null && this.carrying[sibling] === null && this.partyChatting(party)) {
+      return { label: "Join their conversation", run: () => this.talk(party) };
+    }
+    return null;
+  }
+
+  /** The members of a party who are sitting at their table. */
+  partyGuests(party: number): Guest[] {
+    return this.guests.filter((g) => g.party === party && (g.status === "waiting" || g.status === "eating"));
+  }
+
+  /** Whether a party is sitting together and talking: at least two of them at the table. */
+  partyChatting(party: number): boolean {
+    return this.partyGuests(party).length >= 2;
+  }
+
+  private stateOf(party: number): { drinks: number; jug: boolean } {
+    let state = this.partyState.get(party);
+    if (!state) {
+      state = { drinks: 0, jug: false };
+      this.partyState.set(party, state);
+    }
+    return state;
+  }
+
+  /** Sits down with a party. The game holds time still while you talk. */
+  talk(party: number): void {
+    if (this.phase !== "service" || !this.partyChatting(party)) return;
+    this.tipChat = null;
+    this.talkingTo = party;
+    this.talkReply = [];
+
+    // Each speaker in the scripted chat is one of the party, matched by what they're called where possible.
+    const members = this.partyGuests(party);
+    const unmatched = [...members];
+    const speakers = new Map<string, number>();
+    const guestFor = (name: string): number => {
+      let id = speakers.get(name);
+      if (id === undefined) {
+        const lower = name.toLowerCase();
+        const index = Math.max(0, unmatched.findIndex((g) => lower.includes(SPEAKERS[g.kind].toLowerCase())));
+        id = (unmatched.splice(index, 1)[0] ?? members[0]).id;
+        speakers.set(name, id);
+      }
+      return id;
+    };
+    const opening = this.plan.parties[party].chat.map(splitSpeaker);
+    for (const line of opening) if (line.speaker) line.guestId = guestFor(line.speaker);
+
+    // Then something they've heard about you, before they ask you to sit.
+    const first = opening[0];
+    const remark = pickLine(REMARKS, this.banterContext(members[0].kind), this.saidLines, this.random);
+    if (remark && this.random() < REMARK_CHANCE) {
+      opening.splice(opening.length - 1, 0, { speaker: first.speaker, text: remark.text, guestId: first.guestId });
+    }
+    this.talkOpening = opening;
+  }
+
+  /** A party member's words, said by whoever spoke first at the table; anything not in quotes is narration. */
+  private partySays(text: string): TalkLine {
+    const first = this.talkOpening[0];
+    return text.startsWith("\"") && first ? { speaker: first.speaker, text, guestId: first.guestId } : narrate(text);
+  }
+
+  /** The conversation so far: what was said when it opened, then the latest reply. */
+  get talkLines(): TalkLine[] {
+    if (this.tipChat) return [...this.tipChat.lines, ...this.tipChat.reply];
+    if (this.talkingTo === null) return [];
+    return [...this.talkOpening, ...this.talkReply];
+  }
+
+  /** The guests in the conversation, so the game can show who's talking. */
+  get talkGuests(): Guest[] {
+    if (this.tipChat) {
+      const id = this.tipChat.guestId;
+      return this.guests.filter((g) => g.id === id);
+    }
+    return this.talkingTo === null ? [] : this.partyGuests(this.talkingTo);
+  }
+
+  /** Just the latest reply, which is all that needs showing after you pick an option. */
+  get talkReplyLines(): TalkLine[] {
+    if (this.tipChat) return this.tipChat.reply;
+    return this.talkReply;
+  }
+
+  get talkChoices(): TalkChoice[] {
+    if (this.tipChat) return this.tipOptions(this.tipChat).map(({ label, disabled }) => ({ label, disabled }));
+    if (this.talkingTo === null) return [];
+    const state = this.stateOf(this.talkingTo);
+    const members = this.partyGuests(this.talkingTo).length;
+
+    const pouredOut = state.drinks >= DRINKS_PER_TABLE;
+    const tooDrunk = this.drunk >= TOO_DRUNK;
+    let drink = state.drinks === 0 ? "Drink with them" : "Have another";
+    if (tooDrunk) drink = "Drink with them (you've had more than enough)";
+    else if (pouredOut) drink = "They've stopped pouring for you";
+
+    let jug = `Sell them a jug of ale (+${JUG_PAY * members} gold, uses the tap)`;
+    if (state.jug) jug = "They already have a jug";
+    else if (this.tapLeft === 0) jug = "Sell them a jug (the tap is empty)";
+
+    return [
+      { label: drink, disabled: pouredOut || tooDrunk },
+      { label: jug, disabled: state.jug || this.tapLeft === 0 },
+      { label: "Get back to work", disabled: false },
+    ];
+  }
+
+  /** Picks an option in the conversation: 0 drinks with them, 1 sells them a jug, 2 leaves the table. */
+  chooseTalk(index: number): void {
+    if (this.tipChat) {
+      const option = this.tipOptions(this.tipChat)[index];
+      if (option && !option.disabled) option.run();
+      return;
+    }
+    const party = this.talkingTo;
+    if (party === null) return;
+    const choice = this.talkChoices[index];
+    if (!choice || choice.disabled) return;
+    const state = this.stateOf(party);
+    const plan = this.plan.parties[party];
+    const members = this.partyGuests(party);
+
+    if (index === 0) {
+      state.drinks++;
+      this.takeDrink();
+      if (state.drinks === 1) {
+        // Drinking with people loosens their tongues. Village folk trust you more for it,
+        // and soldiers who've drunk with you speak well of you to the garrison.
+        this.talkReply = [you("\"Don't mind if I do.\""), this.partySays(plan.offer), this.partySays(plan.gossip)];
+        if (members.some((g) => GUEST_KINDS[g.kind].trust > 0)) {
+          this.adjust(0, 1, 0);
+          this.talkReply.push(narrate("They like an innkeeper who drinks with them. (+1 trust)"));
+        }
+        if (members.some((g) => g.kind === "soldier")) {
+          this.adjust(0, 0, -1);
+          this.talkReply.push(narrate("The garrison will hear you're a friend. (-1 heat)"));
+        }
+        if (!this.heardRumor && members.some((g) => g.rumor)) {
+          this.heardRumor = true;
+          this.talkReply.push(narrate(`They let slip: ${this.plan.lastCall.rumor}`));
+          this.say(`Overheard: ${this.plan.lastCall.rumor}`);
+          this.cue("rumor");
+        }
+      } else {
+        this.talkReply = [you("\"One more!\""), narrate("Another cup goes down, and the table cheers. The room has started to tilt.")];
+      }
+    } else if (index === 1) {
+      const pay = JUG_PAY * members.length;
+      state.jug = true;
+      this.tapLeft--;
+      // A shared jug never goes round without some of it ending up on the floor.
+      if (members[0]) this.spiltAt.add(members[0].seat);
+      this.gold += pay;
+      this.earned += pay;
+      // A jug on the table keeps them happy while they wait for their food.
+      for (const guest of members) guest.patience = guest.maxPatience;
+      this.talkReply = [narrate(`You set a jug on the table. They pay ${pay} gold and stop watching the kitchen.`)];
+      this.say(`+${pay} gold for a jug of ale.`);
+    } else {
+      this.talkingTo = null;
+      this.talkReply = [];
+    }
+  }
+
+  /** You stumbled. Whatever you were carrying hits the floor, except a cask, which you hang on to. */
+  stumble(sibling: number): void {
+    const held = this.carrying[sibling];
+    if (held && held !== "cask") {
+      const tray = held === "ale" && this.carryCount[sibling] > 1;
+      this.emptyHands(sibling);
+      this.say(tray ? "You stumble and drop the whole tray!" : `You stumble and drop the ${held}!`);
+      this.cue(tray ? "smashTray" : held === "bread" ? "drop" : "smashOne");
+    } else {
+      this.say("You stumble and nearly go over.");
+      this.cue("drop");
+    }
   }
 
   prompt(sibling: number, target: Target): Prompt | null {
@@ -520,8 +1245,16 @@ export class Tavern {
     const choice = this.lastCallChoices[index];
     if (!choice) return;
     this.adjust(choice.gold, choice.trust, choice.heat);
+    // What you did gets round, and changes how people talk to you.
+    if (this.heardRumor) {
+      const deeds: Partial<Persona>[] = [{ informed: 1, kindness: -1 }, { protected: 1, kindness: 1 }, { sold: 1, greed: 2 }];
+      shiftPersona(this.persona, deeds[index]);
+    } else if (index === 1) {
+      shiftPersona(this.persona, { greed: 1 });
+    }
     this.lastResult = choice.result;
-    this.phase = "dawn";
+    this.phase = "bedtime";
+    this.say("The tavern is shut for the night. Your bed is through the door in the east wall.");
   }
 
   canBuy(id: UpgradeId): boolean {
@@ -532,6 +1265,7 @@ export class Tavern {
     if (!this.canBuy(id)) return;
     this.gold -= UPGRADE_COST;
     this.upgrades.add(id);
+    this.cue("buy");
   }
 
   private decideEnding(): EndingId {
@@ -547,8 +1281,51 @@ export class Tavern {
       this.phase = "ended";
       return;
     }
+    const messes = this.leftovers();
     this.nightIndex++;
-    this.openNight();
+    this.openDay(messes);
+  }
+
+  /** How long guests will wait, as a share of usual, given how dirty the room is. */
+  get messPatience(): number {
+    return 1 - MESS_PATIENCE_LOSS * Math.min(1, this.messes.length / MESS_FOR_FULL_LOSS);
+  }
+
+  /** Cleans up one mess. */
+  clean(id: number): void {
+    const index = this.messes.findIndex((m) => m.id === id);
+    if (index < 0) return;
+    const [mess] = this.messes.splice(index, 1);
+    this.cue(mess.kind === "dishes" ? "dishes" : "wipe");
+    if (this.messes.length === 0) this.say("The tavern is spotless.");
+    else this.say(`${MESS_DONE[mess.kind]} ${this.messes.length} more to clean.`);
+  }
+
+  /**
+   * Everything still to clean after tonight: what was left from before, dishes on each table that was eaten
+   * at, ale wherever it was spilt, and dust the crowd tracked in. Messes in the same place join up.
+   */
+  private leftovers(): Mess[] {
+    const messes = this.messes.map((m) => ({ ...m, spots: [...m.spots] }));
+    const add = (kind: MessKind, spots: number[]) => messes.push({ id: this.nextMessId++, kind, spots });
+    const has = (kind: MessKind, spot: number) => messes.some((m) => m.kind === kind && m.spots.includes(spot));
+    const tableOf = (seat: number) => this.seatTables[seat] ?? `seat ${seat}`;
+
+    for (const seat of [...this.eatenAt].sort((a, b) => a - b)) {
+      if (has("dishes", seat)) continue;
+      const table = messes.find((m) => m.kind === "dishes" && tableOf(m.spots[0]) === tableOf(seat));
+      if (table) table.spots.push(seat);
+      else add("dishes", [seat]);
+    }
+    for (const seat of this.spiltAt) if (!has("spill", seat)) add("spill", [seat]);
+
+    const crowd = this.served + this.walkouts;
+    if (crowd > 0 && this.dustSpots > 0) {
+      const want = DUST_BASE + Math.floor(crowd / GUESTS_PER_DUST) - messes.filter((m) => m.kind === "dust").length;
+      const free = shuffled(this.dustSpots, this.nightIndex * 7919 + crowd).filter((spot) => !has("dust", spot));
+      for (const spot of free.slice(0, Math.max(0, want))) add("dust", [spot]);
+    }
+    return messes;
   }
 
   /** What carries from one night to the next, taken as a night opens. A save holds this. */
@@ -560,6 +1337,9 @@ export class Tavern {
       heat: this.heat,
       upgrades: [...this.upgrades],
       tapLeft: this.tapLeft,
+      messes: this.messes.map((m) => ({ ...m, spots: [...m.spots] })),
+      persona: { ...this.persona },
+      ...(this.layout ? { layout: cloneLayout(this.layout) } : {}),
     };
   }
 
@@ -572,20 +1352,28 @@ export class Tavern {
     this.upgrades.clear();
     for (const id of save.upgrades) this.upgrades.add(id);
     this.tapLeft = save.tapLeft;
+    this.persona = readPersona(save.persona);
+    this.layout = save.layout ? cloneLayout(save.layout) : null;
     this.guests.length = 0;
     this.nextGuestId = 1;
     this.messages.length = 0;
+    this.cues.length = 0;
     this.lastResult = "";
     this.ending = null;
-    this.openNight();
+    this.openDay(save.messes ?? []);
   }
 
-  /** Clears everything that only lasts one night, and announces the night. */
-  private openNight(): void {
-    this.phase = "service";
+  /** Starts a new day with the tavern closed, clearing everything that only lasts one night. */
+  private openDay(messes: Mess[] = []): void {
+    this.phase = "day";
+    this.messes.splice(0, this.messes.length, ...messes);
+    this.nextMessId = Math.max(0, ...messes.map((m) => m.id)) + 1;
+    this.eatenAt.clear();
+    this.spiltAt.clear();
     this.clock = 0;
     this.nextArrival = 0;
     this.carrying[0] = this.carrying[1] = null;
+    this.carryCount[0] = this.carryCount[1] = 0;
     this.aleReady = 0;
     this.pourLeft = null;
     this.potState = "empty";
@@ -594,6 +1382,16 @@ export class Tavern {
     this.served = 0;
     this.walkouts = 0;
     this.earned = 0;
-    this.say(this.plan.intro);
+    this.napped = false;
+    this.drunk = 0;
+    this.talkingTo = null;
+    this.talkReply = [];
+    this.tipChat = null;
+    this.partyState.clear();
+    this.say(
+      messes.length > 0
+        ? `Day ${this.nightIndex + 1}. Last night left a mess: dirty dishes, spilt ale and dust. Clean up and get ready, then ring the bell on the bar.`
+        : `Day ${this.nightIndex + 1}. The tavern is closed. Get ready, then ring the bell on the bar when you want the night to begin.`,
+    );
   }
 }

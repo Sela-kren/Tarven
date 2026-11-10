@@ -1,4 +1,4 @@
-import { Group, MathUtils, Object3D } from "three";
+import { Group, MathUtils, Object3D, type Vector3 } from "three";
 import type { Vec2 } from "./collision";
 import { Icon, PatienceBar } from "./icons";
 import type { NavGrid } from "./path";
@@ -14,6 +14,9 @@ const ARRIVE_DISTANCE = 0.06;
 const ICON_HEIGHT = 2.25;
 const BAR_HEIGHT = 1.88;
 const RUMOR_ICON_HEIGHT = 2.72;
+/** Where a speech bubble points, clear of the order icon, and of the rumor icon when there is one. */
+const SPEECH_HEIGHT = 2.7;
+const SPEECH_HEIGHT_OVER_RUMOR = 3.02;
 
 /** Moves a body along a list of waypoints and animates its legs. */
 export class Walker {
@@ -54,6 +57,7 @@ export class Walker {
     this.turnTo(Math.atan2(-dx, -dz), dt);
     this.stride += WALK_SPEED * STRIDE_RATE * dt;
     this.swing += (1 - this.swing) * Math.min(1, 12 * dt);
+    this.body.advance(dt);
     this.body.pose(this.stride, this.swing);
     return false;
   }
@@ -91,17 +95,38 @@ export class GuestActor {
     private readonly guest: Guest,
     private readonly seat: Seat,
     private readonly nav: NavGrid,
-    private readonly door: Vec2,
+    /** The way in from out of sight to just inside the door, in walking order. */
+    private readonly entrance: readonly Vec2[],
     private readonly makeItem: (item: Guest["order"]) => Object3D,
     private readonly tableLayer: Object3D,
   ) {
     this.walker = new Walker(body);
     this.group = this.walker.group;
-    this.group.position.set(door.x, 0, door.z);
+    this.group.position.set(entrance[0].x, 0, entrance[0].z);
     this.seatedY = body.seatedOffset(seat.height);
-    this.walker.setPath(this.route(door, seat.approach));
+    this.walker.setPath([...entrance, ...this.route(this.doorstep, seat.approach)]);
     this.group.add(this.orderIcon.sprite, this.rumorIcon.sprite);
     this.bar = new PatienceBar(this.group);
+  }
+
+  private get doorstep(): Vec2 {
+    return this.entrance[this.entrance.length - 1];
+  }
+
+  /** True while on the way in or out, when they may need the front door. */
+  get walking(): boolean {
+    return this.mode === "walking-in" || this.mode === "walking-out";
+  }
+
+  /** The guest's body, without the icons and bars that float over it. */
+  get bodyRoot(): Object3D {
+    return this.walker.body.root;
+  }
+
+  /** Sets `out` to the point over this guest's head that their speech bubble points at. */
+  speechAnchor(out: Vector3): Vector3 {
+    const { x, z } = this.group.position;
+    return out.set(x, this.rumorIcon.sprite.visible ? SPEECH_HEIGHT_OVER_RUMOR : SPEECH_HEIGHT, z);
   }
 
   private route(from: Vec2, to: Vec2): Vec2[] {
@@ -166,7 +191,7 @@ export class GuestActor {
         this.sitProgress = Math.max(0, this.sitProgress - dt / SIT_TIME);
         this.applySit();
         if (this.sitProgress === 0) {
-          this.walker.setPath(this.route(this.seat.approach, this.door));
+          this.walker.setPath([...this.route(this.seat.approach, this.doorstep), ...[...this.entrance].reverse()]);
           this.mode = "walking-out";
         }
         break;
@@ -175,7 +200,8 @@ export class GuestActor {
         break;
     }
 
-    const showRumor = guest.rumor && !tavern.heardRumor && (guest.status === "waiting" || guest.status === "eating");
+    const seated = guest.status === "waiting" || guest.status === "eating";
+    const showRumor = guest.rumor && !tavern.heardRumor && seated;
     this.rumorIcon.show(showRumor ? "dots" : null);
     this.rumorIcon.sprite.position.y = RUMOR_ICON_HEIGHT - this.group.position.y;
     this.updateOverlay();

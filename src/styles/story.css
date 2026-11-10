@@ -1,6 +1,6 @@
 /*
  * Visual novel intro. Layers, back to front: the 3D tavern (canvas), the scene picture,
- * the standing sprites, the letterbox bars, then the dialog box and skip button.
+ * the standing sprite, the letterbox bars, then the dialog box and skip button.
  */
 #story {
   --bar: 9vh;
@@ -11,7 +11,7 @@
   color: var(--text-bright);
   text-shadow: var(--shadow);
   cursor: pointer;
-  /* Dims the tavern behind the dialog so the sprites stand out. */
+  /* Dims the tavern behind the dialog so the sprite stands out. */
   background: linear-gradient(rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.5));
 }
 
@@ -70,15 +70,18 @@
   }
 }
 
-/* Standing sprites: brother on the left, sister on the right. */
+/* The player's standing sprite, shown while they speak. */
 #story .sprite {
   position: absolute;
   z-index: 2;
   bottom: var(--bar);
+  left: 50%;
   height: 80vh;
+  /* Half the sprite's width (220x360 image at 80vh tall), to centre it without using transform. */
+  margin-left: -24.4vh;
   opacity: 0;
   transform-origin: 50% 100%;
-  transition: opacity 0.35s ease, filter 0.3s ease, transform 0.3s ease;
+  transition: opacity 0.35s ease;
 }
 
 #story .sprite canvas {
@@ -86,28 +89,9 @@
   width: auto;
 }
 
-#story-sprite-0 {
-  left: max(2vw, calc(50% - 560px));
-}
-
-#story-sprite-1 {
-  right: max(2vw, calc(50% - 560px));
-}
-
-#story .sprite.speaking,
-#story .sprite.listening {
-  opacity: 1;
-}
-
 #story .sprite.speaking {
-  filter: none;
-  transform: translateY(0) scale(1);
+  opacity: 1;
   animation: sprite-talk 0.3s ease;
-}
-
-#story .sprite.listening {
-  filter: brightness(0.45) saturate(0.7);
-  transform: translateY(14px) scale(0.97);
 }
 
 #story.has-cg .sprite {
@@ -116,7 +100,7 @@
 
 @keyframes sprite-talk {
   40% {
-    transform: translateY(-8px) scale(1);
+    transform: translateY(-8px);
   }
 }
 

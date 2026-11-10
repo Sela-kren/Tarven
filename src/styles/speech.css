@@ -1,0 +1,88 @@
+/*
+ * Speech bubbles over the guests' heads: what they're saying to each other, and what they're shouting at you.
+ * Same parchment and ink as the order icons, so they read as part of the room.
+ */
+#speech {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+#speech .bubble {
+  position: absolute;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(230px, 60vw);
+  padding: 5px 9px;
+  font: bold 13px/1.25 var(--font);
+  color: #1c140e;
+  background: #f0e4c4;
+  border: 3px solid #1c140e;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.55);
+  transform: translate(-50%, -100%);
+  transform-origin: 50% 100%;
+  animation: bubble-pop 0.14s steps(3);
+}
+
+/* The tail, pointing down at whoever's talking. */
+#speech .bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  width: 8px;
+  height: 8px;
+  margin-left: -5px;
+  background: inherit;
+  border-right: 3px solid #1c140e;
+  border-bottom: 3px solid #1c140e;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+
+#speech .rest {
+  visibility: hidden;
+}
+
+/* Calling for you: a gold edge, so the ones that need you stand out from table talk. */
+#speech .bubble.call {
+  background: #ffe9a3;
+  border-color: #6b4a10;
+}
+
+#speech .bubble.call::after {
+  border-color: #6b4a10;
+}
+
+#speech .bubble.angry {
+  color: #8f1408;
+  background: #f6cdb8;
+  border-color: #8f1408;
+}
+
+#speech .bubble.angry::after {
+  border-color: #8f1408;
+}
+
+#speech .bubble.thanks {
+  color: #24520f;
+  background: #dcebb8;
+  border-color: #24520f;
+}
+
+#speech .bubble.thanks::after {
+  border-color: #24520f;
+}
+
+@keyframes bubble-pop {
+  from {
+    transform: translate(-50%, -100%) scale(0.6);
+  }
+}
+
+@media (max-width: 720px) {
+  #speech .bubble {
+    max-width: 44vw;
+    font-size: 12px;
+  }
+}

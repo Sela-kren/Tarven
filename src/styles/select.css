@@ -7,7 +7,7 @@
   color: var(--text);
   text-shadow: var(--shadow);
   background: radial-gradient(ellipse at 50% 55%, transparent 45%, rgba(0, 0, 0, 0.55) 100%);
-  /* Clicks fall through to the canvas, where the siblings are picked. */
+  /* Clicks fall through to the canvas, where the characters are picked. */
   pointer-events: none;
 }
 

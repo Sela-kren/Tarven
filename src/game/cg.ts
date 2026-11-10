@@ -3,7 +3,7 @@
  * smoothing, so they match the game's low-resolution look. No image files are needed.
  */
 
-export type CgName = "split" | "coins" | "letter" | "grave" | "town" | "townDusk" | "baron";
+export type CgName = "split" | "coins" | "letter" | "grave" | "town" | "baron";
 
 const W = 320;
 const H = 180;
@@ -247,7 +247,7 @@ function stars(p: Pixels, seed: number, bottom: number): void {
 }
 
 /** Grandma's grave on the hill. */
-function grave(p: Pixels): void {
+function grave(p: Pixels, player: number): void {
   p.gradient(0, 130, ["#05070f", "#0e1530", "#251f44"]);
   stars(p, 7, 100);
   p.glow(252, 36, 40, "#2e3560", 0.6);
@@ -269,13 +269,12 @@ function grave(p: Pixels): void {
   p.rect(129, 110, 7, 9, "#2a2014");
   p.rect(130, 111, 5, 6, "#ffcf6a");
 
-  // The two of you, standing beside her.
-  p.figure(104, 128, 34, "#04060b");
-  p.figure(116, 128, 30, "#04060b");
+  // You, standing beside her.
+  p.figure(110, 128, player === 0 ? 34 : 31, "#04060b");
   p.vignette(0.7);
 }
 
-/** Colours for the town's high street, by day or at dusk. */
+/** Colours for the town's high street. */
 interface TownPalette {
   sky: string[];
   sun: string;
@@ -316,41 +315,33 @@ const DAY: TownPalette = {
   treeShade: "#3b5e28",
 };
 
-const DUSK: TownPalette = {
-  sky: ["#2a2350", "#7a4a6e", "#e0885a"],
-  sun: "#ffb070",
-  cloud: "#a0607a",
-  cloudShade: "#6a4466",
-  mountain: "#3c3a5c",
-  snow: "#b8a8c8",
-  hill: "#2e3a32",
-  ground: "#3a3e30",
-  road: "#5e5248",
-  stone: "#463c34",
-  wall: "#8a7a68",
-  wallShade: "#6a5c4e",
-  beam: "#2a1c14",
-  roof: ["#5a2a20", "#33384a", "#4e3420"],
-  window: "#ffcf6a",
-  tree: "#26341f",
-  treeShade: "#1a2416",
-};
+interface Look {
+  hair: string;
+  skin: string;
+  /** Shirt or blouse, including the sleeves. */
+  top: string;
+  /** Trousers, or the skirt when `skirt` is set. */
+  legs: string;
+  shoes: string;
+  longHair?: boolean;
+  /** A bodice laced over the lower half of the top. */
+  bodice?: string;
+  /** A long skirt flaring from the hips instead of trousers. */
+  skirt?: boolean;
+  /** Apron strings tied at the back of the waist. */
+  apron?: string;
+}
 
-/** Someone seen from behind, walking up the street: hair, shirt and trousers in their own colours. */
-function walker(
-  p: Pixels,
-  x: number,
-  foot: number,
-  height: number,
-  look: { hair: string; skin: string; top: string; legs: string; shoes: string; longHair?: boolean },
-): void {
+/** Someone seen from behind, walking up the street, in their own colours. */
+function walker(p: Pixels, x: number, foot: number, height: number, look: Look): void {
   const head = Math.max(2, Math.round(height * 0.09));
   const headY = foot - height + head;
   const neck = headY + head;
   const hips = foot - height * 0.46;
   for (let y = neck; y < hips; y++) {
-    const half = Math.round(height * (0.12 - 0.03 * ((y - neck) / (hips - neck))));
-    p.rect(x - half, y, half * 2 + 1, 1, look.top);
+    const t = (y - neck) / (hips - neck);
+    const half = Math.round(height * (0.12 - 0.03 * t));
+    p.rect(x - half, y, half * 2 + 1, 1, look.bodice && t > 0.4 ? look.bodice : look.top);
   }
   const arm = Math.max(1, Math.round(height * 0.05));
   const shoulder = Math.round(height * 0.12);
@@ -359,10 +350,22 @@ function walker(
   p.rect(x - shoulder - arm, hips, arm, 2, look.skin);
   p.rect(x + shoulder + 1, hips, arm, 2, look.skin);
   const leg = Math.max(2, Math.round(height * 0.07));
-  p.rect(x - leg - 1, hips, leg, foot - hips - 1, look.legs);
-  p.rect(x + 1, hips, leg, foot - hips - 1, look.legs);
-  p.rect(x - leg - 1, foot - 1, leg, 1, look.shoes);
-  p.rect(x + 1, foot - 1, leg, 1, look.shoes);
+  if (look.skirt) {
+    for (let y = hips; y < foot - 2; y++) {
+      const half = Math.round(height * (0.1 + 0.06 * ((y - hips) / (foot - hips))));
+      p.rect(x - half, y, half * 2 + 1, 1, look.legs);
+    }
+    if (look.apron) {
+      p.rect(x - 1, hips, 3, 2, look.apron);
+      p.rect(x - 2, hips + 2, 2, 3, look.apron);
+      p.rect(x + 1, hips + 2, 2, 3, look.apron);
+    }
+  } else {
+    p.rect(x - leg - 1, hips, leg, foot - hips - 1, look.legs);
+    p.rect(x + 1, hips, leg, foot - hips - 1, look.legs);
+  }
+  p.rect(x - leg - 1, foot - 2, leg, 2, look.shoes);
+  p.rect(x + 1, foot - 2, leg, 2, look.shoes);
   p.disc(x, headY, head, look.hair);
   if (look.longHair) p.rect(x - head, headY, head * 2 + 1, head + 2, look.hair);
 }
@@ -390,11 +393,10 @@ function house(p: Pixels, x: number, base: number, w: number, h: number, roof: s
 }
 
 /**
- * Tarven's high street: the little market town where Grandma kept her tavern.
- * By day you and your sibling walk in with your bags; at dusk the lamps are lit and the first guests arrive.
+ * Tarven's high street: the little market town where Grandma kept her tavern, as you walk in with your bag.
  */
-function town(p: Pixels, dusk: boolean): void {
-  const c = dusk ? DUSK : DAY;
+function town(p: Pixels, player: number): void {
+  const c = DAY;
   const horizon = 96;
   p.gradient(0, horizon, c.sky);
   p.glow(64, 26, 34, c.cloudShade, 0.5);
@@ -440,7 +442,7 @@ function town(p: Pixels, dusk: boolean): void {
   house(p, 212, 136, 102, 58, c.roof[2], c);
   house(p, 180, 106, 28, 20, c.roof[0], c);
   p.rect(224, 104, 16, 32, c.beam);
-  p.rect(226, 106, 12, 30, dusk ? "#6a4422" : "#5a3a22");
+  p.rect(226, 106, 12, 30, "#5a3a22");
   p.rect(196, 84, 18, 2, c.beam);
   p.rect(198, 86, 1, 4, c.beam);
   p.rect(211, 86, 1, 4, c.beam);
@@ -451,32 +453,18 @@ function town(p: Pixels, dusk: boolean): void {
   p.rect(201, 93, 7, 2, "#fff4d8");
   p.rect(208, 95, 2, 4, "#e0c070");
 
-  if (dusk) {
-    // Lamps along the street and light from every window.
-    for (const [lx, ly] of [[66, 134], [252, 138], [118, 106]]) {
-      p.glow(lx, ly - 22, 20, "#a8642c", 0.8);
-      p.rect(lx, ly - 22, 1, 22, "#1a120c");
-      p.rect(lx - 2, ly - 26, 5, 5, "#ffd88a");
-    }
-    p.glow(232, 118, 30, "#a8642c", 0.7);
-    // The first guests of the night, walking up to your door.
-    const traveller = { hair: "#1a1410", skin: "#7a5a44", top: "#2a2430", legs: "#1e1a20", shoes: "#100c0a" };
-    walker(p, 176, 128, 26, traveller);
-    walker(p, 190, 126, 24, { ...traveller, top: "#3a2a1c" });
-    p.glow(184, 112, 14, "#c08040", 0.9);
-    p.rect(183, 110, 3, 4, "#ffd88a");
+  // You arrive, everything you own in one bag, dressed as your character is in the game.
+  if (player === 0) {
+    walker(p, 158, 136, 34, { hair: "#2a1c14", skin: "#c89878", top: "#3d5a48", legs: "#4a3424", shoes: "#2a1a10" });
+    p.rect(144, 116, 6, 9, "#6b4a2a");
   } else {
-    // You and your sibling arrive, everything you own in two bags.
-    walker(p, 146, 136, 34, {
-      hair: "#2a1c14", skin: "#c89878", top: "#3d5a48", legs: "#4a3424", shoes: "#2a1a10",
+    walker(p, 158, 136, 31, {
+      hair: "#1a1214", skin: "#e0b898", top: "#ece6dc", bodice: "#8c2a2a", legs: "#3f5a3a", skirt: true,
+      apron: "#ece6dc", shoes: "#3a2616", longHair: true,
     });
-    p.rect(132, 116, 6, 9, "#6b4a2a");
-    walker(p, 170, 136, 31, {
-      hair: "#1a1214", skin: "#e0b898", top: "#ece6dc", legs: "#a82828", shoes: "#f0f0f0", longHair: true,
-    });
-    p.rect(181, 118, 5, 8, "#4a5a6a");
+    p.rect(169, 118, 5, 8, "#6b4a2a");
   }
-  p.vignette(dusk ? 0.6 : 0.35);
+  p.vignette(0.35);
 }
 
 /** The baron's demand: one hundred and fifty gold. */
@@ -501,26 +489,27 @@ function baron(p: Pixels): void {
   p.vignette();
 }
 
-const DRAW: Record<CgName, (p: Pixels) => void> = {
+/** Each scene's painter. `player` is the character picked (0 male, 1 female), for scenes that show you. */
+const DRAW: Record<CgName, (p: Pixels, player: number) => void> = {
   split,
   coins,
   letter,
   grave,
-  town: (p) => town(p, false),
-  townDusk: (p) => town(p, true),
+  town,
   baron,
 };
 
-const cache = new Map<CgName, HTMLCanvasElement>();
+const cache = new Map<string, HTMLCanvasElement>();
 
 /** The scene's picture, drawn on first use. */
-export function drawCg(name: CgName): HTMLCanvasElement {
-  let canvas = cache.get(name);
+export function drawCg(name: CgName, player: number): HTMLCanvasElement {
+  const key = `${name}:${player}`;
+  let canvas = cache.get(key);
   if (!canvas) {
     const pixels = new Pixels();
-    DRAW[name](pixels);
+    DRAW[name](pixels, player);
     canvas = pixels.canvas;
-    cache.set(name, canvas);
+    cache.set(key, canvas);
   }
   return canvas;
 }

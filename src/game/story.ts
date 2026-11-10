@@ -1,13 +1,13 @@
 import { drawCg, type CgName } from "./cg";
 
-/** The narrator, the sibling the player chose, or the other one. */
-export type Speaker = "narrator" | "you" | "other";
+/** The narrator, or the player's character speaking. */
+export type Speaker = "narrator" | "you";
 
 export interface StoryLine {
   speaker: Speaker;
-  /** `{other}` becomes "your brother" or "your sister"; `{debt}` the gold owed. */
+  /** `{debt}` becomes the gold owed. */
   text: string;
-  /** A full-screen picture behind the line. Lines without one show the siblings in the tavern. */
+  /** A full-screen picture behind the line. Lines without one show the player in the tavern. */
   cg?: CgName;
 }
 
@@ -31,29 +31,25 @@ export const INTRO: StoryLine[] = [
   {
     cg: "town",
     speaker: "narrator",
-    text: "She left her tavern to you and {other}. A week later you rode the morning cart up to Tarven, a little market town under the mountains.",
+    text: "She left her tavern to you. A week later you rode the morning cart up to Tarven, a little market town under the mountains.",
   },
   {
     cg: "town",
     speaker: "narrator",
-    text: "Everything you own fits in two bags. The tavern is the biggest building on the high street, its old sign still swinging.",
+    text: "Everything you own fits in one bag. The tavern is the biggest building on the high street, its old sign still swinging.",
   },
-  { speaker: "other", text: "So this is it. Grandma's tavern." },
+  { speaker: "you", text: "So this is it. Grandma's tavern." },
   { speaker: "you", text: "It's smaller than I remember. And colder." },
-  { speaker: "other", text: "There was a letter waiting on the bar. It has the baron's seal on it." },
+  { speaker: "you", text: "There's a letter waiting on the bar. It has the baron's seal on it." },
   {
     cg: "baron",
     speaker: "narrator",
     text: "Grandma owed the baron {debt} gold. Now you do. He collects in three nights, or the tavern is his.",
   },
-  { speaker: "other", text: "Mother can't help us. Father won't. It's just us now." },
-  { speaker: "you", text: "Then we open tonight. Ale, bread, anything we can sell." },
-  { speaker: "other", text: "And we keep our ears open. Grandma always said travellers pay more for secrets than for stew." },
-  {
-    cg: "townDusk",
-    speaker: "narrator",
-    text: "By evening the lamps are lit along the high street, and the first travellers off the mountain road are walking up to your door.",
-  },
+  { speaker: "you", text: "Mother can't help. Father won't. It's just me now." },
+  { speaker: "you", text: "Then I open tonight. Ale, bread, stew, anything I can sell." },
+  { speaker: "you", text: "And I keep my ears open. Grandma always said travellers pay more for secrets than for stew." },
+  { speaker: "you", text: "The road gets busy after dark. I'll get the place ready, then open the front door." },
 ];
 
 /** Letters revealed per second. */
@@ -66,19 +62,18 @@ export interface StoryView {
   next: HTMLElement;
   /** Holds the full-screen picture. */
   cg: HTMLElement;
-  /** Standing sprites: the brother on the left, the sister on the right. */
-  sprites: [HTMLElement, HTMLElement];
+  /** Holds the player's standing sprite. */
+  sprite: HTMLElement;
 }
 
-/** Who a speaker is, for the name tag and which sprite steps forward. */
+/** Details of the player's run that the story fills in. */
 export interface Cast {
-  name(speaker: Speaker): string;
-  /** 0 for the brother, 1 for the sister, null for the narrator. */
-  sprite(speaker: Speaker): number | null;
+  /** Which character the player picked: 0 male, 1 female. Pictures that show the player use it. */
+  player(): number;
   fill(text: string): string;
 }
 
-/** A visual novel scene: pictures, standing sprites and a dialog box that types each line out. */
+/** A visual novel scene: pictures, a standing sprite and a dialog box that types each line out. */
 export class StoryBox {
   private lines: StoryLine[] = [];
   private index = 0;
@@ -96,9 +91,9 @@ export class StoryBox {
     return this.onFinish !== null;
   }
 
-  /** Puts each sibling's sprite image in place. */
-  setSprites(images: [HTMLCanvasElement, HTMLCanvasElement]): void {
-    this.view.sprites.forEach((holder, index) => holder.replaceChildren(images[index]));
+  /** Puts the player's sprite image in place. */
+  setSprite(image: HTMLCanvasElement): void {
+    this.view.sprite.replaceChildren(image);
   }
 
   start(lines: StoryLine[], onFinish: () => void): void {
@@ -120,12 +115,12 @@ export class StoryBox {
 
     const narrator = line.speaker === "narrator";
     view.root.classList.toggle("narrator", narrator);
-    view.name.textContent = narrator ? "" : this.cast.name(line.speaker);
+    view.name.textContent = narrator ? "" : "You";
 
-    // A new picture fades in over the last; dialog lines fade the picture away to show the siblings.
+    // A new picture fades in over the last; dialog lines fade the picture away to show the player.
     const cg = line.cg ?? null;
     if (cg && cg !== this.cg) {
-      view.cg.replaceChildren(drawCg(cg));
+      view.cg.replaceChildren(drawCg(cg, this.cast.player()));
       view.cg.classList.remove("enter");
       void view.cg.offsetWidth; // Restarts the fade-in animation.
       view.cg.classList.add("enter");
@@ -133,11 +128,7 @@ export class StoryBox {
     this.cg = cg;
     view.root.classList.toggle("has-cg", cg !== null);
 
-    const talking = this.cast.sprite(line.speaker);
-    view.sprites.forEach((sprite, i) => {
-      sprite.classList.toggle("speaking", talking === i);
-      sprite.classList.toggle("listening", talking !== null && talking !== i);
-    });
+    view.sprite.classList.toggle("speaking", line.speaker === "you");
   }
 
   /** Finishes typing the current line, or moves to the next one. */

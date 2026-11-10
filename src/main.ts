@@ -1,8 +1,6 @@
 import {
-  AmbientLight,
   BasicShadowMap,
   Color,
-  HemisphereLight,
   MathUtils,
   PerspectiveCamera,
   Scene,
@@ -10,17 +8,19 @@ import {
   WebGLRenderer,
 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { Game } from "./game/game";
+import { Soundscape } from "./game/audio";
+import { addBedroom, addBin, addFrontDoorway, BEDROOM_FROM_X, BEDROOM_SOUTH_Z, BEDROOM_VIEW } from "./game/furnishings";
+import { Game, WHOLE_PIECES } from "./game/game";
+import { claimFurniture } from "./game/houseview";
 import { Input } from "./game/input";
+import { DayNightLighting } from "./game/lighting";
 import { RetroPipeline } from "./game/retro";
+import { WorldClock } from "./game/time";
 import { setupWorld } from "./game/world";
 
 // 3/4 view: looking 45 degrees down, so both tops and fronts of things show.
 const CAMERA_OFFSET = new Vector3(0, 10, 10);
 const CAMERA_FOLLOW_RATE = 8;
-// Tight limits keep nearly the whole room in view, so you can watch both siblings' jobs.
-const CAMERA_LIMIT_X = 0.5;
-const CAMERA_LIMIT_Z = 1;
 const MAX_FRAME_TIME = 1 / 20;
 const SHADOW_UPDATE_INTERVAL = 0.1;
 
@@ -36,8 +36,9 @@ async function start(): Promise<void> {
   const pipeline = new RetroPipeline(renderer);
   const scene = new Scene();
   scene.background = new Color(0x050404);
-  scene.add(new AmbientLight(0x6a6480, 0.55));
-  scene.add(new HemisphereLight(0x8fa4d0, 0x2a1a10, 0.5));
+  // One clock for the whole world; the lighting follows it. Indoors, so no sky is painted.
+  const clock = new WorldClock();
+  const lighting = new DayNightLighting(scene);
 
   const camera = new PerspectiveCamera(32, 1, 0.5, 60);
 
@@ -58,31 +59,49 @@ async function start(): Promise<void> {
     loader.loadAsync(`${base}models/props.glb`),
   ]);
 
-  const world = setupWorld(worldFile.scene);
+  addBedroom(worldFile.scene);
+  addBin(worldFile.scene);
+  addFrontDoorway(worldFile.scene);
+  const claimed = claimFurniture(worldFile.scene);
+  const world = setupWorld(worldFile.scene, [...WHOLE_PIECES, ...claimed.whole]);
   scene.add(worldFile.scene);
+  lighting.addSkyGlow(worldFile.scene, ["T_window"]);
 
   const input = new Input();
+  const audio = new Soundscape(base);
   const game = new Game(scene, input, world, {
     male: maleFile.scene,
     female: femaleFile.scene,
     props: propsFile.scene,
-  }, camera, renderer);
+    furniture: claimed.defaults,
+  }, camera, renderer, clock, audio);
 
   const focus = new Vector3();
   const updateCameraTarget = () => {
+    if (game.buildFocus) {
+      focus.copy(game.buildFocus);
+      return;
+    }
+    // The bedroom is off the side of the main room's shot, so the camera moves over to look at it.
+    if (game.focus.x > BEDROOM_FROM_X && game.focus.z < BEDROOM_SOUTH_Z) {
+      focus.copy(BEDROOM_VIEW);
+      return;
+    }
+    const limits = game.cameraLimits;
     focus.set(
-      MathUtils.clamp(game.focus.x, -CAMERA_LIMIT_X, CAMERA_LIMIT_X),
+      MathUtils.clamp(game.focus.x, limits.minX, limits.maxX),
       0.8,
-      MathUtils.clamp(game.focus.z, -CAMERA_LIMIT_Z, CAMERA_LIMIT_Z),
+      MathUtils.clamp(game.focus.z, limits.minZ, limits.maxZ),
     );
   };
   updateCameraTarget();
   const look = focus.clone();
+  let zoom = 1;
   camera.position.copy(look).add(CAMERA_OFFSET);
   camera.lookAt(look);
 
   if (import.meta.env.DEV) {
-    Object.assign(window, { __tarven: { game, world, renderer } });
+    Object.assign(window, { __tarven: { game, world, renderer, clock, audio } });
   }
 
   let last = performance.now();
@@ -95,17 +114,20 @@ async function start(): Promise<void> {
 
     game.update(dt);
     world.update(elapsed);
+    lighting.apply(clock);
 
     updateCameraTarget();
     const shot = game.closeup;
     if (shot) {
-      // Hold the staged shot; the follow camera starts settled on the active sibling afterwards.
+      // Hold the staged shot; the follow camera starts settled on the player afterwards.
       look.copy(focus);
       camera.position.copy(shot.eye);
       camera.lookAt(shot.target);
     } else {
-      look.lerp(focus, 1 - Math.exp(-CAMERA_FOLLOW_RATE * dt));
-      camera.position.copy(look).add(CAMERA_OFFSET);
+      const follow = 1 - Math.exp(-CAMERA_FOLLOW_RATE * dt);
+      look.lerp(focus, follow);
+      zoom += (game.cameraZoom - zoom) * follow;
+      camera.position.copy(look).addScaledVector(CAMERA_OFFSET, zoom);
       camera.lookAt(look);
     }
 
@@ -114,6 +136,7 @@ async function start(): Promise<void> {
       nextShadowUpdate = elapsed + SHADOW_UPDATE_INTERVAL;
     }
 
+    game.renderSpeech();
     pipeline.render(scene, camera);
   });
 
