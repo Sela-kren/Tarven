@@ -1,0 +1,49 @@
+/* In-game overlays: stats, controls, prompts and messages. */
+#hud,
+#stats,
+#prompt,
+#toast {
+  position: fixed;
+  font: 14px/1.4 var(--font);
+  color: var(--text);
+  text-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+#hud {
+  left: 16px;
+  bottom: 12px;
+}
+
+/* Controls are hidden until the night starts. */
+body.staging #hud {
+  display: none;
+}
+
+#stats {
+  left: 16px;
+  right: 16px;
+  top: 10px;
+  font-size: 16px;
+  font-weight: bold;
+  white-space: pre-wrap;
+}
+
+#prompt {
+  left: 16px;
+  right: 16px;
+  bottom: 44px;
+  font-size: 18px;
+  font-weight: bold;
+  color: var(--gold);
+  text-align: center;
+}
+
+#toast {
+  left: 50%;
+  top: 66px;
+  width: min(680px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  font-size: 16px;
+  text-align: center;
+}

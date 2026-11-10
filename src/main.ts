@@ -66,7 +66,7 @@ async function start(): Promise<void> {
     male: maleFile.scene,
     female: femaleFile.scene,
     props: propsFile.scene,
-  });
+  }, camera, renderer);
 
   const focus = new Vector3();
   const updateCameraTarget = () => {
@@ -97,9 +97,17 @@ async function start(): Promise<void> {
     world.update(elapsed);
 
     updateCameraTarget();
-    look.lerp(focus, 1 - Math.exp(-CAMERA_FOLLOW_RATE * dt));
-    camera.position.copy(look).add(CAMERA_OFFSET);
-    camera.lookAt(look);
+    const shot = game.closeup;
+    if (shot) {
+      // Hold the staged shot; the follow camera starts settled on the active sibling afterwards.
+      look.copy(focus);
+      camera.position.copy(shot.eye);
+      camera.lookAt(shot.target);
+    } else {
+      look.lerp(focus, 1 - Math.exp(-CAMERA_FOLLOW_RATE * dt));
+      camera.position.copy(look).add(CAMERA_OFFSET);
+      camera.lookAt(look);
+    }
 
     if (elapsed >= nextShadowUpdate) {
       renderer.shadowMap.needsUpdate = true;

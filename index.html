@@ -4,63 +4,32 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Last Call at Tarven</title>
-    <style>
-      html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
-      canvas { display: block; image-rendering: pixelated; }
-      #hud, #status, #stats, #prompt, #toast, #panel {
-        position: fixed;
-        font: 14px/1.4 "Courier New", monospace;
-        color: #e8d3a2;
-        text-shadow: 2px 2px 0 #000;
-      }
-      #hud, #status, #stats, #prompt, #toast { pointer-events: none; }
-      #hud { left: 16px; bottom: 12px; }
-      #status { inset: 0; display: grid; place-items: center; font-size: 18px; text-align: center; padding: 16px; }
-      #stats { left: 16px; right: 16px; top: 10px; font-size: 16px; font-weight: bold; white-space: pre-wrap; }
-      #prompt { left: 16px; right: 16px; bottom: 44px; text-align: center; font-size: 18px; font-weight: bold; color: #ffe27a; }
-      #toast { left: 50%; top: 66px; width: min(680px, calc(100vw - 32px)); transform: translateX(-50%); text-align: center; font-size: 16px; }
-      #panel {
-        inset: 0;
-        display: none;
-        place-items: center;
-        padding: 16px;
-        background: rgba(5, 3, 2, 0.72);
-        overflow-y: auto;
-      }
-      #panel.open { display: grid; }
-      #panel .box {
-        box-sizing: border-box;
-        width: min(620px, 100%);
-        padding: 20px 24px;
-        background: #1b120b;
-        border: 4px solid #6d4a25;
-        box-shadow: 8px 8px 0 #000;
-      }
-      #panel h1 { margin: 0 0 10px; font-size: 24px; color: #ffe27a; }
-      #panel p { margin: 0 0 12px; font-size: 16px; }
-      #panel button {
-        display: block;
-        width: 100%;
-        margin-top: 8px;
-        padding: 10px 12px;
-        font: bold 15px/1.3 "Courier New", monospace;
-        color: #f0e4c4;
-        text-align: left;
-        cursor: pointer;
-        background: #3a2615;
-        border: 2px solid #6d4a25;
-      }
-      #panel button:hover:not(:disabled), #panel button:focus-visible { background: #5a3b1f; outline: 2px solid #ffe27a; }
-      #panel button:disabled { color: #7d6c55; cursor: default; }
-    </style>
+    <link rel="stylesheet" href="/src/styles/index.css" />
   </head>
   <body>
     <div id="status">Loading...</div>
     <div id="stats"></div>
     <div id="toast" role="status" aria-live="polite"></div>
     <div id="prompt"></div>
-    <div id="hud">WASD / arrows: move &nbsp; Shift: run &nbsp; E: use / serve &nbsp; C: swap sibling</div>
+    <div id="hud">WASD / arrows: move &nbsp; Shift: run &nbsp; E: use / serve &nbsp; C: swap sibling &nbsp; Esc: pause</div>
+    <div id="select" aria-label="Character select">
+      <h1>Who are you?</h1>
+      <p class="hint">Click a sibling (or press 1 / 2) to choose. You can swap during the night with C.</p>
+      <button type="button" id="select-start" disabled>Choose a sibling</button>
+    </div>
+    <div id="story" aria-live="polite">
+      <div id="story-cg"></div>
+      <div class="sprite" id="story-sprite-0"></div>
+      <div class="sprite" id="story-sprite-1"></div>
+      <button type="button" id="story-skip">Skip &#9656;&#9656;</button>
+      <div class="box">
+        <div id="story-name"></div>
+        <p id="story-text"></p>
+        <div id="story-next">&#9660;</div>
+      </div>
+    </div>
     <div id="panel" role="dialog" aria-modal="true"></div>
+    <div id="fade"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

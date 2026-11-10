@@ -1,0 +1,54 @@
+/* Shared palette and type, plus page-wide basics. */
+:root {
+  --font: "Courier New", monospace;
+  --text: #e8d3a2;
+  --text-bright: #f0e4c4;
+  --text-muted: #7d6c55;
+  --gold: #ffe27a;
+  --wood-darkest: #1b120b;
+  --wood: #3a2615;
+  --wood-hover: #5a3b1f;
+  --wood-edge: #6d4a25;
+  --shadow: 2px 2px 0 #000;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+}
+
+canvas {
+  display: block;
+  image-rendering: pixelated;
+}
+
+#status {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  font: 18px/1.4 var(--font);
+  color: var(--text);
+  text-align: center;
+  text-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+/* Screen-wide fade to black between scenes. */
+#fade {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.45s ease;
+}
+
+#fade.on {
+  opacity: 1;
+  pointer-events: auto;
+}

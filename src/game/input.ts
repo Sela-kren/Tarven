@@ -2,7 +2,7 @@ const GAME_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD",
   "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
   "ShiftLeft", "ShiftRight",
-  "KeyC", "KeyE", "Enter", "Digit1", "Digit2", "Digit3", "Digit4",
+  "KeyC", "KeyE", "Enter", "Space", "Escape", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5",
 ]);
 
 export class Input {

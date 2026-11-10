@@ -6,6 +6,8 @@ const WALK_SPEED = 3.2;
 const RUN_SPEED = 5.2;
 const PLAYER_RADIUS = 0.3;
 const TURN_RATE = 14;
+/** Pace of the short steps taken on the character select screen. */
+const STAGE_STEP_SPEED = 1.4;
 
 const ELBOW_REST = 0.08;
 
@@ -337,6 +339,27 @@ export class Sibling {
 
   rest(dt: number): void {
     this.animate(dt, false, false);
+  }
+
+  /** Turns to a fixed heading at once. */
+  face(heading: number): void {
+    this.heading = heading;
+    this.root.rotation.y = heading;
+  }
+
+  /** Walks straight to a floor point without turning, for staged scenes such as character select. */
+  stepTo(target: Vector3, dt: number): void {
+    const dx = target.x - this.root.position.x;
+    const dz = target.z - this.root.position.z;
+    const distance = Math.hypot(dx, dz);
+    const moving = distance > 0.005;
+    if (moving) {
+      const t = Math.min(1, (STAGE_STEP_SPEED * dt) / distance);
+      this.root.position.x += dx * t;
+      this.root.position.z += dz * t;
+      this.stride += STAGE_STEP_SPEED * this.body.strideRate(0) * dt;
+    }
+    this.animate(dt, moving, false);
   }
 
   move(dt: number, input: Input, colliders: readonly Rect[]): void {

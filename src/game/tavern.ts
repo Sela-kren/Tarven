@@ -207,6 +207,16 @@ export interface Guest {
   listened: number;
 }
 
+/** The state that lasts between nights. */
+export interface TavernSave {
+  nightIndex: number;
+  gold: number;
+  trust: number;
+  heat: number;
+  upgrades: UpgradeId[];
+  tapLeft: number;
+}
+
 export interface TickContext {
   /** Station the sibling you are not controlling is standing at, if any. */
   helper: Station | null;
@@ -538,6 +548,40 @@ export class Tavern {
       return;
     }
     this.nightIndex++;
+    this.openNight();
+  }
+
+  /** What carries from one night to the next, taken as a night opens. A save holds this. */
+  snapshot(): TavernSave {
+    return {
+      nightIndex: this.nightIndex,
+      gold: this.gold,
+      trust: this.trust,
+      heat: this.heat,
+      upgrades: [...this.upgrades],
+      tapLeft: this.tapLeft,
+    };
+  }
+
+  /** Puts the tavern back at the start of a saved night, with no guests yet. */
+  restore(save: TavernSave): void {
+    this.nightIndex = save.nightIndex;
+    this.gold = save.gold;
+    this.trust = save.trust;
+    this.heat = save.heat;
+    this.upgrades.clear();
+    for (const id of save.upgrades) this.upgrades.add(id);
+    this.tapLeft = save.tapLeft;
+    this.guests.length = 0;
+    this.nextGuestId = 1;
+    this.messages.length = 0;
+    this.lastResult = "";
+    this.ending = null;
+    this.openNight();
+  }
+
+  /** Clears everything that only lasts one night, and announces the night. */
+  private openNight(): void {
     this.phase = "service";
     this.clock = 0;
     this.nextArrival = 0;

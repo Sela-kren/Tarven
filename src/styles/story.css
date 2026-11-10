@@ -1,0 +1,203 @@
+/*
+ * Visual novel intro. Layers, back to front: the 3D tavern (canvas), the scene picture,
+ * the standing sprites, the letterbox bars, then the dialog box and skip button.
+ */
+#story {
+  --bar: 9vh;
+  position: fixed;
+  inset: 0;
+  display: none;
+  font: 14px/1.4 var(--font);
+  color: var(--text-bright);
+  text-shadow: var(--shadow);
+  cursor: pointer;
+  /* Dims the tavern behind the dialog so the sprites stand out. */
+  background: linear-gradient(rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.5));
+}
+
+#story.open {
+  display: block;
+}
+
+/* Letterbox bars. */
+#story::before,
+#story::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  left: 0;
+  right: 0;
+  height: var(--bar);
+  background: #000;
+}
+
+#story::before {
+  top: 0;
+}
+
+#story::after {
+  bottom: 0;
+}
+
+/* Full-screen scene pictures, shown for narration. */
+#story-cg {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+#story.has-cg #story-cg {
+  opacity: 1;
+}
+
+#story-cg canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#story-cg.enter canvas {
+  animation: cg-in 0.8s ease both;
+}
+
+@keyframes cg-in {
+  from {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+}
+
+/* Standing sprites: brother on the left, sister on the right. */
+#story .sprite {
+  position: absolute;
+  z-index: 2;
+  bottom: var(--bar);
+  height: 80vh;
+  opacity: 0;
+  transform-origin: 50% 100%;
+  transition: opacity 0.35s ease, filter 0.3s ease, transform 0.3s ease;
+}
+
+#story .sprite canvas {
+  height: 100%;
+  width: auto;
+}
+
+#story-sprite-0 {
+  left: max(2vw, calc(50% - 560px));
+}
+
+#story-sprite-1 {
+  right: max(2vw, calc(50% - 560px));
+}
+
+#story .sprite.speaking,
+#story .sprite.listening {
+  opacity: 1;
+}
+
+#story .sprite.speaking {
+  filter: none;
+  transform: translateY(0) scale(1);
+  animation: sprite-talk 0.3s ease;
+}
+
+#story .sprite.listening {
+  filter: brightness(0.45) saturate(0.7);
+  transform: translateY(14px) scale(0.97);
+}
+
+#story.has-cg .sprite {
+  opacity: 0;
+}
+
+@keyframes sprite-talk {
+  40% {
+    transform: translateY(-8px) scale(1);
+  }
+}
+
+/* Dialog box. */
+#story .box {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  bottom: calc(var(--bar) - 24px);
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  width: min(860px, calc(100vw - 32px));
+  min-height: 128px;
+  padding: 26px 26px 30px;
+  background: rgba(27, 18, 11, 0.94);
+  border: 4px solid var(--wood-edge);
+  box-shadow: 8px 8px 0 #000;
+}
+
+#story-name {
+  position: absolute;
+  top: -20px;
+  left: 18px;
+  padding: 4px 14px;
+  font-size: 17px;
+  font-weight: bold;
+  color: var(--gold);
+  background: var(--wood);
+  border: 3px solid var(--wood-edge);
+}
+
+#story-name:empty {
+  display: none;
+}
+
+#story-text {
+  min-height: 57px;
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.5;
+}
+
+#story.narrator #story-text {
+  font-style: italic;
+  color: #d9c49a;
+}
+
+#story-next {
+  position: absolute;
+  right: 16px;
+  bottom: 6px;
+  color: var(--gold);
+  visibility: hidden;
+}
+
+#story-next.ready {
+  visibility: visible;
+  animation: story-bob 0.8s steps(2) infinite;
+}
+
+@keyframes story-bob {
+  50% {
+    transform: translateY(4px);
+  }
+}
+
+#story-skip {
+  position: absolute;
+  z-index: 4;
+  top: calc(var(--bar) + 12px);
+  right: 16px;
+  padding: 6px 12px;
+  font: bold 14px/1.3 var(--font);
+  color: var(--text);
+  cursor: pointer;
+  background: rgba(58, 38, 21, 0.85);
+  border: 2px solid var(--wood-edge);
+}
+
+#story-skip:hover,
+#story-skip:focus-visible {
+  background: var(--wood-hover);
+  outline: 2px solid var(--gold);
+}
