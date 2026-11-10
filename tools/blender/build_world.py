@@ -806,91 +806,102 @@ def add_hand(part, cx, wrist_z, sx, scale, skin, y0=0.0):
 # Each row: depth of the face at the centre, then (x, height above the chin) for each face column.
 HEAD_FACE_COLUMNS = ("C", "A", "B", "D", "E")
 HEAD_FACE_ROWS = [
-    (0.07, [(0.0, 0.0), (0.02, 0.0), (0.0367, 0.0025), (0.0489, 0.0126), (0.0597, 0.0294)]),  # chin and jaw
-    # Between the jaw and the forehead only the edge of the face is a grid point; FACE_POINTS holds the rest.
-    (0.0, [None, None, None, None, (0.0665, 0.0462)]),
-    (0.0, [None, None, None, None, (0.0699, 0.0693)]),
-    (0.0, [None, None, None, None, (0.0699, 0.0945)]),
-    (0.0, [None, None, None, None, (0.0685, 0.1071)]),
-    (0.0, [None, None, None, None, (0.066, 0.1218)]),
-    (0.084, [(0.0, 0.1386), (0.022, 0.1386), (0.044, 0.1386), (0.0562, 0.1386), (0.0626, 0.1386)]),  # forehead
-    (0.066, [(0.0, 0.158), (0.018, 0.157), (0.0436, 0.153), (0.0607, 0.148), (0.0655, 0.145)]),   # hairline
-    (0.04, [(0.0, 0.17), (0.02, 0.169), (0.045, 0.163), (0.055, 0.158), (0.06, 0.153)]),          # crown
+    (0.0, [(0.0, 0.0), (0.0085, 0.0), (0.0249, 0.0086), (0.0412, 0.0196), (0.0569, 0.0293)]),  # chin and jaw
+    # Between the jaw and the brow only the edge of the face is a grid point; FACE_POINTS holds the rest.
+    (0.0, [None, None, None, None, (0.0619, 0.0397)]),
+    (0.0, [None, None, None, None, (0.0683, 0.055)]),
+    (0.0, [None, None, None, None, (0.0747, 0.0733)]),
+    (0.0, [None, None, None, None, (0.0803, 0.0917)]),
+    (0.0, [None, None, None, None, (0.0818, 0.1008)]),
+    (0.0, [(0.0, 0.1051), (0.0292, 0.1051), (0.0462, 0.1021), (0.0647, 0.0978), (0.0825, 0.1161)]),  # brow
+    (0.082, [(0.0, 0.1528), (0.0299, 0.1528), (0.0483, 0.1442), (0.0675, 0.1363), (0.0747, 0.157)]),  # forehead
+    (0.05, [(0.0, 0.1835), (0.03, 0.183), (0.05, 0.179), (0.057, 0.175), (0.062, 0.172)]),        # upper forehead
+    (0.012, [(0.0, 0.195), (0.018, 0.1945), (0.03, 0.192), (0.036, 0.189), (0.04, 0.187)]),       # crown
 ]
 # The same rows carried around the back: height, the x of three columns, and how far back they reach.
-HEAD_BACK_ROWS = [(0.0418, 0.058, 0.046, 0.03, 0.55), (0.06, 0.066, 0.056, 0.034, 0.65), (0.072, 0.072, 0.066, 0.04, 0.75),
-                  (0.09, 0.076, 0.074, 0.044, 0.9), (0.1, 0.082, 0.076, 0.046, 1.0), (0.115, 0.082, 0.076, 0.046, 1.0),
-                  (0.135, 0.078, 0.07, 0.044, 0.95), (0.15, 0.066, 0.058, 0.036, 0.75), (0.162, 0.05, 0.043, 0.026, 0.55)]
+HEAD_BACK_ROWS = [(0.049, 0.06, 0.056, 0.036, 0.7), (0.058, 0.068, 0.066, 0.044, 0.85), (0.07, 0.075, 0.074, 0.052, 0.95),
+                  (0.09, 0.081, 0.079, 0.058, 1.0), (0.105, 0.0825, 0.08, 0.06, 1.0), (0.122, 0.082, 0.079, 0.058, 0.98),
+                  (0.14, 0.0785, 0.075, 0.055, 0.93), (0.165, 0.066, 0.063, 0.046, 0.78), (0.18, 0.052, 0.048, 0.034, 0.62),
+                  (0.19, 0.034, 0.03, 0.018, 0.25)]
 HEAD_BACK_DEPTHS = (0.0, -0.045, -0.075)
-HEAD_BACK_CENTRE = -0.085
-# How far forward the jaw and the edge of the face sit, so the face turns away towards the ears.
-HEAD_EDGE_DEPTH = {("C", 0): 0.07, ("A", 0): 0.071, ("B", 0): 0.068, ("D", 0): 0.06, ("E", 0): 0.052, ("E", 1): 0.05,
-                   ("E", 2): 0.055, ("E", 3): 0.06, ("E", 4): 0.06, ("E", 5): 0.056, ("E", 6): 0.056}
-# The face traced from the head reference. Points are given in the reference's pixels, measured sideways
+HEAD_BACK_CENTRE = -0.098
+# How far forward the jaw, the brow and the edge of the face sit, so the face turns away towards the ears.
+HEAD_EDGE_DEPTH = {("C", 0): 0.081, ("A", 0): 0.081, ("B", 0): 0.065, ("D", 0): 0.046, ("E", 0): 0.02, ("E", 1): 0.02,
+                   ("E", 2): 0.025, ("E", 3): 0.03, ("E", 4): 0.035, ("E", 5): 0.04, ("C", 6): 0.098, ("A", 6): 0.084,
+                   ("B", 6): 0.0751, ("D", 6): 0.0653, ("E", 6): 0.03,
+                   # The forehead panel ends at a corner, behind which the skull turns away to the side.
+                   ("A", 7): 0.075, ("B", 7): 0.064, ("D", 7): 0.052, ("E", 7): 0.021,
+                   ("C", 8): 0.05, ("A", 8): 0.048, ("B", 8): 0.042, ("D", 8): 0.034, ("E", 8): 0.018,
+                   ("C", 9): 0.012, ("A", 9): 0.011, ("B", 9): 0.009, ("D", 9): 0.007, ("E", 9): 0.004}
+# The face follows the head-planes reference. Points are given in the reference's pixels, measured sideways
 # from the centre line and up from the chin, and these convert them to head units.
-FACE_TRACE_X, FACE_TRACE_UP = 0.000489, 0.00042
+FACE_TRACE_X, FACE_TRACE_UP = 0.000711, 0.000611
 FACE_TRACED_ROWS = 6
 # One half of the face: name -> (pixels sideways, pixels up, how far forward).
 FACE_POINTS = {
-    "j0": (0, 24, 0.08), "j1": (52, 26, 0.077), "j2": (85, 48, 0.075), "j3": (104, 82, 0.072), "j4": (118, 116, 0.068),
-    "j5": (130, 165, 0.066), "mu": (0, 55, 0.083), "ub": (25, 58, 0.083),
-    "lb0": (0, 76, 0.09), "lb1": (16, 79, 0.087), "ll0": (0, 94, 0.09), "l1": (16, 95, 0.088), "lc": (30, 98, 0.086),
-    "lt0": (0, 108, 0.092), "lt1": (14, 112, 0.09), "mc": (48, 100, 0.085),
-    "nb0": (0, 135, 0.095), "nb1": (20, 136, 0.093), "chi": (40, 135, 0.09), "ck1": (85, 115, 0.082), "ck2": (95, 165, 0.086),
-    "nsd": (40, 170, 0.093), "nb2": (20, 152, 0.098), "tip": (0, 150, 0.11), "t2": (0, 165, 0.106), "t3": (18, 165, 0.097),
-    "s1": (13, 195, 0.097), "br1": (0, 195, 0.104), "s2": (18, 240, 0.094), "br2": (0, 240, 0.099), "s3": (22, 270, 0.094),
-    "gl": (0, 270, 0.096), "ein": (45, 228, 0.092), "un1": (70, 195, 0.091), "un2": (110, 195, 0.085),
-    "bu1": (52, 265, 0.092), "bu2": (100, 262, 0.085),
+    "j0": (0, 10, 0.085), "j1": (13, 10, 0.084), "j2": (38, 28, 0.0764), "j3": (60, 50, 0.0713), "j4": (78, 75, 0.0704),
+    "j5": (90, 100, 0.065), "mu": (0, 28, 0.0854), "ub": (20, 28, 0.085),
+    "lb0": (0, 36, 0.0924), "lb1": (11, 37, 0.089), "ll0": (0, 43, 0.0854), "l1": (12, 44, 0.085), "lc": (24, 43, 0.083),
+    "lt0": (0, 48, 0.0955), "lt1": (10, 51, 0.092),
+    "nb0": (0, 64, 0.096), "nb1": (10, 65, 0.092), "nb2": (11, 80, 0.093), "tip": (0, 84, 0.11), "t2": (0, 98, 0.102), "t3": (9, 96, 0.094),
+    "s1": (9, 120, 0.092), "br1": (0, 120, 0.092), "s2": (14, 145, 0.093), "br2": (0, 145, 0.095), "s3": (26, 160, 0.09),
+    "gl": (0, 160, 0.098), "ein": (18, 132, 0.0914), "un1": (27, 113, 0.0877), "sd": (94, 113, 0.063),
 }
 # Each plane of the face and its tone. A pair of tones gives the two sides different light.
 # Capital names are grid points: column, then row.
 FACE_PLANES = [
-    (("C0", "A0", "j1", "j0"), "face_mid"), (("A0", "B0", "j1"), "face_mid"), (("B0", "D0", "j2", "j1"), "face_mid"),
-    (("D0", "E0", "j3", "j2"), "face_mid"), (("E0", "E1", "j4", "j3"), "face_skin"), (("E1", "E2", "j5", "j4"), "face_skin"),
-    (("j0", "j1", "ub", "mu"), "face_lit"), (("j1", "j2", "ub"), "face_skin"), (("mu", "ub", "lb1", "lb0"), "face_mid"),
+    (("C0", "A0", "j1", "j0"), "face_mid"), (("A0", "B0", "j2", "j1"), "face_mid"), (("B0", "D0", "j3", "j2"), "face_mid"),
+    (("D0", "E0", "j4", "j3"), "face_mid"), (("E0", "E1", "j5", "j4"), "face_mid"), (("E1", "E2", "sd", "j5"), "face_mid"),
+    (("E2", "E3", "sd"), "face_mid"), (("E3", "E4", "D6", "sd"), "face_mid"), (("E4", "E5", "E6", "D6"), "face_mid"),
+    (("j0", "j1", "ub", "mu"), "face_skin"), (("j1", "j2", "ub"), "face_skin"), (("mu", "ub", "lb1", "lb0"), "face_skin"),
     (("lb0", "lb1", "l1", "ll0"), "lip_lit"), (("lb1", "lc", "l1"), "lip"), (("ll0", "l1", "lt1", "lt0"), "lip"), (("l1", "lc", "lt1"), "lip"),
-    (("lt0", "lt1", "nb1", "nb0"), "face_skin"), (("lt1", "lc", "mc", "chi", "nb1"), "face_skin"), (("ub", "j2", "lc", "lb1"), "face_skin"),
-    (("lc", "j2", "j3", "mc"), "face_skin"), (("mc", "j3", "j4", "ck1"), "face_skin"), (("chi", "mc", "ck1", "ck2"), "face_blush"),
-    (("nb1", "chi", "nsd", "nb2"), "face_skin"), (("chi", "ck2", "nsd"), "face_blush"), (("ck1", "j4", "j5", "ck2"), "face_skin"),
-    (("ck2", "j5", "E2", "un2"), "face_skin"), (("un2", "E2", "E3"), "face_skin"), (("nsd", "ck2", "un2", "un1"), "face_skin"),
-    (("nb2", "nsd", "un1", "s1", "t3"), "face_skin"), (("s1", "un1", "ein", "s2"), "face_skin"), (("s2", "ein", "bu1", "s3"), "face_skin"),
+    (("lt0", "lt1", "nb1", "nb0"), "face_skin"), (("lt1", "lc", "nb1"), "face_skin"), (("lc", "j2", "ub", "lb1"), "face_skin"),
+    (("un1", "sd", "j5", "j4", "nb2"), "face_blush"), (("nb2", "j4", "j3", "j2", "lc", "nb1"), "face_skin"),
+    (("t3", "s1", "un1", "nb2"), "face_skin"), (("s1", "un1", "ein", "s2"), "face_skin"), (("s2", "ein", "A6", "s3"), "face_skin"),
     (("nb0", "nb1", "nb2", "tip"), "face_pink"), (("tip", "nb2", "t3", "t2"), "face_pink"), (("t2", "t3", "s1"), ("face_white", "face_cool")),
-    (("t2", "s1", "br1"), ("face_lit", "face_cool")),
-    (("br1", "s1", "s2", "br2"), "face_lit"), (("br2", "s2", "s3", "gl"), "face_lit"), (("gl", "s3", "bu1", "A6", "C6"), "face_lit"),
-    (("bu1", "B6", "A6"), "face_lit"), (("bu1", "bu2", "D6", "B6"), "face_lit"), (("bu2", "E5", "E6", "D6"), "face_skin"),
-    (("E3", "E4", "E5", "bu2"), "face_skin"),
+    (("t2", "s1", "br1"), ("face_lit", "face_cool")), (("br1", "s1", "s2", "br2"), "face_lit"), (("br2", "s2", "s3", "gl"), "face_lit"),
+    (("gl", "s3", "A6", "C6"), "face_lit"),
 ]
 # The socket around the eye, starting from the corner nearest the nose, and the round dot of the eye inside it:
 # centre, half width and half height in reference pixels. The dot has two points for each side of the socket.
-FACE_EYE_SOCKET = ("ein", "un1", "un2", "E3", "bu2", "bu1")
-FACE_EYE_DOT = (78, 228, 17, 18)
+FACE_EYE_SOCKET = ("ein", "un1", "sd", "D6", "B6", "A6")
+FACE_EYE_DOT = (56, 143, 12, 13)
+# The plane of the socket: forward = a + b * pixels sideways + c * pixels up.
+FACE_EYE_PLANE = (0.09471, -0.000368, 0.00002545)
+# The ear: a ring where it meets the skull and the ring of its rim, as (x, y, height above the chin).
+FACE_EAR = [[(0.07, 0.0105, 0.0855), (0.07, -0.002, 0.0947), (0.07, -0.0147, 0.0935), (0.07, -0.0266, 0.0764), (0.07, -0.016, 0.058), (0.07, -0.0056, 0.0489)],
+            [(0.086, 0.0105, 0.0855), (0.093, -0.002, 0.0947), (0.095, -0.0147, 0.0935), (0.093, -0.0266, 0.0764), (0.088, -0.016, 0.058), (0.082, -0.0056, 0.0489)]]
 # The eyebrow from the nose outwards: x, bottom edge, top edge, how far forward.
-HEAD_BROW = [(0.0171, 0.1109, 0.1163, 0.096), (0.0381, 0.1134, 0.1197, 0.091), (0.0597, 0.1075, 0.1109, 0.08)]
+HEAD_BROW = [(0.0156, 0.1065, 0.1125, 0.092), (0.0398, 0.1095, 0.1149, 0.079), (0.064, 0.1008, 0.1035, 0.067)]
 # One half of the bob from the crown to the neck. Each ring runs around the outside from the front
 # edge to the centre of the back, then returns along the inside: (x, y, height above the chin).
 BOB_RINGS = [
-    [(0.0, -0.02, 0.192), (0.03, -0.03, 0.192), (0.02, -0.05, 0.192), (0.0, -0.058, 0.192),
-     (0.0, -0.045, 0.192), (0.0, -0.04, 0.192), (0.0, -0.033, 0.192), (0.0, -0.027, 0.192)],
-    [(0.06, -0.02, 0.17), (0.075, -0.04, 0.17), (0.055, -0.08, 0.17), (0.0, -0.095, 0.17),
-     (0.0, -0.06, 0.155), (0.03, -0.05, 0.155), (0.05, -0.03, 0.155), (0.04, -0.025, 0.155)],
-    [(0.097, -0.045, 0.09), (0.112, -0.065, 0.09), (0.08, -0.103, 0.09), (0.0, -0.113, 0.09),
-     (0.0, -0.075, 0.09), (0.045, -0.07, 0.09), (0.07, -0.05, 0.09), (0.07, -0.04, 0.09)],
-    [(0.072, 0.015, 0.03), (0.138, -0.05, 0.02), (0.092, -0.105, 0.02), (0.0, -0.117, 0.02),
-     (0.0, -0.085, 0.02), (0.055, -0.078, 0.02), (0.08, -0.045, 0.02), (0.06, -0.02, 0.02)],
-    [(0.06, -0.04, -0.068), (0.078, -0.07, -0.06), (0.056, -0.09, -0.056), (0.0, -0.096, -0.05),
-     (0.0, -0.08, -0.05), (0.035, -0.075, -0.056), (0.056, -0.06, -0.06), (0.05, -0.04, -0.068)],
+    [(0.0, -0.02, 0.212), (0.03, -0.03, 0.212), (0.02, -0.05, 0.212), (0.0, -0.058, 0.212),
+     (0.0, -0.045, 0.212), (0.0, -0.04, 0.212), (0.0, -0.033, 0.212), (0.0, -0.027, 0.212)],
+    [(0.065, -0.02, 0.192), (0.08, -0.04, 0.192), (0.06, -0.085, 0.192), (0.0, -0.1, 0.192),
+     (0.0, -0.06, 0.165), (0.03, -0.05, 0.165), (0.05, -0.03, 0.165), (0.04, -0.025, 0.165)],
+    [(0.103, 0.03, 0.09), (0.12, -0.025, 0.09), (0.088, -0.1, 0.09), (0.0, -0.115, 0.09),
+     (0.0, -0.075, 0.09), (0.045, -0.07, 0.09), (0.072, -0.04, 0.09), (0.078, 0.022, 0.09)],
+    [(0.1, 0.05, 0.04), (0.13, -0.025, 0.04), (0.095, -0.105, 0.04), (0.0, -0.12, 0.04),
+     (0.0, -0.085, 0.04), (0.055, -0.078, 0.04), (0.08, -0.03, 0.04), (0.078, 0.04, 0.04)],
+    [(0.082, 0.082, -0.005), (0.118, -0.015, 0.0), (0.085, -0.1, 0.0), (0.0, -0.112, 0.0),
+     (0.0, -0.085, 0.0), (0.052, -0.075, 0.0), (0.074, -0.025, 0.0), (0.066, 0.065, -0.002)],
+    [(0.064, 0.05, -0.03), (0.09, -0.035, -0.033), (0.066, -0.088, -0.033), (0.0, -0.095, -0.033),
+     (0.0, -0.075, -0.033), (0.042, -0.068, -0.033), (0.062, -0.035, -0.033), (0.056, 0.04, -0.03)],
+    [(0.058, 0.0, -0.045), (0.072, -0.05, -0.047), (0.052, -0.075, -0.047), (0.0, -0.082, -0.047),
+     (0.0, -0.07, -0.047), (0.04, -0.062, -0.047), (0.06, -0.05, -0.047), (0.056, -0.005, -0.045)],
 ]
 # The side-swept fringe, from the parting across to the far temple. Each station: back of the crown,
 # the raised ridge, the lower edge on the forehead, and a point inside the skull.
 BOB_FRINGE = [
-    [(-0.09, -0.03, 0.14), (-0.095, 0.0, 0.115), (-0.09, 0.03, 0.09), (-0.06, 0.0, 0.105)],
-    [(-0.09, -0.03, 0.15), (-0.09, 0.045, 0.15), (-0.086, 0.045, 0.118), (-0.06, -0.03, 0.125)],
-    [(-0.05, -0.035, 0.178), (-0.06, 0.076, 0.168), (-0.058, 0.08, 0.135), (-0.04, -0.03, 0.145)],
-    [(-0.008, -0.035, 0.195), (-0.012, 0.086, 0.172), (-0.012, 0.09, 0.133), (-0.008, -0.03, 0.145)],
-    [(0.035, -0.035, 0.187), (0.04, 0.09, 0.158), (0.04, 0.09, 0.122), (0.03, -0.03, 0.135)],
-    [(0.074, -0.04, 0.172), (0.085, 0.07, 0.135), (0.083, 0.068, 0.1), (0.06, -0.03, 0.115)],
-    [(0.095, -0.01, 0.13), (0.1, 0.03, 0.112), (0.097, 0.035, 0.095), (0.08, 0.01, 0.105)],
-    [(0.092, -0.035, 0.115), (0.1, -0.01, 0.105), (0.095, 0.015, 0.09), (0.075, -0.01, 0.1)],
+    [(-0.1, -0.055, 0.14), (-0.1, 0.0, 0.115), (-0.095, 0.03, 0.09), (-0.06, 0.0, 0.105)],
+    [(-0.098, -0.045, 0.165), (-0.097, 0.05, 0.155), (-0.092, 0.05, 0.118), (-0.06, -0.03, 0.125)],
+    [(-0.055, -0.035, 0.195), (-0.066, 0.066, 0.18), (-0.064, 0.085, 0.135), (-0.04, -0.03, 0.145)],
+    [(-0.008, -0.035, 0.212), (-0.012, 0.075, 0.185), (-0.012, 0.096, 0.133), (-0.008, -0.03, 0.145)],
+    [(0.035, -0.035, 0.21), (0.04, 0.078, 0.185), (0.04, 0.095, 0.122), (0.03, -0.03, 0.135)],
+    [(0.078, -0.04, 0.197), (0.09, 0.065, 0.16), (0.088, 0.072, 0.1), (0.06, -0.03, 0.115)],
+    [(0.1, -0.045, 0.145), (0.105, 0.035, 0.118), (0.102, 0.04, 0.105), (0.08, 0.01, 0.105)],
+    [(0.1, -0.055, 0.118), (0.105, -0.01, 0.112), (0.1, 0.015, 0.1), (0.075, -0.01, 0.1)],
 ]
 HEAD_AROUND = ("C", "A", "B", "D", "E", "H1", "H2", "H3", "P")
 
@@ -1114,8 +1125,9 @@ def head_grid(at, m):
     centre_x, centre_up, half_x, half_up = FACE_EYE_DOT
     for i in range(12):
         angle = math.pi + i * math.pi / 6
-        x = centre_x + half_x * math.cos(angle)
-        head.add(("dot", i), x * FACE_TRACE_X, 0.0955 - x * 0.0001, (centre_up + half_up * math.sin(angle)) * FACE_TRACE_UP)
+        x, up = centre_x + half_x * math.cos(angle), centre_up + half_up * math.sin(angle)
+        a, b, c = FACE_EYE_PLANE
+        head.add(("dot", i), x * FACE_TRACE_X, a + b * x + c * up, up * FACE_TRACE_UP)
 
     def named(point):
         return (point[0], int(point[1])) if point[0].isupper() else point
@@ -1192,7 +1204,7 @@ def add_head(part, spec, m, hair_parts=None):
         pass  # the nose, eyes and mouth are part of the head itself
     elif spec.get("cute_face"):
         for sx in (-1, 1):
-            brow =[[at(sx * x, y, top), at(sx * x, y, low), at(sx * x, y - 0.012, low), at(sx * x, y - 0.012, top)]
+            brow =[[at(sx * x, y, top), at(sx * x, y, low), at(sx * x, y - 0.006, low), at(sx * x, y - 0.006, top)]
                     for x, low, top, y in HEAD_BROW]
             part.loft(brow, hair)
     else:
@@ -1206,8 +1218,7 @@ def add_head(part, spec, m, hair_parts=None):
         ear = [(0, 1, 4), (1, 2, 4), (2, 3, 4), (3, 0, 4), (0, 2, 1), (0, 3, 2)]
         for sx in (-1, 1):
             if spec.get("head_grid"):
-                part.solid([at(sx * 0.074, -0.004, 0.09), at(sx * 0.102, -0.018, 0.087), at(sx * 0.094, -0.014, 0.056),
-                            at(sx * 0.072, -0.008, 0.05), at(sx * 0.074, -0.03, 0.072)], ear, skin)
+                part.loft([[at(sx * x, y, up) for x, y, up in rim] for rim in FACE_EAR], skin)
             else:
                 part.solid([at(sx * 0.078, -0.002, 0.132), at(sx * 0.106, -0.018, 0.125), at(sx * 0.102, -0.016, 0.09),
                             at(sx * 0.076, -0.006, 0.088), at(sx * 0.08, -0.036, 0.11)], ear, skin)
@@ -2094,8 +2105,8 @@ def main():
     # The female face tones are nearly flat, so its planes read as clean shapes. They also leave the random numbers as they were.
     random_state = rng.bit_generator.state
     for key, colour in (("face_lit", (0.92, 0.71, 0.58)), ("face_skin", (0.86, 0.63, 0.5)), ("face_mid", (0.8, 0.58, 0.47)),
-                        ("face_blush", (0.87, 0.6, 0.52)), ("face_pink", (0.92, 0.55, 0.52)), ("face_white", (0.98, 0.95, 0.92)),
-                        ("face_cool", (0.68, 0.52, 0.5)), ("lip_lit", (0.9, 0.6, 0.58))):
+                        ("face_blush", (0.87, 0.6, 0.52)), ("face_pink", (0.92, 0.55, 0.52)), ("face_white", (0.98, 0.9, 0.84)),
+                        ("face_cool", (0.8, 0.59, 0.5)), ("lip_lit", (0.9, 0.6, 0.58))):
         mats[key] = material("T_" + key, tex_flat("T_" + key, colour, variation=0.03))
     rng.bit_generator.state = random_state
     # The male face colours put the random numbers back afterwards, so the textures made after them stay the same.
