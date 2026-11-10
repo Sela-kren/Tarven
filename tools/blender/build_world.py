@@ -1,0 +1,2125 @@
+"""Builds the Tarven test room and player in Blender and exports them as GLB.
+
+Run inside Blender. It works in its own scene ("TarvenWorld") and rebuilds that
+scene from scratch each time, so it is safe to re-run after editing.
+
+Textures are made in two steps: a detailed 512px source, then retro_crush()
+shrinks it and reduces its colours. When real photo references are available,
+load them as the source and pass them through retro_crush() the same way.
+"""
+import math
+import os
+
+import bmesh
+import bpy
+import numpy as np
+from mathutils import Matrix
+
+ROOT = r"C:\Game\Tarven"
+TEX_DIR = os.path.join(ROOT, "art", "textures")
+OUT_DIR = os.path.join(ROOT, "public", "models")
+SCENE_NAME = "TarvenWorld"
+HI = 512
+
+rng = np.random.default_rng(7)
+
+
+# ---------------------------------------------------------------- textures
+
+def noise(n, fx, fy, octaves=4, persistence=0.55):
+    """Tileable fractal value noise, normalised to 0..1, shape (n, n)."""
+    out = np.zeros((n, n))
+    amp = 1.0
+    for o in range(octaves):
+        cx, cy = max(1, int(fx * 2 ** o)), max(1, int(fy * 2 ** o))
+        grid = rng.random((cy, cx))
+        x, y = np.arange(n) * cx / n, np.arange(n) * cy / n
+        xi, yi = x.astype(int), y.astype(int)
+        xf, yf = x - xi, y - yi
+        xf, yf = xf * xf * (3 - 2 * xf), yf * yf * (3 - 2 * yf)
+        x0, x1, y0, y1 = xi % cx, (xi + 1) % cx, yi % cy, (yi + 1) % cy
+        a, b = grid[np.ix_(y0, x0)], grid[np.ix_(y0, x1)]
+        c, d = grid[np.ix_(y1, x0)], grid[np.ix_(y1, x1)]
+        fx_col, fy_row = xf[None, :], yf[:, None]
+        out += ((a * (1 - fx_col) + b * fx_col) * (1 - fy_row)
+                + (c * (1 - fx_col) + d * fx_col) * fy_row) * amp
+        amp *= persistence
+    lo, hi = np.percentile(out, 1), np.percentile(out, 99)
+    return np.clip((out - lo) / max(hi - lo, 1e-6), 0, 1)
+
+
+def ramp(v, c0, c1):
+    c0, c1 = np.array(c0, float), np.array(c1, float)
+    return c0 + (c1 - c0) * np.clip(v, 0, 1)[..., None]
+
+
+def quantize(img, k):
+    """Median-cut colour reduction."""
+    px = img.reshape(-1, 3)
+    boxes = [np.arange(len(px))]
+    while len(boxes) < k:
+        best, best_score = -1, -1.0
+        for i, b in enumerate(boxes):
+            if len(b) < 2:
+                continue
+            score = float(np.ptp(px[b], axis=0).max()) * len(b)
+            if score > best_score:
+                best, best_score = i, score
+        if best < 0 or best_score <= 0:
+            break
+        b = boxes.pop(best)
+        channel = int(np.ptp(px[b], axis=0).argmax())
+        order = b[np.argsort(px[b, channel], kind="stable")]
+        mid = len(order) // 2
+        boxes += [order[:mid], order[mid:]]
+    out = px.copy()
+    for b in boxes:
+        out[b] = px[b].mean(axis=0)
+    return out.reshape(img.shape)
+
+
+def retro_crush(rgb, size=128, colors=32):
+    """Shrink a detailed source to retro resolution and reduce its palette."""
+    factor = rgb.shape[0] // size
+    h = rgb.shape[0] // factor
+    small = rgb[:h * factor, :h * factor].reshape(h, factor, h, factor, 3).mean(axis=(1, 3))
+    return quantize(small, colors)
+
+
+def save_tex(name, rgb):
+    h, w = rgb.shape[:2]
+    rgba = np.dstack([np.clip(np.flipud(rgb), 0, 1), np.ones((h, w))]).astype(np.float32)
+    old = bpy.data.images.get(name)
+    if old:
+        bpy.data.images.remove(old)
+    img = bpy.data.images.new(name, w, h, alpha=False)
+    img.pixels.foreach_set(rgba.ravel())
+    img.filepath_raw = os.path.join(TEX_DIR, name + ".png")
+    img.file_format = "PNG"
+    img.save()
+    return img
+
+
+def tex_planks(name, dark, light, planks=6, size=128):
+    n = HI
+    grain, blotch = noise(n, 3, 48), noise(n, 4, 4)
+    v = np.zeros((n, n))
+    gap = max(2, n // 128)
+    edges = [p * n // planks for p in range(planks + 1)]
+    for p in range(planks):
+        y0, y1 = edges[p], edges[p + 1]
+        v[y0:y1] = np.roll(grain, int(rng.integers(n)), axis=1)[y0:y1] + rng.uniform(-0.2, 0.2)
+    rgb = ramp(np.clip(v * 0.72 + blotch * 0.28, 0, 1), dark, light)
+    for p in range(planks):
+        y0, y1 = edges[p], edges[p + 1]
+        joint = int(rng.integers(n))
+        rgb[y0:y1, np.arange(joint, joint + gap) % n] *= 0.3
+        rgb[y0:y0 + gap] *= 0.25
+        rgb[y0 + gap:y0 + 2 * gap] *= 1.15
+    return save_tex(name, retro_crush(rgb, size))
+
+
+def tex_stone(name, c0, c1, mortar, rows=6, cols=4, size=128):
+    n = HI
+    fine, big = noise(n, 24, 24), noise(n, 5, 5)
+    rh, bw, m = n / rows, n / cols, n / 85
+    yy, xx0 = np.mgrid[0:n, 0:n]
+    row = (yy / rh).astype(int)
+    xx = (xx0 + (row % 2) * bw / 2) % n
+    col = (xx / bw).astype(int)
+    tone = rng.random((rows, cols))[row, col]
+    edge = np.minimum(np.minimum(xx % bw, bw - xx % bw), np.minimum(yy % rh, rh - yy % rh))
+    rgb = ramp(np.clip(0.15 + 0.4 * tone + 0.3 * fine + 0.2 * big, 0, 1), c0, c1)
+    rgb *= (0.5 + 0.5 * np.clip(edge / (m * 2.4), 0, 1) ** 0.6)[..., None]
+    joint = edge < m
+    rgb[joint] = np.array(mortar) * (0.7 + 0.6 * fine[joint])[..., None]
+    return save_tex(name, retro_crush(rgb, size))
+
+
+def tex_flat(name, c, variation=0.12, freq=24, size=32, colors=12):
+    v = noise(HI, freq, freq)
+    rgb = np.array(c, float) * (1 + variation * (v[..., None] - 0.5) * 2)
+    return save_tex(name, retro_crush(rgb, size, colors))
+
+
+def tex_barrel(name, size=64):
+    n = HI
+    grain, staves = noise(n, 48, 3), 12
+    sw = n // staves
+    v = grain.copy()
+    for s in range(staves):
+        v[:, s * sw:(s + 1) * sw] += rng.uniform(-0.2, 0.2)
+    rgb = ramp(v, (0.16, 0.09, 0.05), (0.56, 0.36, 0.2))
+    rgb[:, np.arange(staves) * sw] *= 0.25
+    for lo, hi in ((0.16, 0.24), (0.76, 0.84)):
+        band = (np.arange(n) >= lo * n) & (np.arange(n) < hi * n)
+        rgb[band] = ramp(noise(n, 30, 30)[band], (0.1, 0.1, 0.11), (0.33, 0.32, 0.33))
+    return save_tex(name, retro_crush(rgb, size))
+
+
+def tex_rug(name, size=128):
+    n = HI
+    yy, xx = np.mgrid[0:n, 0:n] / (n - 1)
+    edge = np.minimum(np.minimum(xx, 1 - xx), np.minimum(yy, 1 - yy))
+    diamond = np.abs(xx - 0.5) + np.abs(yy - 0.5)
+    rgb = np.zeros((n, n, 3)) + np.array((0.42, 0.08, 0.07))
+    rgb[(diamond < 0.30) & (diamond > 0.24)] = (0.72, 0.56, 0.3)
+    rgb[diamond < 0.16] = (0.12, 0.13, 0.26)
+    rgb[edge < 0.11] = (0.12, 0.13, 0.26)
+    rgb[edge < 0.08] = (0.72, 0.56, 0.3)
+    rgb[edge < 0.05] = (0.3, 0.05, 0.05)
+    rgb *= (0.65 + 0.6 * noise(n, 90, 90, 2))[..., None]
+    return save_tex(name, retro_crush(rgb, size, 24))
+
+
+def tex_window(name, size=64):
+    n = HI
+    yy, xx = np.mgrid[0:n, 0:n] / (n - 1)
+    rgb = ramp(yy * 0.8 + noise(n, 6, 6) * 0.2, (0.42, 0.56, 0.78), (0.1, 0.17, 0.36))
+    bars = (np.abs((xx * 2) % 1 - 0.5) > 0.46) | (np.abs((yy * 3) % 1 - 0.5) > 0.46)
+    rgb[bars] = (0.05, 0.04, 0.04)
+    return save_tex(name, retro_crush(rgb, size, 16))
+
+
+def tex_flame(name, size=32):
+    n = HI
+    v = np.clip(np.arange(n)[:, None] / n * 0.75 + noise(n, 8, 5) * 0.4, 0, 1)
+    rgb = ramp(v, (1.0, 0.86, 0.36), (0.95, 0.28, 0.03))
+    return save_tex(name, retro_crush(rgb, size, 8))
+
+
+def material(name, image, emissive=False):
+    old = bpy.data.materials.get(name)
+    if old:
+        bpy.data.materials.remove(old)
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    tree = mat.node_tree
+    bsdf = next(n for n in tree.nodes if n.type == "BSDF_PRINCIPLED")
+    tex = tree.nodes.new("ShaderNodeTexImage")
+    tex.image = image
+    tex.interpolation = "Closest"
+    tree.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+    bsdf.inputs["Roughness"].default_value = 0.95
+    if emissive:
+        tree.links.new(tex.outputs["Color"], bsdf.inputs["Emission Color"])
+        bsdf.inputs["Emission Strength"].default_value = 1.0
+    return mat
+
+
+# ------------------------------------------------------------ mesh builder
+
+class Part:
+    """One Blender object assembled from boxes and lathed shapes."""
+
+    def __init__(self, coll, name, **props):
+        self.coll, self.name, self.props = coll, name, props
+        self.bm = bmesh.new()
+        self.uv = self.bm.loops.layers.uv.new("UVMap")
+        self.mats = []
+
+    def _slot(self, mat):
+        if mat not in self.mats:
+            self.mats.append(mat)
+        return self.mats.index(mat)
+
+    def box(self, cx, cy, z0, sx, sy, sz, mat, rz=0.0, tile=1.0, fit=False, swap=False):
+        bm, slot = self.bm, self._slot(mat)
+        c, s = math.cos(rz), math.sin(rz)
+        corners = [(-sx / 2, -sy / 2), (sx / 2, -sy / 2), (sx / 2, sy / 2), (-sx / 2, sy / 2)]
+        ring = [(cx + c * x - s * y, cy + s * x + c * y) for x, y in corners]
+        bot = [bm.verts.new((x, y, z0)) for x, y in ring]
+        top = [bm.verts.new((x, y, z0 + sz)) for x, y in ring]
+        faces = [bm.faces.new(list(reversed(bot))), bm.faces.new(top)]
+        for i in range(4):
+            j = (i + 1) % 4
+            faces.append(bm.faces.new((bot[i], bot[j], top[j], top[i])))
+        off_u, off_v = (0.0, 0.0) if fit else (float(rng.random()), float(rng.random()))
+        for face in faces:
+            face.material_index = slot
+            face.normal_update()
+            nx, ny, nz = (abs(a) for a in face.normal)
+            for loop in face.loops:
+                x, y, z = loop.vert.co
+                if fit:
+                    x, y, z = (x - cx + sx / 2) / sx, (y - cy + sy / 2) / sy, (z - z0) / sz
+                    scale = 1.0
+                else:
+                    scale = tile
+                if nz >= nx and nz >= ny:
+                    u, v = x, y
+                elif nx >= ny:
+                    u, v = y, z
+                else:
+                    u, v = x, z
+                if swap:
+                    u, v = v, u
+                loop[self.uv].uv = (u * scale + off_u, v * scale + off_v)
+        return self
+
+    def lathe(self, cx, cy, z0, profile, segs, side, cap=None, tile=1.0):
+        bm, side_slot = self.bm, self._slot(side)
+        cap_slot = self._slot(cap or side)
+        rings = []
+        for r, dz in profile:
+            rings.append([bm.verts.new((cx + r * math.cos(2 * math.pi * i / segs),
+                                        cy + r * math.sin(2 * math.pi * i / segs),
+                                        z0 + dz)) for i in range(segs)])
+        height = (profile[-1][1] - profile[0][1]) or 1.0
+        vs = [(dz - profile[0][1]) / height for _, dz in profile]
+        for j in range(len(rings) - 1):
+            low, high = rings[j], rings[j + 1]
+            for i in range(segs):
+                k = (i + 1) % segs
+                face = bm.faces.new((low[i], low[k], high[k], high[i]))
+                face.material_index = side_slot
+                u0, u1 = i / segs, (i + 1) / segs
+                uvs = ((u0, vs[j]), (u1, vs[j]), (u1, vs[j + 1]), (u0, vs[j + 1]))
+                for loop, uv in zip(face.loops, uvs):
+                    loop[self.uv].uv = uv
+        for ring in (list(reversed(rings[0])), rings[-1]):
+            face = bm.faces.new(ring)
+            face.material_index = cap_slot
+            for loop in face.loops:
+                loop[self.uv].uv = (loop.vert.co.x * tile, loop.vert.co.y * tile)
+        return self
+
+    def done(self, loc=(0, 0, 0), rz=0.0, parent=None):
+        mesh = bpy.data.meshes.new(self.name)
+        self.bm.to_mesh(mesh)
+        self.bm.free()
+        for mat in self.mats:
+            mesh.materials.append(mat)
+        obj = bpy.data.objects.new(self.name, mesh)
+        self.coll.objects.link(obj)
+        obj.location = loc
+        obj.rotation_euler[2] = rz
+        obj.parent = parent
+        for key, value in self.props.items():
+            obj[key] = value
+        return obj
+
+
+def empty(coll, name, loc, parent=None, **props):
+    obj = bpy.data.objects.new(name, None)
+    coll.objects.link(obj)
+    obj.location = loc
+    obj.parent = parent
+    for key, value in props.items():
+        obj[key] = value
+    return obj
+
+
+# ------------------------------------------------------------------- build
+
+def reset_scene():
+    old = bpy.data.scenes.get(SCENE_NAME)
+    if old:
+        for obj in list(old.objects):
+            bpy.data.objects.remove(obj, do_unlink=True)
+        for coll in list(old.collection.children):
+            bpy.data.collections.remove(coll)
+        bpy.data.scenes.remove(old)
+    scene = bpy.data.scenes.new(SCENE_NAME)
+    bpy.context.window.scene = scene
+    return scene
+
+
+def make_materials():
+    m = {}
+    def add(key, image, emissive=False):
+        m[key] = material("T_" + key, image, emissive)
+    add("floor", tex_planks("T_floor", (0.2, 0.12, 0.07), (0.58, 0.4, 0.24)))
+    add("wood", tex_planks("T_wood", (0.11, 0.065, 0.04), (0.42, 0.27, 0.16), planks=4))
+    add("crate", tex_planks("T_crate", (0.25, 0.17, 0.09), (0.66, 0.5, 0.3), planks=3, size=64))
+    add("tabletop", tex_planks("T_tabletop", (0.42, 0.3, 0.17), (0.9, 0.74, 0.5), planks=4, size=64))
+    add("stone", tex_stone("T_stone", (0.22, 0.21, 0.2), (0.6, 0.57, 0.52), (0.13, 0.12, 0.11)))
+    add("hearth", tex_stone("T_hearth", (0.24, 0.12, 0.09), (0.56, 0.31, 0.23), (0.1, 0.08, 0.07), rows=8, cols=5))
+    add("barrel", tex_barrel("T_barrel"))
+    add("rug", tex_rug("T_rug"))
+    add("window", tex_window("T_window"), emissive=True)
+    add("flame", tex_flame("T_flame"), emissive=True)
+    flats = {
+        "iron": (0.19, 0.19, 0.21), "soot": (0.04, 0.035, 0.03), "wax": (0.86, 0.8, 0.62),
+        "bark": (0.2, 0.13, 0.08), "ceramic": (0.68, 0.64, 0.55), "pewter": (0.5, 0.5, 0.52),
+        "glass_green": (0.12, 0.34, 0.17), "glass_amber": (0.5, 0.26, 0.07), "glass_wine": (0.3, 0.05, 0.1),
+        "tunic": (0.2, 0.32, 0.27), "trousers": (0.3, 0.24, 0.17), "leather": (0.24, 0.14, 0.08),
+        "skin": (0.72, 0.51, 0.39), "hair": (0.16, 0.1, 0.06),
+    }
+    for key, colour in flats.items():
+        add(key, tex_flat("T_" + key, colour))
+    return m
+
+
+def build_room(c, m):
+    w, d, h = 7.0, 5.0, 3.2
+    Part(c, "Floor").box(0, 0, -0.2, 2 * w, 2 * d, 0.2, m["floor"], tile=0.5).done()
+    Part(c, "Wall_N", collide=1).box(0, d + 0.2, 0, 2 * w + 0.8, 0.4, h, m["stone"], tile=0.5).done()
+    Part(c, "Wall_W", collide=1).box(-w - 0.2, 0, 0, 0.4, 2 * d, h, m["stone"], tile=0.5).done()
+    Part(c, "Wall_E", collide=1).box(w + 0.2, 0, 0, 0.4, 2 * d, h, m["stone"], tile=0.5).done()
+    # The south wall is a low sill so it never hides the player from the camera.
+    Part(c, "Wall_S", collide=1).box(0, -d - 0.2, 0, 2 * w + 0.8, 0.4, 0.35, m["stone"], tile=0.5).done()
+
+    beams = Part(c, "Beams")
+    for x in (-6.8, -3.2, 0.4, 6.8):
+        beams.box(x, d - 0.08, 0, 0.26, 0.16, h, m["wood"], swap=True)
+    for y in (-4.8, -1.6, 1.6, 4.8):
+        beams.box(-w + 0.08, y, 0, 0.16, 0.26, h, m["wood"], swap=True)
+        beams.box(w - 0.08, y, 0, 0.16, 0.26, h, m["wood"], swap=True)
+    beams.box(0, d - 0.1, h - 0.28, 2 * w, 0.2, 0.28, m["wood"])
+    beams.box(-w + 0.1, 0, h - 0.28, 0.2, 2 * d, 0.28, m["wood"])
+    beams.box(w - 0.1, 0, h - 0.28, 0.2, 2 * d, 0.28, m["wood"])
+    beams.done()
+
+    door = Part(c, "Door", collide=1)
+    door.box(-1.5, d - 0.03, 0, 1.3, 0.1, 2.25, m["wood"], tile=0.9, swap=True)
+    door.box(-1.5, d - 0.1, 0.45, 1.3, 0.05, 0.12, m["iron"])
+    door.box(-1.5, d - 0.1, 1.7, 1.3, 0.05, 0.12, m["iron"])
+    door.done()
+
+    window = Part(c, "Window")
+    window.box(-4.6, d - 0.02, 1.15, 1.25, 0.04, 1.3, m["window"], fit=True)
+    window.box(-4.6, d - 0.06, 2.45, 1.45, 0.14, 0.12, m["wood"])
+    window.box(-4.6, d - 0.06, 1.03, 1.45, 0.18, 0.12, m["wood"])
+    window.done()
+
+    rug = Part(c, "Rug")
+    rug.box(-1.8, -2.6, 0, 3.8, 2.8, 0.02, m["rug"], fit=True)
+    rug.done()
+
+
+def build_fireplace(c, m):
+    y0, depth_x = 0.5, -6.45
+    fp = Part(c, "Fireplace", collide=1)
+    stone = m["hearth"]
+    fp.box(depth_x, y0 - 1.0, 0, 1.1, 0.6, 1.25, stone, tile=0.7)
+    fp.box(depth_x, y0 + 1.0, 0, 1.1, 0.6, 1.25, stone, tile=0.7)
+    fp.box(depth_x, y0, 1.25, 1.1, 2.6, 0.95, stone, tile=0.7)
+    fp.box(-6.95, y0, 0, 0.1, 1.4, 1.25, m["soot"])
+    fp.box(depth_x, y0, 0, 1.1, 1.4, 0.04, m["soot"])
+    fp.box(-5.82, y0, 1.55, 0.34, 2.9, 0.13, m["wood"])
+    fp.box(-6.6, y0, 2.2, 0.8, 1.6, 1.0, stone, tile=0.7)
+    fp.done()
+
+    fire = Part(c, "Fire")
+    for offset, angle in ((-0.2, 0.25), (0.2, -0.3), (0.0, 1.35)):
+        fire.box(-6.4, y0 + offset, 0.04, 0.8, 0.16, 0.15, m["bark"], rz=math.pi / 2 + angle)
+    for dx, dy, r, tall in ((0, 0, 0.22, 0.75), (0.08, 0.28, 0.14, 0.5), (0.05, -0.27, 0.15, 0.55)):
+        fire.lathe(-6.4 + dx, y0 + dy, 0.14,
+                   [(r, 0), (r * 1.1, tall * 0.3), (r * 0.5, tall * 0.7), (0.01, tall)], 5, m["flame"])
+    fire.done()
+    empty(c, "Light_Fire", (-5.45, y0, 0.9), light="fire")
+
+
+def build_bar(c, m):
+    bar = Part(c, "BarCounter", collide=1)
+    bar.box(3.2, 2.9, 0, 4.4, 0.62, 1.02, m["wood"], tile=0.8, swap=True)
+    bar.box(3.2, 2.9, 1.02, 4.75, 0.86, 0.08, m["floor"], tile=0.7)
+    bar.box(3.2, 2.56, 0.1, 4.45, 0.05, 0.08, m["iron"])
+    bar.done()
+
+    shelf = Part(c, "BackShelf", collide=1)
+    shelf.box(3.4, 4.7, 0, 5.4, 0.55, 0.9, m["wood"], tile=0.8, swap=True)
+    shelf.box(3.4, 4.7, 0.9, 5.6, 0.62, 0.06, m["floor"], tile=0.7)
+    for x in (0.75, 3.4, 6.05):
+        shelf.box(x, 4.86, 0.96, 0.1, 0.24, 1.5, m["wood"], swap=True)
+    for z in (1.55, 2.2):
+        shelf.box(3.4, 4.84, z, 5.5, 0.3, 0.06, m["wood"])
+    shelf.done()
+
+    bottles = Part(c, "Bottles")
+    kinds = ("glass_green", "glass_amber", "glass_wine")
+    profile = [(0.05, 0), (0.055, 0.17), (0.02, 0.24), (0.02, 0.32)]
+    for z in (0.96, 1.61, 2.26):
+        for x in np.arange(1.0, 5.9, 0.34):
+            if rng.random() < 0.8:
+                bottles.lathe(float(x) + float(rng.uniform(-0.05, 0.05)), 4.84 + float(rng.uniform(-0.06, 0.06)),
+                              z, profile, 6, m[kinds[int(rng.integers(3))]])
+    bottles.done()
+
+    lantern = Part(c, "BarLantern")
+    lantern.lathe(1.5, 2.9, 1.1, [(0.11, 0), (0.1, 0.03)], 6, m["iron"])
+    lantern.lathe(1.5, 2.9, 1.13, [(0.075, 0), (0.09, 0.14), (0.06, 0.24)], 6, m["flame"])
+    lantern.lathe(1.5, 2.9, 1.37, [(0.1, 0), (0.02, 0.11)], 6, m["iron"])
+    lantern.done()
+    empty(c, "Light_Bar", (1.5, 2.45, 1.9), light="lantern")
+
+    for i, x in enumerate((2.5, 3.1, 4.2)):
+        mug(c, m, f"Mug_Bar{i}", x, 2.85 + 0.12 * (i % 2), 1.1)
+
+
+def mug(c, m, name, x, y, z):
+    Part(c, name).lathe(x, y, z, [(0.05, 0), (0.055, 0.11)], 6, m["pewter"]).done()
+
+
+def candle(c, m, name, x, y, z):
+    part = Part(c, name)
+    part.lathe(x, y, z, [(0.07, 0), (0.07, 0.015)], 6, m["iron"])
+    part.lathe(x, y, z + 0.015, [(0.03, 0), (0.03, 0.13)], 5, m["wax"])
+    part.lathe(x, y, z + 0.15, [(0.018, 0), (0.024, 0.03), (0.003, 0.09)], 4, m["flame"])
+    part.done()
+    empty(c, "Light_" + name, (x, y, z + 0.55), light="candle")
+
+
+def stool(c, m, name, x, y):
+    part = Part(c, name, collide=1)
+    part.lathe(0, 0, 0.56, [(0.17, 0), (0.17, 0.05)], 8, m["crate"], m["floor"])
+    for i in range(3):
+        a = i * 2 * math.pi / 3
+        part.box(0.11 * math.cos(a), 0.11 * math.sin(a), 0, 0.05, 0.05, 0.56, m["wood"], swap=True)
+    part.done((x, y, 0))
+
+
+def chair(c, m, name, x, y, rz):
+    part = Part(c, name, collide=1)
+    part.box(0, 0, 0.45, 0.44, 0.42, 0.05, m["floor"])
+    for sx, sy in ((-0.18, -0.17), (0.18, -0.17), (-0.18, 0.17), (0.18, 0.17)):
+        part.box(sx, sy, 0, 0.055, 0.055, 0.45, m["wood"], swap=True)
+    for sx in (-0.18, 0.18):
+        part.box(sx, -0.19, 0.5, 0.055, 0.05, 0.5, m["wood"], swap=True)
+    part.box(0, -0.19, 0.84, 0.42, 0.04, 0.14, m["wood"])
+    part.done((x, y, 0), rz)
+
+
+def rect_table(c, m, key, x, y):
+    table = Part(c, "Table_" + key, collide=1)
+    table.box(0, 0, 0.72, 1.7, 0.95, 0.07, m["tabletop"], tile=0.7)
+    for sx, sy in ((-0.72, -0.36), (0.72, -0.36), (-0.72, 0.36), (0.72, 0.36)):
+        table.box(sx, sy, 0, 0.1, 0.1, 0.72, m["wood"], swap=True)
+    table.done((x, y, 0))
+    chair(c, m, f"Chair_{key}_N", x - 0.35, y + 0.82, math.pi)
+    chair(c, m, f"Chair_{key}_S", x + 0.35, y - 0.82, 0)
+    Part(c, f"Plate_{key}").lathe(x - 0.35, y + 0.2, 0.79, [(0.11, 0), (0.14, 0.02)], 8, m["ceramic"]).done()
+    mug(c, m, f"Mug_{key}", x + 0.42, y - 0.18, 0.79)
+    candle(c, m, f"Candle_{key}", x, y, 0.79)
+
+
+def build_furniture(c, m):
+    rect_table(c, m, "A", -2.8, 2.2)
+    rect_table(c, m, "B", -1.8, -2.6)
+
+    round_table = Part(c, "Table_C", collide=1)
+    round_table.lathe(0, 0, 0.72, [(0.72, 0), (0.72, 0.07)], 10, m["wood"], m["tabletop"], tile=0.7)
+    round_table.lathe(0, 0, 0, [(0.34, 0), (0.09, 0.14), (0.08, 0.72)], 6, m["wood"])
+    round_table.done((3.0, -1.4, 0))
+    candle(c, m, "Candle_C", 3.0, -1.4, 0.79)
+    mug(c, m, "Mug_C", 3.3, -1.25, 0.79)
+    stool(c, m, "Stool_C1", 3.0, -2.45)
+    stool(c, m, "Stool_C2", 4.0, -0.85)
+    stool(c, m, "Stool_C3", 2.0, -0.85)
+    for i, x in enumerate((2.3, 3.2, 4.1, 5.0)):
+        stool(c, m, f"Stool_Bar{i}", x, 2.1)
+
+    profile = [(0.3, 0), (0.37, 0.25), (0.4, 0.45), (0.37, 0.65), (0.3, 0.9)]
+    for i, (x, y) in enumerate(((6.3, -4.3), (5.45, -4.35), (6.35, -3.45))):
+        Part(c, f"Barrel_{i}", collide=1).lathe(0, 0, 0, profile, 10, m["barrel"], m["wood"]).done((x, y, 0))
+
+    for i, (x, y, s) in enumerate(((-6.2, -4.2, 1.0), (-5.15, -4.3, 0.8), (-6.25, -3.2, 0.75))):
+        crate = Part(c, f"Crate_{i}", collide=1)
+        crate.box(0, 0, 0, s, s, s, m["crate"], tile=0.9)
+        for sx, sy in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
+            crate.box(sx * (s / 2 - 0.03), sy * (s / 2 - 0.03), 0, 0.08, 0.08, s + 0.01, m["wood"], swap=True)
+        crate.done((x, y, 0))
+
+
+# ------------------------------------------------------- faceted characters
+#
+# Bodies follow the low-poly reference sheets: stacked cross-sections joined by
+# hard-edged triangles. Each moving body part is its own object with its origin
+# on the joint, so the game can animate them without skinning. Rings are written
+# in model space with the character standing at the origin, facing +Y, arms
+# hanging straight down; the arm splay is applied as a rest rotation.
+
+# Head layout, from the chin up: (height above the chin, half outline running from the
+# centre of the face round to the centre of the back of the head). The rings are mirrored.
+HEAD_RINGS = [
+    (0.0, [(0, 0.082), (0.025, 0.08), (0.035, 0.06), (0.03, 0.02), (0.018, -0.01), (0.01, -0.02), (0, -0.025)]),
+    (0.037, [(0, 0.09), (0.032, 0.087), (0.058, 0.06), (0.066, 0.015), (0.058, -0.025), (0.03, -0.05), (0, -0.055)]),
+    (0.069, [(0, 0.095), (0.035, 0.09), (0.064, 0.062), (0.074, 0.01), (0.068, -0.04), (0.04, -0.07), (0, -0.075)]),
+    (0.094, [(0, 0.094), (0.04, 0.092), (0.07, 0.06), (0.078, 0.008), (0.074, -0.05), (0.045, -0.08), (0, -0.085)]),
+    (0.106, [(0, 0.092), (0.02, 0.08), (0.055, 0.08), (0.076, 0.045), (0.078, -0.01), (0.048, -0.085), (0, -0.09)]),
+    (0.124, [(0, 0.098), (0.026, 0.1), (0.058, 0.088), (0.078, 0.05), (0.08, -0.03), (0.05, -0.085), (0, -0.09)]),
+    (0.159, [(0, 0.088), (0.03, 0.086), (0.06, 0.07), (0.074, 0.03), (0.075, -0.04), (0.045, -0.08), (0, -0.085)]),
+    (0.204, [(0, 0.055), (0.02, 0.052), (0.04, 0.04), (0.05, 0.015), (0.05, -0.03), (0.03, -0.055), (0, -0.06)]),
+]
+# Short hair with an overhanging front edge. Low rings stay inside the skull at the front so the face shows.
+HAIR_SHORT = [
+    (0.084, [(0, 0.02), (0.03, 0.02), (0.06, 0.02), (0.085, 0.005), (0.086, -0.045), (0.056, -0.09), (0, -0.097)]),
+    (0.125, [(0, 0.04), (0.03, 0.04), (0.07, 0.045), (0.089, 0.02), (0.089, -0.05), (0.056, -0.095), (0, -0.1)]),
+    (0.151, [(0, 0.06), (0.035, 0.06), (0.072, 0.05), (0.09, 0.02), (0.087, -0.055), (0.052, -0.095), (0, -0.098)]),
+    (0.164, [(0, 0.104), (0.035, 0.104), (0.076, 0.082), (0.09, 0.022), (0.085, -0.055), (0.05, -0.094), (0, -0.096)]),
+    (0.189, [(0, 0.106), (0.04, 0.102), (0.075, 0.07), (0.084, 0.02), (0.08, -0.05), (0.045, -0.085), (0, -0.088)]),
+    (0.214, [(0, 0.07), (0.03, 0.068), (0.055, 0.045), (0.062, 0.01), (0.058, -0.03), (0.035, -0.055), (0, -0.058)]),
+]
+
+MALE = {
+    "name": "Male", "tunic": "tunic", "hair": "hair", "splay": 0.257, "leg_splay": 0.08, "arm_sides": 10, "cuff_bands": 1,
+    "hips_z": 1.06, "torso_z": 1.16, "neck_z": 1.6,
+    "hip_x": 0.1, "shoulder": (0.187, 1.46), "elbow_z": 1.284, "wrist_z": 0.985,
+    "knee_z": 0.58, "hand_scale": 1.0, "foot_scale": 1.1,
+    # (z, half width, front depth, back depth[, forward shift])
+    "hips": [(0.86, 0.09, 0.07, 0.08), (0.92, 0.19, 0.105, 0.125), (0.98, 0.182, 0.105, 0.125),
+             (1.05, 0.162, 0.105, 0.112), (1.11, 0.155, 0.1, 0.105)],
+    "torso": [(1.05, 0.16, 0.095, 0.1), (1.13, 0.15, 0.098, 0.1), (1.2, 0.128, 0.096, 0.095),
+              (1.26, 0.122, 0.105, 0.1), (1.33, 0.15, 0.14, 0.12), (1.4, 0.185, 0.15, 0.13),
+              (1.47, 0.205, 0.13, 0.125), (1.535, 0.17, 0.095, 0.105), (1.585, 0.152, 0.082, 0.09),
+              (1.618, 0.124, 0.072, 0.08)],
+    # Arm rings add: forward shift, shift away from the body, slope of the ring (outer edge lower).
+    "upper_arm": [(1.22, 0.048, 0.054, 0.052, 0.0, 0.0, 0.0), (1.27, 0.05, 0.056, 0.056, 0.0, 0.0, 0.0),
+                  (1.33, 0.055, 0.074, 0.064, 0.005, 0.003, 0.0), (1.375, 0.058, 0.074, 0.066, 0.0, 0.006, 0.0),
+                  (1.41, 0.072, 0.08, 0.076, 0.0, 0.012, 0.0), (1.46, 0.06, 0.082, 0.08, 0.0, 0.0, 0.1),
+                  (1.515, 0.05, 0.078, 0.074, 0.0, -0.01, 0.35), (1.555, 0.028, 0.05, 0.05, 0.0, -0.03, 0.5)],
+    "forearm": [(0.98, 0.032, 0.036, 0.036, 0.0, 0.0, 0.0), (1.01, 0.036, 0.04, 0.04, 0.0, 0.0, 0.0),
+                (1.08, 0.046, 0.054, 0.05, 0.0, 0.004, 0.0), (1.16, 0.06, 0.068, 0.06, 0.0, 0.008, 0.0),
+                (1.22, 0.064, 0.072, 0.062, 0.0, 0.006, 0.0), (1.27, 0.05, 0.055, 0.055, 0.0, 0.0, 0.0)],
+    "thigh": [(0.48, 0.06, 0.07, 0.068), (0.6, 0.062, 0.075, 0.074), (0.68, 0.068, 0.08, 0.08),
+              (0.8, 0.086, 0.1, 0.1), (0.9, 0.086, 0.106, 0.11), (0.97, 0.056, 0.08, 0.085)],
+    "shin": [(0.09, 0.036, 0.046, 0.048), (0.15, 0.037, 0.048, 0.05), (0.22, 0.04, 0.052, 0.056),
+             (0.3, 0.048, 0.06, 0.066), (0.37, 0.062, 0.068, 0.082), (0.44, 0.077, 0.08, 0.082),
+             (0.49, 0.068, 0.088, 0.07), (0.56, 0.064, 0.075, 0.062)],
+    # Neck: (z, half width, front depth, back depth, forward shift, collar pit depth).
+    "neck": [(1.58, 0.1, 0.066, 0.076, -0.006, 0.012), (1.62, 0.074, 0.055, 0.07, -0.008, 0.014),
+             (1.645, 0.058, 0.046, 0.06, -0.01, 0.01), (1.69, 0.043, 0.04, 0.05, -0.012, 0.0),
+             (1.725, 0.04, 0.036, 0.05, -0.012, 0.0)],
+    "chin_z": 1.655, "head_scale": (0.85, 0.95, 1.0), "jaw": 1.0, "angular_head": True,
+    "hair_outlines": HAIR_SHORT,
+    "skinned": True, "quads": True, "plated": True, "skin": "skin", "pants": "trousers", "belt": "leather",
+    "sleeve_rows": 7, "leg_drop": {}, "trunk_blend": (1.1, 0.08),
+    "bare_profile": [(0.89, 0.173, 0.1, 0.125), (0.976, 0.16, 0.1, 0.13), (1.04, 0.14, 0.1, 0.12), (1.125, 0.13, 0.095, 0.1),
+                     (1.215, 0.116, 0.095, 0.09), (1.3, 0.13, 0.1, 0.1), (1.37, 0.15, 0.125, 0.12), (1.433, 0.16, 0.15, 0.125),
+                     (1.496, 0.16, 0.135, 0.125), (1.554, 0.15, 0.095, 0.105), (1.582, 0.125, 0.08, 0.1), (1.618, 0.075, 0.06, 0.07)],
+    "bare_arm": [(1.438, 0.046, 0.07), (1.4, 0.052, 0.07), (1.33, 0.045, 0.06), (1.295, 0.036, 0.05), (1.275, 0.04, 0.055),
+                 (1.225, 0.052, 0.06), (1.12, 0.043, 0.05), (1.0, 0.025, 0.032)],
+    "skin_leg": [(0.698, 0.057, 0.075, 0.072), (0.6426, 0.05, 0.072, 0.065), (0.6, 0.06, 0.09, 0.062), (0.535, 0.05, 0.075, 0.06),
+                 (0.469, 0.07, 0.062, 0.09), (0.3, 0.05, 0.05, 0.06), (0.178, 0.026, 0.04, 0.04), (0.09, 0.036, 0.046, 0.048)],
+    "shoulder_points": {"SHf": (0.205, 0.055, 1.51), "SHb": (0.205, -0.06, 1.51), "SHm": (0.224, -0.005, 1.513),
+                        "T": (0.12, -0.01, 1.58)},
+}
+
+# A rounder face with full cheeks and a small chin.
+HEAD_CUTE = [
+    (0.0, [(0, 0.075), (0.016, 0.072), (0.024, 0.055), (0.022, 0.02), (0.014, -0.01), (0.008, -0.02), (0, -0.025)]),
+    (0.035, [(0, 0.088), (0.03, 0.085), (0.054, 0.06), (0.062, 0.015), (0.054, -0.025), (0.03, -0.05), (0, -0.055)]),
+    (0.07, [(0, 0.095), (0.04, 0.094), (0.07, 0.068), (0.08, 0.012), (0.072, -0.04), (0.04, -0.07), (0, -0.075)]),
+    (0.1, [(0, 0.093), (0.04, 0.094), (0.072, 0.066), (0.082, 0.01), (0.076, -0.05), (0.045, -0.08), (0, -0.085)]),
+    (0.112, [(0, 0.092), (0.02, 0.086), (0.055, 0.086), (0.078, 0.05), (0.08, -0.01), (0.05, -0.085), (0, -0.09)]),
+    (0.13, [(0, 0.094), (0.026, 0.094), (0.058, 0.085), (0.08, 0.05), (0.082, -0.03), (0.05, -0.085), (0, -0.09)]),
+    (0.165, [(0, 0.088), (0.03, 0.086), (0.06, 0.07), (0.076, 0.03), (0.077, -0.04), (0.045, -0.08), (0, -0.085)]),
+    (0.21, [(0, 0.055), (0.02, 0.052), (0.04, 0.04), (0.05, 0.015), (0.05, -0.03), (0.03, -0.055), (0, -0.06)]),
+]
+# Hair pulled up and back, leaving the face clear.
+HAIR_UPDO = [
+    (0.09, [(0, 0.01), (0.03, 0.01), (0.06, 0.015), (0.075, 0.0), (0.08, -0.05), (0.055, -0.09), (0, -0.097)]),
+    (0.135, [(0, 0.05), (0.03, 0.05), (0.065, 0.05), (0.083, 0.03), (0.085, -0.05), (0.056, -0.095), (0, -0.1)]),
+    (0.16, [(0, 0.085), (0.035, 0.088), (0.068, 0.072), (0.085, 0.03), (0.085, -0.055), (0.052, -0.095), (0, -0.098)]),
+    (0.19, [(0, 0.085), (0.04, 0.082), (0.072, 0.06), (0.082, 0.02), (0.078, -0.05), (0.045, -0.085), (0, -0.088)]),
+    (0.225, [(0, 0.05), (0.03, 0.048), (0.05, 0.03), (0.058, 0.008), (0.055, -0.03), (0.033, -0.055), (0, -0.058)]),
+]
+
+FEMALE = {
+    "name": "Female", "tunic": "tee_white", "hair": "hair_f", "skin": "skin_f", "pants": "pants_red",
+    "belt": "waistband", "shoe": "shoe_w", "sole": "sole_w", "splay": 0.28, "leg_splay": 0.05,
+    "arm_sides": 8, "cuff_bands": 0, "midriff_bands": 2, "bare_arm_bands": 2, "bare_forearm": True,
+    "fold": 0.0, "quads": True, "skinned": True, "stripes": True, "drawstring": True, "necklace": True, "sneakers": True, "cute_face": True,
+    "hips_z": 0.86, "torso_z": 0.98, "neck_z": 1.37,
+    "hip_x": 0.098, "shoulder": (0.105, 1.3), "shoulder_y": -0.03, "arm_lean": (0.36, 0.06), "elbow_z": 1.04, "wrist_z": 0.85,
+    "knee_z": 0.47, "hand_scale": 0.76, "foot_scale": 0.9,
+    "back_seam": 0.015,
+    # One outline for the whole trunk of the skinned body: (height, half width, front, back).
+    "skin_profile": [(0.76, 0.17, 0.07, 0.095), (0.841, 0.172, 0.073, 0.112), (0.898, 0.148, 0.076, 0.095),
+                     (0.93, 0.128, 0.078, 0.075), (0.974, 0.106, 0.08, 0.055), (1.005, 0.095, 0.083, 0.042),
+                     (1.055, 0.09, 0.083, 0.04), (1.056, 0.082, 0.08, 0.033), (1.0705, 0.083, 0.08, 0.034),
+                     (1.0715, 0.093, 0.09, 0.044), (1.108, 0.095, 0.09, 0.045), (1.152, 0.106, 0.122, 0.05),
+                     (1.19, 0.114, 0.105, 0.052), (1.235, 0.124, 0.082, 0.056), (1.321, 0.128, 0.055, 0.06),
+                     (1.335, 0.068, 0.05, 0.05)],
+    # The body under the clothes: no hems, waistband or sleeves.
+    "bare_profile": [(0.76, 0.17, 0.07, 0.095), (0.841, 0.17, 0.072, 0.11), (0.898, 0.146, 0.075, 0.093),
+                     (0.93, 0.126, 0.077, 0.073), (0.974, 0.104, 0.079, 0.054), (1.005, 0.09, 0.08, 0.04),
+                     (1.062, 0.082, 0.08, 0.034), (1.108, 0.092, 0.088, 0.043), (1.152, 0.106, 0.12, 0.048),
+                     (1.19, 0.112, 0.103, 0.05), (1.235, 0.122, 0.08, 0.054), (1.321, 0.126, 0.054, 0.058),
+                     (1.335, 0.066, 0.049, 0.049)],
+    "bare_arm": [(1.219, 0.034, 0.05), (1.1815, 0.029, 0.04), (1.134, 0.027, 0.035), (1.0765, 0.025, 0.03),
+                 (1.0465, 0.024, 0.03), (1.0165, 0.026, 0.03), (0.9665, 0.026, 0.028), (0.868, 0.017, 0.021)],
+    # Arm loops from shoulder to wrist: (height, half width, half depth).
+    "skin_arm": [(1.219, 0.034, 0.05), (1.1815, 0.033, 0.045), (1.18, 0.026, 0.036), (1.134, 0.027, 0.035),
+                 (1.0765, 0.025, 0.03), (1.0465, 0.024, 0.03), (1.0165, 0.026, 0.03), (0.9665, 0.026, 0.028),
+                 (0.868, 0.017, 0.021)],
+    # Leg loops from upper thigh to ankle: (height, half width, front, back).
+    "skin_leg": [(0.681, 0.089, 0.074, 0.079), (0.582, 0.076, 0.064, 0.072), (0.484, 0.057, 0.038, 0.057),
+                 (0.412, 0.046, 0.038, 0.06), (0.34, 0.053, 0.032, 0.072), (0.264, 0.044, 0.02, 0.057),
+                 (0.204, 0.035, 0.016, 0.05), (0.1, 0.033, 0.014, 0.046)],
+    "hips": [(0.71, 0.085, 0.06, 0.075), (0.765, 0.17, 0.07, 0.095), (0.841, 0.172, 0.073, 0.112),
+             (0.898, 0.148, 0.076, 0.095), (0.966, 0.12, 0.08, 0.055), (1.005, 0.122, 0.085, 0.04),
+             (1.055, 0.118, 0.085, 0.04)],
+    "torso": [(1.0, 0.1, 0.078, 0.034), (1.057, 0.095, 0.08, 0.033), (1.07, 0.095, 0.08, 0.034),
+              (1.072, 0.105, 0.09, 0.044), (1.108, 0.104, 0.09, 0.045), (1.152, 0.112, 0.122, 0.05),
+              (1.19, 0.118, 0.105, 0.052), (1.235, 0.124, 0.082, 0.056), (1.321, 0.128, 0.055, 0.06),
+              (1.36, 0.075, 0.05, 0.05)],
+    "upper_arm": [(1.06, 0.033, 0.036, 0.036, 0.0, 0.0, 0.0), (1.12, 0.036, 0.038, 0.038, 0.0, 0.0, 0.0),
+                  (1.2, 0.04, 0.042, 0.042, 0.0, 0.0, 0.0), (1.215, 0.058, 0.06, 0.06, 0.0, 0.003, 0.0),
+                  (1.27, 0.062, 0.066, 0.064, 0.0, 0.005, 0.0), (1.32, 0.06, 0.066, 0.064, 0.0, 0.0, 0.25),
+                  (1.36, 0.03, 0.04, 0.04, 0.0, -0.02, 0.5)],
+    "forearm": [(0.85, 0.024, 0.028, 0.028, 0.0, 0.0, 0.0), (0.92, 0.028, 0.032, 0.032, 0.0, 0.0, 0.0),
+                (1.0, 0.034, 0.038, 0.037, 0.0, 0.0, 0.0), (1.07, 0.035, 0.038, 0.037, 0.0, 0.0, 0.0),
+                (1.1, 0.03, 0.034, 0.034, 0.0, 0.0, 0.0)],
+    # Loose through the hip and thigh, then tapering in to a slim knee.
+    "thigh": [(0.44, 0.05, 0.034, 0.055), (0.484, 0.057, 0.038, 0.057), (0.582, 0.076, 0.064, 0.072),
+              (0.681, 0.089, 0.074, 0.079), (0.765, 0.094, 0.075, 0.083), (0.85, 0.075, 0.06, 0.065)],
+    # Slim below the knee: a slight calf curve down to a narrow ankle.
+    "shin": [(0.1, 0.033, 0.014, 0.046), (0.204, 0.035, 0.016, 0.05), (0.264, 0.044, 0.02, 0.057),
+             (0.34, 0.053, 0.032, 0.072), (0.412, 0.046, 0.038, 0.06), (0.46, 0.05, 0.038, 0.058),
+             (0.51, 0.05, 0.036, 0.056)],
+    "neck": [(1.335, 0.06, 0.042, 0.05, -0.002, 0.008), (1.37, 0.04, 0.034, 0.04, -0.004, 0.004),
+             (1.395, 0.033, 0.03, 0.034, -0.006, 0.0), (1.45, 0.03, 0.03, 0.034, -0.006, 0.0)],
+    "chin_z": 1.4, "head_scale": (0.86, 0.9, 1.0), "jaw": 1.0, "ears": True, "head_grid": True,
+    "head_rings": HEAD_CUTE, "hair_outlines": HAIR_UPDO,
+    "bob": True, "strands": [],
+}
+
+
+def ring(z, w, f, b, cy=0.0, cx=0.0, n=8):
+    """A faceted cross-section. Point 0 is on +X and the points run towards the front (+Y)."""
+    points = []
+    for i in range(n):
+        angle = 2 * math.pi * i / n
+        c, s = math.cos(angle), math.sin(angle)
+        points.append((cx + w * math.copysign(abs(c) ** 0.8, c),
+                       cy + (f if s >= 0 else b) * math.copysign(abs(s) ** 0.8, s),
+                       z))
+    return points
+
+
+# Shoe cross-sections from heel to toe, at a foot_scale of 1.
+# Sole: (y, half width, height of the underside, raised under the arch).
+SHOE_SOLE = [(-0.088, 0.042, 0.0), (-0.07, 0.058, 0.0), (-0.02, 0.056, 0.0), (0.015, 0.05, 0.012), (0.06, 0.05, 0.012),
+             (0.09, 0.06, 0.0), (0.15, 0.06, 0.0), (0.185, 0.05, 0.0), (0.2, 0.034, 0.0)]
+# Upper: (y, half width, height of the top).
+SHOE_UPPER = [(-0.082, 0.042, 0.085), (-0.062, 0.053, 0.12), (-0.018, 0.05, 0.135), (0.03, 0.05, 0.125),
+              (0.08, 0.056, 0.08), (0.13, 0.058, 0.058), (0.175, 0.048, 0.045), (0.192, 0.032, 0.035)]
+SOLE_TOP = 0.026
+TOE_OUT = 0.12
+
+
+def sole_ring(y, w, lift, cx, scale):
+    y, w, lift, top = y * scale, w * scale, lift * scale, SOLE_TOP * scale
+    mid = lift + (top - lift) * 0.6
+    return [(cx - w * 0.92, y, lift), (cx + w * 0.92, y, lift), (cx + w, y, mid),
+            (cx + w * 0.98, y, top), (cx - w * 0.98, y, top), (cx - w, y, mid)]
+
+
+def upper_ring(y, w, top, cx, scale):
+    """A shoe section with a slight ridge along the top of the foot."""
+    y, w, top, base = y * scale, w * scale, top * scale, (SOLE_TOP - 0.002) * scale
+    mid = base + (top - base) * 0.5
+    return [(cx - w, y, base), (cx + w, y, base), (cx + w * 1.05, y, mid), (cx + w * 0.75, y, top),
+            (cx, y, top + 0.008 * scale), (cx - w * 0.75, y, top), (cx - w * 1.05, y, mid)]
+
+
+class Facet(Part):
+    """A body part with its origin on a joint, drawn with hard-edged triangles."""
+
+    def __init__(self, coll, name, pivot):
+        super().__init__(coll, name)
+        self.pivot = pivot
+        self.keep_quads = False
+
+    def loft(self, rings, mats):
+        bands = len(rings) - 1
+        slots = [self._slot(mat) for mat in (mats if isinstance(mats, list) else [mats] * bands)]
+        px, py, pz = self.pivot
+        loops = [[self.bm.verts.new((x - px, y - py, z - pz)) for x, y, z in r] for r in rings]
+        for j in range(bands):
+            low, high = loops[j], loops[j + 1]
+            for i in range(len(low)):
+                k = (i + 1) % len(low)
+                self.bm.faces.new((low[i], low[k], high[k], high[i])).material_index = slots[j]
+        self.bm.faces.new(loops[0]).material_index = slots[0]
+        self.bm.faces.new(loops[-1]).material_index = slots[-1]
+        return self
+
+    def solid(self, points, faces, mat):
+        """A small closed shape from explicit corners, for details such as the nose and ears."""
+        mats = mat if isinstance(mat, list) else [mat] * len(faces)
+        px, py, pz = self.pivot
+        verts = [self.bm.verts.new((x - px, y - py, z - pz)) for x, y, z in points]
+        for face, face_mat in zip(faces, mats):
+            self.bm.faces.new([verts[i] for i in face]).material_index = self._slot(face_mat)
+        return self
+
+    def finish(self, parent, parent_pivot, tile=2.0):
+        bmesh.ops.recalc_face_normals(self.bm, faces=self.bm.faces)
+        if not self.keep_quads:
+            bmesh.ops.triangulate(self.bm, faces=self.bm.faces, quad_method="SHORT_EDGE", ngon_method="BEAUTY")
+        for face in self.bm.faces:
+            face.normal_update()
+            nx, ny, nz = (abs(a) for a in face.normal)
+            for loop in face.loops:
+                x, y, z = loop.vert.co
+                u, v = (x, y) if nz >= nx and nz >= ny else (y, z) if nx >= ny else (x, z)
+                loop[self.uv].uv = (u * tile, v * tile)
+        return self.done(tuple(a - b for a, b in zip(self.pivot, parent_pivot)), parent=parent)
+
+
+def add_strand(part, points, mat):
+    """A thin tapered piece following (x, y, z, half thickness) points: hair, cords, chains."""
+    part.loft([ring(z, w, w, w, y, x, n=4) for x, y, z, w in points], mat)
+
+
+def add_stripes(part, stack, cx, sx, mat, spacing, half_width, curve):
+    """Two thin track-pants stripes down the outer side of a leg. Curve follows the ring's facet."""
+    def on_side(r, offset):
+        y = (r[2] - r[3]) / 2 + offset
+        return y, r[1] * (1 - curve * abs(y) / (r[2] if y > 0 else r[3])) + 0.006
+
+    for offset in (-spacing, spacing):
+        part.loft([ring(r[0], 0.002, half_width, half_width, on_side(r, offset)[0],
+                        cx + sx * on_side(r, offset)[1], n=4) for r in stack], mat)
+
+
+def arm_rings(stack, cx, sx, n, y_at=lambda z: 0.0):
+    """Arm cross-sections, shifted away from the body and sloped to run into the shoulder."""
+    rings = []
+    for z, w, f, b, cy, out, slope in stack:
+        centre = cx + sx * out
+        rings.append([(x, y, pz - slope * sx * (x - centre)) for x, y, pz in ring(z, w, f, b, cy + y_at(z), centre, n)])
+    return rings
+
+
+def add_hand(part, cx, wrist_z, sx, scale, skin, y0=0.0):
+    """A broad back of the hand, two-joint fingers and a thumb. The palm faces the body."""
+    def section(depth, w, f, b, n=8, cy=0.0, out=0.0):
+        return ring(wrist_z - depth * scale, w * scale, f * scale, b * scale,
+                    y0 + cy * scale, cx + sx * out * scale, n)
+
+    part.loft([section(-0.015, 0.028, 0.034, 0.034), section(0.03, 0.036, 0.058, 0.054),
+               section(0.09, 0.036, 0.066, 0.062), section(0.118, 0.024, 0.06, 0.056)], skin)
+    for y, first, second in ((-0.045, 0.04, 0.042), (-0.016, 0.052, 0.054), (0.013, 0.056, 0.058), (0.042, 0.048, 0.05)):
+        part.loft([section(0.105, 0.0125, 0.0145, 0.0145, 6, y, 0.0),
+                   section(0.105 + first, 0.0105, 0.012, 0.012, 6, y * 1.08, -0.01),
+                   section(0.105 + first + second, 0.0075, 0.0085, 0.0085, 6, y * 1.14, -0.034)], skin)
+    part.loft([section(0.015, 0.015, 0.02, 0.02, 6, 0.046, -0.006),
+               section(0.075, 0.0125, 0.015, 0.015, 6, 0.09, -0.02),
+               section(0.122, 0.0085, 0.01, 0.01, 6, 0.104, -0.034)], skin)
+
+
+# The face and skull as drawn in the head reference. Face columns run from the centre out to the temple.
+# Each row: depth of the face at the centre, then (x, height above the chin) for each face column.
+HEAD_FACE_COLUMNS = ("C", "A", "B", "D", "E")
+HEAD_FACE_ROWS = [
+    (0.07, [(0.0, 0.0), (0.02, 0.0), (0.0367, 0.0025), (0.0489, 0.0126), (0.0597, 0.0294)]),  # chin and jaw
+    # Between the jaw and the forehead only the edge of the face is a grid point; FACE_POINTS holds the rest.
+    (0.0, [None, None, None, None, (0.0665, 0.0462)]),
+    (0.0, [None, None, None, None, (0.0699, 0.0693)]),
+    (0.0, [None, None, None, None, (0.0699, 0.0945)]),
+    (0.0, [None, None, None, None, (0.0685, 0.1071)]),
+    (0.0, [None, None, None, None, (0.066, 0.1218)]),
+    (0.084, [(0.0, 0.1386), (0.022, 0.1386), (0.044, 0.1386), (0.0562, 0.1386), (0.0626, 0.1386)]),  # forehead
+    (0.066, [(0.0, 0.158), (0.018, 0.157), (0.0436, 0.153), (0.0607, 0.148), (0.0655, 0.145)]),   # hairline
+    (0.04, [(0.0, 0.17), (0.02, 0.169), (0.045, 0.163), (0.055, 0.158), (0.06, 0.153)]),          # crown
+]
+# The same rows carried around the back: height, the x of three columns, and how far back they reach.
+HEAD_BACK_ROWS = [(0.0418, 0.058, 0.046, 0.03, 0.55), (0.06, 0.066, 0.056, 0.034, 0.65), (0.072, 0.072, 0.066, 0.04, 0.75),
+                  (0.09, 0.076, 0.074, 0.044, 0.9), (0.1, 0.082, 0.076, 0.046, 1.0), (0.115, 0.082, 0.076, 0.046, 1.0),
+                  (0.135, 0.078, 0.07, 0.044, 0.95), (0.15, 0.066, 0.058, 0.036, 0.75), (0.162, 0.05, 0.043, 0.026, 0.55)]
+HEAD_BACK_DEPTHS = (0.0, -0.045, -0.075)
+HEAD_BACK_CENTRE = -0.085
+# How far forward the jaw and the edge of the face sit, so the face turns away towards the ears.
+HEAD_EDGE_DEPTH = {("C", 0): 0.07, ("A", 0): 0.071, ("B", 0): 0.068, ("D", 0): 0.06, ("E", 0): 0.052, ("E", 1): 0.05,
+                   ("E", 2): 0.055, ("E", 3): 0.06, ("E", 4): 0.06, ("E", 5): 0.056, ("E", 6): 0.056}
+# The face traced from the head reference. Points are given in the reference's pixels, measured sideways
+# from the centre line and up from the chin, and these convert them to head units.
+FACE_TRACE_X, FACE_TRACE_UP = 0.000489, 0.00042
+FACE_TRACED_ROWS = 6
+# One half of the face: name -> (pixels sideways, pixels up, how far forward).
+FACE_POINTS = {
+    "j0": (0, 24, 0.08), "j1": (52, 26, 0.077), "j2": (85, 48, 0.075), "j3": (104, 82, 0.072), "j4": (118, 116, 0.068),
+    "j5": (130, 165, 0.066), "mu": (0, 55, 0.083), "ub": (25, 58, 0.083),
+    "lb0": (0, 76, 0.09), "lb1": (16, 79, 0.087), "ll0": (0, 94, 0.09), "l1": (16, 95, 0.088), "lc": (30, 98, 0.086),
+    "lt0": (0, 108, 0.092), "lt1": (14, 112, 0.09), "mc": (48, 100, 0.085),
+    "nb0": (0, 135, 0.095), "nb1": (20, 136, 0.093), "chi": (40, 135, 0.09), "ck1": (85, 115, 0.082), "ck2": (95, 165, 0.086),
+    "nsd": (40, 170, 0.093), "nb2": (20, 152, 0.098), "tip": (0, 150, 0.11), "t2": (0, 165, 0.106), "t3": (18, 165, 0.097),
+    "s1": (13, 195, 0.097), "br1": (0, 195, 0.104), "s2": (18, 240, 0.094), "br2": (0, 240, 0.099), "s3": (22, 270, 0.094),
+    "gl": (0, 270, 0.096), "ein": (45, 228, 0.092), "un1": (70, 195, 0.091), "un2": (110, 195, 0.085),
+    "bu1": (52, 265, 0.092), "bu2": (100, 262, 0.085),
+}
+# Each plane of the face and its tone. A pair of tones gives the two sides different light.
+# Capital names are grid points: column, then row.
+FACE_PLANES = [
+    (("C0", "A0", "j1", "j0"), "face_mid"), (("A0", "B0", "j1"), "face_mid"), (("B0", "D0", "j2", "j1"), "face_mid"),
+    (("D0", "E0", "j3", "j2"), "face_mid"), (("E0", "E1", "j4", "j3"), "face_skin"), (("E1", "E2", "j5", "j4"), "face_skin"),
+    (("j0", "j1", "ub", "mu"), "face_lit"), (("j1", "j2", "ub"), "face_skin"), (("mu", "ub", "lb1", "lb0"), "face_mid"),
+    (("lb0", "lb1", "l1", "ll0"), "lip_lit"), (("lb1", "lc", "l1"), "lip"), (("ll0", "l1", "lt1", "lt0"), "lip"), (("l1", "lc", "lt1"), "lip"),
+    (("lt0", "lt1", "nb1", "nb0"), "face_skin"), (("lt1", "lc", "mc", "chi", "nb1"), "face_skin"), (("ub", "j2", "lc", "lb1"), "face_skin"),
+    (("lc", "j2", "j3", "mc"), "face_skin"), (("mc", "j3", "j4", "ck1"), "face_skin"), (("chi", "mc", "ck1", "ck2"), "face_blush"),
+    (("nb1", "chi", "nsd", "nb2"), "face_skin"), (("chi", "ck2", "nsd"), "face_blush"), (("ck1", "j4", "j5", "ck2"), "face_skin"),
+    (("ck2", "j5", "E2", "un2"), "face_skin"), (("un2", "E2", "E3"), "face_skin"), (("nsd", "ck2", "un2", "un1"), "face_skin"),
+    (("nb2", "nsd", "un1", "s1", "t3"), "face_skin"), (("s1", "un1", "ein", "s2"), "face_skin"), (("s2", "ein", "bu1", "s3"), "face_skin"),
+    (("nb0", "nb1", "nb2", "tip"), "face_pink"), (("tip", "nb2", "t3", "t2"), "face_pink"), (("t2", "t3", "s1"), ("face_white", "face_cool")),
+    (("t2", "s1", "br1"), ("face_lit", "face_cool")),
+    (("br1", "s1", "s2", "br2"), "face_lit"), (("br2", "s2", "s3", "gl"), "face_lit"), (("gl", "s3", "bu1", "A6", "C6"), "face_lit"),
+    (("bu1", "B6", "A6"), "face_lit"), (("bu1", "bu2", "D6", "B6"), "face_lit"), (("bu2", "E5", "E6", "D6"), "face_skin"),
+    (("E3", "E4", "E5", "bu2"), "face_skin"),
+]
+# The socket around the eye, starting from the corner nearest the nose, and the round dot of the eye inside it:
+# centre, half width and half height in reference pixels. The dot has two points for each side of the socket.
+FACE_EYE_SOCKET = ("ein", "un1", "un2", "E3", "bu2", "bu1")
+FACE_EYE_DOT = (78, 228, 17, 18)
+# The eyebrow from the nose outwards: x, bottom edge, top edge, how far forward.
+HEAD_BROW = [(0.0171, 0.1109, 0.1163, 0.096), (0.0381, 0.1134, 0.1197, 0.091), (0.0597, 0.1075, 0.1109, 0.08)]
+# One half of the bob from the crown to the neck. Each ring runs around the outside from the front
+# edge to the centre of the back, then returns along the inside: (x, y, height above the chin).
+BOB_RINGS = [
+    [(0.0, -0.02, 0.192), (0.03, -0.03, 0.192), (0.02, -0.05, 0.192), (0.0, -0.058, 0.192),
+     (0.0, -0.045, 0.192), (0.0, -0.04, 0.192), (0.0, -0.033, 0.192), (0.0, -0.027, 0.192)],
+    [(0.06, -0.02, 0.17), (0.075, -0.04, 0.17), (0.055, -0.08, 0.17), (0.0, -0.095, 0.17),
+     (0.0, -0.06, 0.155), (0.03, -0.05, 0.155), (0.05, -0.03, 0.155), (0.04, -0.025, 0.155)],
+    [(0.097, -0.045, 0.09), (0.112, -0.065, 0.09), (0.08, -0.103, 0.09), (0.0, -0.113, 0.09),
+     (0.0, -0.075, 0.09), (0.045, -0.07, 0.09), (0.07, -0.05, 0.09), (0.07, -0.04, 0.09)],
+    [(0.072, 0.015, 0.03), (0.138, -0.05, 0.02), (0.092, -0.105, 0.02), (0.0, -0.117, 0.02),
+     (0.0, -0.085, 0.02), (0.055, -0.078, 0.02), (0.08, -0.045, 0.02), (0.06, -0.02, 0.02)],
+    [(0.06, -0.04, -0.068), (0.078, -0.07, -0.06), (0.056, -0.09, -0.056), (0.0, -0.096, -0.05),
+     (0.0, -0.08, -0.05), (0.035, -0.075, -0.056), (0.056, -0.06, -0.06), (0.05, -0.04, -0.068)],
+]
+# The side-swept fringe, from the parting across to the far temple. Each station: back of the crown,
+# the raised ridge, the lower edge on the forehead, and a point inside the skull.
+BOB_FRINGE = [
+    [(-0.09, -0.03, 0.14), (-0.095, 0.0, 0.115), (-0.09, 0.03, 0.09), (-0.06, 0.0, 0.105)],
+    [(-0.09, -0.03, 0.15), (-0.09, 0.045, 0.15), (-0.086, 0.045, 0.118), (-0.06, -0.03, 0.125)],
+    [(-0.05, -0.035, 0.178), (-0.06, 0.076, 0.168), (-0.058, 0.08, 0.135), (-0.04, -0.03, 0.145)],
+    [(-0.008, -0.035, 0.195), (-0.012, 0.086, 0.172), (-0.012, 0.09, 0.133), (-0.008, -0.03, 0.145)],
+    [(0.035, -0.035, 0.187), (0.04, 0.09, 0.158), (0.04, 0.09, 0.122), (0.03, -0.03, 0.135)],
+    [(0.074, -0.04, 0.172), (0.085, 0.07, 0.135), (0.083, 0.068, 0.1), (0.06, -0.03, 0.115)],
+    [(0.095, -0.01, 0.13), (0.1, 0.03, 0.112), (0.097, 0.035, 0.095), (0.08, 0.01, 0.105)],
+    [(0.092, -0.035, 0.115), (0.1, -0.01, 0.105), (0.095, 0.015, 0.09), (0.075, -0.01, 0.1)],
+]
+HEAD_AROUND = ("C", "A", "B", "D", "E", "H1", "H2", "H3", "P")
+
+
+# The male head, drawn from his faceted head reference: a long tapering jaw, a wedge of a nose,
+# eyes set deep under a heavy brow. Columns run from the centre of the face round to the centre
+# of the back; each corner is (x, depth, height above the chin).
+MALE_HEAD_AROUND = ("C", "N", "I", "O", "K", "S", "B1", "B2", "P")
+MALE_HEAD_ROWS = [
+    [(0.0, 0.077, 0.0), (0.017, 0.075, 0.0), (0.032, 0.062, 0.012), (0.048, 0.046, 0.028), (0.063, 0.024, 0.046),
+     (0.067, 0.0, 0.058), (0.058, -0.04, 0.06), (0.036, -0.064, 0.058), (0.0, -0.072, 0.056)],      # chin and jaw line
+    [(0.0, 0.089, 0.03), (0.016, 0.087, 0.03), (0.027, 0.082, 0.041), (0.053, 0.066, 0.05), (0.069, 0.04, 0.065),
+     (0.075, 0.004, 0.082), (0.07, -0.05, 0.084), (0.043, -0.08, 0.082), (0.0, -0.088, 0.08)],      # under the lip, mouth corner
+    [(0.0, 0.097, 0.056), (0.021, 0.093, 0.056), (0.04, 0.085, 0.063), (0.06, 0.073, 0.07), (0.075, 0.047, 0.084),
+     (0.08, 0.006, 0.106), (0.075, -0.056, 0.108), (0.047, -0.09, 0.106), (0.0, -0.098, 0.104)],    # base of the nose
+    [(0.0, 0.124, 0.07), (0.021, 0.101, 0.068), (0.042, 0.089, 0.077), (0.064, 0.077, 0.083), (0.078, 0.051, 0.096),
+     (0.081, 0.006, 0.12), (0.077, -0.06, 0.122), (0.049, -0.094, 0.12), (0.0, -0.102, 0.118)],     # tip of the nose
+    [(0.0, 0.108, 0.096), (0.012, 0.098, 0.094), (0.037, 0.09, 0.092), (0.066, 0.078, 0.094), (0.079, 0.052, 0.106),
+     (0.082, 0.006, 0.136), (0.078, -0.06, 0.138), (0.05, -0.095, 0.136), (0.0, -0.104, 0.134)],    # under the eye
+    [(0.0, 0.099, 0.122), (0.014, 0.1, 0.122), (0.036, 0.102, 0.126), (0.066, 0.09, 0.124), (0.08, 0.054, 0.122),
+     (0.082, 0.006, 0.152), (0.078, -0.058, 0.154), (0.05, -0.093, 0.152), (0.0, -0.102, 0.15)],    # brow ridge
+    [(0.0, 0.098, 0.15), (0.018, 0.098, 0.15), (0.04, 0.095, 0.152), (0.064, 0.082, 0.15), (0.077, 0.052, 0.148),
+     (0.08, 0.004, 0.172), (0.075, -0.054, 0.174), (0.048, -0.087, 0.172), (0.0, -0.095, 0.17)],    # forehead
+    [(0.0, 0.072, 0.186), (0.02, 0.07, 0.186), (0.04, 0.066, 0.184), (0.057, 0.056, 0.18), (0.068, 0.035, 0.175),
+     (0.07, 0.0, 0.196), (0.063, -0.045, 0.196), (0.04, -0.072, 0.196), (0.0, -0.078, 0.194)],      # under the hair
+    [(0.0, 0.03, 0.21), (0.018, 0.03, 0.21), (0.032, 0.028, 0.208), (0.04, 0.02, 0.206), (0.045, 0.01, 0.204),
+     (0.046, -0.008, 0.21), (0.042, -0.03, 0.21), (0.026, -0.045, 0.21), (0.0, -0.05, 0.21)],       # crown
+]
+# The eye, from the outside in: inner corner, lower inner, lower outer, outer corner, upper outer, upper inner.
+# Narrow and level, with the iris filling the height of the opening.
+MALE_EYE_RIM = [(0.021, 0.092, 0.1035), (0.032, 0.086, 0.0975), (0.05, 0.081, 0.0975),
+                (0.063, 0.073, 0.1075), (0.05, 0.085, 0.118), (0.032, 0.09, 0.117)]
+MALE_EYE_OPENING = [(0.025, 0.087, 0.104), (0.034, 0.082, 0.1005), (0.049, 0.078, 0.1005),
+                    (0.059, 0.071, 0.107), (0.049, 0.079, 0.1115), (0.034, 0.084, 0.1105)]
+MALE_IRIS = [(0.0335, 0.083, 0.1055), (0.037, 0.0825, 0.1015), (0.0455, 0.081, 0.1015),
+             (0.049, 0.08, 0.1055), (0.0455, 0.081, 0.1105), (0.037, 0.0825, 0.1105)]
+# The brow from the nose outwards: (x, depth, height of the bottom edge, height of the top edge).
+MALE_BROW = [(0.015, 0.106, 0.12, 0.128), (0.042, 0.108, 0.124, 0.135), (0.068, 0.08, 0.121, 0.1235)]
+# Lips: top edge, the two sides of the dark mouth line and bottom edge, at the centre and towards the corner.
+MALE_LIPS = [("top", [(0.0, 0.047, 0.095), (0.013, 0.047, 0.093)]), ("up", [(0.0, 0.0425, 0.091), (0.014, 0.043, 0.089)]),
+             ("low", [(0.0, 0.0405, 0.091), (0.014, 0.041, 0.089)]), ("bottom", [(0.0, 0.036, 0.093), (0.014, 0.037, 0.09)])]
+# Painted planes, as in the reference. Keys are (column, row) of the quad's lower inner corner.
+MALE_FACE_PAINT = {("C", 2): "skin_deep", ("N", 2): "skin_shade", ("N", 3): "skin_shade", ("C", 3): "skin_lit", ("C", 4): "skin_lit",
+                   ("I", 3): "skin_lit", ("C", 0): "skin_lit", ("N", 0): "skin_lit"}
+# Quads split along the other diagonal, so that a plane breaks where the reference breaks it.
+MALE_FACE_FLIP = {("C", 2), ("I", 1), ("I", 3)}
+# The edge of the hair, starting at one sideburn and running across the fringe and round the back.
+MALE_HAIR_EDGE = [(0.086, 0.03, 0.118), (0.083, 0.062, 0.152), (0.073, 0.09, 0.134), (0.06, 0.097, 0.163), (0.04, 0.112, 0.141),
+                  (0.022, 0.108, 0.17), (-0.006, 0.114, 0.146), (-0.024, 0.106, 0.172), (-0.045, 0.108, 0.152), (-0.06, 0.094, 0.168),
+                  (-0.073, 0.09, 0.138), (-0.083, 0.062, 0.156), (-0.086, 0.03, 0.118), (-0.09, -0.012, 0.142), (-0.093, -0.052, 0.118),
+                  (-0.072, -0.098, 0.1), (-0.036, -0.118, 0.082), (0.0, -0.122, 0.092), (0.036, -0.118, 0.08), (0.072, -0.098, 0.1),
+                  (0.093, -0.052, 0.118), (0.09, -0.012, 0.142)]
+# The rings of hair above that edge: height, half width, front, back, how far the strands have swept round.
+MALE_HAIR_RINGS = [(0.188, 0.09, 0.092, 0.114, 0.1), (0.222, 0.062, 0.06, 0.078, 0.2)]
+MALE_HAIR_RIDGE = 0.006  # strands from each point of the fringe stand proud of those from the gaps between them
+MALE_HAIR_TOP = (0.012, -0.018, 0.24)
+
+
+def angular_head(at, m, skin):
+    """The male skull and face as one closed surface, with the eyes, brows and lips set into it."""
+    head = HeadMesh(at)
+    for row, columns in enumerate(MALE_HEAD_ROWS):
+        for key, (x, y, up) in zip(MALE_HEAD_AROUND, columns):
+            head.add((key, row), x, y, up)
+    for name, eye_ring in (("rim", MALE_EYE_RIM), ("open", MALE_EYE_OPENING), ("iris", MALE_IRIS)):
+        for i, (x, y, up) in enumerate(eye_ring):
+            head.add((name, i), x, y, up)
+    for name, lip_ring in MALE_LIPS:
+        for i, (x, up, y) in enumerate(lip_ring):
+            head.add((name, i), x, y, up)
+
+    def quad(a, b, c, d, mat, flip=False):
+        for tri in ((a, b, d), (b, c, d)) if flip else ((a, b, c), (a, c, d)):
+            head.face(tri, mat)
+
+    deep, shade = m["skin_deep"], m["skin_shade"]
+    skipped = {("C", 1), ("N", 1), ("N", 4), ("I", 4)}  # the mouth and the eye are filled in below
+    for row in range(len(MALE_HEAD_ROWS) - 1):
+        for one, two in zip(MALE_HEAD_AROUND, MALE_HEAD_AROUND[1:]):
+            if (one, row) not in skipped:
+                quad((one, row), (two, row), (two, row + 1), (one, row + 1),
+                     m[MALE_FACE_PAINT[(one, row)]] if (one, row) in MALE_FACE_PAINT else skin, (one, row) in MALE_FACE_FLIP)
+
+    # The eye. The top of the socket is the darkest part of the face, under the brow.
+    outside = [("N", 5), ("N", 4), ("I", 4), ("O", 4), ("O", 5), ("I", 5)]
+    for i in range(6):
+        j = (i + 1) % 6
+        upper = i in (3, 4, 5)
+        quad(outside[i], outside[j], ("rim", j), ("rim", i), deep if upper else shade)
+        quad(("rim", i), ("rim", j), ("open", j), ("open", i), m["eye_line"] if upper else skin)
+        quad(("open", i), ("open", j), ("iris", j), ("iris", i), m["eye_m"])
+    head.face([("iris", i) for i in range(6)], m["iris_m"])
+
+    # The brow, a dark wedge lying on the ridge.
+    hair = m["hair_m"]
+    for i, (x, y, low, high) in enumerate(MALE_BROW):
+        head.add(("brow_lf", i), x, y, low)
+        head.add(("brow_hf", i), x, y, high)
+        head.add(("brow_lb", i), x, y - 0.016, low)
+        head.add(("brow_hb", i), x, y - 0.016, high)
+    for i in range(len(MALE_BROW) - 1):
+        j = i + 1
+        for one, two in (("lf", "hf"), ("hf", "hb"), ("hb", "lb"), ("lb", "lf")):
+            head.face(((f"brow_{one}", i), (f"brow_{one}", j), (f"brow_{two}", j), (f"brow_{two}", i)), hair)
+    for i in (0, len(MALE_BROW) - 1):
+        head.face((("brow_lf", i), ("brow_hf", i), ("brow_hb", i), ("brow_lb", i)), hair)
+
+    # The lips, and the skin around them.
+    corner = ("I", 1)
+    lip, line = m["lip_m"], m["skin_deep"]
+    quad(("top", 0), ("top", 1), ("N", 2), ("C", 2), skin)
+    quad(("top", 1), corner, ("I", 2), ("N", 2), skin)
+    quad(("up", 0), ("up", 1), ("top", 1), ("top", 0), lip)
+    head.face((("up", 1), corner, ("top", 1)), lip)
+    quad(("low", 0), ("low", 1), ("up", 1), ("up", 0), line)
+    head.face((("low", 1), corner, ("up", 1)), line)
+    quad(("bottom", 0), ("bottom", 1), ("low", 1), ("low", 0), lip)
+    head.face((("bottom", 1), corner, ("low", 1)), lip)
+    quad(("C", 1), ("N", 1), ("bottom", 1), ("bottom", 0), skin)
+    head.face((("N", 1), corner, ("bottom", 1)), skin)
+
+    head.cap(0, skin, MALE_HEAD_AROUND)
+    head.cap(len(MALE_HEAD_ROWS) - 1, skin, MALE_HEAD_AROUND)
+    return head.points, head.faces, head.mats
+
+
+def angular_hair(at, m):
+    """Short, chunky hair swept to one side. Its fringe comes to points, and strands rise from them to the crown."""
+    dark, warm = m["hair_m"], m["hair_m_warm"]
+    edge = MALE_HAIR_EDGE
+    count = len(edge)
+    inner = [(x * 0.72, y * 0.72, up + 0.015) for x, y, up in edge]  # buried in the skull: the underside of the hair
+
+    def swept(i, height, width, front, back, sweep):
+        angle = math.atan2(edge[i][1], edge[i][0]) + sweep
+        c, s = math.cos(angle), math.sin(angle)
+        proud = 1 + (MALE_HAIR_RIDGE / width if i % 2 == 0 else -MALE_HAIR_RIDGE / width)
+        return (width * proud * math.copysign(abs(c) ** 0.75, c),
+                (front if s >= 0 else back) * proud * math.copysign(abs(s) ** 0.75, s),
+                height + (MALE_HAIR_RIDGE if i % 2 == 0 else -MALE_HAIR_RIDGE))
+
+    rings = [inner, edge] + [[swept(i, *spec) for i in range(count)] for spec in MALE_HAIR_RINGS]
+    points = [p for r in rings for p in r] + [MALE_HAIR_TOP, (0.0, 0.0, 0.13)]
+    top, centre = len(points) - 2, len(points) - 1
+    faces, mats = [], []
+
+    def add(face):
+        # One side of the head catches warm light in the reference and the other stays dark.
+        faces.append(face)
+        mats.append(warm if sum(points[i][0] for i in face) < 0 else dark)
+
+    for band in range(len(rings) - 1):
+        for i in range(count):
+            j = (i + 1) % count
+            low_i, low_j = band * count + i, band * count + j
+            high_i, high_j = (band + 1) * count + i, (band + 1) * count + j
+            add((low_i, low_j, high_j))
+            add((low_i, high_j, high_i))
+    last = (len(rings) - 1) * count
+    for i in range(count):
+        j = (i + 1) % count
+        add((last + i, last + j, top))
+        add((j, i, centre))
+    return [at(*p) for p in points], faces, mats
+
+
+def head_face_depth(centre, x):
+    return centre * max(0.0, 1 - (x / 0.085) ** 4) ** 0.5
+
+
+def head_corners():
+    """One side of the skull: {(column, row): (x, y, height)}."""
+    corners = {}
+    for row, (centre, columns) in enumerate(HEAD_FACE_ROWS):
+        for key, corner in zip(HEAD_FACE_COLUMNS, columns):
+            if corner:
+                x, up = corner
+                corners[(key, row)] = (x, HEAD_EDGE_DEPTH.get((key, row), head_face_depth(centre, x)), up)
+        up, h1, h2, h3, factor = HEAD_BACK_ROWS[row]
+        corners[("H1", row)] = (h1, HEAD_BACK_DEPTHS[0] * factor, up)
+        corners[("H2", row)] = (h2, HEAD_BACK_DEPTHS[1] * factor, up)
+        corners[("H3", row)] = (h3, HEAD_BACK_DEPTHS[2] * factor, up)
+        corners[("P", row)] = (0.0, HEAD_BACK_CENTRE * factor, up)
+    return corners
+
+
+class HeadMesh:
+    """Corners placed by name and mirrored, shared along the centre line."""
+
+    def __init__(self, at):
+        self.at, self.points, self.index, self.faces, self.mats = at, [], {}, [], []
+
+    def add(self, key, x, y, up):
+        for sx in ((0,) if x == 0 else (-1, 1)):
+            self.index[(key, sx)] = len(self.points)
+            self.points.append(self.at(sx * x if sx else 0.0, y, up))
+
+    def find(self, key, sx):
+        return self.index[(key, sx)] if (key, sx) in self.index else self.index[(key, 0)]
+
+    def face(self, keys, mat, sides=(-1, 1)):
+        for sx in sides:
+            self.faces.append([self.find(key, sx) for key in keys])
+            self.mats.append(mat)
+
+    def cap(self, row, mat, around=HEAD_AROUND):
+        half = [(key, row) for key in around[1:-1]]
+        self.faces.append([self.find((around[0], row), 0)] + [self.find(k, 1) for k in half]
+                          + [self.find((around[-1], row), 0)] + [self.find(k, -1) for k in reversed(half)])
+        self.mats.append(mat)
+
+
+def head_grid(at, m):
+    """The head as one closed surface: the skull in loops, and the face traced plane by plane."""
+    head = HeadMesh(at)
+    skin = m["face_skin"]
+    for key, (x, y, up) in head_corners().items():
+        head.add(key, x, y, up)
+    for name, (x, up, y) in FACE_POINTS.items():
+        head.add(name, x * FACE_TRACE_X, y, up * FACE_TRACE_UP)
+    centre_x, centre_up, half_x, half_up = FACE_EYE_DOT
+    for i in range(12):
+        angle = math.pi + i * math.pi / 6
+        x = centre_x + half_x * math.cos(angle)
+        head.add(("dot", i), x * FACE_TRACE_X, 0.0955 - x * 0.0001, (centre_up + half_up * math.sin(angle)) * FACE_TRACE_UP)
+
+    def named(point):
+        return (point[0], int(point[1])) if point[0].isupper() else point
+
+    edge = HEAD_AROUND.index("E")
+    last = len(HEAD_FACE_ROWS) - 1
+    for row in range(last):
+        for column, (one, two) in enumerate(zip(HEAD_AROUND, HEAD_AROUND[1:])):
+            if row >= FACE_TRACED_ROWS or column >= edge:
+                head.face(((one, row), (two, row), (two, row + 1), (one, row + 1)), skin)
+    for points, tone in FACE_PLANES:
+        keys = [named(point) for point in points]
+        if isinstance(tone, str):
+            head.face(keys, m[tone])
+        else:
+            for sx, side_tone in zip((-1, 1), tone):
+                head.face(keys, m[side_tone], sides=(sx,))
+
+    for i in range(6):
+        j = (i + 1) % 6
+        head.face((named(FACE_EYE_SOCKET[i]), named(FACE_EYE_SOCKET[j]), ("dot", 2 * j), ("dot", 2 * i + 1), ("dot", 2 * i)), skin)
+    head.face([("dot", i) for i in range(12)], m["soot"])
+
+    head.cap(0, skin)
+    head.cap(last, skin)
+    return head.points, head.faces, head.mats
+
+
+def add_bob(at, hair, hair_parts):
+    """A side-parted bob. Each half hangs from its own bone so the ends can swing."""
+    for sx in (-1, 1):
+        hair_parts[sx].loft([[at(sx * x, y, up) for x, y, up in station] for station in BOB_RINGS], hair)
+    hair_parts["hair"].loft([[at(x, y, up) for x, y, up in station] for station in BOB_FRINGE], hair)
+
+
+def add_head(part, spec, m, hair_parts=None):
+    """The neck, faceted skull, face details, ears and hair."""
+    skin = m[spec.get("skin", "skin")]
+    hair = m[spec["hair"]]
+    chin = spec["chin_z"]
+    kx, ky, kz = spec["head_scale"]
+
+    def at(x, y, up):
+        return (x * kx, y * ky, chin + up * kz)
+
+    def outline(up, half):
+        return [at(x, y, up) for x, y in half + [(-x, y) for x, y in reversed(half[1:-1])]]
+
+    def neck_ring(z, w, f, b, cy, pit):
+        points = ring(z, w, f, b, cy, n=12)
+        x, y, pz = points[3]  # the point at the centre of the front
+        points[3] = (x, y - pit, pz)
+        return points
+
+    def detail_box(x, y, up, width, depth, height, mat, target=None):
+        cx, cy, z0 = at(x, y, up)
+        (target or part).box(cx - part.pivot[0], cy - part.pivot[1], z0 - part.pivot[2],
+                             width * kx, depth * ky, height * kz, mat, fit=True)
+
+    part.loft([neck_ring(*r) for r in spec["neck"]], skin)
+    jaw = spec["jaw"]
+    if spec.get("angular_head"):
+        points, faces, mats = angular_head(at, m, skin)
+        part.solid(points, faces, mats)
+    elif spec.get("head_grid"):
+        points, faces, mats = head_grid(at, m)
+        part.solid(points, faces, mats)
+    else:
+        part.loft([outline(up, [(x * (jaw if i < 2 else 1.0), y) for x, y in half])
+                   for i, (up, half) in enumerate(spec.get("head_rings", HEAD_RINGS))], skin)
+
+    nose = [(0, 1, 2), (0, 3, 1), (1, 4, 2), (1, 3, 4), (0, 2, 4), (0, 4, 3)]
+    if spec.get("angular_head"):
+        pass  # the nose, eyes and mouth are part of the head itself
+    elif spec.get("cute_face"):
+        for sx in (-1, 1):
+            brow =[[at(sx * x, y, top), at(sx * x, y, low), at(sx * x, y - 0.012, low), at(sx * x, y - 0.012, top)]
+                    for x, low, top, y in HEAD_BROW]
+            part.loft(brow, hair)
+    else:
+        part.solid([at(0, 0.096, 0.122), at(0, 0.124, 0.072), at(0.021, 0.096, 0.066),
+                    at(-0.021, 0.096, 0.066), at(0, 0.093, 0.06)], nose, skin)
+        detail_box(0, 0.09, 0.035, 0.05, 0.012, 0.004, m["soot"])
+        for sx in (-1, 1):
+            detail_box(sx * 0.037, 0.085, 0.098, 0.03, 0.012, 0.014, m["soot"])
+
+    if spec.get("ears", True):
+        ear = [(0, 1, 4), (1, 2, 4), (2, 3, 4), (3, 0, 4), (0, 2, 1), (0, 3, 2)]
+        for sx in (-1, 1):
+            if spec.get("head_grid"):
+                part.solid([at(sx * 0.074, -0.004, 0.09), at(sx * 0.102, -0.018, 0.087), at(sx * 0.094, -0.014, 0.056),
+                            at(sx * 0.072, -0.008, 0.05), at(sx * 0.074, -0.03, 0.072)], ear, skin)
+            else:
+                part.solid([at(sx * 0.078, -0.002, 0.132), at(sx * 0.106, -0.018, 0.125), at(sx * 0.102, -0.016, 0.09),
+                            at(sx * 0.076, -0.006, 0.088), at(sx * 0.08, -0.036, 0.11)], ear, skin)
+
+    scalp = hair_parts["hair"] if hair_parts else part
+    bun = hair_parts.get("bun", part) if hair_parts else part
+    if spec.get("angular_head"):
+        points, faces, mats = angular_hair(at, m)
+        scalp.solid(points, faces, mats)
+    elif spec.get("bob"):
+        add_bob(at, hair, hair_parts)
+    else:
+        scalp.loft([outline(up, half) for up, half in spec["hair_outlines"]], hair)
+    for offset, lump in spec.get("buns", []):
+        bun.loft([ring(chin + up * kz, w * kx, f * ky, b * ky, cy * ky, offset * kx) for up, w, f, b, cy in lump], hair)
+    if "buns" in spec:
+        detail_box(-0.092, -0.1, 0.2, 0.012, 0.05, 0.012, m["pewter"], bun)
+    for chain in spec.get("strands", []):
+        lock = hair_parts[1 if chain[0][0] > 0 else -1] if hair_parts else part
+        add_strand(lock, [(*at(x, y, up), w * kx) for x, y, up, w in chain], hair)
+
+
+def build_character(c, m, spec):
+    name = spec["name"]
+    tunic, trousers, leather = m[spec["tunic"]], m[spec.get("pants", "trousers")], m["leather"]
+    skin = m[spec.get("skin", "skin")]
+    root = empty(c, name, (0, 0, 0))
+    fold_amount = spec.get("fold", 0.0)
+    fold_rng = np.random.default_rng(23)
+    skinned = spec.get("skinned", False)
+    stripes = spec.get("stripes", False) and not skinned
+
+    def body(facet, *rings_and_mats):
+        """Adds a limb shell, unless one continuous skin will cover this part instead."""
+        return facet if skinned else facet.loft(*rings_and_mats)
+
+    def part(label, pivot):
+        facet = Facet(c, f"{name}_{label}", pivot)
+        facet.keep_quads = spec.get("quads", False)
+        return facet
+
+    def stack(key, n=8, cx=0.0):
+        return [ring(*r, cx=cx, n=n) for r in spec[key]]
+
+    def folded(key, n, cx=0.0, keep_top=0):
+        """Rings nudged at random, so cloth catches the light in uneven planes like folded paper."""
+        rings = stack(key, n, cx)
+        if fold_amount:
+            for r in rings[:len(rings) - keep_top]:
+                r[:] = [(x + fold_rng.uniform(-fold_amount, fold_amount),
+                         y + fold_rng.uniform(-fold_amount, fold_amount), z) for x, y, z in r]
+        return rings
+
+    hips_at = (0, 0, spec["hips_z"])
+    bands = len(spec["hips"]) - 1
+    hip_rings = folded("hips", 12, keep_top=2)
+    if "back_seam" in spec:
+        for r in hip_rings[1:-2]:
+            x, y, z = r[9]  # the point at the centre of the back
+            r[9] = (x, y + spec["back_seam"], z)
+    hips = body(part("Hips", hips_at), hip_rings, [trousers] * (bands - 1) + [m[spec.get("belt", "leather")]])
+    if stripes:
+        for sx in (-1, 1):
+            add_stripes(hips, spec["hips"][2:-1], 0.0, sx, m["stripe"], 0.01, 0.004, 0.19)
+    if spec.get("drawstring"):
+        for sx in (-1, 1):
+            add_strand(hips, [(sx * 0.01, 0.088, 1.04, 0.004), (sx * 0.035, 0.09, 0.99, 0.004),
+                              (sx * 0.02, 0.085, 0.95, 0.004), (sx * 0.032, 0.08, 0.9, 0.004)], m["waistband"])
+    hips_obj = hips.finish(root, (0, 0, 0))
+
+    torso_at = (0, 0, spec["torso_z"])
+    midriff = spec.get("midriff_bands", 0)
+    torso = body(part("Torso", torso_at), stack("torso", 12),
+                 [skin] * midriff + [tunic] * (len(spec["torso"]) - 1 - midriff))
+    if spec.get("necklace"):
+        for sx in (-1, 1):
+            add_strand(torso, [(sx * 0.055, 0.035, 1.355, 0.003), (sx * 0.03, 0.065, 1.31, 0.003),
+                               (0, 0.08, 1.265, 0.003)], m["pewter"])
+        torso.loft([ring(1.24, 0.008, 0.004, 0.004, 0.09, n=4), ring(1.265, 0.003, 0.003, 0.003, 0.084, n=4)], m["pewter"])
+    torso_obj = torso.finish(hips_obj, hips_at)
+
+    neck_at = (0, 0, spec["neck_z"])
+    head = part("Head", neck_at)
+    hair_parts = None
+    if skinned:
+        hair_parts = {"hair": part("Hair", neck_at)}
+        if "buns" in spec:
+            hair_parts["bun"] = part("Bun", neck_at)
+        if "strands" in spec:
+            hair_parts.update({1: part("Strand_R", neck_at), -1: part("Strand_L", neck_at)})
+    add_head(head, spec, m, hair_parts)
+    head_obj = head.finish(torso_obj, torso_at)
+    for facet in (hair_parts or {}).values():
+        facet.finish(head_obj, neck_at)
+
+    shoulder_x, shoulder_z = spec["shoulder"]
+    for side, sx in (("L", -1), ("R", 1)):
+        cx = sx * shoulder_x
+        shoulder_y = spec.get("shoulder_y", 0.0)
+        upper_lean, fore_lean = spec.get("arm_lean", (0.0, 0.0))
+        elbow_z = spec["elbow_z"]
+        elbow_y = shoulder_y - upper_lean * (shoulder_z - elbow_z)
+
+        def upper_y(z):
+            return shoulder_y - upper_lean * (shoulder_z - z)
+
+        def fore_y(z):
+            return elbow_y - fore_lean * (elbow_z - z)
+
+        shoulder_at = (cx, shoulder_y, shoulder_z)
+        sides = spec["arm_sides"]
+        bare = spec.get("bare_arm_bands", 0)
+        sleeve_top = [skin] * bare + [tunic] * (len(spec["upper_arm"]) - 1 - bare)
+        upper = body(part(f"UpperArm_{side}", shoulder_at), arm_rings(spec["upper_arm"], cx, sx, sides, upper_y), sleeve_top)
+        upper_obj = upper.finish(torso_obj, torso_at)
+        upper_obj.rotation_euler[1] = -sx * spec["splay"]
+
+        elbow_at = (cx, elbow_y, elbow_z)
+        forearm_bands = len(spec["forearm"]) - 1
+        cuff = spec["cuff_bands"]
+        sleeve = [skin] * forearm_bands if spec.get("bare_forearm") else [leather] * cuff + [tunic] * (forearm_bands - cuff)
+        fore = body(part(f"ForeArm_{side}", elbow_at), arm_rings(spec["forearm"], cx, sx, sides, fore_y), sleeve)
+        add_hand(fore, cx, spec["wrist_z"], sx, spec["hand_scale"], skin, fore_y(spec["wrist_z"]))
+        fore.finish(upper_obj, shoulder_at)
+
+        leg_x = sx * spec["hip_x"]
+        hip_at = (leg_x, 0, spec["hips_z"] - 0.06)
+        thigh = body(part(f"Thigh_{side}", hip_at), folded("thigh", 8, leg_x), trousers)
+        if stripes:
+            add_stripes(thigh, spec["thigh"], leg_x, sx, m["stripe"], 0.01, 0.004, 0.316)
+        thigh_obj = thigh.finish(hips_obj, hips_at)
+        thigh_obj.rotation_euler[1] = -sx * spec["leg_splay"]
+
+        knee_at = (leg_x, 0, spec["knee_z"])
+        knee_z = spec["knee_z"]
+        shin = body(part(f"Shin_{side}", knee_at), stack("shin", 8, leg_x), trousers)
+        if stripes:
+            add_stripes(shin, spec["shin"], leg_x, sx, m["stripe"], 0.01, 0.004, 0.316)
+        scale = spec["foot_scale"]
+        shin.loft([sole_ring(y, w, lift, leg_x + sx * y * TOE_OUT, scale) for y, w, lift in SHOE_SOLE],
+                  m[spec.get("sole", "iron")])
+        shin.loft([upper_ring(y, w, top, leg_x + sx * y * TOE_OUT, scale) for y, w, top in SHOE_UPPER],
+                  m[spec.get("shoe", "leather")])
+        if spec.get("sneakers"):
+            for y, top in ((0.06, 0.098), (0.085, 0.079), (0.11, 0.068)):
+                shin.box(sx * y * TOE_OUT, y * scale, (top + 0.006) * scale - knee_z,
+                         0.05 * scale, 0.012 * scale, 0.006 * scale, m["sole_w"], fit=True)
+            shin.box(sx * (0.058 * scale + 0.002 + 0.095 * TOE_OUT), 0.095 * scale, 0.045 * scale - knee_z,
+                     0.006, 0.024 * scale, 0.024 * scale, m["pants_red"], fit=True)
+        # Cancels the thigh's outward angle so the feet stay flat on the floor.
+        shin.finish(thigh_obj, hip_at).rotation_euler[1] = sx * spec["leg_splay"]
+    if skinned:
+        skin_character(c, m, spec, root)
+    return root
+
+
+class Skin:
+    """One continuous body, written as named corners on one side and mirrored to the other."""
+
+    def __init__(self):
+        self.points, self.weights, self.faces = [], [], []
+        self.ids = {}
+
+    def add(self, key, sx, co, weights):
+        self.ids[(key, sx)] = len(self.points)
+        self.points.append(co)
+        self.weights.append(weights)
+
+    def has(self, key, sx):
+        return (key, sx) in self.ids or (key, 0) in self.ids
+
+    def at(self, key, sx):
+        return self.ids[(key, sx)] if (key, sx) in self.ids else self.ids[(key, 0)]
+
+    def face(self, keys, sx, mat):
+        self.faces.append(([self.at(key, sx) for key in keys], mat))
+
+    def mesh(self, name, faces, place=None):
+        """A mesh of just these faces. Returns it with the original index of each of its corners."""
+        kept = sorted({i for f, _ in faces for i in f})
+        renumbered = {old: new for new, old in enumerate(kept)}
+        mesh = bpy.data.meshes.new(name)
+        mesh.from_pydata([place(i) if place else self.points[i] for i in kept], [],
+                         [[renumbered[i] for i in f] for f, _ in faces])
+        materials = list(dict.fromkeys(mat for _, mat in faces))
+        for mat in materials:
+            mesh.materials.append(mat)
+        for polygon, (_, mat) in zip(mesh.polygons, faces):
+            polygon.material_index = materials.index(mat)
+        bm = bmesh.new()
+        bm.from_mesh(mesh)
+        uv = bm.loops.layers.uv.new("UVMap")
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        for face in bm.faces:
+            nx, ny, nz = (abs(a) for a in face.normal)
+            for loop in face.loops:
+                x, y, z = loop.vert.co
+                u, v = (x, y) if nz >= nx and nz >= ny else (y, z) if nx >= ny else (x, z)
+                loop[uv].uv = (u * 2.0, v * 2.0)
+        bm.to_mesh(mesh)
+        bm.free()
+        mesh.update()
+        return mesh, kept
+
+    def link(self, coll, mesh, kept, character, object_name):
+        """An object for this mesh, with one vertex group per bone."""
+        obj = bpy.data.objects.new(object_name, mesh)
+        coll.objects.link(obj)
+        groups = {}
+        for new, old in enumerate(kept):
+            for label, weight in self.weights[old].items():
+                bone = f"{character}_{label}"
+                if bone not in groups:
+                    groups[bone] = obj.vertex_groups.new(name=bone)
+                groups[bone].add([new], weight, "REPLACE")
+        return obj
+
+
+# Where each trunk column crosses each loop: "name": (height, x) per column, read off the
+# reference wireframe. A missing x means the default for that column.
+# Columns run around one side: centre front, front, side, back, beside the spine, spine.
+TRUNK_COLUMNS = ("C", "F", "S", "B", "N", "P")
+TRUNK_LOOPS = [
+    ("a", {"C": (0.977, 0), "F": (0.965, 0.07), "S": (0.972, None), "B": (0.974, 0.075), "N": (0.974, 0.0125), "P": (0.969, 0)}),
+    ("belt0", {"C": (1.005, 0), "F": (1.005, 0.065), "S": (1.005, None), "B": (1.005, 0.068), "N": (1.005, 0.0115), "P": (1.005, 0)}),
+    ("belt1", {"C": (1.055, 0), "F": (1.055, 0.06), "S": (1.055, None), "B": (1.055, 0.0625), "N": (1.055, 0.0115), "P": (1.055, 0)}),
+    ("skin0", {"C": (1.057, 0), "F": (1.057, 0.0575), "S": (1.057, None), "B": (1.057, 0.06), "N": (1.057, 0.0115), "P": (1.057, 0)}),
+    ("skin1", {"C": (1.07, 0), "F": (1.07, 0.0575), "S": (1.07, None), "B": (1.07, 0.06), "N": (1.07, 0.0115), "P": (1.07, 0)}),
+    ("hem", {"C": (1.072, 0), "F": (1.072, 0.0625), "S": (1.072, None), "B": (1.072, 0.066), "N": (1.072, 0.0115), "P": (1.072, 0)}),
+    ("under", {"C": (1.126, 0), "F": (1.103, 0.065), "S": (1.092, 0.095), "B": (1.1, 0.069), "N": (1.1, 0.0115), "P": (1.1, 0)}),
+    ("bust", {"C": (1.1536, 0), "F": (1.1536, 0.08), "S": (1.149, 0.108), "B": (1.138, 0.0725), "N": (1.138, 0.015), "P": (1.138, 0)}),
+    ("chest", {"C": (1.193, 0), "F": (1.193, 0.0815), "S": (1.172, 0.105), "B": (1.1665, 0.0825), "N": (1.1665, 0.02), "P": (1.1665, 0)}),
+]
+# The bare body has only the loops the reference has, with no clothing edges.
+BARE_LOOPS = [
+    TRUNK_LOOPS[0],
+    ("w0", {"C": (1.009, 0), "F": (1.009, 0.064), "S": (1.009, None), "B": (1.02, 0.0625), "N": (1.02, 0.0115), "P": (1.02, 0)}),
+    ("w1", {"C": (1.062, 0), "F": (1.062, 0.0575), "S": (1.062, None), "B": (1.06, 0.0625), "N": (1.06, 0.0115), "P": (1.06, 0)}),
+] + TRUNK_LOOPS[6:]
+# How far the front pushes forward at the bust, as a multiple of the plain outline.
+BUST = {"under": {"C": 0.93, "F": 1.12}, "bust": {"C": 0.92, "F": 1.2}, "chest": {"C": 0.95, "F": 1.12}}
+LEG_FRONT_OUT, LEG_FRONT_IN, LEG_BACK_OUT, LEG_BACK_IN = 0.65, -0.45, 0.6, -0.5
+# Below the knee the loops run downhill towards the outside of the leg.
+LEG_SIDE_DROP = {3: 0.026, 4: 0.026, 5: 0.026, 6: 0.015}
+ARM_DEPTH_SIN, ARM_WIDTH_COS = 0.5, 0.866
+BONE_LENGTH = 0.08
+COLLAR_Z = 1.335
+CLOTH_GAP = 0.003
+CLOTH_EASE = 0.006
+# Heights above the chin where a loose strand starts to hang free, and how far until it is fully free.
+STRAND_ROOT, STRAND_LENGTH = 0.13, 0.2
+
+
+# The male trunk as drawn in his reference: chest plates, the large diamond across the back, and a belt.
+# Weight kinds: t follows height, h is hips, b mostly hips, l joins hips to the thigh.
+# Centre line: name, height, front or back, weight kind, depth multiplier.
+PLATE_MIDLINE = [("Cn", 1.618, "f", "t", 1.0), ("C0", 1.554, "f", "t", 1.0), ("C1", 1.496, "f", "t", 0.96), ("C2", 1.433, "f", "t", 0.95),
+                 ("C3", 1.385, "f", "t", 1.0), ("C4", 1.299, "f", "t", 1.0), ("C5", 1.234, "f", "t", 1.0), ("C6", 1.139, "f", "t", 1.0),
+                 ("C7", 1.088, "f", "t", 1.0), ("P0", 1.618, "b", "t", 1.0), ("P1", 1.582, "b", "t", 1.0), ("P2", 1.501, "b", "t", 1.0),
+                 ("P3", 1.389, "b", "t", 0.96), ("P4", 1.253, "b", "t", 1.0), ("P5", 1.215, "b", "t", 1.0), ("P6", 1.129, "b", "t", 1.0),
+                 ("P7", 1.112, "b", "t", 1.0), ("P8", 1.071, "b", "h", 1.0), ("P9", 1.038, "b", "h", 0.9), ("P10", 0.986, "b", "h", 0.75),
+                 ("X_b", 0.93, "b", "h", 0.7)]
+# One side: name, x (None for the full width), height, front/back/side, weight kind, depth multiplier.
+PLATE_POINTS = [("Fn", 0.05, 1.618, "f", "t", 1.0), ("Sn", 0.07, 1.618, "s", "t", 1.0), ("K1", 0.051, 1.618, "b", "t", 1.0),
+                ("K2", 0.075, 1.582, "b", "t", 1.0), ("K4", 0.153, 1.512, "b", "t", 1.0), ("K5", 0.0476, 1.482, "b", "t", 1.0),
+                ("K7", 0.085, 1.379, "b", "t", 1.0), ("K8", 0.119, 1.35, "b", "t", 1.0), ("K10", 0.09, 1.215, "b", "t", 1.0),
+                ("K12", 0.092, 1.125, "b", "t", 1.0), ("K13", 0.09, 1.112, "b", "t", 1.0), ("K14", 0.082, 1.071, "b", "h", 1.0),
+                ("K15", 0.054, 0.993, "b", "b", 1.05), ("K18", 0.015, 0.923, "b", "h", 0.75), ("G_o", 0.133, 0.976, "b", "b", 1.0),
+                ("G_L", 0.16, 0.925, "b", "b", 1.0), ("SA", None, 1.4, "s", "t", 1.0), ("SB", None, 1.3, "s", "t", 1.0),
+                ("SC", None, 1.215, "s", "t", 1.0), ("SD", None, 1.125, "s", "t", 1.0), ("Sb1", None, 1.112, "s", "t", 1.0),
+                ("Sb0", None, 1.071, "s", "h", 1.0), ("Sh", None, 0.976, "s", "b", 1.0), ("F3", 0.125, 1.555, "f", "t", 1.0),
+                ("F4", 0.15, 1.496, "f", "t", 1.0), ("F5", 0.09, 1.407, "f", "t", 1.05), ("F6", 0.155, 1.45, "f", "t", 1.0),
+                ("F7", 0.085, 1.37, "f", "t", 1.0), ("F8", 0.13, 1.367, "f", "t", 1.0), ("F9", 0.075, 1.299, "f", "t", 1.0),
+                ("F10", 0.115, 1.299, "f", "t", 1.0), ("F11", 0.07, 1.234, "f", "t", 1.0), ("F12", 0.1, 1.234, "f", "t", 1.0),
+                ("F13", 0.07, 1.139, "f", "t", 1.0), ("F14", 0.11, 1.139, "f", "t", 1.0), ("F15", 0.08, 1.09, "f", "t", 1.0),
+                ("F16", 0.125, 1.09, "f", "t", 1.0), ("F17", 0.135, 1.03, "f", "b", 1.0), ("S_t", 0.173, 0.93, "s", "l", 1.0),
+                ("FO_t", 0.12, 0.93, "f", "l", 1.0), ("FI_t", 0.03, 0.99, "f", "l", 1.0), ("BO_t", 0.133, 0.891, "b", "l", 1.0),
+                ("BI_t", 0.03, 0.891, "b", "l", 1.0)]
+# Faces of one side, by what covers them: t shirt, b belt, p trousers.
+PLATE_FACES = {
+    "t": [("Cn", "Fn", "F3", "C0"), ("Fn", "Sn", "K3", "F3"), ("C0", "F3", "F4", "C1"), ("F3", "K3", "F4"),
+          ("C1", "F4", "F5", "C2"), ("F4", "F6", "F5"), ("F4", "a0_5", "F6"), ("C2", "F5", "F7", "C3"), ("F5", "F6", "F8", "F7"),
+          ("F6", "a0_5", "SA", "F8"), ("a0_5", "a0_4", "SA"), ("C3", "F7", "F9", "C4"), ("F7", "F8", "F10", "F9"),
+          ("F8", "SA", "SB", "F10"), ("C4", "F9", "F11", "C5"), ("F9", "F10", "F12", "F11"), ("F10", "SB", "SC", "F12"),
+          ("C5", "F11", "F13", "C6"), ("F11", "F12", "F14", "F13"), ("F12", "SC", "SD", "F14"), ("F14", "SD", "Sb1", "F16"),
+          ("K3", "F4", "SHf", "SHm"), ("K3", "SHm", "SHb", "K4"), ("F4", "SHf", "a0_5"), ("K4", "a0_4", "SHb"),
+          ("SHf", "a0_5", "a0_0", "a0_1"), ("SHf", "a0_1", "a0_2", "SHm"), ("SHm", "a0_2", "SHb"), ("SHb", "a0_2", "a0_3", "a0_4"),
+          ("P0", "K1", "K2", "P1"), ("K1", "Sn", "K3", "K2"), ("P1", "K2", "K5", "P2"), ("K2", "K3", "K4", "K5"), ("K5", "K4", "a0_4"),
+          ("P2", "K5", "K7"), ("K5", "a0_4", "K8", "K7"), ("P2", "K7", "P3"), ("P3", "K7", "K8", "P4"), ("P4", "K8", "K10", "P5"),
+          ("a0_4", "SA", "SB", "K8"), ("K8", "SB", "SC", "K10"), ("P5", "K10", "P6"), ("K10", "K12", "P6"), ("K10", "SC", "SD", "K12"),
+          ("P6", "K12", "K13", "P7"), ("K12", "SD", "Sb1", "K13")],
+    "b": [("C6", "F13", "F15", "C7"), ("F13", "F14", "F16", "F15"), ("F16", "Sb1", "Sb0", "F17"), ("P7", "K13", "K14", "P8"),
+          ("K13", "Sb1", "Sb0", "K14")],
+    "p": [("C7", "F15", "FI_t", "C_v"), ("F15", "F16", "F17"), ("F15", "F17", "FO_t", "FI_t"), ("F17", "Sb0", "Sh", "FO_t"),
+          ("FO_t", "Sh", "S_t"), ("P8", "K14", "K15", "P9"), ("P9", "K15", "P10"), ("K14", "Sb0", "Sh", "G_o"), ("K14", "G_o", "K15"),
+          ("K15", "G_o", "G_L", "K18"), ("P10", "K15", "K18", "X_b"), ("G_o", "Sh", "S_t", "G_L"), ("G_L", "S_t", "BO_t"),
+          ("K18", "G_L", "BO_t", "BI_t"), ("X_b", "K18", "BI_t", "X")],
+}
+
+
+def build_skin(spec, m, worn=True):
+    """The body as one mesh of four-sided polygons, laid out like the reference wireframe."""
+    skin = Skin()
+    profile = spec["bare_profile"]
+    arm_rows = spec["bare_arm"]
+    loops = BARE_LOOPS
+    tee, bare, pants, belt, stripe = (m[spec["tunic"]], m[spec["skin"]], m[spec["pants"]], m[spec["belt"]], m["stripe"])
+    if worn:
+        loops = TRUNK_LOOPS
+        profile = spec.get("skin_profile") or [(z, w + CLOTH_EASE, f + CLOTH_EASE, b + CLOTH_EASE) for z, w, f, b in profile]
+        arm_rows = spec.get("skin_arm") or [(z, w + CLOTH_EASE, d + CLOTH_EASE) for z, w, d in arm_rows]
+    else:
+        tee = pants = belt = bare
+    bust_table = spec.get("bust", BUST)
+    layout_heights = spec.get("layout_z")
+    plated = spec.get("plated", False)
+    blend_start, blend_span = spec.get("trunk_blend", (0.985, 0.05))
+    leg_drop = spec.get("leg_drop", LEG_SIDE_DROP)
+    shoulder_x, shoulder_z = spec["shoulder"]
+    hip_z = spec["hips_z"] - 0.06
+    leg_splay, arm_splay = spec["leg_splay"], spec["splay"]
+    upper_lean, fore_lean = spec.get("arm_lean", (0.0, 0.0))
+    elbow_rest = spec["elbow_z"]
+
+    def outline(z):
+        for (z0, *low), (z1, *high) in zip(profile, profile[1:]):
+            if z <= z1:
+                t = max(0.0, (z - z0) / (z1 - z0))
+                return [a + (b - a) * t for a, b in zip(low, high)]
+        return profile[-1][1:]
+
+    def outline_of(table, z):
+        for (z0, *low), (z1, *high) in zip(table, table[1:]):
+            if z <= z1:
+                t = max(0.0, (z - z0) / (z1 - z0))
+                return [a + (b - a) * t for a, b in zip(low, high)]
+        return table[-1][1:]
+
+    def height(z):
+        """Where a height in the shared layout falls on this character."""
+        if not layout_heights:
+            return z
+        for (a0, b0), (a1, b1) in zip(layout_heights, layout_heights[1:]):
+            if z <= a1:
+                return b0 + (b1 - b0) * (z - a0) / (a1 - a0)
+        return layout_heights[-1][1]
+
+    def fit(x, z):
+        """Moves a point of the shared layout onto this character's outline."""
+        target = height(z)
+        if plated:
+            return x, target
+        return x * outline(target)[0] / outline_of(FEMALE["bare_profile"], z)[0], target
+
+    def on_raw(x, y, z):
+        scale = outline(height(z))[1] / outline_of(FEMALE["bare_profile"], z)[1]
+        x, target = fit(x, z)
+        return (x, y * scale, target)
+
+    def on_body(x, z, front, depth=1.0):
+        """The (x, y, z) of a trunk point, taking y from the measured outline at that height."""
+        x, z = fit(x, z)
+        w, f, b = outline(z)
+        c = min(x / w, 0.995) ** 1.25
+        return (x, (f if front else -b) * (1 - c * c) ** 0.4 * depth, z)
+
+    def on_side(x, z):
+        if x is not None:
+            x, z = fit(x, z)
+        else:
+            z = height(z)
+        w, f, b = outline(z)
+        return ((w if x is None else min(x, w)), (f - b) / 2, z)
+
+    def trunk_weights(z):
+        t = min(1.0, max(0.0, (z - blend_start) / blend_span))
+        return {"Hips": 1 - t, "Torso": t}
+
+    def mirrored(sx, co):
+        return (sx * co[0], co[1], co[2])
+
+    def midline(key, co, weights):
+        skin.add(key, 0, co, weights)
+
+    # Centre-line points are shared by both sides.
+    if not plated:
+        for name, loop in loops:
+            z, _ = loop["C"]
+            midline(f"C_{name}", on_body(0.0, z, True, bust_table.get(name, {}).get("C", 1.0)), trunk_weights(z))
+            z, _ = loop["P"]
+            midline(f"P_{name}", on_body(0.0, z, False), trunk_weights(z))
+    torso = {"Torso": 1.0}
+    hips_only = {"Hips": 1.0}
+    if plated:
+        for key, z, kind, weight, depth in PLATE_MIDLINE:
+            midline(key, on_body(0.0, z, kind == "f", depth), hips_only if weight == "h" else trunk_weights(z))
+        midline("C_v", (0.0, 0.06, 0.992), hips_only)
+        midline("X", (0.0, -0.02, 0.955), hips_only)
+    if not plated:
+        midline("C_top", on_body(0.0, 1.297, True), torso)
+        midline("P_top", on_body(0.0, 1.284, False), torso)
+        midline("C_neck", on_body(0.0, COLLAR_Z, True), torso)
+        midline("P_neck", on_body(0.0, COLLAR_Z, False), torso)
+        midline("C_chest2", on_body(0.0, 1.218, True), torso)
+        midline("P_chest2", on_body(0.0, 1.19, False), torso)
+        # Front of the hips down to the point of the V, and the spine down between the glutes.
+        midline("C_b", on_body(0.0, 0.89, True), hips_only)
+        midline("C_c", on_body(0.0, 0.826, True), hips_only)
+        midline("C_v", on_raw(0.0, 0.055, 0.7635), hips_only)
+        midline("P_b", on_body(0.0, 0.914, False, 0.86), hips_only)
+        midline("P_c", on_body(0.0, 0.879, False, 0.8), hips_only)
+        midline("P_g", on_body(0.0, 0.804, False, 0.72), hips_only)
+        midline("X", on_raw(0.0, -0.02, 0.76), hips_only)
+
+    leg_rows = spec["skin_leg"]
+    shoulder_points = spec.get("shoulder_points", {"SHf": (0.124, 0.022, 1.3), "SHb": (0.1275, -0.05, 1.3),
+                                                   "SHm": (0.1265, -0.014, 1.308), "T": (0.0725, -0.012, 1.322)})
+
+    for side, sx in (("L", -1), ("R", 1)):
+        thigh, shin, upper, fore = f"Thigh_{side}", f"Shin_{side}", f"UpperArm_{side}", f"ForeArm_{side}"
+
+        def add(key, co, weights):
+            skin.add(key, sx, mirrored(sx, co), weights)
+
+        if not plated:
+            for name, loop in loops:
+                bust = bust_table.get(name, {}).get("F", 1.0)
+                z, x = loop["F"]
+                add(f"F_{name}", on_body(x, z, True, bust), trunk_weights(z))
+                z, x = loop["S"]
+                add(f"S_{name}", on_side(x, z), trunk_weights(z))
+                z, x = loop["B"]
+                add(f"B_{name}", on_body(x, z, False), trunk_weights(z))
+                z, x = loop["N"]
+                add(f"N_{name}", on_body(x, z, False), trunk_weights(z))
+
+            # Shoulders and collar.
+            add("F_top", on_body(0.064, 1.297, True), torso)
+            add("B_top", on_body(0.08, 1.284, False), torso)
+            add("N_top", on_body(0.035, 1.284, False), torso)
+            add("F_neck", on_body(0.045, COLLAR_Z, True), torso)
+            add("B_neck", on_body(0.05, COLLAR_Z, False), torso)
+            add("N_neck", on_body(0.02, COLLAR_Z, False), torso)
+            add("F_chest2", on_body(0.0765, 1.229, True), torso)
+            add("B_chest2", on_body(0.0825, 1.19, False), torso)
+            add("N_chest2", on_body(0.0325, 1.19, False), torso)
+        half_blend = {"Torso": 0.5, upper: 0.5}
+        add("SHf", shoulder_points["SHf"], half_blend)
+        add("SHb", shoulder_points["SHb"], half_blend)
+        add("SHm", shoulder_points["SHm"], half_blend)
+        if plated:
+            add("K3", (0.15, -0.005, 1.557), torso)
+        else:
+            add("T", shoulder_points["T"], torso)
+            add("M_neck", on_raw(0.066, 0.0, COLLAR_Z), torso)
+
+        # Arm: hexagonal loops with a corner at the front and back.
+        cos_splay, sin_splay = math.cos(arm_splay), math.sin(arm_splay)
+        shoulder_y = spec.get("shoulder_y", 0.0)
+        elbow_y = shoulder_y - upper_lean * (shoulder_z - elbow_rest)
+
+        def arm_centre(z):
+            length = (shoulder_z - z) / cos_splay
+            rest_z = shoulder_z - length
+            y = shoulder_y - upper_lean * length if rest_z >= elbow_rest else elbow_y - fore_lean * (elbow_rest - rest_z)
+            return shoulder_x + length * sin_splay, y
+
+        elbow_world_z = shoulder_z - (shoulder_z - elbow_rest) * cos_splay
+        for row, (z, w, d) in enumerate(arm_rows):
+            cx, cy = arm_centre(z)
+            offset = z - elbow_world_z
+            bend = min(1.0, max(0.0, 0.5 - offset / 0.06))
+            weights = {upper: 1 - bend, fore: bend}
+            if bend in (0.0, 1.0):
+                weights = {fore if bend else upper: 1.0}
+            if row == 0:
+                weights = {upper: 0.85, "Torso": 0.15}
+            corners = [(cx, cy + d), (cx + w * ARM_WIDTH_COS, cy + d * ARM_DEPTH_SIN),
+                       (cx + w * ARM_WIDTH_COS, cy - d * ARM_DEPTH_SIN), (cx, cy - d),
+                       (cx - w * ARM_WIDTH_COS, cy - d * ARM_DEPTH_SIN), (cx - w * ARM_WIDTH_COS, cy + d * ARM_DEPTH_SIN)]
+            for i, (x, y) in enumerate(corners):
+                inner = row == 0 and i in (4, 5)
+                add(f"a{row}_{i}", (x, y, z), half_blend if inner else weights)
+
+        # Hips: the V at the front, loops around each glute at the back.
+        hip_blend = {"Hips": 0.85, thigh: 0.15}
+        leg_top = {"Hips": 0.4, thigh: 0.6}
+        if plated:
+            for key, x, z, kind, weight, depth in PLATE_POINTS:
+                weights = {"t": trunk_weights(z), "h": hips_only, "b": hip_blend, "l": leg_top}[weight]
+                add(key, on_side(x, z) if kind == "s" else on_body(x, z, kind == "f", depth), weights)
+        if not plated:
+            add("F_b", on_body(0.0835, 0.905, True), hips_only)
+            add("S_b", on_side(None, 0.925), hips_only)
+            add("B_b", on_body(0.09, 0.93, False), hips_only)
+            add("N_b", on_body(0.0375, 0.93, False), hips_only)
+            add("F_c", on_body(0.099, 0.848, True), hip_blend)
+            add("S_c", on_side(None, 0.87), hip_blend)
+            add("B_c", on_body(0.111, 0.894, False), hips_only)
+            add("N_c", on_body(0.0265, 0.894, False), hips_only)
+            add("W1", on_body(0.13, 0.814, True), hip_blend)
+            add("W2", on_body(0.06, 0.784, True), hip_blend)
+            add("W3", on_body(0.045, 0.778, True, 0.92), hip_blend)
+            add("S_w", on_side(0.16, 0.836), hip_blend)
+            add("B_d", on_body(0.13, 0.8565, False), hip_blend)
+            add("G_d", on_body(0.0825, 0.8565, False, 1.08), hip_blend)
+            add("G_e", on_body(0.071, 0.8265, False, 1.08), hip_blend)
+            add("G_b", on_body(0.004, 0.804, False, 0.72), hips_only)
+
+            # Upper end of the leg.
+            add("S_t", on_side(0.18, 0.761), leg_top)
+            add("FO_t", on_body(0.1525, 0.766, True), leg_top)
+            add("FI_t", on_body(0.044, 0.755, True), leg_top)
+            add("BO_t", on_body(0.1425, 0.7615, False), leg_top)
+            add("BI_t", on_body(0.056, 0.7615, False), leg_top)
+
+        # Leg: six columns, with the side column dropping lower below the knee.
+        knee_z = spec["knee_z"]
+        columns = (("S", 1.0, None), ("FO", LEG_FRONT_OUT, True), ("FI", LEG_FRONT_IN, True), ("I", -1.0, None),
+                   ("BI", LEG_BACK_IN, False), ("BO", LEG_BACK_OUT, False))
+        for row, (z, w, f, b) in enumerate(leg_rows):
+            leg_x = spec["hip_x"] + (hip_z - max(z, knee_z)) * math.sin(leg_splay)
+            bend = min(1.0, max(0.0, (0.5 - (z - knee_z) / 0.09)))
+            weights = {thigh: 1 - bend, shin: bend}
+            if bend in (0.0, 1.0):
+                weights = {shin if bend else thigh: 1.0}
+            for key, out, front in columns:
+                if front is None:
+                    y = (f - b) / 2
+                else:
+                    c = abs(out) ** 1.25
+                    y = (f if front else -b) * (1 - c * c) ** 0.4
+                dz = -leg_drop.get(row, 0.0) if key == "S" else 0.0
+                add(f"{key}{row}", (leg_x + out * w, y, z + dz), weights)
+
+    for sx in (-1, 1):
+        def quad(keys, mat):
+            skin.face(keys, sx, mat)
+
+        if plated:
+            covers = {"t": tee, "b": belt, "p": pants}
+            for zone, faces in PLATE_FACES.items():
+                for keys in faces:
+                    skin.face(keys, sx, covers[zone])
+
+        if not plated:
+            # Regular loops up the trunk.
+            midriff = bare if spec.get("midriff", True) else tee
+            fabric = {"a": pants, "belt0": belt, "belt1": belt, "skin0": midriff, "skin1": tee, "hem": tee, "under": tee,
+                      "bust": tee, "w0": bare, "w1": bare}
+            for (low, _), (high, _) in zip(loops, loops[1:]):
+                for one, two in zip(TRUNK_COLUMNS, TRUNK_COLUMNS[1:]):
+                    quad((f"{one}_{low}", f"{two}_{low}", f"{two}_{high}", f"{one}_{high}"), fabric[low])
+
+            # Chest to collar, opening out into the arm.
+            for one, two in (("C", "F"), ("B", "N"), ("N", "P")):
+                quad((f"{one}_chest", f"{two}_chest", f"{two}_chest2", f"{one}_chest2"), tee)
+                quad((f"{one}_chest2", f"{two}_chest2", f"{two}_top", f"{one}_top"), tee)
+                quad((f"{one}_top", f"{two}_top", f"{two}_neck", f"{one}_neck"), tee)
+            quad(("F_top", "T", "M_neck", "F_neck"), tee)
+            quad(("T", "B_top", "B_neck", "M_neck"), tee)
+            quad(("F_chest", "S_chest", "a0_5", "F_chest2"), tee)
+            quad(("S_chest", "B_chest", "B_chest2", "a0_4"), tee)
+            skin.face(("S_chest", "a0_4", "a0_5"), sx, tee)  # hidden in the armpit
+            quad(("F_chest2", "a0_5", "SHf", "F_top"), tee)
+            quad(("SHf", "a0_5", "a0_0", "a0_1"), tee)
+            quad(("B_chest2", "B_top", "SHb", "a0_4"), tee)
+            quad(("SHb", "a0_2", "a0_3", "a0_4"), tee)
+            quad(("SHf", "a0_1", "a0_2", "SHm"), tee)
+            skin.face(("SHm", "a0_2", "SHb"), sx, tee)
+            quad(("F_top", "SHf", "SHm", "T"), tee)
+            quad(("T", "SHm", "SHb", "B_top"), tee)
+
+        # Down the arm.
+        for row in range(len(arm_rows) - 1):
+            mat = tee if row < spec.get("sleeve_rows", 2) else bare
+            if spec["cuff_bands"] and worn and row == len(arm_rows) - 2:
+                mat = m["leather"]
+            for i in range(6):
+                j = (i + 1) % 6
+                quad((f"a{row}_{i}", f"a{row}_{j}", f"a{row + 1}_{j}", f"a{row + 1}_{i}"), mat)
+        last = len(arm_rows) - 1
+        skin.face([f"a{last}_{i}" for i in range(6)], sx, bare)
+
+        if not plated:
+            # Hips, as drawn in the reference.
+            quad(("C_b", "F_b", "F_a", "C_a"), pants)
+            quad(("F_b", "S_b", "S_a", "F_a"), pants)
+            quad(("S_b", "B_b", "B_a", "S_a"), pants)
+            quad(("B_b", "N_b", "N_a", "B_a"), pants)
+            quad(("N_b", "P_b", "P_a", "N_a"), pants)
+            quad(("C_c", "F_c", "F_b", "C_b"), pants)
+            quad(("F_c", "S_c", "S_b", "F_b"), pants)
+            quad(("S_c", "B_c", "B_b", "S_b"), pants)
+            quad(("B_c", "N_c", "N_b", "B_b"), pants)
+            quad(("N_c", "P_c", "P_b", "N_b"), pants)
+            quad(("C_v", "W3", "F_c", "C_c"), pants)      # the V at the front
+            quad(("W3", "W2", "W1", "F_c"), pants)
+            quad(("W1", "S_w", "S_c", "F_c"), pants)
+            quad(("FO_t", "S_t", "S_w", "W1"), pants)
+            quad(("FI_t", "FO_t", "W1", "W2"), pants)
+            quad(("C_v", "FI_t", "W2", "W3"), pants)
+            quad(("S_w", "B_d", "B_c", "S_c"), pants)
+            quad(("N_c", "B_c", "B_d", "G_d"), pants)     # above the glute
+            quad(("N_c", "G_d", "G_e", "G_b"), pants)     # the glute
+            quad(("P_c", "N_c", "G_b", "P_g"), pants)     # between the glutes
+            quad(("G_e", "G_d", "B_d", "BO_t"), pants)
+            quad(("G_b", "G_e", "BO_t", "BI_t"), pants)
+            quad(("P_g", "G_b", "BI_t", "X"), pants)
+            quad(("S_w", "S_t", "BO_t", "B_d"), pants)
+
+        # Thigh top into the first full leg loop; the crotch closes around one small triangle.
+        quad(("S_t", "FO_t", "FO0", "S0"), pants)
+        quad(("FO_t", "FI_t", "FI0", "FO0"), pants)
+        quad(("FI_t", "C_v", "I0", "FI0"), pants)
+        skin.face(("C_v", "X", "I0"), sx, pants)
+        quad(("X", "BI_t", "BI0", "I0"), pants)
+        quad(("BI_t", "BO_t", "BO0", "BI0"), pants)
+        quad(("BO_t", "S_t", "S0", "BO0"), pants)
+
+        ring_order = ("S", "FO", "FI", "I", "BI", "BO")
+        for row in range(len(leg_rows) - 1):
+            for one, two in zip(ring_order, ring_order[1:] + ring_order[:1]):
+                quad((f"{one}{row}", f"{two}{row}", f"{two}{row + 1}", f"{one}{row + 1}"), pants)
+        skin.face([f"{key}{len(leg_rows) - 1}" for key in ring_order], sx, pants)
+
+    # Collar cap, hidden inside the neck.
+    ring_keys = [("C_neck", 1), ("F_neck", 1), ("M_neck", 1), ("B_neck", 1), ("N_neck", 1), ("P_neck", 1),
+                 ("N_neck", -1), ("B_neck", -1), ("M_neck", -1), ("F_neck", -1)]
+    if plated:
+        ring_keys = [("Cn", 1), ("Fn", 1), ("Sn", 1), ("K1", 1), ("P0", 1), ("K1", -1), ("Sn", -1), ("Fn", -1)]
+    skin.faces.append(([skin.at(key, sx) for key, sx in ring_keys], tee))
+
+    if not (worn and spec.get("stripes")):
+        return skin
+
+    # Track-pants stripes: two thin raised bands lying on the facets either side of the side column.
+    leg_path = [(f"S{row}", f"FO{row}", f"BO{row}") for row in range(len(leg_rows))]
+    path = [("S_b", "F_b", "B_b"), ("S_c", "F_c", "B_c"), ("S_w", "W1", "B_d"), ("S_t", "FO_t", "BO_t")] + leg_path
+    for sx in (-1, 1):
+        for offset_index, offset in enumerate((-0.01, 0.01)):
+            names = []
+            for step, (key, front, back) in enumerate(path):
+                source = skin.at(key, sx)
+                sx0, sy0, sz0 = skin.points[source]
+                nx0, ny0, nz0 = skin.points[skin.at(front if offset > 0 else back, sx)]
+                name = f"st{offset_index}_{step}"
+                corners = ((0.005, -0.004), (0.005, 0.004), (0.007, 0.004), (0.007, -0.004))
+                for c, (out, along) in enumerate(corners):
+                    t = abs(offset + along) / abs(ny0 - sy0)
+                    skin.add(f"{name}_{c}", sx, (sx0 + (nx0 - sx0) * t + sx * out, sy0 + offset + along,
+                                                 sz0 + (nz0 - sz0) * t), skin.weights[source])
+                names.append(name)
+            for low, high in zip(names, names[1:]):
+                for c in range(4):
+                    d = (c + 1) % 4
+                    skin.face((f"{low}_{c}", f"{low}_{d}", f"{high}_{d}", f"{high}_{c}"), sx, stripe)
+            for name in (names[0], names[-1]):
+                skin.face([f"{name}_{c}" for c in range(4)], sx, stripe)
+    return skin
+
+
+def character_joints(spec):
+    """Each bone's parent and head position. Limb angles are baked into the skin, so bones stay upright."""
+    name = spec["name"]
+    joints = {
+        "Hips": (None, (0.0, 0.0, spec["hips_z"])),
+        "Torso": ("Hips", (0.0, 0.0, spec["torso_z"])),
+        "Head": ("Torso", (0.0, 0.0, spec["neck_z"])),
+    }
+    shoulder_x, shoulder_z = spec["shoulder"]
+    shoulder_y = spec.get("shoulder_y", 0.0)
+    upper_lean = spec.get("arm_lean", (0.0, 0.0))[0]
+    elbow_z = spec["elbow_z"]
+    elbow_y = shoulder_y - upper_lean * (shoulder_z - elbow_z)
+    length = shoulder_z - elbow_z
+    hip_z = spec["hips_z"] - 0.06
+    knee_x = spec["hip_x"] + (hip_z - spec["knee_z"]) * math.sin(spec["leg_splay"])
+    for side, sx in (("L", -1), ("R", 1)):
+        joints[f"UpperArm_{side}"] = ("Torso", (sx * shoulder_x, shoulder_y, shoulder_z))
+        joints[f"ForeArm_{side}"] = (f"UpperArm_{side}", (sx * (shoulder_x + length * math.sin(spec["splay"])), elbow_y,
+                                                         shoulder_z - length * math.cos(spec["splay"])))
+        joints[f"Thigh_{side}"] = ("Hips", (sx * spec["hip_x"], 0.0, hip_z))
+        joints[f"Shin_{side}"] = (f"Thigh_{side}", (sx * knee_x, 0.0, spec["knee_z"]))
+    kx, ky, kz = spec["head_scale"]
+    chin = spec["chin_z"]
+    if "buns" in spec:
+        joints["Bun"] = ("Head", (0.0, -0.095 * ky, chin + 0.17 * kz))
+    if "strands" in spec:
+        for side, sx in (("L", -1), ("R", 1)):
+            joints[f"Strand_{side}"] = ("Head", (sx * 0.085 * kx, 0.02 * ky, chin + 0.12 * kz))
+    return {f"{name}_{label}": (f"{name}_{parent}" if parent else None, head) for label, (parent, head) in joints.items()}
+
+
+def skin_character(c, m, spec, root):
+    """Rebuilds a character as body, cloth, shoe and hair layers, all driven by one set of bones."""
+    name = spec["name"]
+    bare_skin = build_skin(spec, m, worn=False)
+    skin = build_skin(spec, m, worn=True)
+    stripe, bare = m["stripe"], m[spec["skin"]]
+
+    # Hands, feet, head and small details are already modelled; bring them into world space.
+    bpy.context.view_layer.update()
+    parts = {o.name: o for o in c.objects if o.type == "MESH"}
+    matrices = {key: o.matrix_world.copy() for key, o in parts.items()}
+    for key, obj in parts.items():
+        obj.parent = None
+        obj.data.transform(matrices[key])
+        obj.matrix_world = Matrix.Identity(4)
+
+    # The whole body in skin, so clothes can come off or change without leaving holes.
+    body, kept = bare_skin.mesh(f"{name}_Body", [(f, bare) for f, _ in bare_skin.faces])
+    body_obj = bare_skin.link(c, body, kept, name, f"{name}_Body")
+
+    # The clothes are pushed out along the normals of their own closed surface.
+    surface, surface_kept = skin.mesh(f"{name}_ClothSurface", [(f, bare) for f, mat in skin.faces if mat is not stripe])
+    normals = {old: surface.vertices[new].normal.copy() for new, old in enumerate(surface_kept)}
+    bpy.data.meshes.remove(surface)
+
+    # Clothes sit just outside the skin and share its weights, so the two can never separate.
+    def outwards(index):
+        normal = normals.get(index)
+        return tuple(a + b * CLOTH_GAP for a, b in zip(skin.points[index], normal)) if normal else skin.points[index]
+
+    worn = [(f, mat) for f, mat in skin.faces if mat is not bare]
+    cloth, cloth_kept = skin.mesh(f"{name}_Cloth", worn, outwards)
+    cloth_obj = skin.link(c, cloth, cloth_kept, name, f"{name}_Cloth")
+
+    def bind(obj, group, indices=None):
+        target = obj.vertex_groups.get(group) or obj.vertex_groups.new(name=group)
+        target.add(list(range(len(obj.data.vertices))) if indices is None else indices, 1.0, "REPLACE")
+
+    def join(target, others):
+        filled = [obj for obj in others if obj.data.vertices]
+        for obj in others:
+            if not obj.data.vertices:  # Blender refuses to join only empty meshes and would leave them behind
+                bpy.data.objects.remove(obj)
+        if not filled:
+            return target
+        others = filled
+        for obj in bpy.context.view_layer.objects:
+            obj.select_set(False)
+        for obj in others:
+            obj.select_set(True)
+        target.select_set(True)
+        bpy.context.view_layer.objects.active = target
+        bpy.ops.object.join()
+        return target
+
+    label = lambda part: f"{name}_{part}"
+    for key in ("Head", "Torso"):
+        bind(parts[label(key)], label(key))
+    limbs = [f"{part}_{side}" for part in ("UpperArm", "ForeArm", "Thigh") for side in "LR"]
+    for key in limbs:
+        bind(parts[label(key)], label(key))
+    join(body_obj, [parts[label(key)] for key in ["Head", "Torso"] + limbs])
+    bind(parts[label("Hips")], label("Hips"))
+    join(cloth_obj, [parts[label("Hips")]])
+
+    shoes = parts[label("Shin_R")]
+    shoes.name = shoes.data.name = f"{name}_Shoes"
+    bind(shoes, label("Shin_R"))
+    bind(parts[label("Shin_L")], label("Shin_L"))
+    join(shoes, [parts[label("Shin_L")]])
+
+    # Loose strands stay fixed at the root and hang more freely towards the tips.
+    locks = [parts[label(f"Strand_{side}")] for side in "LR" if label(f"Strand_{side}") in parts]
+    for strand, side in zip(locks, "LR"):
+        head_group = strand.vertex_groups.new(name=label("Head"))
+        tip_group = strand.vertex_groups.new(name=label(f"Strand_{side}"))
+        for vertex in strand.data.vertices:
+            t = min(1.0, max(0.0, (spec["chin_z"] + STRAND_ROOT - vertex.co.z) / STRAND_LENGTH))
+            head_group.add([vertex.index], 1 - t, "REPLACE")
+            tip_group.add([vertex.index], t, "REPLACE")
+    hair = parts[label("Hair")]
+    bind(hair, label("Head"))
+    others = list(locks)
+    if label("Bun") in parts:
+        bind(parts[label("Bun")], label("Bun"))
+        others.append(parts[label("Bun")])
+    if others:
+        join(hair, others)
+
+    armature = bpy.data.armatures.new(f"{name}_Bones")
+    rig = bpy.data.objects.new(f"{name}_Armature", armature)
+    c.objects.link(rig)
+    rig.parent = root
+    bpy.context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="EDIT")
+    joints = character_joints(spec)
+    for bone_name, (_, head) in joints.items():
+        bone = armature.edit_bones.new(bone_name)
+        bone.head = head
+        bone.tail = (head[0], head[1], head[2] + BONE_LENGTH)
+        bone.roll = 0.0
+    for bone_name, (parent, _) in joints.items():
+        if parent:
+            armature.edit_bones[bone_name].parent = armature.edit_bones[parent]
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+    for layer in (body_obj, cloth_obj, shoes, hair):
+        layer.parent = rig
+        layer.modifiers.new("Bones", "ARMATURE").object = rig
+
+
+def export_collection(coll, path):
+    for obj in bpy.context.view_layer.objects:
+        obj.select_set(False)
+    for obj in coll.objects:
+        obj.select_set(True)
+    bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True,
+                              export_extras=True, export_yup=True, export_cameras=False,
+                              export_lights=False, export_apply=True)
+    tris = sum(len(p.vertices) - 2 for o in coll.objects if o.type == "MESH" for p in o.data.polygons)
+    print(f"{os.path.basename(path)}: {len(coll.objects)} objects, {tris} triangles, "
+          f"{os.path.getsize(path) / 1024:.0f} KB")
+
+
+def build_props(c, m):
+    """Gameplay models. Item_* sit at the origin to be carried; Station_* and Spot_* are placed in the room."""
+    ale = Part(c, "Item_Ale")
+    ale.lathe(0, 0, 0, [(0.055, 0), (0.062, 0.12)], 8, m["pewter"], m["foam"])
+    ale.lathe(0, 0, 0.12, [(0.062, 0), (0.05, 0.03)], 8, m["foam"])
+    ale.box(0.078, 0, 0.03, 0.035, 0.02, 0.07, m["pewter"])
+    ale.done()
+
+    bread = Part(c, "Item_Bread")
+    bread.lathe(0, 0, 0, [(0.11, 0), (0.15, 0.025)], 8, m["ceramic"])
+    bread.lathe(0, 0, 0.025, [(0.07, 0), (0.1, 0.04), (0.06, 0.08), (0.012, 0.095)], 8, m["bread"])
+    bread.done()
+
+    stew = Part(c, "Item_Stew")
+    stew.lathe(0, 0, 0, [(0.07, 0), (0.12, 0.08)], 8, m["ceramic"], m["stew"])
+    stew.done()
+
+    Part(c, "Item_Cask").lathe(0, 0, 0, [(0.12, 0), (0.16, 0.13), (0.12, 0.27)], 8, m["barrel"], m["wood"]).done()
+
+    tap = Part(c, "Station_Tap")
+    tap.lathe(1.1, 2.9, 1.1, [(0.16, 0), (0.2, 0.18), (0.16, 0.36)], 10, m["barrel"], m["wood"])
+    tap.box(1.1, 2.68, 1.22, 0.05, 0.16, 0.05, m["iron"])
+    tap.box(1.1, 2.64, 1.26, 0.04, 0.04, 0.13, m["iron"])
+    tap.done()
+
+    pot = Part(c, "Station_Pot")
+    pot.lathe(-6.0, 0.5, 0.22, [(0.16, 0), (0.28, 0.12), (0.3, 0.28), (0.25, 0.42)], 8, m["iron"], m["soot"])
+    for i in range(3):
+        a = i * 2 * math.pi / 3 + 0.5
+        pot.box(-6.0 + 0.22 * math.cos(a), 0.5 + 0.22 * math.sin(a), 0, 0.05, 0.05, 0.3, m["iron"], swap=True)
+    pot.done()
+    # Separate so the game can show or recolour what is in the pot.
+    Part(c, "Station_PotStew").lathe(-6.0, 0.5, 0.63, [(0.24, 0), (0.24, 0.015)], 8, m["stew"]).done()
+
+    basket = Part(c, "Station_Bread")
+    basket.lathe(-5.15, -4.3, 0.8, [(0.2, 0), (0.3, 0.14)], 8, m["crate"], m["soot"])
+    for dx, dy in ((-0.1, 0.05), (0.1, 0.07), (0.0, -0.1)):
+        basket.lathe(-5.15 + dx, -4.3 + dy, 0.9, [(0.07, 0), (0.1, 0.05), (0.06, 0.1), (0.012, 0.12)], 7, m["bread"])
+    basket.done()
+
+    for name, x, y in (("Tap", 1.1, 2.75), ("Pot", -5.7, 0.5), ("Bread", -5.15, -3.9), ("Barrel", 6.0, -3.6)):
+        empty(c, "Spot_" + name, (x, y, 0))
+
+
+def main():
+    os.makedirs(TEX_DIR, exist_ok=True)
+    os.makedirs(OUT_DIR, exist_ok=True)
+    scene = reset_scene()
+    world = bpy.data.collections.new("World")
+    scene.collection.children.link(world)
+
+    mats = make_materials()
+    build_room(world, mats)
+    build_fireplace(world, mats)
+    build_bar(world, mats)
+    build_furniture(world, mats)
+    empty(world, "PlayerSpawn", (0.6, 0.2, 0))
+    export_collection(world, os.path.join(OUT_DIR, "world.glb"))
+
+    # Made after the room so that new character colours never shift the room's random numbers.
+    for key, colour in (("tee_white", (0.85, 0.84, 0.8)), ("hair_f", (0.075, 0.06, 0.06)), ("skin_f", (0.86, 0.63, 0.5)),
+                        ("pants_red", (0.62, 0.09, 0.11)), ("waistband", (0.5, 0.07, 0.09)),
+                        ("stripe", (0.88, 0.86, 0.82)), ("shoe_w", (0.88, 0.87, 0.85)), ("sole_w", (0.74, 0.72, 0.7)),
+                        ("eye_white", (0.92, 0.92, 0.9)), ("blush", (0.85, 0.585, 0.47)), ("lip", (0.8, 0.44, 0.43))):
+        mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
+    # The female face tones are nearly flat, so its planes read as clean shapes. They also leave the random numbers as they were.
+    random_state = rng.bit_generator.state
+    for key, colour in (("face_lit", (0.92, 0.71, 0.58)), ("face_skin", (0.86, 0.63, 0.5)), ("face_mid", (0.8, 0.58, 0.47)),
+                        ("face_blush", (0.87, 0.6, 0.52)), ("face_pink", (0.92, 0.55, 0.52)), ("face_white", (0.98, 0.95, 0.92)),
+                        ("face_cool", (0.68, 0.52, 0.5)), ("lip_lit", (0.9, 0.6, 0.58))):
+        mats[key] = material("T_" + key, tex_flat("T_" + key, colour, variation=0.03))
+    rng.bit_generator.state = random_state
+    # The male face colours put the random numbers back afterwards, so the textures made after them stay the same.
+    random_state = rng.bit_generator.state
+    for key, colour in (("skin_lit", (0.8, 0.59, 0.46)), ("skin_shade", (0.62, 0.42, 0.33)), ("skin_deep", (0.3, 0.17, 0.14)),
+                        ("lip_m", (0.62, 0.4, 0.33)), ("eye_line", (0.07, 0.05, 0.05)), ("iris_m", (0.1, 0.13, 0.15)),
+                        ("eye_m", (0.78, 0.74, 0.68)),
+                        ("hair_m", (0.055, 0.07, 0.08)), ("hair_m_warm", (0.13, 0.09, 0.075))):
+        mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
+    rng.bit_generator.state = random_state
+    for spec, blender_x in ((MALE, -0.6), (FEMALE, 0.6)):
+        coll = bpy.data.collections.new(spec["name"] + "Rig")
+        scene.collection.children.link(coll)
+        root = build_character(coll, mats, spec)
+        export_collection(coll, os.path.join(OUT_DIR, spec["name"].lower() + ".glb"))
+        # Exported at the origin; moved afterwards so they don't overlap in Blender.
+        root.location.x = blender_x
+
+    for key, colour in (("foam", (0.88, 0.8, 0.6)), ("stew", (0.46, 0.24, 0.1)), ("bread", (0.74, 0.48, 0.2))):
+        mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
+    props = bpy.data.collections.new("Props")
+    scene.collection.children.link(props)
+    build_props(props, mats)
+    export_collection(props, os.path.join(OUT_DIR, "props.glb"))
+
+
+main()
