@@ -4,6 +4,7 @@ import {
   EFFECT_FILES,
   falloff,
   footfalls,
+  MUSIC_FILES,
   musicFor,
   nextSoundLevel,
   readSoundSettings,
@@ -15,15 +16,36 @@ const daytime = { listeningTo: null, night: false };
 
 describe("music", () => {
   it("plays the title theme before the tavern opens and at the end", () => {
-    expect(musicFor(true, "day", 0)).toBe("bards_tale");
-    expect(musicFor(false, "ended", 2)).toBe("bards_tale");
+    expect(musicFor(true, "day", 0)).toEqual(["bards_tale"]);
+    expect(musicFor(false, "ended", 2)).toEqual(["bards_tale"]);
   });
 
-  it("gives each night its own tune and each day a calmer one", () => {
-    const nights = [0, 1, 2].map((night) => musicFor(false, "service", night));
-    expect(new Set(nights).size).toBe(3);
-    expect(nights).not.toContain("harvest_season");
-    for (const phase of ["day", "dusk", "dawn"] as const) expect(musicFor(false, phase, 1)).toBe("harvest_season");
+  it("opens each night on a different song from the same lively set", () => {
+    const nights = [0, 1, 2].map((night) => musicFor(false, "service", night)!);
+    expect(new Set(nights.map((set) => set[0])).size).toBe(3);
+    for (const set of nights) {
+      expect([...set].sort()).toEqual([...nights[0]].sort());
+      expect(set).not.toContain("harvest_season");
+      expect(set).not.toContain("bards_tale");
+    }
+  });
+
+  it("plays calmer songs by day", () => {
+    for (const phase of ["day", "dusk", "dawn"] as const) {
+      const day = musicFor(false, phase, 1)!;
+      expect(day).toContain("harvest_season");
+      expect(day).not.toContain(musicFor(false, "service", 1)![0]);
+    }
+  });
+
+  it("hands back the same playlist every frame, so the music isn't restarted", () => {
+    expect(musicFor(false, "service", 1)).toBe(musicFor(false, "service", 1));
+    expect(musicFor(false, "day", 1)).toBe(musicFor(false, "dusk", 2));
+  });
+
+  it("has a file on disk for every song", () => {
+    const onDisk = Object.keys(import.meta.glob("../public/audio/music/*")).map((path) => path.split("/").pop());
+    for (const file of Object.values(MUSIC_FILES)) expect(onDisk, file).toContain(file);
   });
 
   it("stops after last call", () => {

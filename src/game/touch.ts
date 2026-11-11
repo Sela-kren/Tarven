@@ -4,9 +4,10 @@ import { CONFIDENT, FIRSTS, TOUCHES, type TouchDef, type TouchRegion } from "./t
 
 /**
  * Guests who reach for the innkeeper. Each touch has a boldness from 1 to 10 (`TouchDef.level`); each guest has a
- * nerve, how bold they'll be tonight, and only reaches for touches up to it. The innkeeper has a desire, how ready
- * she is, and can only let a touch happen once her desire has reached what it needs. Slapping the hand away and
- * slipping out of reach are always there, and only they are, when either of them has had far too much.
+ * nerve, how bold they'll be tonight, and only reaches for touches up to it. The innkeeper has a desire for each
+ * part of her (see `passives.ts`), and can only let a touch happen once the desire it needs is high enough; here
+ * that desire comes in on a scale of 0 to 10. Slapping the hand away and slipping out of reach are always there,
+ * and only they are, when either of them has had far too much.
  */
 
 export type { TouchDef, TouchRegion } from "./touchtalk";
@@ -39,10 +40,7 @@ const BOLD_PULL = 0.6;
 const SEEN_WEIGHT = 0.2;
 
 /** How far past what a touch needs her desire has to be before she can lean into it. */
-const LEAN_MARGIN = 2;
-/** Tonight's heat and the drink both make her bolder, until the drink is too much. */
-const DESIRE_PER_LUST = 0.25;
-const DESIRE_PER_DRUNK = 2;
+export const LEAN_MARGIN = 2;
 
 /** How many times she has to have let something like it before she stops being shocked. */
 const CONFIDENT_AFTER = 3;
@@ -60,6 +58,10 @@ export interface NerveFacts {
   allowed: number;
   /** Whether you slapped this guest tonight. */
   slapped: boolean;
+  /** Anything else on their nerve: her passives, and how lewd she's known to be. */
+  bonus?: number;
+  /** A slap stops them reaching for good tonight. */
+  slapStops?: boolean;
 }
 
 /** How bold a guest will be, from 0 to 10. */
@@ -68,6 +70,8 @@ export function nerve(f: NerveFacts): number {
   if (f.respect <= f.lowRespect) n += NERVE_DISRESPECTED;
   if (f.respect >= f.highRespect) n += NERVE_RESPECTED;
   if (f.slapped) n += NERVE_AFTER_SLAP;
+  if (f.slapped && f.slapStops) return 0;
+  n += f.bonus ?? 0;
   return Math.min(MAX_LEVEL, Math.max(0, n));
 }
 
@@ -82,13 +86,17 @@ export interface PickOptions {
   canStrip: boolean;
   /** Touches already tried tonight. */
   seen: ReadonlySet<string>;
+  /** Whether guests will ask her upstairs yet. */
+  invites?: boolean;
+  /** How much more often guests go for each kind of touch, as a fraction. */
+  pull?: Partial<Record<TouchRegion, number>>;
 }
 
-/** The touches a guest of this kind with this much nerve might go for. Lovers' invitations are never among them. */
+/** The touches a guest of this kind with this much nerve might go for. Invitations only once she's ready for them. */
 export function touchesFor(kind: GuestKind, guestNerve: number, options: PickOptions): TouchDef[] {
   return TOUCHES.filter(
     (t) =>
-      !t.romance &&
+      (!t.romance || options.invites === true) &&
       t.level <= guestNerve &&
       (t.kinds.length === 0 || t.kinds.includes(kind)) &&
       (!t.strip || options.canStrip),
@@ -102,7 +110,10 @@ export function touchesFor(kind: GuestKind, guestNerve: number, options: PickOpt
 export function pickTouch(kind: GuestKind, guestNerve: number, random: () => number, options: PickOptions): TouchDef | null {
   const choices = touchesFor(kind, guestNerve, options);
   if (choices.length === 0) return null;
-  const weights = choices.map((t) => Math.exp(-BOLD_PULL * (guestNerve - t.level)) * (options.seen.has(t.id) ? SEEN_WEIGHT : 1));
+  const weights = choices.map(
+    (t) =>
+      Math.exp(-BOLD_PULL * (guestNerve - t.level)) * (options.seen.has(t.id) ? SEEN_WEIGHT : 1) * (1 + (options.pull?.[t.region] ?? 0)),
+  );
   let roll = random() * weights.reduce((a, b) => a + b, 0);
   for (let i = 0; i < choices.length; i++) {
     roll -= weights[i];
@@ -116,21 +127,18 @@ export function desireNeeded(level: number): number {
   return level - 1;
 }
 
-/** Her desire in the moment: what she's grown into, warmed by tonight's heat and a drink or two. */
-export function desireNow(desire: number, lustTonight: number, drunk: number, sloppyDrunk: number): number {
-  return Math.min(MAX_DESIRE, desire + lustTonight * DESIRE_PER_LUST + Math.min(drunk, sloppyDrunk) * DESIRE_PER_DRUNK);
-}
-
 /** Which of her three thoughts fits: 0 not ready, 1 torn, 2 wanting it. */
-export function thoughtTier(touch: TouchDef, desire: number): 0 | 1 | 2 {
+export function thoughtTier(touch: TouchDef, desire: number, leanMargin = LEAN_MARGIN): 0 | 1 | 2 {
   const need = desireNeeded(touch.level);
   if (desire < need) return 0;
-  return desire < need + LEAN_MARGIN ? 1 : 2;
+  return desire < need + leanMargin ? 1 : 2;
 }
 
 export interface AnswerFacts {
-  /** Her desire in the moment, from `desireNow`. */
+  /** Her desire for this touch in the moment, 0 to 10. */
   desire: number;
+  /** How far past what it needs she has to be to lean in; less with passives. */
+  leanMargin?: number;
   /** She's had far too much to say yes to anything. */
   sloppy: boolean;
   /** So has the guest. */
@@ -144,7 +152,7 @@ export interface AnswerFacts {
 export function touchAnswers(touch: TouchDef, f: AnswerFacts): TouchAnswer[] {
   const answers: TouchAnswer[] = [];
   if (!f.sloppy && !f.guestSloppy) {
-    const tier = thoughtTier(touch, f.desire);
+    const tier = thoughtTier(touch, f.desire, f.leanMargin);
     if (tier >= 1) answers.push("allow");
     if (tier >= 2) answers.push("lean");
   }
@@ -158,16 +166,9 @@ export interface TouchOutcome {
   respect: number;
   fame: number;
   flirt: number;
-  /** Tonight's heat. */
-  lust: number;
-  /** What she's grown into. */
-  desire: number;
   /** The guest's mood after, or null to leave it. */
   mood: Mood | null;
 }
-
-/** Even being reached for, and turning it down, makes her a little more curious. */
-const CURIOSITY = 0.15;
 
 export function touchOutcome(touch: TouchDef, answer: TouchAnswer): TouchOutcome {
   const level = touch.level;
@@ -178,8 +179,6 @@ export function touchOutcome(touch: TouchDef, answer: TouchAnswer): TouchOutcome
         respect: -Math.floor(level / 3),
         fame: level >= 4 ? 1 : 0,
         flirt: level >= 5 ? 1 : 0,
-        lust: 1,
-        desire: CURIOSITY + 0.35,
         mood: "lust",
       };
     case "lean":
@@ -188,14 +187,12 @@ export function touchOutcome(touch: TouchDef, answer: TouchAnswer): TouchOutcome
         respect: -Math.floor(level / 3) - 1,
         fame: 2,
         flirt: 1,
-        lust: 2,
-        desire: CURIOSITY + 0.65,
         mood: "lust",
       };
     case "slap":
-      return { gold: 0, respect: level >= 6 ? 2 : level >= 3 ? 1 : 0, fame: 0, flirt: 0, lust: -1, desire: -0.2, mood: "angry" };
+      return { gold: 0, respect: level >= 6 ? 2 : level >= 3 ? 1 : 0, fame: 0, flirt: 0, mood: "angry" };
     case "pull":
-      return { gold: 0, respect: level >= 5 ? 1 : 0, fame: 0, flirt: 0, lust: 0, desire: CURIOSITY, mood: null };
+      return { gold: 0, respect: level >= 5 ? 1 : 0, fame: 0, flirt: 0, mood: null };
   }
 }
 
@@ -225,25 +222,21 @@ export function fillPiece(text: string, piece: string | null): string {
   return text.replaceAll("{piece}", piece ?? "clothes");
 }
 
-/** What carries between nights: how far she's come. */
+/** What carries between nights: how many times she's let each kind of touch happen. */
 export interface TouchMemory {
-  desire: number;
-  /** How many times she's let each kind of touch happen. */
   lets: Partial<Record<TouchRegion, number>>;
 }
 
 export function newTouchMemory(): TouchMemory {
-  return { desire: 0, lets: {} };
+  return { lets: {} };
 }
 
 /** A touch memory from a save, with anything broken put back to its start. */
 export function readTouchMemory(raw: unknown): TouchMemory {
   const memory = newTouchMemory();
   if (!raw || typeof raw !== "object") return memory;
-  const fields = raw as { desire?: unknown; lets?: unknown };
-  if (typeof fields.desire === "number" && Number.isFinite(fields.desire)) {
-    memory.desire = Math.min(MAX_DESIRE, Math.max(0, fields.desire));
-  }
+  // Older saves also kept a lasting desire; that's now worked out from passives, so it's let go.
+  const fields = raw as { lets?: unknown };
   if (fields.lets && typeof fields.lets === "object") {
     for (const [region, count] of Object.entries(fields.lets as Record<string, unknown>)) {
       if (region in FIRSTS && typeof count === "number" && Number.isFinite(count) && count > 0) {

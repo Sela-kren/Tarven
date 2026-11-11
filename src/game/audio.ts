@@ -6,28 +6,78 @@ import type { Cue, Phase } from "./tavern";
  * the browser, and stays silent rather than failing if the browser can't or won't play anything.
  */
 
-export type Track = "bards_tale" | "harvest_season" | "old_tower_inn" | "kings_feast" | "minstrel_dance";
+export type Track =
+  | "bards_tale"
+  | "harvest_season"
+  | "exploration"
+  | "old_tower_inn"
+  | "kings_feast"
+  | "minstrel_dance"
+  | "market_day"
+  | "rejoicing"
+  | "crowded_pub"
+  | "flutenist_dance";
 export type Layer = "fire" | "crowd" | "stew";
 /** Sounds the game itself asks for, on top of what the tavern's rules cue. */
 export type Effect = Cue | "step" | "click" | "page" | "cloth" | "visitor" | "cheers";
 
-/** One tavern tune per night, so the three nights don't all sound the same. */
-const NIGHT_TRACKS: readonly Track[] = ["old_tower_inn", "kings_feast", "minstrel_dance"];
+/** Each track's file in `audio/music/`. Browsers decode both Ogg and MP3. */
+export const MUSIC_FILES: Record<Track, string> = {
+  bards_tale: "bards_tale.ogg",
+  harvest_season: "harvest_season.ogg",
+  exploration: "exploration.mp3",
+  old_tower_inn: "old_tower_inn.ogg",
+  kings_feast: "kings_feast.ogg",
+  minstrel_dance: "minstrel_dance.ogg",
+  market_day: "market_day.mp3",
+  rejoicing: "rejoicing.mp3",
+  crowded_pub: "crowded_pub.ogg",
+  flutenist_dance: "flutenist_dance.ogg",
+};
+
+/** Songs played one after another, round and round. A playlist of one just loops. */
+export type Playlist = readonly Track[];
+
+const TITLE_PLAYLIST: Playlist = ["bards_tale"];
+const DAY_PLAYLIST: Playlist = ["harvest_season", "exploration"];
+/** The band's set. Each night starts somewhere else in it, so the nights don't all open the same way. */
+const NIGHT_SET: Playlist = [
+  "old_tower_inn",
+  "market_day",
+  "kings_feast",
+  "crowded_pub",
+  "minstrel_dance",
+  "rejoicing",
+  "flutenist_dance",
+];
+/** Each night's set, made once, so asking every frame hands back the same playlist. */
+const nightSets = new Map<number, Playlist>();
+
+function nightSet(nightIndex: number): Playlist {
+  let set = nightSets.get(nightIndex);
+  if (!set) {
+    // Spread the openers across the set rather than walking it one song at a time.
+    const start = (nightIndex * 3) % NIGHT_SET.length;
+    set = [...NIGHT_SET.slice(start), ...NIGHT_SET.slice(0, start)];
+    nightSets.set(nightIndex, set);
+  }
+  return set;
+}
 
 /**
  * The music for a moment of the game, or null for none. After last call the band has stopped: only the
  * fire is left, which is the point of the visitor's scene.
  */
-export function musicFor(staging: boolean, phase: Phase, nightIndex: number): Track | null {
-  if (staging || phase === "ended") return "bards_tale";
+export function musicFor(staging: boolean, phase: Phase, nightIndex: number): Playlist | null {
+  if (staging || phase === "ended") return TITLE_PLAYLIST;
   switch (phase) {
     case "service":
-      return NIGHT_TRACKS[nightIndex % NIGHT_TRACKS.length];
+      return nightSet(nightIndex);
     case "lastcall":
     case "bedtime":
       return null;
     default:
-      return "harvest_season";
+      return DAY_PLAYLIST;
   }
 }
 
@@ -152,7 +202,7 @@ const PAUSED_LEVEL = 0.35;
 const LEVEL_EPSILON = 0.01;
 
 interface Playing {
-  track: Track;
+  playlist: Playlist;
   source: AudioBufferSourceNode;
   gain: GainNode;
 }
@@ -168,8 +218,8 @@ export class Soundscape {
   private readonly layerGains = new Map<Layer, GainNode>();
   private readonly layerLevels: Record<Layer, number> = { fire: 0, crowd: 0, stew: 0 };
   private readonly lastFile = new Map<Effect, string>();
-  /** The track that should be playing. A slow download that is no longer wanted gets dropped. */
-  private wanted: Track | null = null;
+  /** The playlist that should be playing. A slow download that is no longer wanted gets dropped. */
+  private wanted: Playlist | null = null;
   private playing: Playing | null = null;
   private paused = false;
 
@@ -205,17 +255,18 @@ export class Soundscape {
       void context.resume();
       for (const file of EFFECT_FILES) void this.loadEffect(file);
       for (const layer of LAYERS) void this.startLayer(layer);
-      if (this.wanted) void this.startTrack(this.wanted);
+      if (this.wanted) void this.startTrack(this.wanted, 0);
     } catch {
       // No sound is fine.
       this.context = null;
     }
   }
 
+  /** `path` is under `audio/` and includes the file's extension. */
   private async fetchBuffer(path: string): Promise<AudioBuffer | null> {
     if (!this.context) return null;
     try {
-      const response = await fetch(`${this.base}audio/${path}.ogg`);
+      const response = await fetch(`${this.base}audio/${path}`);
       if (!response.ok) return null;
       return await this.context.decodeAudioData(await response.arrayBuffer());
     } catch {
@@ -224,13 +275,13 @@ export class Soundscape {
   }
 
   private async loadEffect(file: string): Promise<void> {
-    const buffer = await this.fetchBuffer(`sfx/${file}`);
+    const buffer = await this.fetchBuffer(`sfx/${file}.ogg`);
     if (buffer) this.effectBuffers.set(file, buffer);
   }
 
   private async startLayer(layer: Layer): Promise<void> {
     const { context, layerBus } = this;
-    const buffer = await this.fetchBuffer(`ambience/${LAYER_FILES[layer]}`);
+    const buffer = await this.fetchBuffer(`ambience/${LAYER_FILES[layer]}.ogg`);
     if (!buffer || !context || !layerBus) return;
     const gain = context.createGain();
     gain.gain.value = this.layerLevels[layer] * LAYER_VOLUME[layer];
@@ -244,10 +295,18 @@ export class Soundscape {
     this.layerGains.set(layer, gain);
   }
 
-  private async startTrack(track: Track): Promise<void> {
-    const buffer = await this.fetchBuffer(`music/${track}`);
+  /** Plays song `index` of `playlist`, and the next one when it finishes. */
+  private async startTrack(playlist: Playlist, index: number, failed = 0): Promise<void> {
+    const buffer = await this.fetchBuffer(`music/${MUSIC_FILES[playlist[index]]}`);
     const { context, musicBus } = this;
-    if (!buffer || !context || !musicBus || this.wanted !== track || this.playing?.track === track) return;
+    if (!context || !musicBus || this.wanted !== playlist) return;
+    if (this.playing?.playlist === playlist) return;
+    const next = (index + 1) % playlist.length;
+    if (!buffer) {
+      // A song that won't load is skipped; if none of them will, the music stays quiet.
+      if (failed + 1 < playlist.length) void this.startTrack(playlist, next, failed + 1);
+      return;
+    }
     this.fadeOutMusic();
     const gain = context.createGain();
     gain.gain.setValueAtTime(0, context.currentTime);
@@ -255,10 +314,16 @@ export class Soundscape {
     gain.connect(musicBus);
     const source = context.createBufferSource();
     source.buffer = buffer;
-    source.loop = true;
+    source.loop = playlist.length === 1;
     source.connect(gain);
+    source.onended = () => {
+      // Only a song that ran out moves the set on. A faded-out one has already been let go.
+      if (this.playing?.source !== source) return;
+      this.playing = null;
+      void this.startTrack(playlist, next);
+    };
     source.start();
-    this.playing = { track, source, gain };
+    this.playing = { playlist, source, gain };
   }
 
   private fadeOutMusic(): void {
@@ -272,12 +337,12 @@ export class Soundscape {
     this.playing = null;
   }
 
-  /** Crossfades to `track`, or fades out for null. Asking for what's already playing does nothing. */
-  setMusic(track: Track | null): void {
-    if (track === this.wanted) return;
-    this.wanted = track;
+  /** Crossfades to `playlist`, or fades out for null. Asking for what's already playing does nothing. */
+  setMusic(playlist: Playlist | null): void {
+    if (playlist === this.wanted) return;
+    this.wanted = playlist;
     if (!this.context) return;
-    if (track) void this.startTrack(track);
+    if (playlist) void this.startTrack(playlist, 0);
     else this.fadeOutMusic();
   }
 

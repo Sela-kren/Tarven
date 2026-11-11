@@ -23,6 +23,7 @@ export type TouchRegion =
   | "neck"
   | "thigh"
   | "clothes"
+  | "intimate"
   | "invite";
 
 export interface TouchDef {
@@ -534,6 +535,48 @@ export const TOUCHES: readonly TouchDef[] = [
     lean: "You wave to the room like a queen. They carry you round twice.",
   },
 
+  // 8 and 9, intimate: a hand that goes where nobody's ever been let go. Never described past the touch itself.
+  {
+    id: "underTable",
+    level: 8,
+    region: "intimate",
+    kinds: ANY,
+    reach: "Under the table, a hand slides up between your knees, and doesn't stop.",
+    thoughts: ["(Under the table— not there, not—)", "(Nobody can see. Nobody can see what they're doing.)", "(Don't stop.)"],
+    allow: "You grip the edge of the table and keep your face very still.",
+    lean: "You shift your knees apart, just a little, and bite your lip.",
+  },
+  {
+    id: "lingering",
+    level: 8,
+    region: "intimate",
+    kinds: FARMER,
+    reach: "The farmer's fingers trace the inside of your thigh, higher, until there's nowhere higher to go.",
+    thoughts: ["(That's— that's as high as—)", "(My whole body's listening to that one hand.)", "(Yes. There.)"],
+    allow: "You stand frozen, breathing hard, and let them stay.",
+    lean: "You close your eyes and lean back against them.",
+  },
+  {
+    id: "beneath",
+    level: 9,
+    region: "intimate",
+    kinds: SMUGGLER,
+    reach: "The smuggler's hand finds its way under your skirt, slow and certain, as if it's been there before.",
+    thoughts: ["(Under my— they can't—)", "(They can. I'm letting them.)", "(There. Right there.)"],
+    allow: "You go very still, and very red, and let them.",
+    lean: "You press into their hand and hide your face in their shoulder.",
+  },
+  {
+    id: "pinned",
+    level: 9,
+    region: "intimate",
+    kinds: [...SOLDIER, ...FUGITIVE],
+    reach: "They pull you down between their knees, one arm round your waist, and the other hand goes lower.",
+    thoughts: ["(Everyone's right there—!)", "(Nobody's looking. Everybody's looking. I can't tell.)", "(Lower. Please.)"],
+    allow: "You hold on to their shoulders and let it happen, trembling.",
+    lean: "You rock against their hand, and forget the room entirely.",
+  },
+
   // 10: the invitation. A lover's, after closing: nobody in the room reaches for these yet.
   {
     id: "upstairs",
@@ -614,6 +657,7 @@ export const FIRSTS: Record<TouchRegion, string> = {
   neck: "(I didn't know my neck could feel like that.)",
   thigh: "(No one's ever touched me there.)",
   clothes: "(I've never let anyone take my clothes off.)",
+  intimate: "(Nobody's ever touched me there. Not ever. Not even me, much.)",
   invite: "(I've never... with anyone.)",
 };
 
@@ -631,5 +675,6 @@ export const CONFIDENT: Record<TouchRegion, string> = {
   neck: "\"You'll leave a mark. People will talk.\"",
   thigh: "\"Higher costs more.\"",
   clothes: "\"You only get one piece a night. Choose well.\"",
+  intimate: "\"Not where the whole room can see. ...Under the table's fine.\"",
   invite: "\"I thought you'd never ask.\"",
 };

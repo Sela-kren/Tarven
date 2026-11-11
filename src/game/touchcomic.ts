@@ -101,6 +101,7 @@ const SHOTS: Record<TouchRegion, Shot> = {
   neck: { bone: "Head", offset: [-0.06, 0.0, -0.04], distance: 0.75, view: "profile", gesture: "stroke" },
   thigh: { bone: "Thigh_R", offset: [-0.04, -0.15, -0.09], distance: 1.15, view: "front", gesture: "rest" },
   clothes: { bone: "Torso", offset: [-0.08, 0.1, -0.13], distance: 1.0, view: "front", gesture: "tug" },
+  intimate: { bone: "Thigh_R", offset: [0.03, 0.02, -0.1], distance: 1.15, view: "front", gesture: "strokeUp" },
   invite: { bone: "Head", offset: SIDE_OF_FACE, distance: 0.9, view: "front", gesture: "hold", sideOfFace: true },
 };
 

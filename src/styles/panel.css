@@ -480,3 +480,233 @@
     display: none;
   }
 }
+
+/* ---------- 18+ cards ---------- */
+
+/*
+ * A moment the game doesn't show: placeholder wallpaper (a door, a candle, a bed, all in flat pixel bands), an
+ * 18+ mark, and one short line. Real art goes in place of the wallpaper later.
+ */
+#panel.adult-open .box {
+  width: min(640px, 100%);
+}
+
+#panel .wallpaper {
+  position: relative;
+  height: 220px;
+  margin: 0 0 14px;
+  overflow: hidden;
+  clip-path: var(--pixel-corners);
+  background:
+    radial-gradient(circle at 70% 40%, #ffcf7a 0 6px, #f0a040 6px 14px, rgba(240, 140, 50, 0.35) 14px 60px, transparent 60px),
+    repeating-linear-gradient(0deg, #2a1424 0 8px, #2f1729 8px 16px);
+  box-shadow: inset 0 0 0 4px #120810;
+}
+
+/* A shut door in the middle of the dark. */
+#panel .wallpaper.door::after {
+  content: "";
+  position: absolute;
+  left: calc(50% - 50px);
+  bottom: 0;
+  width: 100px;
+  height: 170px;
+  background: repeating-linear-gradient(90deg, #5a3b1f 0 22px, #3e2814 22px 25px);
+  box-shadow: inset 0 0 0 5px #24160b, inset -14px 0 0 -9px #d9a93a;
+}
+
+/* A candle, burning low. */
+#panel .wallpaper.candle::after {
+  content: "";
+  position: absolute;
+  left: calc(70% - 8px);
+  top: calc(40% + 14px);
+  width: 16px;
+  height: 60px;
+  background: #e8dcc0;
+  box-shadow: inset -4px 0 0 #c4b490, 0 60px 0 -2px #3a2010;
+}
+
+/* The end of a bed with the sheets thrown back. */
+#panel .wallpaper.bed::after {
+  content: "";
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: 0;
+  height: 80px;
+  background:
+    linear-gradient(170deg, transparent 0 30%, #e8dcc0 30% 48%, #c4b490 48% 52%, #8a2440 52%),
+    #8a2440;
+  box-shadow: inset 0 0 0 4px #24160b;
+}
+
+#panel .wallpaper .badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 1;
+  padding: 2px 8px;
+  font: 400 22px/1 var(--font-title);
+  color: #fff;
+  background: #b0200f;
+  box-shadow: inset 0 -3px 0 #6a1208, 0 0 0 2px #000;
+}
+
+#panel .wallpaper .placeholder {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  z-index: 1;
+  font-size: 12px;
+  color: rgba(255, 240, 220, 0.6);
+}
+
+#panel .adult-line {
+  margin: 0;
+  font-size: 18px;
+  font-style: italic;
+  text-align: center;
+}
+
+/* ---------- New passives, on the morning report ---------- */
+
+#panel .new-passives {
+  /* A big night can earn a lot at once; the list scrolls so the button stays in reach. */
+  max-height: 34vh;
+  overflow-y: auto;
+  margin-top: 16px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.28);
+  box-shadow: inset 0 0 0 2px var(--gold-dim);
+}
+
+#panel .new-passives h2 {
+  margin: 0 0 8px;
+  font: 400 24px/1 var(--font-title);
+  color: var(--gold);
+}
+
+#panel .new-passive {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 10px;
+  align-items: start;
+  margin-top: 8px;
+}
+
+#panel .new-passive .icon svg {
+  display: block;
+  width: 28px;
+  height: 28px;
+  shape-rendering: crispEdges;
+}
+
+#panel .new-passive p {
+  margin: 2px 0 0;
+  font-size: 14px;
+}
+
+#panel .new-passive .thought {
+  font-style: italic;
+  color: #e8d8b0;
+}
+
+#panel .new-passive .benefit {
+  color: #9fd08a;
+}
+
+/* ---------- Brawls ---------- */
+
+#panel.fight-open .box {
+  width: min(620px, 100%);
+}
+
+#panel .fight-bars {
+  display: grid;
+  gap: 8px;
+}
+
+#panel .fight-bar {
+  display: grid;
+  grid-template-columns: 11em 1fr 4em;
+  align-items: center;
+  gap: 10px;
+}
+
+#panel .fight-bar .track {
+  position: relative;
+  height: 16px;
+  background: #1a1009;
+  box-shadow: inset 0 0 0 2px #000;
+}
+
+#panel .fight-bar .fill {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  max-width: calc(100% - 4px);
+  background: repeating-linear-gradient(90deg, var(--fill-color) 0 6px, var(--fill-shade) 6px 8px);
+}
+
+#panel .fight-bar.you {
+  --fill-color: #4f9a46;
+  --fill-shade: #36702f;
+}
+
+#panel .fight-bar.foe {
+  --fill-color: #c8402c;
+  --fill-shade: #8e2a1c;
+}
+
+#panel .fight-bar b {
+  text-align: right;
+}
+
+/* What just happened, newest at the bottom and brightest. */
+#panel .fight-log {
+  margin-top: 12px;
+  padding: 8px 12px;
+  min-height: 92px;
+  background: rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 0 0 2px var(--gold-dim);
+}
+
+#panel .fight-log p {
+  margin: 2px 0;
+  font-size: 15px;
+  color: #b8a888;
+}
+
+#panel .fight-log p:last-child {
+  color: var(--text-bright);
+}
+
+/* ---------- After hours ---------- */
+
+#panel .fight-bar.pleasure {
+  --fill-color: #e8607c;
+  --fill-shade: #a8304c;
+}
+
+#panel .duel-state {
+  margin: 10px 0 0;
+  font-size: 15px;
+  color: #d8b8c8;
+}
+
+#panel .duel-state.aroused {
+  color: #f090b0;
+}
+
+#panel .duel-state.edge {
+  color: #ff5a7a;
+}
+
+/* Her moves in two columns, so they all fit. */
+#panel.duel-open .menu {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}

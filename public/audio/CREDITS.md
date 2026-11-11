@@ -3,6 +3,7 @@
 Every sound here is released under CC0 (public domain). No credit is legally required, but these people
 made the game sound the way it does, so they are named here. The license of each was checked on its own
 source page. Files were converted to Ogg Vorbis and levelled; a few loops had their seams crossfaded.
+The MP3 tracks are the originals as downloaded.
 
 ## Music
 
@@ -13,6 +14,11 @@ source page. Files were converted to Ogg Vorbis and levelled; a few loops had th
 | music/kings_feast.ogg | Medieval: King's Feast | RandomMind | https://opengameart.org/content/medieval-kings-feast |
 | music/minstrel_dance.ogg | Medieval: Minstrel Dance | RandomMind | https://opengameart.org/node/92393 |
 | music/harvest_season.ogg | Medieval: Harvest Season | RandomMind | https://opengameart.org/node/133527 |
+| music/exploration.mp3 | Medieval: Exploration | RandomMind | https://opengameart.org/content/medieval-exploration |
+| music/market_day.mp3 | Medieval: Market Day | RandomMind | https://opengameart.org/content/medieval-market-day |
+| music/rejoicing.mp3 | Medieval: Rejoicing | RandomMind | https://opengameart.org/content/medieval-rejoicing |
+| music/crowded_pub.ogg | Crowded Pub (2025) | Bobjt | https://opengameart.org/content/crowded-pub |
+| music/flutenist_dance.ogg | Flutenist Dance 3 | Spring Spring | https://opengameart.org/content/flutenist-dance-3 |
 
 ## Ambience
 
