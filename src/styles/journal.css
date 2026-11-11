@@ -304,3 +304,136 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* ---------- Passives and records ---------- */
+
+#panel .journal-tabs .tab.passives,
+#panel .journal-tabs .tab.records {
+  background: repeating-linear-gradient(90deg, #6a1430 0 18px, #64132d 18px 20px);
+  box-shadow: inset 0 4px 0 #8e2448, inset 0 -5px 0 #3a0a1a;
+}
+
+#panel .journal-book .meter.purple {
+  --fill-color: #7a4aa0;
+  --fill-shade: #563274;
+}
+
+#panel .journal-book .meter.pink {
+  --fill-color: #e0608a;
+  --fill-shade: #a83a62;
+}
+
+#panel .journal-book .reach.dark {
+  color: #563274;
+}
+
+/* A group of passives: its picture, its name, and a chip for each passive. */
+#panel .journal-book .group {
+  display: grid;
+  grid-template-columns: 24px 6.5em 1fr;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 2px 0;
+  border-bottom: 2px solid #d8c79a;
+}
+
+#panel .journal-book .group .icon svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+  shape-rendering: crispEdges;
+}
+
+#panel .journal-book .group .label {
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+#panel .journal-book .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+#panel .journal-book .pchip {
+  width: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 2px 7px;
+  font: 400 13px/1.2 var(--font);
+  color: #f3e6c4;
+  text-shadow: none;
+  background: #8e2448;
+  border: none;
+  box-shadow: inset 0 -3px 0 #5a1430;
+  clip-path: none;
+  filter: none;
+  cursor: pointer;
+}
+
+#panel .journal-book .pchip.next {
+  color: #6b5a3e;
+  background: #e2d3a8;
+  box-shadow: inset 0 0 0 2px #a8936a;
+}
+
+#panel .journal-book .pchip.hidden {
+  color: #a8936a;
+  background: #d8c79a;
+  box-shadow: none;
+  cursor: default;
+}
+
+#panel .journal-book .pchip.picked {
+  outline: 2px solid #1c140e;
+}
+
+/* What a picked passive needs and does, at the foot of its page. */
+#panel .journal-book .detail {
+  min-height: 84px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  font-size: 14px;
+  background: #e2d3a8;
+  box-shadow: inset 0 0 0 2px #c9b483;
+}
+
+#panel .journal-book .detail p {
+  margin: 2px 0;
+}
+
+#panel .journal-book .detail .name {
+  font: 400 20px/1.1 var(--font-title);
+  color: #7a1a3a;
+}
+
+#panel .journal-book .detail .benefit {
+  color: #3f7a3a;
+}
+
+#panel .journal-book .detail .cost {
+  color: #b0200f;
+}
+
+#panel .journal-book .detail .thought {
+  font-style: italic;
+  color: #6b5a3e;
+}
+
+#panel .journal-book .detail .note {
+  margin-left: 0;
+}
+
+#panel .journal-book.passives .page,
+#panel .journal-book.records .page {
+  padding-top: 16px;
+}
+
+#panel .journal-book.records .line {
+  min-height: 22px;
+}
+
+#panel .journal-book.records h2 {
+  margin-top: 10px;
+}

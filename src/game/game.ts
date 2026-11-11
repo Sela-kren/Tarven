@@ -83,9 +83,9 @@ import {
 import { INTRO, StoryBox } from "./story";
 import { Chatter } from "./chatter";
 import { DrinkComic } from "./comic";
-import { journalBook, privateBook } from "./journal";
+import { journalBook, passivesBook, privateBook, recordsBook } from "./journal";
+import { PASSIVE_ICONS } from "./passiveicons";
 import { saveBadges } from "./saveicons";
-import { MAX_DESIRE } from "./touch";
 import { SkyDial } from "./skydial";
 import { TouchComic } from "./touchcomic";
 import type { Reaction, SoftPart } from "./player";
@@ -113,6 +113,7 @@ import {
   UPGRADE_COST,
   UPGRADES,
   WARE_NAMES,
+  type AdultScene,
   type Bottle,
   type GuestKind,
   type Held,
@@ -238,6 +239,14 @@ const BEDROOM_DOOR_SWING_RATE = 7;
 const DESK_RANGE = 1.5;
 /** The journal on the chest: close enough to reach down to it, and the arrow low over it. */
 const JOURNAL_RANGE = 1.2;
+/** The journal's spreads, in tab order. */
+type JournalPage = "ledger" | "private" | "passives" | "records";
+const JOURNAL_PAGES: readonly { id: JournalPage; label: string }[] = [
+  { id: "ledger", label: "Ledger" },
+  { id: "private", label: "Private" },
+  { id: "passives", label: "Passives" },
+  { id: "records", label: "Records" },
+];
 const JOURNAL_ARROW_HEIGHT = 1.4;
 /** How far the camera pulls back to look at the plans. */
 const BUILD_ZOOM = 1.4;
@@ -498,6 +507,8 @@ export class Game {
   private panelButtons: Button[] = [];
   /** Where Esc leads from the open menu, or null when it has no way back. */
   private panelBack: (() => void) | null = null;
+  /** An 18+ moment the last answer led to, shown once the conversation closes. */
+  private pendingAdult: AdultScene | null = null;
   /** Tonight as it opened: what a save holds. */
   private checkpoint: TavernSave;
   private visitor: Walker | null = null;
@@ -1180,7 +1191,7 @@ export class Game {
     const box = document.createElement("div");
     box.className = "box";
     this.panelEl.classList.toggle("title-screen", style === "title");
-    this.panelEl.classList.remove("journal-open");
+    this.panelEl.classList.remove("journal-open", "adult-open");
     const heading = document.createElement("h1");
     if (style === "title") {
       // "Last Call at" small over the sign, "Tarven" large across it.
@@ -1243,10 +1254,10 @@ export class Game {
   }
 
   /**
-   * Opens the journal: your name and how you stand, or, on its private pages, the adult side. Ribbon tabs (or
-   * 1 and 2) turn between them. The night waits while you read.
+   * Opens the journal: your name and how you stand, or the adult side: tonight's desire, her passives, and her
+   * records. Ribbon tabs (or 1 to 4) turn between them. The night waits while you read.
    */
-  private showJournal(page: "ledger" | "private" = "ledger"): void {
+  private showJournal(page: JournalPage = "ledger"): void {
     const { tavern } = this;
     this.clearTarget();
     this.audio.play("click");
@@ -1254,47 +1265,49 @@ export class Game {
       this.closePanel();
       this.screen = "play";
     };
-    const book =
-      page === "ledger"
-        ? journalBook(
-            {
-              name: tavern.name,
-              night: tavern.nightIndex + 1,
-              nights: NIGHTS.length,
-              gold: tavern.gold,
-              debt: DEBT,
-              trust: tavern.trust,
-              trustMax: TRUST_MAX,
-              trustToRise: TRUST_TO_OVERTHROW,
-              heat: tavern.heat,
-              heatMax: HEAT_MAX,
-              persona: tavern.persona,
-              desire: tavern.desire,
-              desireMax: MAX_DESIRE,
-            },
-            (name) => (tavern.name = name),
-          )
-        : privateBook({
-            touchable: tavern.playerBody === "Female",
-            desire: tavern.touchMemory.desire,
-            warmth: tavern.heatTonight,
-            desireNow: tavern.desire,
-            desireMax: MAX_DESIRE,
-            flirt: tavern.persona.flirt,
-            roomLust: tavern.persona.lust,
-            tonight: { ...tavern.touchesTonight },
-            clothesLost: tavern.stripped,
-            lets: tavern.touchMemory.lets,
-          });
+    const facts = tavern.passiveFacts();
+    let book: HTMLElement;
+    if (page === "ledger") {
+      book = journalBook(
+        {
+          name: tavern.name,
+          night: tavern.nightIndex + 1,
+          nights: NIGHTS.length,
+          gold: tavern.gold,
+          debt: DEBT,
+          trust: tavern.trust,
+          trustMax: TRUST_MAX,
+          trustToRise: TRUST_TO_OVERTHROW,
+          heat: tavern.heat,
+          heatMax: HEAT_MAX,
+          persona: tavern.persona,
+          lewdness: tavern.lewdness,
+          corruption: Math.round(tavern.corruption),
+        },
+        (name) => (tavern.name = name),
+      );
+    } else if (page === "private") {
+      book = privateBook({
+        touchable: tavern.playerBody === "Female",
+        lewdness: tavern.lewdness,
+        corruption: Math.round(tavern.corruption),
+        meters: { ...tavern.meters },
+        pleasure: tavern.pleasure,
+        tonight: { ...tavern.touchesTonight },
+        clothesLost: tavern.stripped,
+        lets: tavern.touchMemory.lets,
+        passivesHeld: tavern.passives.size,
+      });
+    } else if (page === "passives") {
+      book = passivesBook({ owned: tavern.passives, facts });
+    } else {
+      book = recordsBook({ facts });
+    }
 
     // Ribbon tabs over the top of the book, one for each spread.
-    const pages: { id: "ledger" | "private"; label: string }[] = [
-      { id: "ledger", label: "Ledger" },
-      { id: "private", label: "Private" },
-    ];
     const tabs = document.createElement("div");
     tabs.className = "journal-tabs";
-    for (const [index, tab] of pages.entries()) {
+    for (const [index, tab] of JOURNAL_PAGES.entries()) {
       const el = document.createElement("button");
       el.type = "button";
       el.className = `tab ${tab.id}`;
@@ -1315,20 +1328,101 @@ export class Game {
     const wrap = document.createElement("div");
     wrap.className = "journal";
     wrap.append(tabs, book, shut);
-    this.panelEl.classList.remove("title-screen");
+    this.panelEl.classList.remove("title-screen", "adult-open");
     this.panelEl.classList.add("open", "journal-open");
     this.panelEl.replaceChildren(wrap);
     this.panelButtons = [
-      { label: "Ledger", onPick: () => page !== "ledger" && this.showJournal("ledger") },
-      { label: "Private", onPick: () => page !== "private" && this.showJournal("private") },
+      ...JOURNAL_PAGES.map((tab) => ({ label: tab.label, onPick: () => tab.id !== page && this.showJournal(tab.id) })),
       { label: "Close", onPick: close },
     ];
     this.panelBack = close;
     this.screen = "panel";
   }
 
+  /**
+   * An 18+ moment, as a card over the room: placeholder wallpaper, the 18+ mark, one short line, and the
+   * choices. Never more than the one line; the art will be the game's own one day.
+   */
+  private showAdultCard(title: string, line: string, scene: "door" | "candle" | "bed", buttons: Button[]): void {
+    this.openPanel(title, [], buttons);
+    this.panelEl.classList.add("adult-open");
+    const box = this.panelEl.querySelector(".box");
+    if (!box) return;
+    const art = document.createElement("div");
+    art.className = `wallpaper ${scene}`;
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.textContent = "18+";
+    const note = document.createElement("span");
+    note.className = "placeholder";
+    note.textContent = "Placeholder art";
+    art.append(badge, note);
+    const words = document.createElement("p");
+    words.className = "adult-line";
+    words.textContent = line;
+    box.insertBefore(words, box.querySelector(".menu"));
+    box.insertBefore(art, words);
+  }
+
+  /** Shows whatever 18+ moment the last answer led to, then gets back to work. */
+  private playAdultScene(scene: AdultScene): void {
+    const { tavern } = this;
+    const back = () => {
+      this.panelEl.classList.remove("adult-open");
+      this.closePanel();
+      this.screen = "play";
+    };
+    if (scene.kind === "overwhelmed") {
+      this.showAdultCard("Overwhelmed", "It all comes over you at once. For a moment the tavern simply isn't there.", "candle", [
+        { label: "Pull yourself together", onPick: back },
+      ]);
+      this.panelBack = back;
+      return;
+    }
+    // She's said yes to going up; what happens there is still hers to choose, and she can still change her mind.
+    const choices: Button[] = tavern.upstairsChoices().map(({ act, label, ready }) => ({
+      label: ready ? label : `${label} (not warm enough yet)`,
+      disabled: !ready,
+      onPick: () => {
+        const line = tavern.goUpstairs(scene, act);
+        this.showAdultCard("Upstairs", line, act === "kiss" ? "candle" : "bed", [{ label: "Go back down to the bar", onPick: back }]);
+        this.panelBack = back;
+      },
+    }));
+    choices.push({ label: "Change your mind, gently", onPick: back });
+    this.showAdultCard("Upstairs", "You lead them up the creaking stairs, and shut the door on the noise below.", "door", choices);
+    this.panelBack = back;
+  }
+
+  /** At bedtime, too restless to sleep: sleep anyway, or ease the ache first. */
+  private showBedChoice(): void {
+    const { tavern } = this;
+    const sleep = () => {
+      this.panelEl.classList.remove("adult-open");
+      this.closePanel();
+      tavern.sleep();
+      this.goToSleep();
+    };
+    this.openPanel("Restless", ["You lie down, but you can't stop thinking about tonight."], [
+      { label: "Sleep it off", onPick: sleep },
+      {
+        label: "Ease the ache first (18+)",
+        onPick: () => {
+          tavern.easeAche();
+          this.showAdultCard("Alone", "You blow out the candle and take care of it yourself. Sleep comes easily after.", "candle", [
+            { label: "Sleep", onPick: sleep },
+          ]);
+        },
+      },
+    ]);
+    this.panelBack = () => {
+      this.closePanel();
+      this.screen = "play";
+    };
+  }
+
   private closePanel(): void {
-    this.panelEl.classList.remove("open", "journal-open");
+    this.panelEl.classList.remove("open", "journal-open", "adult-open");
     this.panelEl.replaceChildren();
     this.panelButtons = [];
     this.panelBack = null;
@@ -1770,9 +1864,13 @@ export class Game {
     tavern.chooseTalk(index);
     this.syncStripped();
     this.showTouch();
+    this.pendingAdult ??= tavern.takeAdultScene();
     if (!tavern.inConversation) {
       this.dialogue.close();
       this.screen = "play";
+      const scene = this.pendingAdult;
+      this.pendingAdult = null;
+      if (scene) this.playAdultScene(scene);
       return;
     }
     // Only the answer to what you picked plays; the conversation before it has been seen.
@@ -1904,6 +2002,34 @@ export class Game {
         },
       ],
     );
+    // What she earned as she lay down, each with her thought on it, the way Karryn's are shown at bedtime.
+    if (tavern.newPassives.length > 0) {
+      const list = document.createElement("div");
+      list.className = "new-passives";
+      const heading = document.createElement("h2");
+      heading.textContent = tavern.newPassives.length === 1 ? "New passive" : `${tavern.newPassives.length} new passives`;
+      list.append(heading);
+      for (const def of tavern.newPassives) {
+        const item = document.createElement("div");
+        item.className = "new-passive";
+        const icon = document.createElement("span");
+        icon.className = "icon";
+        icon.innerHTML = PASSIVE_ICONS[def.group];
+        const text = document.createElement("div");
+        const name = document.createElement("b");
+        name.textContent = def.name;
+        const thought = document.createElement("p");
+        thought.className = "thought";
+        thought.textContent = def.thought;
+        const benefit = document.createElement("p");
+        benefit.className = "benefit";
+        benefit.textContent = def.cost ? `+ ${def.benefit}   - ${def.cost}` : `+ ${def.benefit}`;
+        text.append(name, thought, benefit);
+        item.append(icon, text);
+        list.append(item);
+      }
+      this.panelEl.querySelector(".box")?.insertBefore(list, this.panelEl.querySelector(".box .menu"));
+    }
   }
 
   private advanceNight(): void {
@@ -1943,6 +2069,11 @@ export class Game {
     }
 
     const found = this.findTarget();
+    if (found && found.prompt.actionable && input.pressed("KeyE") && found.target.kind === "bed" && tavern.restless) {
+      this.clearTarget();
+      this.showBedChoice();
+      return;
+    }
     if (found && found.prompt.actionable && input.pressed("KeyE")) {
       tavern.interact(this.active, found.target);
       if (tavern.inConversation) {

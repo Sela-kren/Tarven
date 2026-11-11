@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   afterLine,
   desireNeeded,
-  desireNow,
   nerve,
   pickTouch,
   reachChance,
@@ -13,6 +12,7 @@ import {
   type NerveFacts,
 } from "../src/game/touch";
 import { TOUCHES } from "../src/game/touchtalk";
+import { METERS } from "../src/game/passives";
 import { Tavern, type Target } from "../src/game/tavern";
 
 const calm: NerveFacts = { kind: "farmer", lust: 0, mood: "calm", respect: 0, lowRespect: -3, highRespect: 4, allowed: 0, slapped: false };
@@ -108,11 +108,6 @@ describe("her answers", () => {
     expect(touchOutcome(byId("squeeze"), "slap").mood).toBe("angry");
   });
 
-  it("are warmed by tonight's heat and a drink, but not past the point of too much", () => {
-    expect(desireNow(2, 4, 0, 0.6)).toBeGreaterThan(2);
-    expect(desireNow(2, 0, 1, 0.6)).toBe(desireNow(2, 0, 0.6, 0.6));
-  });
-
   it("are shocked the first time and teasing once she's used to it", () => {
     expect(afterLine("lips", 0)?.thought).toBe(true);
     expect(afterLine("lips", 1)).toBeNull();
@@ -122,8 +117,8 @@ describe("her answers", () => {
 
 describe("touch memory", () => {
   it("survives a broken save", () => {
-    expect(readTouchMemory(null)).toEqual({ desire: 0, lets: {} });
-    expect(readTouchMemory({ desire: 99, lets: { lips: 2, nonsense: 4, rear: -1 } })).toEqual({ desire: 10, lets: { lips: 2 } });
+    expect(readTouchMemory(null)).toEqual({ lets: {} });
+    expect(readTouchMemory({ desire: 99, lets: { lips: 2, nonsense: 4, rear: -1 } })).toEqual({ lets: { lips: 2 } });
   });
 });
 
@@ -140,8 +135,8 @@ describe("in the tavern", () => {
     const t = new Tavern(TABLES.length, TABLES);
     t.random = () => 0;
     t.playerBody = body;
-    t.touchMemory.desire = desire;
     t.open();
+    for (const m of METERS) t.meters[m] = desire * 10;
     t.tick(0, idle);
     run(t, 4);
     const guest = t.guests[0];
@@ -176,7 +171,7 @@ describe("in the tavern", () => {
     expect(allow).toBeGreaterThanOrEqual(0);
     t.chooseTalk(allow);
     expect(t.gold).toBeGreaterThan(gold);
-    expect(t.heatTonight).toBeGreaterThan(0);
+    expect(Math.max(...METERS.map((m) => t.meters[m]))).toBeGreaterThanOrEqual(100);
     expect(t.takeTouchMoment()?.answer).toBe("allow");
     expect(t.takeTouchMoment()).toBeNull();
     expect(t.talkChoices.map((c) => c.label)).toEqual(["Get back to work"]);
@@ -184,13 +179,14 @@ describe("in the tavern", () => {
     expect(t.inConversation).toBe(false);
   });
 
-  it("keeps what she's grown into across a save, and forgets tonight's heat by morning", () => {
+  it("keeps what she's let happen across a save, and forgets tonight's desire by morning", () => {
     const t = served("Female", 10);
     t.chooseTalk(0);
     const save = t.snapshot();
     const loaded = new Tavern(TABLES.length, TABLES);
     loaded.restore(save);
-    expect(loaded.touchMemory.desire).toBe(t.touchMemory.desire);
-    expect(loaded.heatTonight).toBe(0);
+    expect(loaded.touchMemory.lets).toEqual(t.touchMemory.lets);
+    expect(loaded.records.leans + loaded.records.pulled + loaded.records.slapped).toBe(t.records.leans + t.records.pulled + t.records.slapped);
+    expect(METERS.every((m) => loaded.meters[m] === 0)).toBe(true);
   });
 });

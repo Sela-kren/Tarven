@@ -1,13 +1,29 @@
 /**
  * The innkeeper's journal: an open book with your name and how you stand. The left page is the ledger and the
  * village (gold against the debt, trust and heat); the right page is what the room says about you. It's read
- * from the book on the chest in the bedroom, instead of crowding the screen with every number. A second, private
- * spread keeps the adult side: desire, tonight's touches, and every touch let happen so far.
+ * from the book on the chest in the bedroom, instead of crowding the screen with every number. More spreads
+ * keep the adult side: tonight's desire and touches, her passives, and her records.
  */
 import type { Persona } from "./banter";
 import type { TouchRegion } from "./touchtalk";
 import { COIN, FLAME, VILLAGERS } from "./hud";
 import { pixelSvg } from "./icons";
+import {
+  corruptWord,
+  earned,
+  lewdWord,
+  METER_MAX,
+  METER_NAMES,
+  METERS,
+  PASSIVE_GROUPS,
+  PASSIVES,
+  UPSTAIRS,
+  UPSTAIRS_ACTS,
+  type Meters,
+  type PassiveDef,
+  type PassiveFacts,
+} from "./passives";
+import { PASSIVE_ICONS } from "./passiveicons";
 
 export interface JournalState {
   name: string;
@@ -23,8 +39,8 @@ export interface JournalState {
   heat: number;
   heatMax: number;
   persona: Persona;
-  desire: number;
-  desireMax: number;
+  lewdness: number;
+  corruption: number;
 }
 
 /** The baron's note of what you owe: a rolled scroll with a red seal. */
@@ -57,7 +73,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
  * A bar in pixel segments. One-sided bars fill from the left; two-sided ones (respect, kindness) fill out from
  * the middle, left when it's bad and right when it's good.
  */
-function meter(value: number, min: number, max: number, tone: "gold" | "red" | "green" = "gold"): HTMLElement {
+function meter(value: number, min: number, max: number, tone: "gold" | "red" | "green" | "purple" | "pink" = "gold"): HTMLElement {
   const bar = el("span", `meter ${tone}`);
   const fill = el("span", "fill");
   if (min < 0) {
@@ -134,11 +150,11 @@ export function journalBook(state: JournalState, onName: (name: string) => void)
   right.append(el("h2", "", "What they say of you"));
   const sign = (n: number) => (n > 0 ? `+${n}` : String(n));
   right.append(row("Respect", sign(p.respect), { bar: meter(p.respect, -10, 10) }));
-  right.append(row("Kindness", sign(p.kindness), { bar: meter(p.kindness, -10, 10) }));
   right.append(row("Fame", String(p.fame), { bar: meter(p.fame, 0, 100) }));
-  right.append(row("Flirt", String(p.flirt), { bar: meter(p.flirt, 0, 10, "red") }));
-  right.append(row("Greed", String(p.greed), { bar: meter(p.greed, 0, 10) }));
-  right.append(row("Desire", String(Math.round(state.desire)), { bar: meter(state.desire, 0, state.desireMax, "red") }));
+  right.append(row("Lewdness", String(state.lewdness), { bar: meter(state.lewdness, 0, 100, "red") }));
+  right.append(el("p", "note", lewdWord(state.lewdness)));
+  right.append(row("Corruption", String(state.corruption), { bar: meter(state.corruption, 0, 100, "purple") }));
+  right.append(el("p", "note", corruptWord(state.corruption)));
 
   right.append(el("h2", "", "Deeds"));
   right.append(row("Drinks with guests", String(p.drinks)));
@@ -148,23 +164,22 @@ export function journalBook(state: JournalState, onName: (name: string) => void)
   return book;
 }
 
+
 // ---------- The private pages ----------
 
-/** What the private pages show: desire, tonight's touches, and every touch let happen so far. */
+/** What the private pages show: tonight's desire and touches, and every touch let happen so far. */
 export interface PrivateState {
   /** Whether guests reach for the player at all; for now only the sister is touched. */
   touchable: boolean;
-  /** What she's grown into, which lasts; tonight's warmth, gone by morning; and the two together, right now. */
-  desire: number;
-  warmth: number;
-  desireNow: number;
-  desireMax: number;
-  flirt: number;
-  /** The heat stirred up in the room, from the persona. */
-  roomLust: number;
+  lewdness: number;
+  corruption: number;
+  /** Tonight's desire, a meter for each part of her. */
+  meters: Meters;
+  pleasure: number;
   tonight: { reached: number; allowed: number; refused: number; boldest: number };
   clothesLost: number;
   lets: Partial<Record<TouchRegion, number>>;
+  passivesHeld: number;
 }
 
 /** The boldness scale, as the concept names it: 1 is barely there, 10 an invitation upstairs. */
@@ -195,18 +210,9 @@ const REGION_NAMES: Record<TouchRegion, string> = {
   neck: "Neck",
   thigh: "Thighs",
   clothes: "Clothes",
+  intimate: "Intimate",
   invite: "Invitations",
 };
-
-/** A word for how far her desire has come. */
-function desireWord(desire: number): string {
-  if (desire < 2) return "Shy";
-  if (desire < 4) return "Curious";
-  if (desire < 6) return "Warming up";
-  if (desire < 8) return "Wanting";
-  if (desire < 10) return "Bold";
-  return "Unashamed";
-}
 
 /** Builds the open journal at its private pages. */
 export function privateBook(state: PrivateState): HTMLElement {
@@ -218,20 +224,19 @@ export function privateBook(state: PrivateState): HTMLElement {
   left.append(el("h1", "title", "Private"));
   left.append(el("p", "role", "Not for anyone else's eyes."));
 
-  left.append(el("h2", "", "Desire"));
-  const max = state.desireMax;
-  left.append(el("p", "reach", desireWord(state.desire)));
-  left.append(row("Grown into", String(Math.round(state.desire)), { bar: meter(state.desire, 0, max, "red") }));
-  left.append(row("Warm tonight", String(Math.round(state.warmth)), { bar: meter(state.warmth, 0, max, "red") }));
-  left.append(row("Right now", String(Math.round(state.desireNow)), { bar: meter(state.desireNow, 0, max, "red") }));
-  // A touch of boldness L needs desire L - 1 to be let happen.
-  const reach = Math.min(10, Math.floor(state.desireNow) + 1);
-  left.append(el("p", "note", "You'd let a guest go as far as:"));
-  left.append(el("p", "reach", `${reach} · ${BOLDNESS[reach]}`));
+  left.append(el("h2", "", "Who she's becoming"));
+  left.append(row("Lewdness", String(state.lewdness), { icon: FLAME, bar: meter(state.lewdness, 0, 100, "red") }));
+  left.append(el("p", "reach", lewdWord(state.lewdness)));
+  left.append(row("Corruption", String(state.corruption), { bar: meter(state.corruption, 0, 100, "purple") }));
+  left.append(el("p", "reach dark", corruptWord(state.corruption)));
+  left.append(el("p", "note", `${state.passivesHeld} of ${PASSIVES.length} passives earned.`));
 
-  left.append(el("h2", "", "Reputation"));
-  left.append(row("Flirt", String(state.flirt), { bar: meter(state.flirt, 0, 10, "red") }));
-  left.append(row("Room's lust", String(state.roomLust), { bar: meter(state.roomLust, 0, 10, "red") }));
+  left.append(el("h2", "", "Desire tonight"));
+  for (const m of METERS) {
+    left.append(row(METER_NAMES[m], String(Math.round(state.meters[m])), { bar: meter(state.meters[m], 0, METER_MAX, "pink") }));
+  }
+  left.append(row("Pleasure", String(Math.round(state.pleasure)), { bar: meter(state.pleasure, 0, 100, "red") }));
+  left.append(el("p", "note", "Each touch needs its own desire: a kiss needs Mouth, a hand on the knee needs Pussy."));
 
   right.append(el("h2", "", "Tonight"));
   if (!state.touchable) {
@@ -256,5 +261,132 @@ export function privateBook(state: PrivateState): HTMLElement {
   right.append(tally);
   const total = Object.values(state.lets).reduce((sum, n) => sum + (n ?? 0), 0);
   right.append(el("p", "note", total === 0 ? "Nobody yet." : `${total} in all, every night so far.`));
+  return book;
+}
+
+// ---------- The passives ----------
+
+/** What the passive pages need: which she holds, and the facts that say how close she is to the rest. */
+export interface PassivesState {
+  owned: ReadonlySet<string>;
+  facts: PassiveFacts;
+}
+
+/** One passive's card, shown when its chip is picked. */
+function passiveDetail(def: PassiveDef, state: PassivesState, detail: HTMLElement): void {
+  const owned = state.owned.has(def.id);
+  const [have, need] = def.progress(state.facts);
+  const parts: HTMLElement[] = [el("b", "name", def.name)];
+  parts.push(el("p", "need", owned ? `Earned: ${def.need.toLowerCase()}.` : `${def.need}. (${have}/${need})`));
+  parts.push(el("p", "benefit", `+ ${def.benefit}`));
+  if (def.cost) parts.push(el("p", "cost", `- ${def.cost}`));
+  if (owned) parts.push(el("p", "thought", def.thought));
+  detail.replaceChildren(...parts);
+}
+
+/**
+ * The passives, like Karryn's list: each group is a row with its picture, and a chip for each passive in it.
+ * Earned ones are coloured, the next to earn shows how close she is, and the rest stay hidden until then.
+ * Picking a chip shows what it needs and what it does at the foot of the page.
+ */
+export function passivesBook(state: PassivesState): HTMLElement {
+  const book = el("div", "journal-book private passives");
+  const left = el("div", "page left");
+  const right = el("div", "page right");
+  book.append(left, el("div", "spine"), right);
+  const owned = PASSIVES.filter((p) => state.owned.has(p.id)).length;
+  left.append(el("h1", "title", "Passives"));
+  left.append(el("p", "role", `${owned} of ${PASSIVES.length} earned. Earned as you go to bed.`));
+  right.append(el("h2", "", "Habits"));
+
+  const details = [el("div", "detail"), el("div", "detail")];
+  details.forEach((d) => d.append(el("p", "note", "Pick a passive to read it.")));
+  let picked: HTMLElement | null = null;
+
+  for (const group of PASSIVE_GROUPS) {
+    const page = group.body ? left : right;
+    const detail = group.body ? details[0] : details[1];
+    const line = el("div", "group");
+    const icon = el("span", "icon");
+    icon.innerHTML = PASSIVE_ICONS[group.id];
+    line.append(icon, el("span", "label", group.name));
+    const chips = el("span", "chips");
+    let hiddenFromHere = false;
+    for (const def of PASSIVES.filter((p) => p.group === group.id)) {
+      const has = state.owned.has(def.id);
+      const chip = el("button", has ? "pchip owned" : hiddenFromHere ? "pchip hidden" : "pchip next");
+      chip.type = "button";
+      if (has) chip.textContent = def.name;
+      else if (hiddenFromHere) chip.textContent = "???";
+      else {
+        const [have, need] = def.progress(state.facts);
+        chip.textContent = earned(def, state.facts) ? `${def.name} · tonight` : `${have}/${need}`;
+        chip.title = def.name;
+        hiddenFromHere = true;
+      }
+      if (!chip.classList.contains("hidden")) {
+        chip.addEventListener("click", () => {
+          picked?.classList.remove("picked");
+          picked = chip;
+          chip.classList.add("picked");
+          passiveDetail(def, state, detail);
+        });
+      }
+      chips.append(chip);
+    }
+    line.append(chips);
+    page.append(line);
+  }
+  left.append(details[0]);
+  right.append(details[1]);
+  return book;
+}
+
+// ---------- The records ----------
+
+export interface RecordsState {
+  facts: PassiveFacts;
+}
+
+/** Everything counted about her, as Karryn's records page: what passives are earned from. */
+export function recordsBook(state: RecordsState): HTMLElement {
+  const book = el("div", "journal-book private records");
+  const left = el("div", "page left");
+  const right = el("div", "page right");
+  book.append(left, el("div", "spine"), right);
+  const { records: r, lets } = state.facts;
+  const sum = (...regions: TouchRegion[]) => regions.reduce((n, region) => n + (lets[region] ?? 0), 0);
+
+  left.append(el("h1", "title", "Records"));
+  left.append(el("h2", "", "Touches"));
+  left.append(row("Allowed, in all", String(sum(...(Object.keys(REGION_NAMES) as TouchRegion[])))));
+  left.append(row("Leaned into", String(r.leans)));
+  left.append(row("Pulled away", String(r.pulled)));
+  left.append(row("Slapped", String(r.slapped)));
+  left.append(row("Got rough", String(r.rough)));
+  left.append(row("Clothes lost", String(r.clothesLost)));
+  left.append(row("Nights bared", String(r.bareNights)));
+  left.append(row("Nights untouched", String(r.chasteNights)));
+  left.append(el("h2", "", "Desire"));
+  for (const m of METERS) {
+    const nights = r.maxed[m] ?? 0;
+    left.append(row(`${METER_NAMES[m]} maxed`, `${nights} ${nights === 1 ? "night" : "nights"}`));
+  }
+  left.append(row("Overwhelmed", String(r.overwhelmed)));
+  left.append(row("Eased it yourself", String(r.alone)));
+
+  right.append(el("h2", "", "Upstairs"));
+  right.append(row("Taken upstairs", String(r.invitations)));
+  for (const act of UPSTAIRS_ACTS) right.append(row(UPSTAIRS[act].label, String(r.acts[act] ?? 0)));
+  right.append(row("Kinds of guest", `${r.upstairsKinds.length}/4`));
+  right.append(el("h2", "", "Work"));
+  right.append(row("Orders served", String(r.served)));
+  right.append(row("Bottles poured", String(r.poured)));
+  right.append(row("Washed up", String(r.washed)));
+  right.append(row("Drinks with guests", String(state.facts.drinks)));
+  right.append(el("h2", "", "Secrets"));
+  right.append(row("Kept", String(state.facts.protected)));
+  right.append(row("Sold", String(state.facts.sold)));
+  right.append(row("Told", String(state.facts.informed)));
   return book;
 }
