@@ -30,6 +30,8 @@ function smoothHull(geometry: BufferGeometry): BufferGeometry {
 /** A hidden outline around every mesh under `root`. Show it by setting `visible` and swapping `material`. */
 export class Outline {
   private readonly hulls: Mesh[] = [];
+  /** The mesh each hull outlines, in the same order: a hidden mesh, such as clothing taken off, gets no outline. */
+  private readonly sources: Mesh[] = [];
   private readonly ownGeometry: BufferGeometry[] = [];
 
   /** `smooth` rebuilds the normals of rigid, hard-edged meshes such as furniture; skinned meshes keep theirs. */
@@ -62,20 +64,22 @@ export class Outline {
       hull.visible = false;
       source.parent?.add(hull);
       this.hulls.push(hull);
+      this.sources.push(source);
     }
   }
 
   /** Shows the outline in this material, or hides it with null. */
   show(material: MeshBasicMaterial | null): void {
-    for (const hull of this.hulls) {
-      hull.visible = material !== null;
+    this.hulls.forEach((hull, i) => {
+      hull.visible = material !== null && this.sources[i].visible;
       if (material) hull.material = material;
-    }
+    });
   }
 
   dispose(): void {
     for (const hull of this.hulls) hull.removeFromParent();
     this.hulls.length = 0;
+    this.sources.length = 0;
     for (const geometry of this.ownGeometry) geometry.dispose();
     this.ownGeometry.length = 0;
   }

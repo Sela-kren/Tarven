@@ -26,6 +26,22 @@ const LEG_SAMPLES: readonly ["thigh" | "shin", readonly [number, number, number]
   ["shin", [0, -0.42, -0.04], 0.07],
   ["shin", [0, -0.42, 0.04], 0.06],
 ];
+/** How much thicker (across) and longer (along) each leg bone is than the model as built. */
+export interface LegSize {
+  thigh: { across: number; along: number };
+  shin: { across: number; along: number };
+}
+export const BUILT_LEGS: LegSize = { thigh: { across: 1, along: 1 }, shin: { across: 1, along: 1 } };
+
+/** The leg points for legs of this size: further down a longer bone, wider round a thicker one. The shoe keeps its size. */
+function legSamples(size: LegSize): typeof LEG_SAMPLES {
+  return LEG_SAMPLES.map(([bone, [x, y, z], radius]) => {
+    const { across, along } = size[bone];
+    const shoe = bone === "shin" && y <= -0.42;
+    return [bone, [x, y * along, z], shoe ? radius : radius * across] as const;
+  });
+}
+
 /** Room left between the leg and the cloth. */
 const GAP = 0.02;
 /** How quickly a panel drops back once the leg has passed, per second. It rises at once. */
@@ -89,9 +105,17 @@ export class Skirt {
   private readonly hem = new Object3D();
   private readonly hemRest: Vector3;
   private readonly seen: Seen[] = [];
+  private readonly samples: typeof LEG_SAMPLES;
 
   /** The skirt of a model built with skirt panels, or null for a model without them. */
-  static find(model: Object3D, name: string, hips: Object3D, legs: readonly [Object3D, Object3D][], strength = 1): Skirt | null {
+  static find(
+    model: Object3D,
+    name: string,
+    hips: Object3D,
+    legs: readonly [Object3D, Object3D][],
+    strength = 1,
+    size: LegSize = BUILT_LEGS,
+  ): Skirt | null {
     const panels: [Object3D, Object3D][] = [];
     for (let i = 0; ; i++) {
       const upper = model.getObjectByName(`${name}_Skirt${i}`);
@@ -99,7 +123,7 @@ export class Skirt {
       if (!upper || !lower) break;
       panels.push([upper, lower]);
     }
-    return panels.length >= 3 ? new Skirt(hips, legs, panels, strength) : null;
+    return panels.length >= 3 ? new Skirt(hips, legs, panels, strength, size) : null;
   }
 
   constructor(
@@ -108,7 +132,9 @@ export class Skirt {
     private readonly legs: readonly [Object3D, Object3D][],
     bones: readonly [Object3D, Object3D][],
     strength = 1,
+    size: LegSize = BUILT_LEGS,
   ) {
+    this.samples = legSamples(size);
     this.panels = bones.map(([upper, lower]) => {
       const head = upper.position;
       const knee = lower.position.clone().applyQuaternion(upper.quaternion);
@@ -137,6 +163,11 @@ export class Skirt {
     this.sway = new Jiggle(this.hem, SKIRT_SWAY, strength);
   }
 
+  /** Takes the hem's sway point off the hips, before the skirt is rebuilt for a reshaped body. */
+  dispose(): void {
+    this.hem.removeFromParent();
+  }
+
   /** Moves the hem's sway on; call with the body's other springs. */
   advance(dt: number): void {
     this.sway.update(dt);
@@ -162,7 +193,7 @@ export class Skirt {
     for (const [thigh, shin] of this.legs) {
       thigh.updateMatrix();
       shin.updateMatrix();
-      for (const [bone, [x, y, z], radius] of LEG_SAMPLES) {
+      for (const [bone, [x, y, z], radius] of this.samples) {
         point.set(x, y, z);
         if (bone === "shin") point.applyMatrix4(shin.matrix);
         point.applyMatrix4(thigh.matrix);

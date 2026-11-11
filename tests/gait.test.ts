@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Object3D, Vector3 } from "three";
 import type { Input } from "../src/game/input";
-import { FEMALE_WALK_STYLE, Sibling, styledStance, styledStrides } from "../src/game/player";
+import { Body, FEMALE_WALK_STYLE, Sibling, styledStance, styledStrides } from "../src/game/player";
 
 describe("female walk style scale", () => {
   it("has no sway at level 1", () => {
@@ -110,5 +110,31 @@ describe("walking drunk", () => {
     } finally {
       Math.random = random;
     }
+  });
+});
+
+describe("reshaping a body", () => {
+  it("keeps its skirt after the body has moved out of the loaded model", () => {
+    const loaded = new Object3D();
+    const root = skeleton("Female");
+    const hips = root.getObjectByName("Female_Hips")!;
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      const panel = new Object3D();
+      panel.name = `Female_Skirt${i}`;
+      panel.position.set(Math.cos(angle) * 0.18, -0.02, Math.sin(angle) * 0.12);
+      const hem = new Object3D();
+      hem.name = `Female_SkirtHem${i}`;
+      hem.position.set(Math.cos(angle) * 0.05, -0.36, Math.sin(angle) * 0.05);
+      panel.add(hem);
+      hips.add(panel);
+    }
+    loaded.add(root);
+    const body = new Body(loaded, "Female");
+    expect(body.hasSkirt).toBe(true);
+    // A sibling takes the body out of the loaded model; a new look then rebuilds the skirt.
+    new Object3D().add(body.root);
+    body.refreshRest();
+    expect(body.hasSkirt).toBe(true);
   });
 });

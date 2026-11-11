@@ -2,7 +2,7 @@ import { Group, MathUtils, Object3D, Vector3 } from "three";
 import { moveVector, resolveCircle, type Rect } from "./collision";
 import type { Input } from "./input";
 import { Jiggle, type SpringSettings } from "./jiggle";
-import { Skirt } from "./skirt";
+import { BUILT_LEGS, Skirt, type LegSize } from "./skirt";
 
 /** How much the female's soft parts move, from 0 (still) up; 1 is the tuned amount. */
 export const FEMALE_JIGGLE = 1;
@@ -295,16 +295,16 @@ export class Body {
   /** The female walk's style level, 1 to 5; null for a body with only the plain walk. */
   private style: number | null;
   private readonly hips: Object3D;
-  private readonly hipsBaseY: number;
+  private hipsBaseY: number;
   /** From the hip joint to the floor. */
-  private readonly legLength: number;
+  private legLength: number;
   private readonly torso: Object3D;
   /** Seconds of standing animation, for breathing and the slow weight shift. */
   private clock = 0;
   /** Springs on the soft parts; only models with those bones get them. */
   private readonly jiggles: Jiggle[] = [];
   /** A long skirt that swings clear of the legs; only models built with skirt panels have one. */
-  private readonly skirt: Skirt | null;
+  private skirt: Skirt | null;
   /** Time the skirt has not yet caught up with. */
   private skirtTime = 0;
   private readonly head: Object3D;
@@ -321,8 +321,14 @@ export class Body {
   private readonly strandL: Object3D | undefined;
   private readonly strandR: Object3D | undefined;
   private sitKnee = SIT_KNEE;
+  private readonly name: string;
+  /** How much thicker and longer the legs are than as built, for the skirt to clear. */
+  private legSize: LegSize = BUILT_LEGS;
+  /** How far the arms hang out from the sides, in radians, so a wider or fuller figure keeps its hands clear. */
+  private armSpread = 0;
 
   constructor(model: Object3D, name: string) {
+    this.name = name;
     const part = (label: string) => requirePart(model, `${name}_${label}`);
     this.root = requirePart(model, name);
     this.hips = part("Hips");
@@ -347,8 +353,28 @@ export class Body {
       const bone = model.getObjectByName(`${name}_${part}`);
       if (bone) this.jiggles.push(new Jiggle(bone, settings, name === "Female" ? FEMALE_JIGGLE : 1));
     }
+    this.skirt = this.findSkirt();
+  }
+
+  private findSkirt(): Skirt | null {
     const legs: [Object3D, Object3D][] = [[this.thighL, this.shinL], [this.thighR, this.shinR]];
-    this.skirt = Skirt.find(model, name, this.hips, legs, name === "Female" ? FEMALE_JIGGLE : 1);
+    // Searched under the body's own root: a sibling's body is moved out of the loaded model into its own group.
+    return Skirt.find(this.root, this.name, this.hips, legs, this.name === "Female" ? FEMALE_JIGGLE : 1, this.legSize);
+  }
+
+  /**
+   * Takes the bones' current places as the body's rest, after a new look reshaped it. Call with the bones
+   * at rest, as `Dresser.apply` leaves them.
+   */
+  refreshRest(legSize: LegSize = BUILT_LEGS, armSpread = 0): void {
+    this.legSize = legSize;
+    this.armSpread = armSpread;
+    this.hipsBaseY = this.hips.position.y;
+    this.legLength = this.hipsBaseY + this.thighL.position.y;
+    for (const jiggle of this.jiggles) jiggle.rebase();
+    this.skirt?.dispose();
+    this.skirt = this.findSkirt();
+    this.skirtTime = 0;
   }
 
   /** Hair follows the stride, so it settles by itself when the character stops or sits. */
@@ -372,15 +398,23 @@ export class Body {
 
   /** How far to lower the whole character so it rests on a seat of this height. */
   seatedOffset(seatHeight: number): number {
+    // Worked out in the model's own size; a taller or shorter character is the model scaled.
+    const scale = this.root.scale.y;
+    const seat = seatHeight / scale;
     // Long shins angle forwards so the feet rest on the floor instead of passing through it.
     const kneeHeight = this.hipsBaseY + this.thighL.position.y + this.shinL.position.y;
-    const seatedKneeHeight = seatHeight + SIT_CLEARANCE + this.thighL.position.y;
+    const seatedKneeHeight = seat + SIT_CLEARANCE + this.thighL.position.y;
     this.sitKnee = SIT_KNEE - Math.acos(Math.min(1, seatedKneeHeight / kneeHeight));
-    return seatHeight + SIT_CLEARANCE - this.hipsBaseY;
+    return (seat + SIT_CLEARANCE - this.hipsBaseY) * scale;
   }
 
   get walkStyle(): number | null {
     return this.style;
+  }
+
+  /** True for a body built with skirt panels, which swing clear of the legs. */
+  get hasSkirt(): boolean {
+    return this.skirt !== null;
   }
 
   /** Changes the female walk and run to another style level; does nothing for a plain body. */
@@ -496,8 +530,9 @@ export class Body {
     this.upperArmR.rotation.x = raised(phase * armSwing + armBias + s.standArm * still);
     // Loose arms hang straight down while the body above the hips tilts.
     const dangle = -(this.hips.rotation.z + this.torso.rotation.z) * g("armDangle") * moving;
-    this.upperArmL.rotation.z = dangle;
-    this.upperArmR.rotation.z = dangle;
+    // Positive Z swings the left arm in and the right arm out.
+    this.upperArmL.rotation.z = dangle - this.armSpread;
+    this.upperArmR.rotation.z = dangle + this.armSpread;
     const elbow = (ahead: number, resting: number) => {
       const swinging = ELBOW_REST + (g("elbow") + Math.max(0, ahead) * g("elbowFlick")) * swing + resting * still;
       return lerp(lerp(swinging, CARRY_ELBOW, carrying), SIT_ELBOW, sit);
@@ -550,6 +585,11 @@ export class Sibling {
     if (style === null) return null;
     this.body.setWalkStyle((style % 5) + 1);
     return this.body.walkStyle;
+  }
+
+  /** Call after a new look reshapes this sibling's body. */
+  refreshBody(legSize?: LegSize, armSpread?: number): void {
+    this.body.refreshRest(legSize, armSpread);
   }
 
   constructor(model: Object3D, name: string, spawn: Vector3) {

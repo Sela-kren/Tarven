@@ -1,3 +1,4 @@
+import { readLooks, type Looks } from "./appearance";
 import { isHouseLayout } from "./house";
 import { NIGHTS, UPGRADES, type Mess, type MessKind, type TavernSave, type UpgradeId, type Ware } from "./tavern";
 
@@ -17,6 +18,8 @@ export interface SaveData {
   /** Which character the player picked: 0 male, 1 female. */
   active: number;
   tavern: TavernSave;
+  /** How both siblings look. Saves from before customising have none, and load with the looks as built. */
+  looks?: Looks;
 }
 
 const isInt = (value: unknown, min: number, max: number): value is number =>
@@ -57,17 +60,20 @@ function validate(raw: unknown): SaveData | null {
   // Saves from before the washing up have neither of these, and start with the usual set.
   if (tavern.stock !== undefined && !(isInt(tavern.stock.cup, 0, 1e3) && isInt(tavern.stock.dish, 0, 1e3))) return null;
   if (tavern.tub !== undefined && !(Array.isArray(tavern.tub) && tavern.tub.every(isWare))) return null;
+  // A broken looks entry only loses the looks, not the night.
+  const looks = readLooks(data.looks) ?? undefined;
   return {
     version: data.version,
     savedAt: data.savedAt,
     active: data.active,
+    looks,
     tavern: { ...(tavern as TavernSave), upgrades: [...new Set(tavern.upgrades as UpgradeId[])], messes },
   };
 }
 
 /** Stores a save. False when the browser refuses (private mode, storage full or blocked). */
-export function writeSave(slot: SlotId, active: number, tavern: TavernSave): boolean {
-  const data: SaveData = { version: SAVE_VERSION, savedAt: Date.now(), active, tavern };
+export function writeSave(slot: SlotId, active: number, tavern: TavernSave, looks?: Looks): boolean {
+  const data: SaveData = { version: SAVE_VERSION, savedAt: Date.now(), active, tavern, looks };
   try {
     localStorage.setItem(KEY_PREFIX + slot, JSON.stringify(data));
     return true;

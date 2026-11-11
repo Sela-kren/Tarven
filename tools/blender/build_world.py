@@ -1245,6 +1245,143 @@ def add_head(part, spec, m, hair_parts=None):
         add_strand(lock, [(*at(x, y, up), w * kx) for x, y, up, w in chain], hair)
 
 
+# ---------------------------------------------------------------- hairstyles
+# Each character has its usual hair (the bob, the short crop) and a few more styles the game can switch
+# to. Every style is its own mesh, named "<Name>_Hair<Style>", so the game shows only the chosen one.
+# Shapes are in head units: x to the side, y forwards, height above the chin, before the head's scale.
+
+# The skull under the hair, from the head rows: (height above the chin, half width, front, back).
+SKULL = {
+    "Female": [(0.04, 0.066, 0.07, 0.07), (0.07, 0.075, 0.08, 0.093), (0.09, 0.081, 0.082, 0.098), (0.122, 0.082, 0.085, 0.096),
+               (0.14, 0.0785, 0.084, 0.091), (0.165, 0.066, 0.07, 0.076), (0.18, 0.052, 0.05, 0.061), (0.19, 0.036, 0.03, 0.04),
+               (0.2, 0.025, 0.02, 0.025), (0.208, 0.008, 0.006, 0.008)],
+    "Male": [(0.06, 0.067, 0.07, 0.072), (0.08, 0.075, 0.085, 0.088), (0.105, 0.08, 0.095, 0.098), (0.135, 0.082, 0.1, 0.104),
+             (0.15, 0.082, 0.098, 0.102), (0.172, 0.08, 0.09, 0.095), (0.186, 0.074, 0.072, 0.086), (0.196, 0.07, 0.06, 0.078),
+             (0.21, 0.046, 0.03, 0.05), (0.222, 0.032, 0.022, 0.034), (0.23, 0.01, 0.008, 0.01)],
+}
+CAP_SIDES = 16
+# How square each skull is round its corners: 1 is an ellipse; lower is boxier. His angular head has corners
+# at the back that an ellipse would cut through.
+SKULL_SQUARE = {"Female": 0.9, "Male": 0.72}
+
+
+def skull_at(skull, up):
+    """(half width, front, back) of the skull at a height, held at the ends of the table."""
+    if up <= skull[0][0]:
+        return skull[0][1:]
+    for (u0, *low), (u1, *high) in zip(skull, skull[1:]):
+        if up <= u1:
+            t = (up - u0) / (u1 - u0)
+            return tuple(a + (b - a) * t for a, b in zip(low, high))
+    return skull[-1][1:]
+
+
+def fitted_cap(skull, front, side, back, gap, bands=5, square=1.0):
+    """A shell over the skull from the crown down to the hairline: high on the forehead, low at the nape."""
+    crown = skull[-1][0] + gap
+
+    def hairline(a):
+        s = math.sin(a)
+        forwards, backwards = max(0.0, s) ** 1.5, max(0.0, -s) ** 1.2
+        return side + (front - side) * forwards + (back - side) * backwards
+
+    rings = []
+    # A small, nearly level ring right at the crown first: the cap's top face spans its first ring, and a ring
+    # already sloping down to the nape would cut under the back of the skull.
+    for t in [0.06] + [(k / bands) ** 0.85 for k in range(1, bands + 1)]:
+        ring_points = []
+        for i in range(CAP_SIDES):
+            a = 2 * math.pi * i / CAP_SIDES
+            up = crown - (crown - hairline(a)) * t
+            w, f, b = skull_at(skull, up)
+            c, s = math.cos(a), math.sin(a)
+            x = math.copysign(abs(c) ** square, c) * (w + gap)
+            y = math.copysign(abs(s) ** square, s) * ((f if s > 0 else b) + gap)
+            ring_points.append((x, y, up))
+        rings.append(ring_points)
+    return rings
+
+
+def hair_curtain(levels, points=6):
+    """A thick sheet of hair hanging down the back. Each level: height, half width, how far back the middle
+    hangs, how far forwards the edges wrap, and thickness."""
+    rings = []
+    for up, half, back, wrap, thick in levels:
+        outer = []
+        for j in range(points + 1):
+            x = -half + 2 * half * j / points
+            outer.append((x, back + wrap * (x / half) ** 2, up))
+        inner = [(x, y + thick, z) for x, y, z in reversed(outer)]
+        rings.append(outer + inner)
+    return rings
+
+
+def hair_tube(path, sides=8):
+    """A rounded length of hair, such as a ponytail or a bun, along (x, y, height, radius) stations."""
+    return [ring(up, r, r, r, y, x, n=sides) for x, y, up, r in path]
+
+
+def hair_lock(path):
+    """A flat lock along (x, y, height, half width, half thickness) stations, wider across than through."""
+    return [ring(up, t, w, w, y, x, n=6) for x, y, up, w, t in path]
+
+
+def hair_styles(spec):
+    """The extra styles for a character: {style: [rings, ...]}, each ring list lofted into one closed piece."""
+    skull = SKULL[spec["name"]]
+    square = SKULL_SQUARE[spec["name"]]
+
+    def hair_cap(skull, front, side, back, gap):
+        return fitted_cap(skull, front, side, back, gap, square=square)
+
+    if spec["name"] == "Female":
+        fringe = [list(station) for station in BOB_FRINGE]
+        return {
+            # Short and close, with her side-swept fringe.
+            "Pixie": [hair_cap(skull, 0.168, 0.1, 0.07, 0.016), fringe],
+            # Long and straight down her back, with a lock either side of the face.
+            "Long": [
+                hair_cap(skull, 0.168, 0.1, 0.05, 0.016), fringe,
+                hair_curtain([(0.16, 0.07, -0.085, 0.02, 0.02), (0.1, 0.092, -0.112, 0.035, 0.025),
+                              (0.04, 0.097, -0.116, 0.04, 0.025), (-0.03, 0.097, -0.104, 0.03, 0.022),
+                              (-0.1, 0.1, -0.098, 0.022, 0.02), (-0.2, 0.1, -0.092, 0.018, 0.018),
+                              (-0.3, 0.09, -0.088, 0.015, 0.014), (-0.36, 0.07, -0.085, 0.01, 0.008)]),
+                *[hair_lock([(sx * 0.086, 0.015, 0.15, 0.014, 0.008), (sx * 0.099, 0.025, 0.08, 0.02, 0.009),
+                             (sx * 0.098, 0.028, 0.0, 0.019, 0.008), (sx * 0.09, 0.022, -0.07, 0.012, 0.005)])
+                  for sx in (-1, 1)],
+            ],
+            # Tied high at the back of the head, hanging to the nape.
+            "Ponytail": [
+                hair_cap(skull, 0.168, 0.11, 0.05, 0.012), fringe,
+                hair_tube([(0.0, -0.09, 0.155, 0.018), (0.0, -0.118, 0.14, 0.026), (0.0, -0.138, 0.08, 0.03),
+                           (0.0, -0.136, 0.0, 0.027), (0.0, -0.126, -0.08, 0.02), (0.0, -0.116, -0.15, 0.007)]),
+            ],
+            # Gathered into a round bun on the crown.
+            "Bun": [
+                hair_cap(skull, 0.168, 0.11, 0.06, 0.012), fringe,
+                hair_tube([(0.0, -0.065, 0.17, 0.028), (0.0, -0.068, 0.192, 0.05), (0.0, -0.07, 0.222, 0.056),
+                           (0.0, -0.07, 0.252, 0.045), (0.0, -0.068, 0.268, 0.018)]),
+            ],
+        }
+    return {
+        # Clipped close all over.
+        "Buzz": [hair_cap(skull, 0.178, 0.13, 0.06, 0.008)],
+        # Loose to the shoulders, covering the ears.
+        "Long": [
+            hair_cap(skull, 0.18, 0.12, 0.05, 0.014),
+            hair_curtain([(0.18, 0.07, -0.08, 0.02, 0.02), (0.12, 0.096, -0.115, 0.06, 0.025),
+                          (0.06, 0.098, -0.118, 0.075, 0.025), (0.0, 0.096, -0.108, 0.075, 0.022),
+                          (-0.07, 0.1, -0.1, 0.06, 0.02), (-0.13, 0.095, -0.095, 0.05, 0.012)], points=8),
+        ],
+        # Pulled back and tied low at the nape.
+        "Ponytail": [
+            hair_cap(skull, 0.18, 0.125, 0.05, 0.013),
+            hair_tube([(0.0, -0.1, 0.07, 0.016), (0.0, -0.118, 0.05, 0.022), (0.0, -0.122, -0.02, 0.022),
+                       (0.0, -0.115, -0.1, 0.016), (0.0, -0.108, -0.16, 0.006)]),
+        ],
+    }
+
+
 def build_character(c, m, spec):
     name = spec["name"]
     tunic, trousers, leather = m[spec["tunic"]], m[spec.get("pants", "trousers")], m["leather"]
@@ -1317,6 +1454,16 @@ def build_character(c, m, spec):
     head_obj = head.finish(torso_obj, torso_at)
     for facet in (hair_parts or {}).values():
         facet.finish(head_obj, neck_at)
+    if skinned:
+        kx, ky, kz = spec["head_scale"]
+        chin = spec["chin_z"]
+        # The male's own hair is drawn in his two hair tones; the styles take the darker one.
+        hair_mat = m["hair_m"] if spec.get("angular_head") else m[spec["hair"]]
+        for style, pieces in hair_styles(spec).items():
+            facet = part(f"Hair{style}", neck_at)
+            for rings in pieces:
+                facet.loft([[(x * kx, y * ky, chin + up * kz) for x, y, up in r] for r in rings], hair_mat)
+            facet.finish(head_obj, neck_at)
 
     shoulder_x, shoulder_z = spec["shoulder"]
     for side, sx in (("L", -1), ("R", 1)):
@@ -1452,8 +1599,11 @@ TRUNK_LOOPS = [
     ("skin0", {"C": (1.057, 0), "F": (1.057, 0.0575), "S": (1.057, None), "B": (1.057, 0.06), "N": (1.057, 0.0115), "P": (1.057, 0)}),
     ("skin1", {"C": (1.07, 0), "F": (1.07, 0.0575), "S": (1.07, None), "B": (1.07, 0.06), "N": (1.07, 0.0115), "P": (1.07, 0)}),
     ("hem", {"C": (1.072, 0), "F": (1.072, 0.0625), "S": (1.072, None), "B": (1.072, 0.066), "N": (1.072, 0.0115), "P": (1.072, 0)}),
+    ("crease", {"C": (1.108, 0), "F": (1.086, 0.07), "S": (1.083, 0.094), "B": (1.086, 0.066), "N": (1.086, 0.0115), "P": (1.086, 0)}),
     ("under", {"C": (1.126, 0), "F": (1.103, 0.065), "S": (1.092, 0.095), "B": (1.1, 0.069), "N": (1.1, 0.0115), "P": (1.1, 0)}),
+    ("low", {"C": (1.14, 0), "F": (1.128, 0.078), "S": (1.12, 0.103), "B": (1.119, 0.071), "N": (1.119, 0.013), "P": (1.119, 0)}),
     ("bust", {"C": (1.1536, 0), "F": (1.1536, 0.08), "S": (1.149, 0.108), "B": (1.138, 0.0725), "N": (1.138, 0.015), "P": (1.138, 0)}),
+    ("high", {"C": (1.173, 0), "F": (1.174, 0.082), "S": (1.161, 0.107), "B": (1.152, 0.078), "N": (1.152, 0.0175), "P": (1.152, 0)}),
     ("chest", {"C": (1.193, 0), "F": (1.193, 0.0815), "S": (1.172, 0.105), "B": (1.1665, 0.0825), "N": (1.1665, 0.02), "P": (1.1665, 0)}),
 ]
 # The bare body has only the loops the reference has, with no clothing edges.
@@ -1463,7 +1613,14 @@ BARE_LOOPS = [
     ("w1", {"C": (1.062, 0), "F": (1.062, 0.0575), "S": (1.062, None), "B": (1.06, 0.0625), "N": (1.06, 0.0115), "P": (1.06, 0)}),
 ] + TRUNK_LOOPS[6:]
 # How far the front pushes forward at the bust, as a multiple of the plain outline.
-BUST = {"under": {"C": 0.93, "F": 1.12}, "bust": {"C": 0.92, "F": 1.2}, "chest": {"C": 0.95, "F": 1.12}}
+BUST = {"crease": {"C": 0.95, "F": 1.05}, "under": {"C": 0.93, "F": 1.12}, "low": {"C": 0.925, "F": 1.17},
+        "bust": {"C": 0.92, "F": 1.2}, "high": {"C": 0.935, "F": 1.16}, "chest": {"C": 0.95, "F": 1.12}}
+# Through the bust each loop has two more columns: M between the centre and front columns, G between the front
+# and side. They give the bust a round underside and enough corners to grow much larger in the game.
+BUST_ZONE = ("crease", "under", "low", "bust", "high")
+BUST_EXTRA = {("C", "F"): "M", ("F", "S"): "G"}
+# How much rounder than a flat facet the extra columns stand: forwards for M, forwards and out for G.
+BUST_ROUND = {"M": (1.0, 1.04), "G": (1.02, 1.06)}
 LEG_FRONT_OUT, LEG_FRONT_IN, LEG_BACK_OUT, LEG_BACK_IN = 0.65, -0.45, 0.6, -0.5
 # Below the knee the loops run downhill towards the outside of the leg.
 LEG_SIDE_DROP = {3: 0.026, 4: 0.026, 5: 0.026, 6: 0.015}
@@ -1652,6 +1809,17 @@ def build_skin(spec, m, worn=True):
                 bust = bust_table.get(name, {}).get("F", 1.0)
                 z, x = loop["F"]
                 add(f"F_{name}", on_body(x, z, True, bust), trunk_weights(z))
+                if name in BUST_ZONE:
+                    # Halfway between the columns either side, then pushed out so the facets round over.
+                    zc, _ = loop["C"]
+                    centre = on_body(0.0, zc, True, bust_table.get(name, {}).get("C", 1.0))
+                    front = on_body(x, z, True, bust)
+                    zs, xs = loop["S"]
+                    side = on_side(xs, zs)
+                    for key, (a, b) in (("M", (centre, front)), ("G", (front, side))):
+                        out, forwards = BUST_ROUND[key]
+                        mx, my, mz = ((u + v) / 2 for u, v in zip(a, b))
+                        add(f"{key}_{name}", (mx * out, my * forwards, mz), trunk_weights(mz))
                 z, x = loop["S"]
                 add(f"S_{name}", on_side(x, z), trunk_weights(z))
                 z, x = loop["B"]
@@ -1771,11 +1939,28 @@ def build_skin(spec, m, worn=True):
         if not plated:
             # Regular loops up the trunk.
             midriff = bare if spec.get("midriff", True) else tee
-            fabric = {"a": pants, "belt0": belt, "belt1": belt, "skin0": midriff, "skin1": tee, "hem": tee, "under": tee,
-                      "bust": tee, "w0": bare, "w1": bare}
+            fabric = {"a": pants, "belt0": belt, "belt1": belt, "skin0": midriff, "skin1": tee, "hem": tee, "crease": tee,
+                      "under": tee, "low": tee, "bust": tee, "high": tee, "w0": bare, "w1": bare}
+            def extra(loop, one, two):
+                key = BUST_EXTRA.get((one, two))
+                return f"{key}_{loop}" if key and loop in BUST_ZONE else None
+
             for (low, _), (high, _) in zip(loops, loops[1:]):
                 for one, two in zip(TRUNK_COLUMNS, TRUNK_COLUMNS[1:]):
-                    quad((f"{one}_{low}", f"{two}_{low}", f"{two}_{high}", f"{one}_{high}"), fabric[low])
+                    a0, b0, a1, b1 = f"{one}_{low}", f"{two}_{low}", f"{one}_{high}", f"{two}_{high}"
+                    x0, x1 = extra(low, one, two), extra(high, one, two)
+                    mat = fabric[low]
+                    if x0 and x1:
+                        quad((a0, x0, x1, a1), mat)
+                        quad((x0, b0, b1, x1), mat)
+                    elif x1:
+                        quad((a0, b0, b1, x1), mat)
+                        skin.face((a0, x1, a1), sx, mat)
+                    elif x0:
+                        skin.face((x0, b0, b1), sx, mat)
+                        quad((a0, x0, b1, a1), mat)
+                    else:
+                        quad((a0, b0, b1, a1), mat)
 
             # Chest to collar, opening out into the arm.
             for one, two in (("C", "F"), ("B", "N"), ("N", "P")):
@@ -1938,6 +2123,53 @@ JIGGLE_REGIONS = {
 }
 
 
+# Regions made of more than one lobe: the weight is taken from the nearest. Each breast is its own lobe, so
+# growing the bust grows the breasts themselves; the crease under them takes only a little, so it holds the fold.
+JIGGLE_LOBES = {
+    "Bust": ([(-0.072, 0.085, 1.145), (0.072, 0.085, 1.145)], (0.09, 0.075, 0.075)),
+}
+
+
+# Where the soft parts get extra faces: (lobe centres, radii, side: 1 front, -1 back). A little larger
+# than their weight regions, so the faces round off where the weight fades.
+REFINE_REGIONS = [
+    ([(-0.072, 0.085, 1.14), (0.072, 0.085, 1.14)], (0.11, 0.1, 0.1), 1),
+    ([(-0.065, -0.08, 0.83), (0.065, -0.08, 0.83)], (0.1, 0.1, 0.12), -1),
+]
+# How far the new corners move towards a smooth surface, from 0 (flat on the old faces) to 1.
+REFINE_SMOOTH = 0.6
+# Long hair blends from the head onto the back over this height below the neck.
+HAIR_ONTO_BACK = 0.08
+
+
+def refine_soft_parts(obj, name):
+    """Splits each face of the bust and glutes into four, leaving the arms alone. Weights follow the new corners."""
+    arms = {g.index for g in obj.vertex_groups if g.name.startswith((f"{name}_UpperArm", f"{name}_ForeArm"))}
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    deform = bm.verts.layers.deform.active
+
+    def inside(co):
+        for centres, (rx, ry, rz), side in REFINE_REGIONS:
+            if side * co.y <= 0.0:
+                continue
+            for cx, cy, cz in centres:
+                if ((co.x - cx) / rx) ** 2 + ((co.y - cy) / ry) ** 2 + ((co.z - cz) / rz) ** 2 < 1:
+                    return True
+        return False
+
+    def on_arm(vert):
+        return deform is not None and any(group in arms and w > 0.2 for group, w in vert[deform].items())
+
+    faces = [f for f in bm.faces if inside(f.calc_center_median()) and not any(on_arm(v) for v in f.verts)]
+    edges = list({e for f in faces for e in f.edges})
+    if edges:
+        bmesh.ops.subdivide_edges(bm, edges=edges, cuts=1, use_grid_fill=True, smooth=REFINE_SMOOTH)
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+
+
 def move_weight(obj, index, bone, share):
     """Hands this share of a vertex's weight to bone, taking it evenly from the bones it already has."""
     if share <= 0:
@@ -1959,10 +2191,11 @@ def add_jiggle_weights(name, layers):
     for obj in layers:
         for v in obj.data.vertices:
             x, y, z = v.co
-            for label, (_, (cx, cy, cz), (rx, ry, rz), most, side) in JIGGLE_REGIONS.items():
+            for label, (_, centre, radii, most, side) in JIGGLE_REGIONS.items():
                 if side * y <= 0.02:
                     continue
-                d2 = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 + ((z - cz) / rz) ** 2
+                centres, (rx, ry, rz) = JIGGLE_LOBES.get(label, ([centre], radii))
+                d2 = min(((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 + ((z - cz) / rz) ** 2 for cx, cy, cz in centres)
                 if d2 < 1:
                     # Full weight through the middle of the mass, fading smoothly to nothing at its edge.
                     t = 1 - math.sqrt(d2)
@@ -2237,7 +2470,22 @@ def skin_character(c, m, spec, root):
     if others:
         join(hair, others)
 
+    # The other hairstyles: on the head, and on the back below the neck so long hair lies on it.
+    styles = [obj for key, obj in parts.items() if key.startswith(label("Hair")) and key != label("Hair")]
+    for style in styles:
+        head_group = style.vertex_groups.new(name=label("Head"))
+        torso_group = style.vertex_groups.new(name=label("Torso"))
+        for vertex in style.data.vertices:
+            t = min(1.0, max(0.0, (spec["neck_z"] - 0.01 - vertex.co.z) / HAIR_ONTO_BACK))
+            if t < 1:
+                head_group.add([vertex.index], 1 - t, "REPLACE")
+            if t > 0:
+                torso_group.add([vertex.index], t, "REPLACE")
+
     if spec.get("jiggle"):
+        # The soft parts get more faces, so the game can grow and drop them and they stay round.
+        for layer in (body_obj, cloth_obj):
+            refine_soft_parts(layer, name)
         add_jiggle_weights(name, (body_obj, cloth_obj))
 
     armature = bpy.data.armatures.new(f"{name}_Bones")
@@ -2257,7 +2505,7 @@ def skin_character(c, m, spec, root):
             armature.edit_bones[bone_name].parent = armature.edit_bones[parent]
     bpy.ops.object.mode_set(mode="OBJECT")
 
-    for layer in (body_obj, cloth_obj, shoes, hair):
+    for layer in (body_obj, cloth_obj, shoes, hair, *styles):
         layer.parent = rig
         layer.modifiers.new("Bones", "ARMATURE").object = rig
 

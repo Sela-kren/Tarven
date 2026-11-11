@@ -15,7 +15,24 @@ import {
   WebGLRenderer,
 } from "three";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
+import {
+  averageColor,
+  BODY_NAMES,
+  displayHex,
+  dressColors,
+  Dresser,
+  LOOK_OPTIONS,
+  loadLooks,
+  OUTFIT_COLORS,
+  randomLook,
+  storeLooks,
+  type BodyName,
+  type Look,
+  type Looks,
+  type LookTab,
+} from "./appearance";
 import { falloff, footfalls, musicFor, nextSoundLevel, type Soundscape } from "./audio";
+import { Customizer } from "./customizer";
 import { resolveCircle, type Rect, type Vec2 } from "./collision";
 import {
   BED_NAME,
@@ -142,6 +159,16 @@ const SELECT_STEP = 0.35;
 /** A warm fill light in front of the siblings, since the bar lantern lights them from behind. */
 const SELECT_LIGHT_OFFSET = new Vector3(0, 2.4, 2.4);
 const SELECT_LIGHT_INTENSITY = 9;
+/**
+ * Customising: the camera comes in close on the chosen sibling, off to one side so the panel on the right
+ * doesn't cover them; for the face it frames the head. Distances are from the sibling, which faces the camera.
+ */
+const CUSTOMIZE_BODY_SHOT = { side: 0.5, height: 0.95, distance: 3.9 };
+const CUSTOMIZE_FACE_SHOT = { side: 0.17, distance: 1.35 };
+/** How fast the camera eases between customise shots, per second. */
+const CUSTOMIZE_CAMERA_RATE = 6;
+/** How far the character turns per pixel dragged, in radians. */
+const CUSTOMIZE_TURN_PER_PIXEL = 0.012;
 /** Outline thickness around a hovered or chosen sibling, in the model's own units. */
 const OUTLINE_WIDTH = 0.026;
 /** How fast the story's room shot drifts from side to side. */
@@ -199,15 +226,6 @@ const OUTFITS: Record<GuestKind | "visitor", { top: number; legs: number; hair: 
   fugitive: { top: 0xbcb4a2, legs: 0x6a6252, hair: 0x9a8c7a },
   // Whoever comes in at last call, dressed unlike any guest so nobody takes them for one who stayed behind.
   visitor: { top: 0x2f5590, legs: 0x1c1c22, hair: 0x2b2018 },
-};
-
-/** Which part of an outfit each character material belongs to. */
-const OUTFIT_SLOTS: Record<string, "top" | "legs" | "hair"> = {
-  T_tunic: "top",
-  T_tee_white: "top",
-  T_pants_red: "legs",
-  T_hair: "hair",
-  T_hair_f: "hair",
 };
 
 /** Who the player can be, by sibling index: the male body, then the female one. */
@@ -281,7 +299,8 @@ export class Game {
   readonly siblings: [Sibling, Sibling];
   active = 0;
 
-  private screen: "title" | "select" | "fade" | "story" | "play" | "talk" | "visitor" | "panel" | "paused" | "build" = "title";
+  private screen:
+    | "title" | "select" | "customize" | "fade" | "story" | "play" | "talk" | "visitor" | "panel" | "paused" | "build" = "title";
   private readonly dialogue = new DialogueBox(
     {
       root: element("talk"),
@@ -331,7 +350,16 @@ export class Game {
   private readonly messLayer: MessLayer;
   private readonly itemTemplates: Record<Item, Object3D>;
   private readonly guestModels: { male: Object3D; female: Object3D };
-  private readonly recolors = new Map<string, Material>();
+  /** Each sibling's look, kept on the customise screen and in saves; both start as the models were built. */
+  private looks: Looks = loadLooks();
+  /** Puts looks on the siblings; one each, in the same order. */
+  private readonly dressers: Dresser[];
+  private readonly customizer: Customizer;
+  /** The camera's customise shot, easing towards the one the open tab wants. */
+  private readonly customShot = { eye: new Vector3(), target: new Vector3() };
+  private readonly customGoal = { eye: new Vector3(), target: new Vector3() };
+  /** The pointer's last X while dragging the character round, or null when not dragging. */
+  private dragX: number | null = null;
   private readonly spots: Record<Station, Vector3>;
   private readonly potStew: Mesh;
   private readonly potStewMaterial: Material;
@@ -375,6 +403,7 @@ export class Game {
   private readonly panelEl = element("panel");
   private readonly selectEl = element("select");
   private readonly selectStartEl = element("select-start") as HTMLButtonElement;
+  private readonly selectCustomizeEl = element("select-customize") as HTMLButtonElement;
   private readonly fadeEl = element("fade");
   private readonly storyEl = element("story");
   private readonly story = new StoryBox(
@@ -498,6 +527,18 @@ export class Game {
     ];
     scene.add(this.siblings[0].root, this.siblings[1].root, this.guestLayer);
 
+    // Each sibling gets meshes of its own to reshape, before the outlines are made from them.
+    this.dressers = this.siblings.map((sibling, index) => new Dresser(sibling.root, BODY_NAMES[index]));
+    this.siblings.forEach((_, index) => this.applyLook(index));
+    this.customizer = new Customizer(element("customize"), {
+      change: (look) => this.changeLook(look),
+      tab: (tab) => this.aimCustomize(tab, false),
+      done: () => this.closeCustomizer(),
+      builtColor: (id) => this.builtColor(id),
+      random: (body) => randomLook(body),
+      undress: (undressed) => this.chosen !== null && this.dressers[this.chosen].setUndressed(undressed),
+    });
+
     this.spawnPoints = [this.siblings[0].position.clone(), this.siblings[1].position.clone()];
     const middle = this.spawnPoints[0].clone().lerp(this.spawnPoints[1], 0.5);
     this.selectShot = {
@@ -514,6 +555,12 @@ export class Game {
     window.addEventListener("pointermove", (event) => this.pointAt(event, false));
     window.addEventListener("click", (event) => this.pointAt(event, true));
     this.selectStartEl.addEventListener("click", () => this.beginNight());
+    this.selectCustomizeEl.addEventListener("click", () => this.openCustomizer());
+    window.addEventListener("pointerdown", (event) => {
+      if (this.screen === "customize" && event.target instanceof HTMLCanvasElement) this.dragX = event.clientX;
+    });
+    window.addEventListener("pointermove", (event) => this.dragCharacter(event));
+    window.addEventListener("pointerup", () => (this.dragX = null));
     this.storyEl.addEventListener("click", () => this.advanceStory());
     element("story-skip").addEventListener("click", (event) => {
       event.stopPropagation();
@@ -565,6 +612,7 @@ export class Game {
       this.roomShot.target.set(sway * 1.2, 0.9, -2);
       return this.roomShot;
     }
+    if (this.screen === "customize") return this.customShot;
     return this.selectShot;
   }
 
@@ -654,7 +702,7 @@ export class Game {
       sibling.position.setX(clear.x).setZ(clear.z);
     }
     this.checkpoint = this.tavern.snapshot();
-    writeSave("auto", this.active, this.checkpoint);
+    writeSave("auto", this.active, this.checkpoint, this.looks);
   }
 
   private makeItem(item: Item): Object3D {
@@ -663,28 +711,111 @@ export class Game {
     return copy;
   }
 
-  private recolor(base: Material, color: number): Material {
-    const key = `${base.name}:${color}`;
-    let material = this.recolors.get(key);
-    if (!material) {
-      material = solidRetroMaterial(key, color);
-      this.recolors.set(key, material);
-    }
-    return material;
-  }
-
   private makeGuestBody(kind: GuestKind | "visitor", female: boolean): Body {
+    const body: BodyName = female ? "Female" : "Male";
     const model = cloneSkinned(female ? this.guestModels.female : this.guestModels.male);
     const outfit = OUTFITS[kind];
+    const slots = OUTFIT_COLORS[body];
+    const hex = (color: number) => `#${color.toString(16).padStart(6, "0")}`;
     model.traverse((object) => {
       object.visible = true;
-      if (!(object instanceof Mesh)) return;
-      object.castShadow = false; // Only the siblings cast shadows, to keep the frame rate up.
-      const material = object.material as Material;
-      const slot = OUTFIT_SLOTS[material.name];
-      if (slot) object.material = this.recolor(material, outfit[slot]);
+      // Only the siblings cast shadows, to keep the frame rate up.
+      if (object instanceof Mesh) object.castShadow = false;
     });
-    return new Body(model, female ? "Female" : "Male");
+    dressColors(model, body, { [slots.top]: hex(outfit.top), [slots.legs]: hex(outfit.legs), [slots.hair]: hex(outfit.hair) });
+    return new Body(model, body);
+  }
+
+  /** Puts a sibling's look on them, and lets their walk and springs settle to the new shape. */
+  private applyLook(index: number): void {
+    this.dressers[index].apply(this.looks[BODY_NAMES[index]]);
+    const dresser = this.dressers[index];
+    this.siblings[index].refreshBody(dresser.legSize(), dresser.armSpread());
+    this.playerPortrait = null;
+  }
+
+  private changeLook(look: Look): void {
+    if (this.chosen === null) return;
+    this.looks = { ...this.looks, [BODY_NAMES[this.chosen]]: look };
+    this.applyLook(this.chosen);
+  }
+
+  /** The colour a customise setting has as built, for its "as built" swatch. */
+  private builtColor(id: string): string {
+    const index = this.chosen ?? 0;
+    const body = BODY_NAMES[index];
+    const def = LOOK_OPTIONS[body].colors.find((d) => d.id === id);
+    const material = def ? this.dressers[index].original(def.parts[0][0], def.parts[0][1]) : undefined;
+    return material ? displayHex(averageColor(material)) : "#808080";
+  }
+
+  /** Opens the customise panel on the chosen sibling, with the other out of the shot. */
+  private openCustomizer(): void {
+    if (this.screen !== "select" || this.chosen === null) return;
+    this.audio.play("click");
+    const index = this.chosen;
+    this.screen = "customize";
+    this.selectEl.classList.remove("open");
+    this.outlines.forEach((outline) => outline.show(null));
+    this.siblings.forEach((sibling, i) => (sibling.root.visible = i === index));
+    this.customizer.open(BODY_NAMES[index], this.looks[BODY_NAMES[index]], PLAYER_LABELS[index]);
+    this.aimCustomize("body", true);
+  }
+
+  private closeCustomizer(): void {
+    if (this.screen !== "customize") return;
+    this.audio.play("click");
+    storeLooks(this.looks);
+    this.customizer.close();
+    // Undressing is only for looking: everyone is dressed again on the way out.
+    this.dressers.forEach((dresser) => dresser.setUndressed(false));
+    this.dragX = null;
+    this.siblings.forEach((sibling) => {
+      sibling.root.visible = true;
+      sibling.face(Math.PI);
+    });
+    this.screen = "select";
+    this.selectEl.classList.add("open");
+  }
+
+  /** Points the customise camera at what a tab edits; `cut` jumps there instead of easing. */
+  private aimCustomize(tab: LookTab, cut: boolean): void {
+    if (this.chosen === null) return;
+    const at = this.spawnPoints[this.chosen].clone();
+    at.z += SELECT_STEP;
+    const { eye, target } = this.customGoal;
+    if (tab === "face" || tab === "hair") {
+      // The head's height changes with the sliders, so it is measured each time.
+      const top = this.hitBox.setFromObject(this.siblings[this.chosen].root).max.y;
+      const head = top - 0.14;
+      target.set(at.x + CUSTOMIZE_FACE_SHOT.side, head, at.z);
+      eye.set(at.x + CUSTOMIZE_FACE_SHOT.side, head + 0.05, at.z + CUSTOMIZE_FACE_SHOT.distance);
+    } else {
+      const { side, height, distance } = CUSTOMIZE_BODY_SHOT;
+      target.set(at.x + side, height, at.z);
+      eye.set(at.x + side, height + 0.25, at.z + distance);
+    }
+    if (cut) {
+      this.customShot.eye.copy(eye);
+      this.customShot.target.copy(target);
+    }
+  }
+
+  private dragCharacter(event: PointerEvent): void {
+    if (this.screen !== "customize" || this.dragX === null || this.chosen === null) return;
+    const sibling = this.siblings[this.chosen];
+    sibling.face(sibling.root.rotation.y + (event.clientX - this.dragX) * CUSTOMIZE_TURN_PER_PIXEL);
+    this.dragX = event.clientX;
+  }
+
+  private updateCustomize(dt: number): void {
+    if (this.chosen === null) return;
+    const spot = this.spawnPoints[this.chosen].clone();
+    spot.z += SELECT_STEP;
+    this.siblings[this.chosen].stepTo(spot, dt);
+    const ease = 1 - Math.exp(-CUSTOMIZE_CAMERA_RATE * dt);
+    this.customShot.eye.lerp(this.customGoal.eye, ease);
+    this.customShot.target.lerp(this.customGoal.target, ease);
   }
 
   private syncGuests(dt: number): void {
@@ -1018,7 +1149,7 @@ export class Game {
     this.clock.setTime(this.tavern.nightIndex, MORNING_HOUR);
     this.clock.run(DAY_HOURS_PER_SECOND, AFTERNOON_HOLD_HOUR);
     this.checkpoint = this.tavern.snapshot();
-    writeSave("auto", this.active, this.checkpoint);
+    writeSave("auto", this.active, this.checkpoint, this.looks);
   }
 
   private showTitle(): void {
@@ -1052,7 +1183,7 @@ export class Game {
         const existing = readSave(slot);
         const label = `${slotName(slot)}: ${existing ? describeSave(existing, PLAYER_LABELS) : "empty"}`;
         const save = () => {
-          const saved = writeSave(slot, this.active, this.checkpoint);
+          const saved = writeSave(slot, this.active, this.checkpoint, this.looks);
           this.showSaveMenu(back, saved ? `Saved to ${slotName(slot)}.` : "Could not save: this browser is blocking storage.");
         };
         return {
@@ -1108,6 +1239,10 @@ export class Game {
       this.tavern.setSeats(this.world.seats.map((seat) => seat.table));
       this.active = data.active;
       this.chosen = data.active;
+      if (data.looks) {
+        this.looks = data.looks;
+        this.siblings.forEach((_, index) => this.applyLook(index));
+      }
       this.toastEl.textContent = "";
       this.toastLeft = 0;
       this.enterTavern();
@@ -1128,6 +1263,8 @@ export class Game {
     this.active = index;
     this.selectStartEl.disabled = false;
     this.selectStartEl.textContent = `Start as ${PLAYER_LABELS[index].toLowerCase()}`;
+    this.selectCustomizeEl.disabled = false;
+    this.selectCustomizeEl.textContent = `Customize ${PLAYER_LABELS[index].toLowerCase()}`;
   }
 
   /** Which sibling sits under the pointer, judged by a box around each body. */
@@ -1585,6 +1722,7 @@ export class Game {
     if (this.input.pressed("Escape")) {
       if (this.screen === "talk") this.leaveTalk();
       else if (this.screen === "build") this.build.escape();
+      else if (this.screen === "customize") this.closeCustomizer();
       else if (this.panelBack) this.panelBack();
       else this.pause();
     }
@@ -1602,6 +1740,8 @@ export class Game {
       this.siblings.forEach((sibling) => sibling.rest(dt));
     } else if (this.screen === "select") {
       this.updateSelect(dt);
+    } else if (this.screen === "customize") {
+      this.updateCustomize(dt);
     } else if (this.screen === "fade") {
       this.siblings.forEach((sibling) => sibling.rest(dt));
       this.fadeLeft -= dt;

@@ -30,7 +30,7 @@ const toLocal = new Quaternion();
  * pushes the bone the other way, as a weight on a spring would be.
  */
 export class Jiggle {
-  private readonly rest: Vector3;
+  private rest: Vector3;
   private readonly offset = new Vector3();
   private readonly speed = new Vector3();
   private readonly lastAnchor = new Vector3();
@@ -79,6 +79,12 @@ export class Jiggle {
       this.speed.multiplyScalar(0.5);
     }
     this.bone.position.copy(this.rest).add(this.offset);
+  }
+
+  /** Takes where the bone stands now as its new rest, as after the body is reshaped. */
+  rebase(): void {
+    this.rest = this.bone.position.clone();
+    this.reset();
   }
 
   /** Puts the part back at rest, for a cut or a teleport. */

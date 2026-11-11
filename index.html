@@ -24,8 +24,12 @@
     <div id="select" aria-label="Character select">
       <h1>Who are you?</h1>
       <p class="hint">Click a character (or press 1 / 2) to choose who you play.</p>
-      <button type="button" id="select-start" disabled>Choose a character</button>
+      <div class="actions">
+        <button type="button" id="select-customize" disabled>Customize</button>
+        <button type="button" id="select-start" disabled>Choose a character</button>
+      </div>
     </div>
+    <div id="customize" aria-label="Customize your character"></div>
     <div id="story" aria-live="polite">
       <div id="story-cg"></div>
       <div class="sprite" id="story-sprite"></div>
