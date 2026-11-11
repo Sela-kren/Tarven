@@ -94,19 +94,19 @@ describe("cups and dishes", () => {
     expect(t.stock.cup).toBe(cup - 3);
   });
 
-  it("can be bought more of in the morning, again and again", () => {
+  it("can be bought more of during the day, again and again", () => {
     const t = opened();
     t.gold = STOCK_COST * 2;
     const { cup, dish } = t.stock;
     t.buyStock("cup");
     expect(t.stock.cup).toBe(cup);
-    t.phase = "dawn";
+    t.phase = "day";
     t.buyStock("cup");
     t.buyStock("dish");
     expect(t.stock.cup).toBe(cup + STOCK_PACK);
     expect(t.stock.dish).toBe(dish + STOCK_PACK);
     expect(t.gold).toBe(0);
-    expect(t.canBuyStock()).toBe(false);
+    expect(t.canBuyStock("cup")).toBe(false);
   });
 });
 

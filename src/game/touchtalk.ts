@@ -526,7 +526,7 @@ export const TOUCHES: readonly TouchDef[] = [
   {
     id: "carry",
     level: 9,
-    region: "lap",
+    region: "waist",
     kinds: SOLDIER,
     reach: "The soldier heaves you up over their shoulder like a sack of grain and parades you round the room.",
     thoughts: ["(Put me DOWN!)", "(I'm upside down and laughing like a fool.)", "(Victory lap!)"],

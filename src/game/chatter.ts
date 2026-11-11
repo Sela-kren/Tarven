@@ -43,12 +43,15 @@ export function lineDuration(text: string): number {
 
 const ITEM_WORDS: Record<Item, string> = {
   ale: "an ale",
+  wine: "a cup of wine",
+  mead: "a mead",
+  vodka: "a vodka",
   bread: "some bread",
   stew: "a bowl of stew",
   cask: "a cask",
 };
 
-const NAMES: Record<Item, string> = { ale: "ale", bread: "bread", stew: "stew", cask: "cask" };
+const NAMES: Record<Item, string> = { ale: "ale", wine: "wine", mead: "mead", vodka: "vodka", bread: "bread", stew: "stew", cask: "cask" };
 
 /** Fills {item} ("an ale"), {Item} ("An ale") and {name} ("ale") in a line. */
 function fill(text: string, item: Item): string {

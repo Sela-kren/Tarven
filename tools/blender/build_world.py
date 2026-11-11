@@ -15,7 +15,8 @@ import bpy
 import numpy as np
 from mathutils import Matrix
 
-ROOT = r"C:\Game\Tarven"
+# TARVEN_ROOT sends the build somewhere else, such as a scratch folder to compare it with the game's models.
+ROOT = os.environ.get("TARVEN_ROOT") or r"C:\Game\Tarven"
 TEX_DIR = os.path.join(ROOT, "art", "textures")
 OUT_DIR = os.path.join(ROOT, "public", "models")
 SCENE_NAME = "TarvenWorld"
@@ -584,6 +585,7 @@ MALE = {
              (1.645, 0.058, 0.046, 0.06, -0.01, 0.01), (1.69, 0.043, 0.04, 0.05, -0.012, 0.0),
              (1.725, 0.04, 0.036, 0.05, -0.012, 0.0)],
     "chin_z": 1.655, "head_scale": (0.85, 0.95, 1.0), "jaw": 1.0, "angular_head": True,
+    "hat_z": 1.8,  # where a hat's crown sits, just above the brow
     "hair_outlines": HAIR_SHORT,
     "skinned": True, "quads": True, "plated": True, "skin": "skin", "pants": "trousers", "belt": "leather",
     "sleeve_rows": 7, "leg_drop": {}, "trunk_blend": (1.1, 0.08),
@@ -681,6 +683,7 @@ FEMALE = {
     "neck": [(1.335, 0.06, 0.042, 0.05, -0.002, 0.008), (1.37, 0.04, 0.034, 0.04, -0.004, 0.004),
              (1.395, 0.033, 0.03, 0.034, -0.006, 0.0), (1.45, 0.03, 0.03, 0.034, -0.006, 0.0)],
     "chin_z": 1.4, "head_scale": (0.86, 0.9, 1.0), "jaw": 1.0, "ears": True, "head_grid": True,
+    "hat_z": 1.545,
     "head_rings": HEAD_CUTE, "hair_outlines": HAIR_UPDO,
     "bob": True, "strands": [],
 }
@@ -2242,7 +2245,7 @@ SKIRT_BEND = (0.58, 0.38)  # from the upper panels onto the lower ones
 
 def profile_at(spec, z):
     """(half width, front, back) of the worn trunk at height z, held at the ends of the table."""
-    table = spec["skin_profile"]
+    table = spec.get("skin_profile") or [(z0, w + CLOTH_EASE, f + CLOTH_EASE, b + CLOTH_EASE) for z0, w, f, b in spec["bare_profile"]]
     if z <= table[0][0]:
         return table[0][1:]
     for (z0, *low), (z1, *high) in zip(table, table[1:]):
@@ -2648,8 +2651,286 @@ def build_priestess_extra(spec, m):
     return extra
 
 
-def more_outfits(spec, m, skin, normals):
-    """{outfit: (worn skin faces, where each corner sits, extra pieces)} for the outfits after the tavern dress."""
+# ---------------------------------------------------------------- the pirate's rig
+# For both bodies: a loose shirt with full sleeves, breeches tucked into tall bucket-topped boots, a sash round the
+# waist knotted at the left hip with its ends hanging, and a cocked hat trimmed with braid. He wears a waistcoat
+# over the shirt, open at the neck; she wears a corset under the bust, a belt slung low on the hips and a feather
+# in her hat. For now only guests wear it.
+PIRATE_COLOURS = (("waistcoat", (0.14, 0.18, 0.3)), ("sash", (0.55, 0.1, 0.1)), ("breeches", (0.24, 0.18, 0.13)),
+                  ("boot", (0.12, 0.085, 0.065)), ("hat", (0.09, 0.08, 0.08)), ("braid", (0.78, 0.6, 0.22)),
+                  ("plume", (0.92, 0.9, 0.86)))
+PIRATE_BOOT = 0.07  # how far above the knee the boots reach
+PIRATE_BUCKET = (0.035, 0.03)  # the boot tops: how far below and above the top of the leg they reach
+PIRATE_CORSET = (0.93, 1.16)  # her corset, from the sash up to under the bust
+PIRATE_SASH = {"Female": (0.912, 0.962), "Male": (1.068, 1.13)}
+PIRATE_BELT = (0.855, 0.878)  # her belt, low on the hips below the sash
+PIRATE_KNOT = math.pi - 0.5  # where the sash is knotted: the left hip, a little to the front
+HAT_SIDES = 18
+
+
+def face_leans(skin, f, prefix):
+    """True if the face's corners are, on average, at least 40% weighted to bones whose names start with prefix."""
+    share = sum(w for i in f for bone, w in skin.weights[i].items() if bone.startswith(prefix))
+    return share >= 0.4 * len(f)
+
+
+def pirate_cloth(spec, m, skin):
+    """
+    The worn skin's faces a pirate's rig covers: the shirt, his waistcoat or her corset, a sash on his belt line,
+    breeches and boots. Faces with more than four corners close the wrists, ankles and collar, and are left out.
+    """
+    male = spec.get("plated", False)
+    boot_top = spec["knee_z"] + PIRATE_BOOT
+    tee, belt = m[spec["tunic"]], m[spec["belt"]]
+    faces = []
+    for f, mat in skin.faces:
+        if mat is m["stripe"] or len(f) > 4:
+            continue
+        bone, (cx, cy, cz) = face_bone(skin, f)
+        if bone.startswith(("UpperArm", "ForeArm")):
+            faces.append((f, m["linen"]))
+        elif bone.startswith(("Thigh", "Shin")):
+            faces.append((f, m["boot"] if cz < boot_top else m["breeches"]))
+        elif bone not in ("Hips", "Torso"):
+            continue
+        elif face_leans(skin, f, "UpperArm"):
+            faces.append((f, m["linen"]))  # the shirt shows at the shoulders
+        elif male:
+            if mat is belt:
+                faces.append((f, m["sash"]))
+            elif mat is not tee:
+                faces.append((f, m["breeches"]))
+            elif cy > 0 and cz > 1.49 and abs(cx) < 0.05:
+                continue  # the shirt hangs open at the neck
+            elif cy > 0 and cz > 1.3 and abs(cx) < 0.02 + 0.3 * (cz - 1.3):
+                faces.append((f, m["linen"]))  # the waistcoat opens over the shirt
+            else:
+                faces.append((f, m["waistcoat"]))
+        elif cz < PIRATE_CORSET[0]:
+            faces.append((f, m["breeches"]))
+        elif cz < PIRATE_CORSET[1]:
+            faces.append((f, m["bodice"]))
+        elif cy > 0 and cz > 1.2 and abs(cx) < 0.012 + 0.5 * (cz - 1.2):
+            continue  # a deep V at the neck
+        else:
+            faces.append((f, m["linen"]))
+    return faces
+
+
+def pirate_lift(spec):
+    """How far each part of the rig stands out from the worn skin: billowing sleeves, boots wider than the leg."""
+    boot_top = spec["knee_z"] + PIRATE_BOOT
+    wrist = spec["wrist_z"] + 0.035
+    # Her shoulders are as broad as her worn skin there, so the shirt stands further off them.
+    shoulders = None if spec.get("plated") else spec["shoulder"][1] - 0.1
+
+    def lift(bone, z):
+        if bone.startswith("UpperArm"):
+            return 0.036 if shoulders and z > shoulders - 0.02 else 0.018
+        if bone.startswith("ForeArm"):
+            return 0.008 if z < wrist else 0.016  # gathered at the cuff
+        if bone.startswith(("Thigh", "Shin")):
+            return 0.011 if z < boot_top else 0.005
+        if shoulders and z > shoulders:
+            return 0.024
+        return 0.004
+    return lift
+
+
+def leg_ring(spec, z, grow, sx):
+    """Six points round one leg at height z, laid out as the skin's leg loops are, grown out by `grow`."""
+    rows = spec["skin_leg"]  # from the top of the thigh down
+    w, f, b = rows[0][1:] if z > rows[0][0] else rows[-1][1:]
+    for (z0, *low), (z1, *high) in zip(rows, rows[1:]):
+        if z1 <= z <= z0:
+            t = (z0 - z) / (z0 - z1)
+            w, f, b = (a + (c - a) * t for a, c in zip(low, high))
+            break
+    hip_z = spec["hips_z"] - 0.06
+    leg_x = spec["hip_x"] + (hip_z - max(z, spec["knee_z"])) * math.sin(spec["leg_splay"])
+    points = []
+    for out, front in ((1.0, None), (LEG_FRONT_OUT, True), (LEG_FRONT_IN, True), (-1.0, None),
+                       (LEG_BACK_IN, False), (LEG_BACK_OUT, False)):
+        if front is None:
+            y = (f - b) / 2
+        else:
+            c = abs(out) ** 1.25
+            y = (f + grow if front else -(b + grow)) * (1 - c * c) ** 0.4
+        points.append((sx * (leg_x + out * (w + grow)), y, z))
+    return points
+
+
+def leg_weights(spec, z, side):
+    bend = min(1.0, max(0.0, 0.5 - (z - spec["knee_z"]) / 0.09))
+    weights = {f"Thigh_{side}": 1 - bend, f"Shin_{side}": bend}
+    return {bone: w for bone, w in weights.items() if w > 0}
+
+
+def add_band(extra, key, rings, weights, mat):
+    """A closed band from rings of points: outside bottom, outside top, inside top, inside bottom."""
+    for r, ring_points in enumerate(rings):
+        for k, co in enumerate(ring_points):
+            extra.add(f"{key}{r}_{k}", 0, co, weights(co))
+    n = len(rings[0])
+    for r in range(len(rings)):
+        r1 = (r + 1) % len(rings)
+        for k in range(n):
+            k1 = (k + 1) % n
+            extra.face((f"{key}{r}_{k}", f"{key}{r}_{k1}", f"{key}{r1}_{k1}", f"{key}{r1}_{k}"), 0, mat)
+
+
+def hat_fit(spec, objects):
+    """(crown height, centre y, half width, front, back, top) of an ellipse round the head and hair above the brow."""
+    base = spec["hat_z"]
+    points = [v.co for obj in objects for v in obj.data.vertices if v.co.z >= base - 0.005]
+    cy = (max(p.y for p in points) + min(p.y for p in points)) / 2
+    rx = max(abs(p.x) for p in points)
+    rf = max(p.y - cy for p in points)
+    rb = max(cy - p.y for p in points)
+    # Grown until every point is inside it, then given a little room.
+    scale = max(math.hypot(p.x / rx, (p.y - cy) / (rf if p.y > cy else rb)) for p in points)
+    room = 0.008
+    return base, cy, rx * scale + room, rf * scale + room, rb * scale + room, max(p.z for p in points) + 0.012
+
+
+def add_ribbon(extra, key, stations, across, mat, thickness=0.004):
+    """A thin closed strip through (centre, half width) stations, as wide as across(tangent) says, thick along x."""
+    for i, (centre, half) in enumerate(stations):
+        before = stations[max(0, i - 1)][0]
+        after = stations[min(len(stations) - 1, i + 1)][0]
+        direction = across([b - a for a, b in zip(before, after)])
+        for j, sign in enumerate((-1, 1)):
+            co = tuple(c + sign * half * u for c, u in zip(centre, direction))
+            extra.add(f"{key}o{i}_{j}", 0, co, {"Head": 1.0})
+            extra.add(f"{key}i{i}_{j}", 0, (co[0] + thickness, co[1], co[2]), {"Head": 1.0})
+    for i in range(len(stations) - 1):
+        o0, o1, i0, i1 = f"{key}o{i}_", f"{key}o{i + 1}_", f"{key}i{i}_", f"{key}i{i + 1}_"
+        extra.face((o0 + "0", o1 + "0", o1 + "1", o0 + "1"), 0, mat)
+        extra.face((i0 + "1", i1 + "1", i1 + "0", i0 + "0"), 0, mat)
+        extra.face((o0 + "1", o1 + "1", i1 + "1", i0 + "1"), 0, mat)
+        extra.face((i0 + "0", i1 + "0", o1 + "0", o0 + "0"), 0, mat)
+
+
+def build_hat(extra, fit, m, feather):
+    """A cocked hat: a round crown over the hair, and a brim turned up on three sides into points front and back."""
+    base, cy, rx, rf, rb, top = fit
+    n = HAT_SIDES
+
+    def at(a, grow, z):
+        return math.cos(a) * (rx + grow), cy + math.sin(a) * ((rf if math.sin(a) > 0 else rb) + grow), z
+
+    angles = [2 * math.pi * k / n for k in range(n)]
+    height = top - base
+    rings = [(0.0, base), (0.003, base + 0.55 * height), (-0.022, top)]
+    for r, (grow, z) in enumerate(rings):
+        for k, a in enumerate(angles):
+            extra.add(f"crown{r}_{k}", 0, at(a, grow, z), {"Head": 1.0})
+    extra.add("crowntop", 0, (0.0, cy, top + 0.008), {"Head": 1.0})
+    for r in range(len(rings) - 1):
+        for k in range(n):
+            k1 = (k + 1) % n
+            extra.face((f"crown{r + 1}_{k}", f"crown{r}_{k}", f"crown{r}_{k1}", f"crown{r + 1}_{k1}"), 0, m["hat"])
+    last = len(rings) - 1
+    for k in range(n):
+        extra.face((f"crown{last}_{k}", f"crown{last}_{(k + 1) % n}", "crowntop"), 0, m["hat"])
+
+    # The brim's cross-section at each angle, as (out, up) from the foot of the crown. One point faces forwards.
+    wide = 0.034
+    turn = 0.62 * height
+    mats = [m["hat"], m["braid"], m["braid"], m["hat"], m["hat"]]
+    for k, a in enumerate(angles):
+        corner = ((1 + math.cos(3 * (a - math.pi / 2))) / 2) ** 1.5
+        width, up = wide + 0.04 * corner, turn * (1 - corner) - 0.008 * corner
+        length = math.hypot(width, up)
+        nx, nz = -up / length * 0.005, width / length * 0.005  # the brim's thickness, square to its slope
+        section = [(0.0, 0.0), (0.8 * width, 0.8 * up), (width, up), (width + nx, up - nz), (nx, -nz)]
+        for p, (out, rise) in enumerate(section):
+            extra.add(f"brim{p}_{k}", 0, at(a, out, base + rise), {"Head": 1.0})
+    for p in range(len(mats)):
+        p1 = (p + 1) % len(mats)
+        for k in range(n):
+            k1 = (k + 1) % n
+            extra.face((f"brim{p}_{k}", f"brim{p1}_{k}", f"brim{p1}_{k1}", f"brim{p}_{k1}"), 0, mats[p])
+
+    if feather:
+        # Tucked in at the left of the crown, sweeping up and back over the brim.
+        x0, y0, z0 = at(math.pi + 0.45, 0.004, base + 0.03)
+        path = [((0.0, 0.0, 0.0), 0.006), ((-0.014, -0.025, 0.05), 0.02), ((-0.016, -0.07, 0.09), 0.028),
+                ((-0.008, -0.13, 0.105), 0.024), ((0.004, -0.185, 0.085), 0.012), ((0.012, -0.21, 0.06), 0.003)]
+
+        def across(tangent):
+            _, ty, tz = tangent
+            # Square to the path in the y-z plane, so the feather lies flat along the side of the crown.
+            length = math.hypot(ty, tz) or 1.0
+            return 0.0, -tz / length, ty / length
+
+        add_ribbon(extra, "plume", [((x0 + dx, y0 + dy, z0 + dz), half) for (dx, dy, dz), half in path], across, m["plume"])
+
+
+def build_pirate_extra(spec, m, fit):
+    """The sash with its knot and hanging ends, her belt and corset laces, the boot tops and the hat."""
+    extra = Skin()
+    female = not spec.get("plated", False)
+    sash = PIRATE_SASH[spec["name"]]
+    hips = lambda co: {"Hips": 1.0}
+    if female:
+        waist_band(extra, spec, "sash", sash, 0.018, m["sash"])
+        waist_band(extra, spec, "belt", PIRATE_BELT, 0.012, m["leather"])
+        # Laces up the front of the corset.
+        blend_start, blend_span = spec.get("trunk_blend", (0.985, 0.05))
+
+        def trunk(co):
+            t = min(1.0, max(0.0, (co[2] - blend_start) / blend_span))
+            return {"Hips": 1 - t, "Torso": t}
+
+        for i, z in enumerate((0.985, 1.02, 1.055, 1.09, 1.125)):
+            y = profile_at(spec, z)[1] + CLOTH_GAP + 0.006
+            for j, sx in enumerate((-1, 1)):
+                corners = [(sx * 0.02, y, z - 0.004), (sx * 0.02, y, z + 0.002), (-sx * 0.02, y, z + 0.02), (-sx * 0.02, y, z + 0.014)]
+                add_slab(extra, f"lace{i}_{j}", corners, (0.0, 0.003, 0.0), trunk, m["leather"])
+
+    # The knot at the left hip, and the two ends hanging from it, following the left thigh lower down.
+    a = PIRATE_KNOT
+    mid = sum(sash) / 2
+    w, f, _ = profile_at(spec, mid)
+    reach = 0.028 if female else 0.034
+    out = (math.cos(a), math.sin(a))
+    kx, ky = math.cos(a) * (w + reach), math.sin(a) * (f + reach)
+    tx, ty = -out[1], out[0]
+    facing(extra, "knot", (kx, ky, mid), (0.022, 0.026), out, hips, m["sash"], depth=0.012)
+    drop = 0.24 if female else 0.27
+
+    def hang(co):
+        t = min(1.0, max(0.0, (sash[0] - co[2]) / drop)) * 0.7
+        return {"Hips": 1 - t, "Thigh_L": t} if t > 0 else {"Hips": 1.0}
+
+    flare = 0.022  # the ends hang a little away from the thigh
+    for i, (side, length, splay) in enumerate(((-1, 1.0, -0.012), (1, 0.82, 0.016))):
+        z1 = mid - drop * length
+        along = lambda u, z, away=0.0: (kx + tx * u + out[0] * away, ky + ty * u + out[1] * away, z)
+        corners = [along(side * 0.008 - 0.02, mid - 0.01), along(side * 0.008 + 0.02, mid - 0.01),
+                   along(side * 0.016 + splay + 0.026, z1, flare), along(side * 0.016 + splay - 0.026, z1, flare)]
+        add_slab(extra, f"end{i}", corners, (out[0] * 0.005, out[1] * 0.005, 0.0), hang, m["sash"])
+
+    # Bucket tops on the boots, flaring out over the top of the leg.
+    boot_top = spec["knee_z"] + PIRATE_BOOT
+    below, above = PIRATE_BUCKET
+    for side, sx in (("L", -1), ("R", 1)):
+        z0, z1 = boot_top - below, boot_top + above
+        flare = 0.03 if spec.get("plated") else 0.024
+        rings = [leg_ring(spec, z0, 0.015, sx), leg_ring(spec, z1, flare, sx),
+                 leg_ring(spec, z1, flare - 0.005, sx), leg_ring(spec, z0, 0.011, sx)]
+        add_band(extra, f"bucket{side}", rings, lambda co, side=side: leg_weights(spec, co[2], side), m["boot"])
+
+    build_hat(extra, fit, m, feather=female)
+    return extra
+
+
+def more_outfits(spec, m, skin, normals, fit):
+    """
+    {outfit: (worn skin faces, where each corner sits, extra pieces)} for the outfits after the character's own:
+    her dirndl and priestess's set, and the pirate's rig for both. `fit` is where a hat goes on the head.
+    """
     def lifted(amount):
         def place(index):
             normal = normals.get(index)
@@ -2672,9 +2953,13 @@ def more_outfits(spec, m, skin, normals):
             return 0.006 if PRIESTESS_ARMLET[0] <= z else 0.004
         return 0.002
 
+    pirate = (pirate_cloth(spec, m, skin), lifted(pirate_lift(spec)), build_pirate_extra(spec, m, fit))
+    if spec.get("outfit") != "medieval":
+        return {"Pirate": pirate}
     return {
         "Dirndl": (dirndl_cloth(spec, m, skin), lifted(dirndl_puff), build_dirndl_extra(spec, m)),
         "Priestess": (priestess_cloth(spec, m, skin), lifted(priestess_lift), build_priestess_extra(spec, m)),
+        "Pirate": pirate,
     }
 
 
@@ -2693,6 +2978,8 @@ def skin_character(c, m, spec, root):
         obj.parent = None
         obj.data.transform(matrices[key])
         obj.matrix_world = Matrix.Identity(4)
+    # Measured now, before the head is joined into the body: a hat has to clear the head and the character's own hair.
+    fit = hat_fit(spec, [parts[f"{name}_Head"], parts[f"{name}_Hair"]])
 
     # The whole body in skin, so clothes can come off or change without leaving holes; only the smallclothes stay.
     smalls = smallclothes(spec, bare_skin)
@@ -2761,14 +3048,13 @@ def skin_character(c, m, spec, root):
         bind(parts[label("Hips")], label("Hips"))
         join(cloth_obj, [parts[label("Hips")]])
 
-    # The other outfits, each its own mesh, which the game shows one at a time instead of the tavern dress.
+    # The other outfits, each its own mesh, which the game shows one at a time instead of the character's own.
     outfits = []
-    if medieval:
-        for outfit, (worn_faces, place, pieces) in more_outfits(spec, m, skin, normals).items():
-            mesh, kept = skin.mesh(f"{name}_Cloth{outfit}", worn_faces, place)
-            obj = skin.link(c, mesh, kept, name, f"{name}_Cloth{outfit}")
-            more, more_kept = pieces.mesh(f"{name}_Cloth{outfit}Pieces", pieces.faces)
-            outfits.append(join(obj, [pieces.link(c, more, more_kept, name, f"{name}_Cloth{outfit}Pieces")]))
+    for outfit, (worn_faces, place, pieces) in more_outfits(spec, m, skin, normals, fit).items():
+        mesh, kept = skin.mesh(f"{name}_Cloth{outfit}", worn_faces, place)
+        obj = skin.link(c, mesh, kept, name, f"{name}_Cloth{outfit}")
+        more, more_kept = pieces.mesh(f"{name}_Cloth{outfit}Pieces", pieces.faces)
+        outfits.append(join(obj, [pieces.link(c, more, more_kept, name, f"{name}_Cloth{outfit}Pieces")]))
 
     shoes = parts[label("Shin_R")]
     shoes.name = shoes.data.name = f"{name}_Shoes"
@@ -2936,6 +3222,11 @@ def main():
     # The female's medieval outfit, likewise without moving the random numbers.
     random_state = rng.bit_generator.state
     for key, colour in MEDIEVAL_COLOURS:
+        mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
+    rng.bit_generator.state = random_state
+    # The pirate's rig, the same way.
+    random_state = rng.bit_generator.state
+    for key, colour in PIRATE_COLOURS:
         mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
     rng.bit_generator.state = random_state
     for spec, blender_x in ((MALE, -0.6), (FEMALE, 0.6)):

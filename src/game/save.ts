@@ -1,6 +1,6 @@
 import { readLooks, type Looks } from "./appearance";
 import { isHouseLayout } from "./house";
-import { NIGHTS, UPGRADES, type Mess, type MessKind, type TavernSave, type UpgradeId, type Ware } from "./tavern";
+import { BOTTLE_KINDS, NIGHTS, UPGRADES, type Mess, type MessKind, type TavernSave, type UpgradeId, type Ware } from "./tavern";
 
 /** Bump when the saved shape changes; older saves are then ignored rather than misread. */
 const SAVE_VERSION = 1;
@@ -60,6 +60,13 @@ function validate(raw: unknown): SaveData | null {
   // Saves from before the washing up have neither of these, and start with the usual set.
   if (tavern.stock !== undefined && !(isInt(tavern.stock.cup, 0, 1e3) && isInt(tavern.stock.dish, 0, 1e3))) return null;
   if (tavern.tub !== undefined && !(Array.isArray(tavern.tub) && tavern.tub.every(isWare))) return null;
+  // A name that isn't a short string is forgotten; the journal just asks for one again.
+  if (tavern.name !== undefined && !(typeof tavern.name === "string" && tavern.name.length <= 40)) delete tavern.name;
+  // Saves from before the bottled drinks have none, and start with an empty shelf. A broken list only loses the
+  // drinks, not the night.
+  if (tavern.bottles !== undefined && !(Array.isArray(tavern.bottles) && tavern.bottles.every((b) => BOTTLE_KINDS.includes(b)))) {
+    delete tavern.bottles;
+  }
   // A broken looks entry only loses the looks, not the night.
   const looks = readLooks(data.looks) ?? undefined;
   return {

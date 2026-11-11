@@ -43,6 +43,15 @@ export interface Garment {
   keep?: string;
 }
 
+/** The pirate's rig that both bodies have. The hat keeps its braid and feather, so it stays on with them. */
+const PIRATE_GARMENTS: readonly Garment[] = [
+  { id: "sash", label: "sash", layer: "accessory", region: "waist" },
+  { id: "breeches", label: "breeches", layer: "outer", region: "bottom" },
+  { id: "boots", label: "boots", layer: "outer", region: "feet", keep: "the shoes inside them never come off either" },
+  { id: "hat", label: "hat", layer: "accessory", region: "top", keep: "its braid and feather are sewn on and would be left hanging in the air" },
+  { id: "braid", label: "braid", layer: "accessory", region: "top", keep: "it's sewn round the hat's brim" },
+];
+
 export const WARDROBE: Record<WardrobeBody, readonly Garment[]> = {
   Female: [
     { id: "apron", label: "apron", layer: "accessory", region: "waist" },
@@ -61,6 +70,9 @@ export const WARDROBE: Record<WardrobeBody, readonly Garment[]> = {
     { id: "girdle", label: "girdle", layer: "outer", region: "bottom" },
     { id: "jewels", label: "jewellery", layer: "accessory", region: "top", keep: "her jewellery is hers; dares are for clothes" },
     { id: "gems", label: "gems", layer: "accessory", region: "top", keep: "they're set in her jewellery and necklace" },
+    // The pirate's rig, which only guests wear for now. Her corset is the bodice and her shirt the chemise.
+    ...PIRATE_GARMENTS,
+    { id: "feather", label: "feather", layer: "accessory", region: "top", keep: "it's pinned in her hat" },
   ],
   Male: [
     {
@@ -74,6 +86,10 @@ export const WARDROBE: Record<WardrobeBody, readonly Garment[]> = {
     { id: "trousers", label: "trousers", layer: "outer", region: "bottom" },
     { id: "boots", label: "boots", layer: "outer", region: "feet", keep: "the body has no feet modelled under them" },
     { id: "smalls", label: "smallclothes", layer: "smallclothes", region: "bottom" },
+    // The pirate's rig, which only guests wear for now. His boots are the ones above, pulled up to the knee.
+    { id: "shirt", label: "shirt", layer: "under", region: "top" },
+    { id: "waistcoat", label: "waistcoat", layer: "outer", region: "top" },
+    ...PIRATE_GARMENTS.filter((g) => g.id !== "boots"),
   ],
 };
 

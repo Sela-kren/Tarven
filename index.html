@@ -4,18 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Last Call at Tarven</title>
+    <!-- Pixel type to match the dithered look: a blackletter for titles, a plain pixel face for everything else. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jacquard+24&family=Pixelify+Sans:wght@400;600;700&display=swap" />
     <link rel="stylesheet" href="/src/styles/index.css" />
   </head>
   <body>
     <div id="status">Loading...</div>
     <div id="stats"></div>
     <div id="clock" aria-label="Time of day">
-      <div id="clock-sky"></div>
+      <canvas id="clock-dial"></canvas>
       <div class="clock-text">
         <div id="clock-time"></div>
         <div id="clock-day"></div>
       </div>
-      <div id="clock-track"><div id="clock-marker"></div></div>
     </div>
     <div id="speech" aria-hidden="true"></div>
     <div id="toast" role="status" aria-live="polite"></div>
@@ -23,10 +26,10 @@
     <div id="hud">WASD / arrows: move &nbsp; Shift: run &nbsp; E: use / serve &nbsp; O: walk style &nbsp; M: mute &nbsp; Esc: pause</div>
     <div id="select" aria-label="Character select">
       <h1>Who are you?</h1>
-      <p class="hint">Click a character (or press 1 / 2) to choose who you play.</p>
+      <p class="hint">Click one, or press 1 / 2</p>
       <div class="actions">
-        <button type="button" id="select-customize" disabled>Customize</button>
-        <button type="button" id="select-start" disabled>Choose a character</button>
+        <button type="button" id="select-customize" disabled><span class="key">C</span><span class="label">Customize</span></button>
+        <button type="button" id="select-start" disabled><span class="key">&#8629;</span><span class="label">Choose a character</span></button>
       </div>
     </div>
     <div id="customize" aria-label="Customize your character"></div>

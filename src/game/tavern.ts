@@ -47,9 +47,11 @@ import { GUEST_TOO_DRUNK, PULLS, SLAPS, TOO_DRUNK_TO_ALLOW } from "./touchtalk";
  * the player did and reads the state back, which keeps the rules unit-testable.
  */
 
-export type Item = "ale" | "bread" | "stew" | "cask";
+/** The drinks bought by the bottle and poured at the shelf behind the bar, on top of the ale on tap. */
+export type Bottle = "wine" | "mead" | "vodka";
+export type Item = "ale" | Bottle | "bread" | "stew" | "cask";
 export type GuestKind = "farmer" | "smuggler" | "soldier" | "fugitive";
-export type Station = "tap" | "bread" | "pot" | "barrel" | "bin" | "wash";
+export type Station = "tap" | "shelf" | "bread" | "pot" | "barrel" | "bin" | "wash";
 /** What food and drink are served on. The tavern owns a set number of each, and they have to be washed to be used again. */
 export type Ware = "cup" | "dish";
 /** What can be in your hands: something to serve, or a stack of dirty dishes on the way to the tub. */
@@ -67,13 +69,22 @@ export type Target =
   | { kind: "bell" }
   | { kind: "bed" }
   | { kind: "door" }
-  | { kind: "desk" };
+  | { kind: "desk" }
+  | { kind: "book" };
 /** A sound the rules ask for. What each one actually sounds like is up to the audio layer. */
 export type Cue =
   | "pour" | "aleReady" | "takeAle" | "takeBread" | "takeStew" | "takeCask" | "putDown" | "refill"
   | "stewStart" | "stewReady" | "stewBurnt" | "serve" | "tip" | "buy" | "drink" | "guestIn" | "walkOut"
   | "doorOpen" | "doorClose" | "smashTray" | "smashOne" | "drop" | "dishes" | "wipe" | "rumor";
-const TAKE_CUES: Record<Item, Cue> = { ale: "takeAle", bread: "takeBread", stew: "takeStew", cask: "takeCask" };
+const TAKE_CUES: Record<Item, Cue> = {
+  ale: "takeAle",
+  wine: "takeAle",
+  mead: "takeAle",
+  vodka: "takeAle",
+  bread: "takeBread",
+  stew: "takeStew",
+  cask: "takeCask",
+};
 /** What a night leaves behind: dirty dishes on the tables, ale on the floor, and dust tracked in. */
 export type MessKind = "dishes" | "spill" | "dust";
 export type UpgradeId = "quicktap" | "bigpot" | "cushions";
@@ -126,11 +137,46 @@ const START_CUPS = 6;
 const START_DISHES = 6;
 /** Seconds of scrubbing per cup or dish, standing at the tub with empty hands. */
 const WASH_TIME = 1;
-/** More can be bought in the morning, this many at a time, for this much. */
+/** More can be bought from the house plans, this many at a time, for this much, up to what the shelves hold. */
 export const STOCK_PACK = 3;
 export const STOCK_COST = 10;
+export const MAX_WARE: Record<Ware, number> = { cup: 12, dish: 12 };
 export const WARE_NAMES: Record<Ware, string> = { cup: "cups", dish: "dishes" };
-const WARE_OF: Record<Item, Ware | null> = { ale: "cup", bread: "dish", stew: "dish", cask: null };
+const WARE_OF: Record<Item, Ware | null> = {
+  ale: "cup",
+  wine: "cup",
+  mead: "cup",
+  vodka: "cup",
+  bread: "dish",
+  stew: "dish",
+  cask: null,
+};
+
+// The good stuff. Each drink is bought once from the house plans and stays on the shelf behind the bar for good,
+// poured a cup at a time. Once it's in, guests who'd have had ale sometimes ask for their favourite, and pay more.
+export const BOTTLE_KINDS: readonly Bottle[] = ["wine", "mead", "vodka"];
+export const BOTTLES: Record<Bottle, { name: string; cost: number; extraPay: number; detail: string }> = {
+  wine: { name: "Wine", cost: 35, extraPay: 5, detail: "Smugglers ask for it. 5 gold more a cup than ale." },
+  mead: {
+    name: "Mead",
+    cost: 25,
+    extraPay: 3,
+    detail: "Farmers ask for it. 3 gold more a cup, and the honey warms them up to you.",
+  },
+  vodka: {
+    name: "Vodka",
+    cost: 30,
+    extraPay: 4,
+    detail: "Soldiers and fugitives ask for it. 4 gold more a cup, and it gets them drunk.",
+  },
+};
+const FAVOURITE: Record<GuestKind, Bottle> = { farmer: "mead", smuggler: "wine", soldier: "vodka", fugitive: "vodka" };
+/** How often a guest who'd have had ale asks for their favourite instead, when there's some on the shelf. */
+const ASKS_FOR_BOTTLE = 0.5;
+/** Mead warms a guest's lust by this much; vodka gets a guest drunk this often. */
+const MEAD_LUST = 2;
+const VODKA_DRUNK_CHANCE = 0.6;
+const isBottle = (item: Item | "dirty" | null): item is Bottle => item === "wine" || item === "mead" || item === "vodka";
 
 /** Ale goes on a tray, which holds this many cups. Everything else is carried one at a time. */
 export const TRAY_SIZE = 3;
@@ -272,7 +318,7 @@ const arrive = (at: number, kind: GuestKind, order: Item, rumor = false, party?:
 
 export const NIGHTS: NightPlan[] = [
   {
-    intro: "Night 1. Ale is at the bar, bread is in the basket on the crates. Take dirty cups and dishes to the wash tub by the barrels. Press E to act.",
+    intro: "Night 1. Ale is at the bar, bread is in the basket by the oven. Take dirty cups and dishes to the wash tub by the barrels. Press E to act.",
     guests: [
       arrive(3, "farmer", "ale"),
       arrive(10, "soldier", "ale"),
@@ -575,6 +621,10 @@ export interface TavernSave {
   layout?: HouseLayout;
   /** How many cups and dishes the tavern owns. Older saves start with the usual set. */
   stock?: Record<Ware, number>;
+  /** The bottled drinks bought for the shelf. */
+  bottles?: Bottle[];
+  /** The name written in the journal, or none yet. */
+  name?: string;
   /** What was left in the wash tub. */
   tub?: Ware[];
   /** How far guests' touches have brought the innkeeper along. Older saves start from nothing. */
@@ -643,7 +693,15 @@ function shuffled(count: number, seed: number): number[] {
   }
   return out;
 }
-const STATION_OF_ITEM: Record<Item, Station> = { ale: "tap", bread: "bread", stew: "pot", cask: "barrel" };
+const STATION_OF_ITEM: Record<Item, Station> = {
+  ale: "tap",
+  wine: "shelf",
+  mead: "shelf",
+  vodka: "shelf",
+  bread: "bread",
+  stew: "pot",
+  cask: "barrel",
+};
 
 export class Tavern {
   phase: Phase = "day";
@@ -663,6 +721,10 @@ export class Tavern {
   readonly messes: Mess[] = [];
   /** How many cups and dishes the tavern owns, clean or not. */
   readonly stock: Record<Ware, number> = { cup: START_CUPS, dish: START_DISHES };
+  /** The bottled drinks on the shelf, bought once and kept for good. */
+  readonly bottles = new Set<Bottle>();
+  /** The innkeeper's name, as written in the journal; empty until the player writes one. */
+  name = "";
   /** How many are clean and ready to use. */
   readonly cleanWare: Record<Ware, number> = { cup: START_CUPS, dish: START_DISHES };
   /** What's waiting to be scrubbed, next one first. */
@@ -701,6 +763,8 @@ export class Tavern {
   private touchMoment: TouchMoment | null = null;
   /** How warm she's got tonight from touches she let happen, 0 to 10. Gone by morning. */
   heatTonight = 0;
+  /** Tonight's touches, for the journal: how many guests reached, how many you let, how many you turned away. */
+  readonly touchesTonight = { reached: 0, allowed: 0, refused: 0, boldest: 0 };
   /** Who the player is, so what guests say fits them. The game sets it. */
   playerBody: PlayerBody = "Male";
   /** The outfit the player has on, by id; missing means their own. Guests go for its pieces in its own order. */
@@ -871,7 +935,8 @@ export class Tavern {
       const seat = next.party === undefined ? this.freeSeat() : this.partySeat(next.party);
       if (seat === null) return; // Tries again next tick, once someone leaves.
       this.nextArrival++;
-      const { kind, order, rumor, party } = next;
+      const { kind, rumor, party } = next;
+      const order = this.chooseOrder(kind, next.order);
       const maxPatience =
         GUEST_KINDS[kind].patience * (this.upgrades.has("cushions") ? CUSHION_PATIENCE : 1) * this.messPatience;
       const context = this.banterContext(kind);
@@ -897,12 +962,52 @@ export class Tavern {
     }
   }
 
+  /**
+   * What a guest asks for. Ale drinkers sometimes want their favourite bottle instead, if it's on the shelf.
+   */
+  private chooseOrder(kind: GuestKind, planned: Item): Item {
+    if (planned !== "ale") return planned;
+    const favourite = FAVOURITE[kind];
+    if (!this.bottles.has(favourite)) return planned;
+    return this.random() < ASKS_FOR_BOTTLE ? favourite : planned;
+  }
+
   private startPour(): void {
     this.tapLeft--;
     this.cleanWare.cup--;
     this.cue("pour");
     // Drunk hands fumble the tap.
     this.pourLeft = (this.upgrades.has("quicktap") ? QUICK_POUR_TIME : POUR_TIME) * (1 + DRUNK_FUMBLE * this.drunk);
+  }
+
+  /**
+   * The bottle shelf pours whatever a waiting guest has asked for, the longest-waiting first, leaving out what
+   * someone is already carrying to them.
+   */
+  private shelfAction(take: (item: Item) => void): Action | null {
+    const carried = [...this.carrying];
+    const wanted: Bottle[] = [];
+    for (const guest of this.guests) {
+      if (guest.status !== "waiting" && guest.status !== "arriving") continue;
+      if (!isBottle(guest.order)) continue;
+      const already = carried.indexOf(guest.order);
+      if (already >= 0) carried.splice(already, 1);
+      else wanted.push(guest.order);
+    }
+    if (wanted.length === 0) {
+      if (this.bottles.size === 0) return this.phase === "day" ? { label: "The shelf is bare. Buy drinks on the house plans" } : null;
+      return { label: "Nobody has asked for the good stuff" };
+    }
+    const pour = wanted[0];
+    if (this.cleanWare.cup === 0) return { label: "No clean cups. Wash some at the tub" };
+    return {
+      label: `Pour a cup of ${pour}`,
+      run: () => {
+        this.cleanWare.cup--;
+        take(pour);
+        this.cue("pour");
+      },
+    };
   }
 
   private startStew(): void {
@@ -1051,9 +1156,12 @@ export class Tavern {
     const left = guest.patience / guest.maxPatience;
     const behaviour = MOOD_BEHAVIOUR[guest.mood];
     const tipped = left > TIP_THRESHOLD && behaviour.tips;
-    const amount = rules.pay + (tipped ? rules.tip + behaviour.tipBonus : 0);
+    const bottle = isBottle(guest.order) ? guest.order : null;
+    const amount = rules.pay + (bottle ? BOTTLES[bottle].extraPay : 0) + (tipped ? rules.tip + behaviour.tipBonus : 0);
     const idolized = guest.mood === "idolize";
     guest.mood = moodWhenServed(guest.mood, left);
+    if (bottle === "mead") guest.lust = Math.min(10, guest.lust + MEAD_LUST);
+    if (bottle === "vodka" && this.random() < VODKA_DRUNK_CHANCE) guest.mood = "drunk";
     shiftPersona(this.persona, { fame: FAME_SERVED + (tipped ? FAME_TIPPED : 0) + (idolized ? FAME_IDOLIZED : 0) });
     this.takeOne(sibling);
     guest.status = "eating";
@@ -1245,8 +1353,11 @@ export class Tavern {
     const history = this.touchHistory.get(chat.guestId) ?? { allowed: 0, slapped: false };
 
     const pick = <T>(lines: readonly T[]) => lines[Math.floor(this.random() * lines.length) % lines.length];
+    this.touchesTonight.reached++;
     if (answer === "allow" || answer === "lean") {
       history.allowed++;
+      this.touchesTonight.allowed++;
+      this.touchesTonight.boldest = Math.max(this.touchesTonight.boldest, touch.level);
       const before = this.touchMemory.lets[touch.region] ?? 0;
       this.touchMemory.lets[touch.region] = before + 1;
       const tip = out.gold > 0 ? ` (+${out.gold} gold)` : "";
@@ -1256,6 +1367,7 @@ export class Tavern {
       if (touch.strip) this.loseClothing();
       else this.cue("tip");
     } else {
+      this.touchesTonight.refused++;
       if (answer === "slap") history.slapped = true;
       const { say, result } = pick(answer === "slap" ? SLAPS : PULLS);
       chat.reply = [you(say), narrate(result)];
@@ -1453,6 +1565,8 @@ export class Tavern {
 
     if (held) return null;
 
+    if (station === "shelf") return this.shelfAction(take);
+
     const noDishes = { label: "No clean dishes. Wash some at the tub" };
     if (station === "bread") {
       if (this.cleanWare.dish === 0) return noDishes;
@@ -1496,6 +1610,7 @@ export class Tavern {
         },
       };
     }
+    if (target.kind === "book") return { label: "Read your journal", run: () => undefined };
     if (target.kind === "desk") {
       if (this.phase !== "day") return this.phase === "dusk" ? { label: "No time for plans now" } : null;
       // Dirty dishes and spills are tied to the seats they're at, so those have to go first.
@@ -1798,8 +1913,9 @@ export class Tavern {
     this.say("The tavern is shut for the night. Your bed is through the door in the east wall.");
   }
 
+  /** Upgrades and wares are bought from the house plans, during the day while the tavern is shut. */
   canBuy(id: UpgradeId): boolean {
-    return this.phase === "dawn" && !this.upgrades.has(id) && this.gold >= UPGRADE_COST;
+    return this.phase === "day" && !this.upgrades.has(id) && this.gold >= UPGRADE_COST;
   }
 
   buy(id: UpgradeId): void {
@@ -1809,16 +1925,29 @@ export class Tavern {
     this.cue("buy");
   }
 
-  canBuyStock(): boolean {
-    return this.phase === "dawn" && this.gold >= STOCK_COST;
+  /** Cups and dishes can be bought again and again, until the shelves are full. */
+  canBuyStock(ware: Ware): boolean {
+    return this.phase === "day" && this.gold >= STOCK_COST && this.stock[ware] + STOCK_PACK <= MAX_WARE[ware];
   }
 
-  /** Buys another set of cups or dishes. Unlike the upgrades, you can keep buying these. */
+  /** Buys another set of cups or dishes. */
   buyStock(ware: Ware): void {
-    if (!this.canBuyStock()) return;
+    if (!this.canBuyStock(ware)) return;
     this.gold -= STOCK_COST;
     this.stock[ware] += STOCK_PACK;
     this.cleanWare[ware] += STOCK_PACK;
+    this.cue("buy");
+  }
+
+  /** A new drink for the shelf, bought once. */
+  canBuyBottle(bottle: Bottle): boolean {
+    return this.phase === "day" && !this.bottles.has(bottle) && this.gold >= BOTTLES[bottle].cost;
+  }
+
+  buyBottle(bottle: Bottle): void {
+    if (!this.canBuyBottle(bottle)) return;
+    this.gold -= BOTTLES[bottle].cost;
+    this.bottles.add(bottle);
     this.cue("buy");
   }
 
@@ -1885,6 +2014,8 @@ export class Tavern {
       messes: this.messes.map(copyMess),
       persona: { ...this.persona },
       stock: { ...this.stock },
+      bottles: [...this.bottles],
+      name: this.name,
       tub: [...this.tub],
       touch: { desire: this.touchMemory.desire, lets: { ...this.touchMemory.lets } },
       ...(this.layout ? { layout: cloneLayout(this.layout) } : {}),
@@ -1905,6 +2036,9 @@ export class Tavern {
     this.layout = save.layout ? cloneLayout(save.layout) : null;
     this.stock.cup = save.stock?.cup ?? START_CUPS;
     this.stock.dish = save.stock?.dish ?? START_DISHES;
+    this.bottles.clear();
+    for (const bottle of save.bottles ?? []) this.bottles.add(bottle);
+    this.name = save.name ?? "";
     this.tub.splice(0, this.tub.length, ...(save.tub ?? []));
     this.dirtyHeld[0].length = this.dirtyHeld[1].length = 0;
     this.guests.length = 0;
@@ -1951,6 +2085,7 @@ export class Tavern {
     this.touchMoment = null;
     this.touchSeen.clear();
     this.touchHistory.clear();
+    Object.assign(this.touchesTonight, { reached: 0, allowed: 0, refused: 0, boldest: 0 });
     // Tonight's heat is gone by morning; what she's found she wants stays.
     this.heatTonight = 0;
     this.partyState.clear();

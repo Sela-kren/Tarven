@@ -1,6 +1,8 @@
 /* Shared palette and type, plus page-wide basics. */
 :root {
-  --font: "Courier New", monospace;
+  --font: "Pixelify Sans", "Courier New", monospace;
+  /* Titles: a pixel blackletter, like a painted tavern sign. */
+  --font-title: "Jacquard 24", "Pixelify Sans", serif;
   --text: #e8d3a2;
   --text-bright: #f0e4c4;
   --text-muted: #7d6c55;
@@ -9,6 +11,10 @@
   --wood: #3a2615;
   --wood-hover: #5a3b1f;
   --wood-edge: #6d4a25;
+  --wood-light: #8a5f32;
+  --gold-dim: #a07a2c;
+  --parchment: #e9d6a8;
+  --ink: #3a2412;
   --shadow: 2px 2px 0 #000;
 }
 

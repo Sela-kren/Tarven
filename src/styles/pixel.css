@@ -1,0 +1,407 @@
+/*
+ * The game's pixel UI kit, shared by every screen so they all look like one game: wooden boards with stepped
+ * pixel corners and a chunky black outline, plank buttons in flat colour bands, pixel sliders and tick boxes,
+ * and blackletter headings. Colours are always flat bands, never smooth fades. The menus (panel.css) build on
+ * the same pieces.
+ */
+:root {
+  /* Stepped corners, two 4px steps, for boards. */
+  --pixel-corners: polygon(
+    8px 0, calc(100% - 8px) 0, calc(100% - 8px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 8px, 100% 8px,
+    100% calc(100% - 8px), calc(100% - 4px) calc(100% - 8px), calc(100% - 4px) calc(100% - 4px),
+    calc(100% - 8px) calc(100% - 4px), calc(100% - 8px) 100%, 8px 100%, 8px calc(100% - 4px),
+    4px calc(100% - 4px), 4px calc(100% - 8px), 0 calc(100% - 8px), 0 8px, 4px 8px, 4px 4px, 8px 4px
+  );
+  /* One 3px step, for buttons: with a 3px black border it makes the classic rounded pixel outline. */
+  --pixel-corners-sm: polygon(
+    3px 0, calc(100% - 3px) 0, 100% 3px, 100% calc(100% - 3px), calc(100% - 3px) 100%, 3px 100%, 0 calc(100% - 3px),
+    0 3px
+  );
+  /* A 3px black outline round whatever shape a board was cut to, then a hard drop shadow. Filters run after
+     the cut, so the outline steps round the corners too. */
+  --pixel-outline: drop-shadow(3px 0 0 #000) drop-shadow(-3px 0 0 #000) drop-shadow(0 3px 0 #000)
+    drop-shadow(0 -3px 0 #000) drop-shadow(6px 6px 0 rgba(0, 0, 0, 0.85));
+  --pixel-outline-sm: drop-shadow(3px 0 0 #000) drop-shadow(-3px 0 0 #000) drop-shadow(0 3px 0 #000)
+    drop-shadow(0 -3px 0 #000) drop-shadow(3px 3px 0 rgba(0, 0, 0, 0.8));
+
+  /* Plank colours: a face, the light band along the top, the shade band along the bottom, and hover. */
+  --plank: #5a3b1f;
+  --plank-grain: #553820;
+  --plank-light: #7a5129;
+  --plank-dark: #2e1d0f;
+  --plank-hover: #7a5129;
+  --plank-hover-grain: #744d27;
+  --plank-hover-light: #a06c38;
+  --plank-on: #8a5f32;
+}
+
+/* ---------- Boards: dialog boxes, side panels, the build toolbar ---------- */
+
+#talk .box,
+#story .box,
+#customize .box,
+#build {
+  background: none;
+  border: none;
+  box-shadow: none;
+  filter: var(--pixel-outline);
+}
+
+#build {
+  filter: var(--pixel-outline-sm);
+}
+
+/* The board itself, cut on its own layer under the content so the outline wraps its stepped corners. */
+#talk .box::before,
+#story .box::before,
+#customize .box::before,
+#build::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  clip-path: var(--pixel-corners);
+  background:
+    repeating-linear-gradient(0deg, transparent 0 45px, #0d0805 45px 48px),
+    repeating-linear-gradient(0deg, #26180d 0 5px, #2a1b0f 5px 9px);
+  /* Bevel light on top, shade below, and a gold inlay just inside the edge. */
+  box-shadow:
+    inset 0 4px 0 #4a2f17,
+    inset 0 -4px 0 #120b06,
+    inset 0 0 0 8px #1a1009,
+    inset 0 0 0 11px var(--gold-dim),
+    inset 0 0 0 13px #0d0805;
+}
+
+#customize .box {
+  position: relative;
+  padding: 22px 22px 18px;
+}
+
+/* Small boards: no inlay, just the bevel. */
+#build::before {
+  box-shadow: inset 0 3px 0 #4a2f17, inset 0 -3px 0 #120b06;
+}
+
+/* The house plans stay on blueprint paper: the same board, in blue. */
+#build::before {
+  background: repeating-linear-gradient(0deg, #183457 0 5px, #1b3a60 5px 9px);
+  box-shadow: inset 0 3px 0 #2d5a96, inset 0 -3px 0 #0e2038, inset 0 0 0 6px #142c4a, inset 0 0 0 8px #4a90e2;
+}
+
+#build {
+  padding: 14px 16px;
+}
+
+
+/* ---------- Name tags over the dialog boxes ---------- */
+
+#talk-name,
+#story-name {
+  top: -24px;
+  padding: 5px 14px 7px;
+  font: 700 18px/1.2 var(--font);
+  color: var(--gold);
+  background: var(--plank);
+  border: 3px solid #000;
+  clip-path: var(--pixel-corners-sm);
+  box-shadow: inset 0 3px 0 var(--plank-light), inset 0 -4px 0 var(--plank-dark);
+}
+
+/* ---------- Plank buttons ---------- */
+
+#talk-choices button,
+#story-skip,
+#customize button:not(.swatch),
+#build button {
+  font-family: var(--font);
+  font-weight: 600;
+  color: var(--text-bright);
+  text-shadow: 2px 2px 0 #000;
+  cursor: pointer;
+  background: repeating-linear-gradient(90deg, var(--plank) 0 18px, var(--plank-grain) 18px 20px);
+  border: 3px solid #000;
+  clip-path: var(--pixel-corners-sm);
+  box-shadow: inset 0 3px 0 var(--plank-light), inset 0 -4px 0 var(--plank-dark);
+}
+
+#talk-choices button:hover:not(:disabled),
+#talk-choices button:focus-visible,
+#story-skip:hover,
+#story-skip:focus-visible,
+#customize button:not(.swatch):hover,
+#customize button:not(.swatch):focus-visible,
+#build button:hover:not(:disabled),
+#build button:focus-visible {
+  outline: none;
+  color: var(--gold);
+  background: repeating-linear-gradient(90deg, var(--plank-hover) 0 18px, var(--plank-hover-grain) 18px 20px);
+  box-shadow: inset 0 3px 0 var(--plank-hover-light), inset 0 -4px 0 var(--plank-dark);
+}
+
+/* Pressed, or the one that's picked: sunk in, its light band gone dark. */
+#talk-choices button:active:not(:disabled),
+#story-skip:active,
+#customize button:not(.swatch):active,
+#build button:active:not(:disabled),
+#customize .tabs button.on,
+#customize .style-grid button.on {
+  color: var(--gold);
+  background: var(--plank-on);
+  box-shadow: inset 0 3px 0 var(--plank-dark), inset 0 -2px 0 var(--plank-hover-light);
+}
+
+#talk-choices button:disabled,
+#build button:disabled {
+  color: var(--text-muted);
+  cursor: default;
+  background: #2c1d10;
+  box-shadow: inset 0 3px 0 #3a2615, inset 0 -4px 0 #1a1009;
+}
+
+/* The house plans' buttons, in blueprint blue. */
+#build {
+  --plank: #1f3f6b;
+  --plank-grain: #1d3b64;
+  --plank-light: #3a6aa8;
+  --plank-dark: #0e2038;
+  --plank-hover: #2d5a96;
+  --plank-hover-grain: #2a558e;
+  --plank-hover-light: #5a8fd0;
+  --plank-on: #ffe27a;
+}
+
+#build button.on {
+  color: #10203a;
+  text-shadow: none;
+  background: var(--gold);
+  box-shadow: inset 0 3px 0 #fff3b0, inset 0 -4px 0 #b8922c;
+}
+
+/* The intro's skip button: a small plank. */
+#story-skip {
+  padding: 6px 12px 8px;
+  font-size: 15px;
+}
+
+/* ---------- Headings ---------- */
+
+#select h1,
+#customize h2 {
+  font-family: var(--font-title);
+  font-weight: 400;
+  color: var(--gold);
+  text-shadow: 3px 3px 0 #000;
+  letter-spacing: 1px;
+}
+
+#select h1 {
+  font-size: 52px;
+  line-height: 1;
+}
+
+#customize h2 {
+  font-size: 34px;
+  line-height: 1;
+}
+
+/* ---------- Sliders ---------- */
+
+/* The track: a sunken groove filled in gold up to the thumb, in flat bands. The fill follows --fill where
+   the page sets it, and is plain otherwise. */
+#panel .slider input[type="range"],
+#customize input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  background: linear-gradient(90deg, var(--gold-dim) 0 var(--fill, 0%), #120b06 var(--fill, 0%) 100%);
+  border: 3px solid #000;
+  box-shadow: inset 0 3px 0 rgba(0, 0, 0, 0.5), 3px 3px 0 #000;
+}
+
+#panel .slider input[type="range"]:focus-visible,
+#customize input[type="range"]:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 3px;
+}
+
+/* The thumb: a parchment block with a dark rim, lit on top and shaded underneath. */
+#panel .slider input[type="range"]::-webkit-slider-thumb,
+#customize input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 28px;
+  background: var(--parchment);
+  border: 3px solid #000;
+  box-shadow: inset 0 -5px 0 #b89a5e, inset 0 3px 0 #fff3d6;
+  cursor: pointer;
+}
+
+#panel .slider input[type="range"]::-moz-range-thumb,
+#customize input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 28px;
+  background: var(--parchment);
+  border: 3px solid #000;
+  border-radius: 0;
+  box-shadow: inset 0 -5px 0 #b89a5e, inset 0 3px 0 #fff3d6;
+  cursor: pointer;
+}
+
+#panel .slider input[type="range"]:hover::-webkit-slider-thumb,
+#customize input[type="range"]:hover::-webkit-slider-thumb {
+  background: var(--gold);
+}
+
+#panel .slider input[type="range"]:hover::-moz-range-thumb,
+#customize input[type="range"]:hover::-moz-range-thumb {
+  background: var(--gold);
+}
+
+/* ---------- Tick boxes ---------- */
+
+#customize input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  cursor: pointer;
+  background: var(--parchment);
+  border: 3px solid #000;
+  box-shadow: inset 0 -4px 0 #b89a5e;
+}
+
+/* Ticked: a square of ink, pixel-hard. */
+#customize input[type="checkbox"]:checked::after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  background: var(--ink);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.25);
+}
+
+#customize input[type="checkbox"]:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* ---------- Customise details ---------- */
+
+#customize .group {
+  font-weight: 700;
+  border-top: 3px solid #0d0805;
+  box-shadow: 0 -3px 0 var(--wood-edge);
+}
+
+#customize .swatch {
+  border: 3px solid #000;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.3), inset 0 3px 0 rgba(255, 255, 255, 0.2);
+}
+
+#customize .swatch.on,
+#customize input[type="color"].on {
+  outline: 3px solid var(--gold);
+  outline-offset: 1px;
+}
+
+#customize input[type="color"] {
+  border: 3px solid #000;
+}
+
+/* A pixel scrollbar for the customise pane. */
+#customize .pane {
+  scrollbar-color: var(--wood-edge) #120b06;
+}
+
+#customize .pane::-webkit-scrollbar {
+  width: 10px;
+}
+
+#customize .pane::-webkit-scrollbar-track {
+  background: #120b06;
+}
+
+#customize .pane::-webkit-scrollbar-thumb {
+  background: var(--wood-edge);
+  border: 2px solid #000;
+}
+
+/* Room for the taller blackletter heading on character select. */
+#select .hint {
+  top: 86px;
+  font-size: 16px;
+}
+
+/* Dialog boxes are one smooth board: no plank seams running under the words. */
+#talk .box::before,
+#story .box::before {
+  background: repeating-linear-gradient(0deg, #26180d 0 5px, #2a1b0f 5px 9px);
+}
+
+/* ---------- The sky clock, top right ---------- */
+
+/* The sky dial (skydial.ts) with the time on a plank beneath it. */
+#clock {
+  top: 8px;
+  right: 14px;
+  left: auto;
+  width: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+#clock-dial {
+  display: block;
+  /* Exactly twice the canvas, so every pixel stays square. */
+  width: 192px;
+  height: 100px;
+  image-rendering: pixelated;
+  filter: drop-shadow(4px 4px 0 rgba(0, 0, 0, 0.75));
+}
+
+/* The nameplate: a small plank with the time and the day. */
+#clock .clock-text {
+  margin-top: -3px;
+  padding: 3px 12px 6px;
+  text-align: center;
+  background: repeating-linear-gradient(90deg, var(--plank) 0 18px, var(--plank-grain) 18px 20px);
+  border: 3px solid #000;
+  clip-path: var(--pixel-corners-sm);
+  box-shadow: inset 0 3px 0 var(--plank-light), inset 0 -4px 0 var(--plank-dark);
+}
+
+#clock-time {
+  font-size: 17px;
+  line-height: 1.1;
+}
+
+#clock-day {
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+@media (max-width: 720px) {
+  /* On a narrow screen the stats fill the top, so the clock sits low, above the controls. */
+  #clock {
+    top: auto;
+    bottom: 90px;
+  }
+
+  #clock-dial {
+    width: 154px;
+    height: 80px;
+  }
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LOOK_OPTIONS } from "../src/game/appearance";
+import { LOOK_OPTIONS, playerOutfits } from "../src/game/appearance";
 import { DARES, stripPiece } from "../src/game/banter";
 import { piecesOff, stripLadder, stripStages, WARDROBE, type WardrobeBody } from "../src/game/wardrobe";
 
@@ -40,9 +40,9 @@ describe("the wardrobe", () => {
     }
   });
 
-  it("gives every garment something to say, written or not", () => {
+  it("gives every garment a player can wear something to say, written or not", () => {
     for (const body of BODIES) {
-      for (const outfit of LOOK_OPTIONS[body].outfits) {
+      for (const outfit of playerOutfits(body)) {
         for (const garment of stripLadder(body, outfit.id)) expect(DARES[garment.id], `${outfit.id}: ${garment.id}`).toBeDefined();
       }
     }

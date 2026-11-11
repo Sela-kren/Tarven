@@ -1,4 +1,9 @@
-/* The house plans: a toolbar along the bottom of the screen while build mode is open. */
+/*
+ * The house plans: a blueprint tray along the bottom of the screen while build mode is open. Everything on it
+ * is a picture tile, like a building game's catalogue: the tools, the furniture (rendered from the room's own
+ * models), what's in storage and the upgrades. Names and prices show on hover in the note line underneath.
+ * The board and plank colours come from pixel.css.
+ */
 #build {
   position: fixed;
   left: 16px;
@@ -6,75 +11,210 @@
   bottom: 12px;
   display: none;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: 8px;
   font: 14px/1.3 var(--font);
   color: var(--text);
   text-shadow: var(--shadow);
-  background: rgba(16, 32, 56, 0.92);
-  border: 2px solid #4a90e2;
-  box-shadow: 4px 4px 0 #000;
 }
 
 #build.open {
   display: flex;
 }
 
-/* The controls and prompts belong to walking around, so they make way for the toolbar. */
+/* The controls and prompts belong to walking around, so they make way for the tray. */
 body.building #hud,
 body.building #prompt {
   display: none;
 }
 
-#build .row {
+#build .bar {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
+  align-items: flex-end;
+  gap: 10px 22px;
 }
 
 #build .spacer {
   flex: 1;
 }
 
-#build .label {
+/* A cluster of tiles with a small heading over it. */
+#build .group .title {
+  margin: 0 0 5px 2px;
+  font: 700 12px/1 var(--font);
+  letter-spacing: 2px;
+  text-transform: uppercase;
   color: #9cc4f0;
-  font-weight: bold;
-  margin-left: 8px;
 }
 
-#build .label:first-child {
-  margin-left: 0;
+#build .tiles {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
 }
 
-#build button {
-  padding: 6px 10px;
-  font: bold 14px/1.2 var(--font);
+/* ---------- Tiles ---------- */
+
+#build .tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  box-sizing: content-box;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+}
+
+/* Pictures stay hard-edged: furniture at twice its 32px render, icons at three times their 12px. */
+#build .tile .art img {
+  display: block;
+  width: 64px;
+  height: 64px;
+  image-rendering: pixelated;
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.6));
+}
+
+#build .tile .art svg {
+  display: block;
+  width: 36px;
+  height: 36px;
+  shape-rendering: crispEdges;
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.6));
+}
+
+/* The price tag, pinned in the bottom corner. */
+#build .tile .price {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px 1px 2px;
+  font: 400 16px/1 var(--font);
+  color: var(--gold);
+  text-shadow: 1px 1px 0 #000;
+  background: rgba(8, 20, 38, 0.85);
+}
+
+#build .tile .price svg,
+#build .sell svg {
+  width: 12px;
+  height: 12px;
+  shape-rendering: crispEdges;
+}
+
+/* How many: in storage, or cups and dishes owned. */
+#build .tile .count {
+  position: absolute;
+  left: 3px;
+  top: 2px;
+  font: 400 16px/1 var(--font);
   color: var(--text-bright);
-  cursor: pointer;
-  background: #1f3f6b;
-  border: 2px solid #4a90e2;
+  text-shadow: 1px 1px 0 #000;
 }
 
-#build button:hover:not(:disabled),
-#build button:focus-visible {
-  background: #2d5a96;
-  outline: 2px solid var(--gold);
+/* Already bought: a green tick in the corner. */
+#build .tile .tick {
+  position: absolute;
+  right: 2px;
+  top: 2px;
 }
 
-#build button.on {
-  color: #10203a;
-  text-shadow: none;
+#build .tile .tick svg {
+  width: 20px;
+  height: 20px;
+  filter: none;
+}
+
+/* The tool in hand: a gold tile. */
+#build .tile.on {
   background: var(--gold);
-  border-color: var(--gold);
+  box-shadow: inset 0 3px 0 #fff3b0, inset 0 -4px 0 #b8922c;
 }
 
-#build button:disabled {
-  color: #6f86a6;
-  cursor: default;
+/* Too dear, for now: the picture greys out. */
+#build .tile:disabled {
+  background: #102440;
+  box-shadow: inset 0 3px 0 #18355c, inset 0 -4px 0 #0a1830;
+}
+
+#build .tile:disabled .art {
+  filter: grayscale(1) brightness(0.55);
+}
+
+#build .tile:disabled .price {
+  color: #8aa0bc;
+}
+
+/* Bought upgrades stay bright: they're yours. */
+#build .tile.owned:disabled .art {
+  filter: none;
+}
+
+#build .tile.owned:disabled {
+  background: #183a64;
+}
+
+/* ---------- Storage: each picture with a small sell plank under it ---------- */
+
+#build .stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#build .sell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 24px;
+  padding: 0 6px;
+  font: 400 16px/1 var(--font);
+}
+
+/* ---------- Done ---------- */
+
+#build .done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 70px;
+  padding: 0 20px;
+  font: 700 18px/1 var(--font);
+}
+
+#build .done svg {
+  width: 24px;
+  height: 24px;
+  shape-rendering: crispEdges;
 }
 
 #build .note {
   min-height: 18px;
+  padding: 0 2px;
   color: var(--text-bright);
+}
+
+@media (max-width: 720px) {
+  #build .tile {
+    width: 52px;
+    height: 52px;
+  }
+
+  #build .tile .art img {
+    width: 48px;
+    height: 48px;
+  }
+
+  #build .tile .art svg {
+    width: 30px;
+    height: 30px;
+  }
+}
+
+/* Shelves full: the count turns gold, and there's nothing more to buy of it. */
+#build .tile .count.full {
+  color: var(--gold);
 }

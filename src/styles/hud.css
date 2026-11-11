@@ -15,8 +15,9 @@
   bottom: 12px;
 }
 
-/* Controls and the clock are hidden until the night starts. */
+/* Controls, stats and the clock are hidden on character select, until the night starts. */
 body.staging #hud,
+body.staging #stats,
 body.staging #clock {
   display: none;
 }
@@ -112,6 +113,11 @@ body.staging #clock {
     top: auto;
     bottom: 80px;
   }
+
+  /* Messages sit over the clock rather than behind it. Written as body #toast to win over the main rule. */
+  body #toast {
+    bottom: 210px;
+  }
 }
 
 /* Gold, trust, heat and the tap, each a pixel icon and its number, straight over the scene with no panel.
@@ -198,11 +204,18 @@ body.staging #clock {
   text-align: center;
 }
 
+/* Messages sit low, just above the action prompt, and grow upward when they run to two lines. */
 #toast {
   left: 50%;
-  top: 66px;
+  bottom: 76px;
   width: min(680px, calc(100vw - 32px));
   transform: translateX(-50%);
   font-size: 16px;
   text-align: center;
+}
+
+/* The build tray fills the bottom of the screen, so messages go back to the top while it's open. */
+body.building #toast {
+  top: 66px;
+  bottom: auto;
 }

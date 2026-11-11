@@ -1,14 +1,21 @@
-/* Menu panels: title, pause, last call, dawn and endings. */
+/*
+ * Menu panels: title, pause, last call, dawn and endings, in the game's pixel style. Every shape has stepped
+ * pixel corners and a chunky black outline that follows them; colours are flat bands, never smooth fades.
+ * Every menu is a carved wooden board with a gold inlay; the title screen instead hangs the tavern's name on a
+ * sign over the room.
+ */
 #panel {
   position: fixed;
   inset: 0;
   display: none;
   place-items: center;
-  padding: 16px;
-  font: 14px/1.4 var(--font);
+  padding: 24px 16px;
+  font: 17px/1.45 var(--font);
   color: var(--text);
   text-shadow: var(--shadow);
-  background: rgba(5, 3, 2, 0.72);
+  -webkit-font-smoothing: none;
+  /* The room shows through, darkening in hard rings toward the edges, like candlelight in a dithered scene. */
+  background: radial-gradient(ellipse at 50% 45%, rgba(10, 5, 2, 0.35) 0%, rgba(5, 3, 2, 0.85) 80%);
   overflow-y: auto;
 }
 
@@ -16,46 +23,460 @@
   display: grid;
 }
 
+/* ---------- The board ---------- */
+
 #panel .box {
+  position: relative;
   box-sizing: border-box;
-  width: min(620px, 100%);
-  padding: 20px 24px;
-  background: var(--wood-darkest);
-  border: 4px solid var(--wood-edge);
-  box-shadow: 8px 8px 0 #000;
+  width: min(600px, 100%);
+  filter: var(--pixel-outline);
+}
+
+/* The board itself is cut on its own layer, so the outline above wraps its stepped corners. */
+#panel .box::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  clip-path: var(--pixel-corners);
+  /* Planks in flat bands: a dark seam every board, faint grain lines between. */
+  background:
+    repeating-linear-gradient(0deg, transparent 0 45px, #0d0805 45px 48px),
+    repeating-linear-gradient(0deg, #26180d 0 5px, #2a1b0f 5px 9px);
+  /* Bevel light on top, shade below, and the gold inlay inside the edge. */
+  box-shadow:
+    inset 0 4px 0 #4a2f17,
+    inset 0 -4px 0 #120b06,
+    inset 0 0 0 8px #1a1009,
+    inset 0 0 0 11px var(--gold-dim),
+    inset 0 0 0 13px #0d0805;
+}
+
+#panel .box > * {
+  position: relative;
+}
+
+#panel .box:not(.title-screen *) {
+  padding: 28px 32px 26px;
 }
 
 #panel h1 {
-  margin: 0 0 10px;
-  font-size: 24px;
+  margin: 0 0 14px;
+  font: 400 42px/1 var(--font-title);
   color: var(--gold);
+  text-align: center;
+  text-shadow: 3px 3px 0 #000;
+  letter-spacing: 1px;
 }
 
-#panel p {
+/* A carved rule under the heading: a flat gold bar with square ends. */
+#panel h1::after {
+  content: "";
+  display: block;
+  height: 4px;
+  width: 60%;
+  margin: 14px auto 0;
+  background: var(--gold-dim);
+  box-shadow: 0 4px 0 #000;
+}
+
+#panel .story p {
   margin: 0 0 12px;
-  font-size: 16px;
+}
+
+#panel .story p:last-child {
+  margin-bottom: 0;
+}
+
+/* ---------- Plank buttons ---------- */
+
+#panel .menu {
+  display: grid;
+  gap: 14px;
+  margin-top: 20px;
+  padding-left: 4px;
+  filter: var(--pixel-outline);
 }
 
 #panel button {
-  display: block;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   width: 100%;
-  margin-top: 8px;
-  padding: 10px 12px;
-  font: bold 15px/1.3 var(--font);
+  padding: 10px 16px 12px;
+  font: 600 18px/1.2 var(--font);
   color: var(--text-bright);
   text-align: left;
+  text-shadow: 2px 2px 0 #000;
   cursor: pointer;
-  background: var(--wood);
-  border: 2px solid var(--wood-edge);
+  border: none;
+  clip-path: var(--pixel-corners);
+  background: repeating-linear-gradient(90deg, #5a3b1f 0 18px, #553820 18px 20px);
+  /* Light band along the top, shade band along the bottom: a raised plank. */
+  box-shadow: inset 0 4px 0 #7a5129, inset 0 -5px 0 #2e1d0f;
+}
+
+#panel button .key {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  font: 700 15px/1 var(--font);
+  color: var(--ink);
+  text-shadow: none;
+  background: var(--parchment);
+  clip-path: polygon(4px 0, calc(100% - 4px) 0, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0 calc(100% - 4px), 0 4px);
+  box-shadow: inset 0 -4px 0 #b89a5e;
+}
+
+#panel button .label {
+  flex: 1;
+  min-width: 0;
 }
 
 #panel button:hover:not(:disabled),
 #panel button:focus-visible {
-  background: var(--wood-hover);
-  outline: 2px solid var(--gold);
+  outline: none;
+  color: var(--gold);
+  background: repeating-linear-gradient(90deg, #7a5129 0 18px, #744d27 18px 20px);
+  box-shadow: inset 0 4px 0 #a06c38, inset 0 -5px 0 #3f2814;
+}
+
+#panel button:hover:not(:disabled) .key,
+#panel button:focus-visible .key {
+  background: var(--gold);
+  box-shadow: inset 0 -4px 0 #b8922c;
+}
+
+/* Pressed: the plank sinks, its light band gone dark. */
+#panel button:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: inset 0 4px 0 #2e1d0f, inset 0 -2px 0 #7a5129;
 }
 
 #panel button:disabled {
   color: var(--text-muted);
   cursor: default;
+  background: #2c1d10;
+  box-shadow: inset 0 4px 0 #3a2615, inset 0 -5px 0 #1a1009;
+}
+
+#panel button:disabled .key {
+  color: #3a2e20;
+  background: #7d6c55;
+  box-shadow: inset 0 -4px 0 #5a4a35;
+}
+
+/* A blinking pointer, drawn in pixels, at the end of the plank you're on. */
+#panel .menu {
+  --pointer: polygon(0 0, 4px 0, 4px 4px, 8px 4px, 8px 8px, 12px 8px, 12px 12px, 8px 12px, 8px 16px, 4px 16px, 4px 20px, 0 20px);
+}
+
+#panel .menu button::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 12px;
+  height: 20px;
+  margin-top: -10px;
+  background: var(--gold);
+  clip-path: var(--pointer);
+  transform: scaleX(-1);
+  opacity: 0;
+}
+
+#panel .menu button:hover:not(:disabled)::after,
+#panel .menu button:focus-visible::after {
+  opacity: 1;
+  animation: pixel-blink 0.8s steps(1) infinite;
+}
+
+@keyframes pixel-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ---------- The title screen: a tavern sign over the room ---------- */
+
+#panel.title-screen .box {
+  width: min(540px, 100%);
+  filter: none;
+}
+
+#panel.title-screen .box::before {
+  display: none;
+}
+
+#panel.title-screen .sign {
+  position: relative;
+  margin: 56px auto 24px;
+  width: fit-content;
+  max-width: 100%;
+  filter: var(--pixel-outline);
+  animation: sign-sway 6s steps(12) infinite;
+  transform-origin: 50% -56px;
+}
+
+/* The sign board, cut on its own layer so the outline follows its corners. */
+#panel.title-screen .sign h1 {
+  position: relative;
+  margin: 0;
+  padding: 18px 30px 22px;
+  display: grid;
+  justify-items: center;
+  line-height: 0.9;
+}
+
+#panel.title-screen .sign h1::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  clip-path: var(--pixel-corners);
+  background:
+    repeating-linear-gradient(0deg, transparent 0 32px, #0d0805 32px 35px),
+    repeating-linear-gradient(0deg, #3d2613 0 5px, #432a15 5px 9px);
+  box-shadow:
+    inset 0 4px 0 #6a4524,
+    inset 0 -4px 0 #1a1009,
+    inset 0 0 0 8px #2a1a0d,
+    inset 0 0 0 11px var(--gold-dim),
+    inset 0 0 0 13px #0d0805;
+}
+
+#panel.title-screen .sign h1::after {
+  display: none;
+}
+
+/* Two chains up off the top of the screen, in square links. */
+#panel.title-screen .sign::before,
+#panel.title-screen .sign::after {
+  content: "";
+  position: absolute;
+  /* Up past the top of the screen, whatever its height. */
+  top: -100vh;
+  width: 8px;
+  height: 100vh;
+  background: repeating-linear-gradient(180deg, #b8a684 0 4px, #6e624e 4px 8px, transparent 8px 12px);
+}
+
+#panel.title-screen .sign::before {
+  left: 20%;
+}
+
+#panel.title-screen .sign::after {
+  right: 20%;
+}
+
+@keyframes sign-sway {
+  0%,
+  100% {
+    transform: rotate(-1.5deg);
+  }
+  50% {
+    transform: rotate(1.5deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #panel.title-screen .sign,
+  #panel .menu button::after,
+  #panel.title-screen .box::after {
+    animation: none;
+  }
+}
+
+#panel.title-screen h1 .over {
+  font-size: 34px;
+  color: var(--parchment);
+  text-shadow: 3px 3px 0 #000;
+}
+
+#panel.title-screen h1 .name {
+  font-size: clamp(64px, 14vw, 108px);
+  color: var(--gold);
+  /* Painted on: gold, a dark outline a pixel step wide, and a deep hard shadow. */
+  text-shadow:
+    -3px 0 0 #3a2208,
+    3px 0 0 #3a2208,
+    0 -3px 0 #3a2208,
+    0 3px 0 #3a2208,
+    6px 6px 0 #000;
+}
+
+#panel.title-screen .menu {
+  width: min(360px, 100%);
+  margin: 26px auto 0;
+}
+
+#panel.title-screen button {
+  justify-content: center;
+  font-size: 20px;
+}
+
+#panel.title-screen button .label {
+  flex: none;
+}
+
+/* PRESS 1-4, blinking, like an old cabinet waiting for a coin. */
+#panel.title-screen .box::after {
+  content: "PRESS 1 - 4";
+  display: block;
+  margin-top: 22px;
+  font: 700 16px/1 var(--font);
+  letter-spacing: 3px;
+  color: var(--gold);
+  text-align: center;
+  text-shadow: 2px 2px 0 #000;
+  animation: pixel-blink 1.2s steps(1) infinite;
+}
+
+@media (max-width: 520px) {
+  #panel .box:not(.title-screen *) {
+    padding: 22px 18px 20px;
+  }
+
+  #panel h1 {
+    font-size: 34px;
+  }
+
+  #panel button {
+    font-size: 16px;
+  }
+
+  #panel.title-screen h1 .over {
+    font-size: 26px;
+  }
+}
+
+/* ---------- Sliders (sound levels) ---------- */
+
+#panel .slider {
+  display: grid;
+  grid-template-columns: 96px 1fr 52px;
+  align-items: center;
+  gap: 14px;
+  margin: 6px 0 14px;
+  font: 600 18px/1 var(--font);
+  color: var(--text-bright);
+}
+
+#panel .slider .value {
+  text-align: right;
+  color: var(--gold);
+}
+
+@media (max-width: 520px) {
+  #panel .slider {
+    grid-template-columns: 70px 1fr 46px;
+    font-size: 16px;
+  }
+}
+
+/* ---------- Corner icon: a gear on settings boards ---------- */
+
+/* Big, and hung over the board's top-right corner, half off it. */
+#panel .box .corner-icon {
+  position: absolute;
+  top: -30px;
+  right: -30px;
+  width: 72px;
+  height: 72px;
+  z-index: 1;
+}
+
+/* Pixel art only stays crisp at right angles, so it turns a quarter, snapping, when the board is hovered. */
+#panel .box:hover .corner-icon {
+  animation: gear-turn 0.6s steps(1) 1;
+}
+
+#panel .box .corner-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  shape-rendering: crispEdges;
+}
+
+@keyframes gear-turn {
+  0% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(90deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #panel .box .corner-icon {
+    animation: none;
+  }
+}
+
+/* ---------- A save, in icons: moon and night, the sibling's sign, coin and gold ---------- */
+
+#panel .menu button {
+  /* Room at the end for the blinking pointer, so it never sits on the icons. */
+  padding-right: 36px;
+}
+
+#panel button .save-badges {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: none;
+  margin-left: auto;
+}
+
+#panel button .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--gold);
+}
+
+#panel button .badge svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+  shape-rendering: crispEdges;
+}
+
+#panel button .when {
+  font: 400 14px/1 var(--font);
+  color: var(--text-muted);
+}
+
+#panel button:disabled .badge svg {
+  filter: grayscale(1) brightness(0.6);
+}
+
+/* On the title the plank is the button and the icons follow the word; the date waits in Load game. */
+#panel.title-screen button .save-badges {
+  margin-left: 18px;
+}
+
+#panel.title-screen button .when {
+  display: none;
+}
+
+@media (max-width: 520px) {
+  #panel button .save-badges {
+    gap: 9px;
+  }
+
+  #panel button .badge svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  #panel:not(.title-screen) button .when {
+    display: none;
+  }
 }

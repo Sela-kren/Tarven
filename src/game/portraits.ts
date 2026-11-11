@@ -1,11 +1,15 @@
 import {
   AmbientLight,
+  Box3,
   Color,
   DirectionalLight,
   HemisphereLight,
+  MathUtils,
   Object3D,
   PerspectiveCamera,
   Scene,
+  Sphere,
+  Vector3,
   WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
@@ -59,17 +63,57 @@ export function renderPortrait(renderer: WebGLRenderer, character: Object3D, tur
   renderer.setRenderTarget(null);
   renderer.setClearColor(previousColor, previousAlpha);
   target.dispose();
+  return ditheredCanvas(pixels, WIDTH, HEIGHT);
+}
 
-  // Render targets hold linear colour: convert to sRGB and dither down, flipping rows to top-down.
+/**
+ * Renders a piece of furniture (or any prop) as a small catalogue picture: seen from above and to the front, the
+ * way the room's camera sees it, lit warm, on a clear background. Returned as a data URL to use in an <img>.
+ */
+export function renderThumbnail(renderer: WebGLRenderer, object: Object3D, size: number): string {
+  const scene = new Scene();
+  scene.add(new AmbientLight(0x8a8090, 1.1));
+  scene.add(new HemisphereLight(0xd8d0e0, 0x3a2414, 0.9));
+  const key = new DirectionalLight(0xffd8a8, 2.4);
+  key.position.set(-2, 4, 3);
+  scene.add(key);
+  scene.add(object);
+
+  const bounds = new Box3().setFromObject(object);
+  const sphere = bounds.getBoundingSphere(new Sphere());
+  const camera = new PerspectiveCamera(30, 1, 0.05, 50);
+  const distance = sphere.radius / Math.sin(MathUtils.degToRad(15)) * 1.02;
+  const view = new Vector3(0.55, 0.75, 1).normalize();
+  camera.position.copy(sphere.center).addScaledVector(view, distance);
+  camera.lookAt(sphere.center);
+
+  const target = new WebGLRenderTarget(size, size);
+  const previousColor = renderer.getClearColor(new Color());
+  const previousAlpha = renderer.getClearAlpha();
+  renderer.setRenderTarget(target);
+  renderer.setClearColor(0x000000, 0);
+  renderer.clear();
+  renderer.render(scene, camera);
+  const pixels = new Uint8Array(size * size * 4);
+  renderer.readRenderTargetPixels(target, 0, 0, size, size, pixels);
+  renderer.setRenderTarget(null);
+  renderer.setClearColor(previousColor, previousAlpha);
+  target.dispose();
+  scene.remove(object);
+  return ditheredCanvas(pixels, size, size).toDataURL();
+}
+
+/** Render targets hold linear colour: convert to sRGB and dither down to 5 bits, flipping rows to top-down. */
+function ditheredCanvas(pixels: Uint8Array, width: number, height: number): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
-  canvas.width = WIDTH;
-  canvas.height = HEIGHT;
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext("2d")!;
-  const image = ctx.createImageData(WIDTH, HEIGHT);
-  for (let y = 0; y < HEIGHT; y++) {
-    for (let x = 0; x < WIDTH; x++) {
-      const from = ((HEIGHT - 1 - y) * WIDTH + x) * 4;
-      const to = (y * WIDTH + x) * 4;
+  const image = ctx.createImageData(width, height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const from = ((height - 1 - y) * width + x) * 4;
+      const to = (y * width + x) * 4;
       const alpha = pixels[from + 3];
       if (alpha < 128) continue;
       const threshold = (BAYER4[(x & 3) + ((y & 3) << 2)] / 16 - 0.46875) / LEVELS;

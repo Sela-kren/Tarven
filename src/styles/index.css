@@ -9,3 +9,6 @@
 @import "./talk.css";
 @import "./comic.css";
 @import "./build.css";
+@import "./journal.css";
+/* The shared pixel UI kit, last so its look wins over each screen's basics. */
+@import "./pixel.css";

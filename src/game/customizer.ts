@@ -1,4 +1,4 @@
-import { copyLook, LOOK_OPTIONS, outfitOf, wearOutfit, type BodyName, type Look, type LookTab } from "./appearance";
+import { copyLook, LOOK_OPTIONS, outfitOf, playerOutfits, wearOutfit, type BodyName, type Look, type LookTab } from "./appearance";
 
 const TABS: { id: LookTab; label: string }[] = [
   { id: "body", label: "Body" },
@@ -130,7 +130,7 @@ export class Customizer {
     const options = LOOK_OPTIONS[this.body];
     const rows: HTMLElement[] = [];
     if (tab === "hair") rows.push(this.hairstyleRow());
-    if (tab === "clothes" && options.outfits.length > 1) rows.push(this.outfitRow());
+    if (tab === "clothes" && playerOutfits(this.body).length > 1) rows.push(this.outfitRow());
     let group: string | undefined;
     for (const def of options.sliders) {
       if (def.tab !== tab) continue;
@@ -184,7 +184,7 @@ export class Customizer {
     row.append(make("span", "name", "Outfit"));
     const grid = make("div", "style-grid");
     const chosen = outfitOf(this.body, this.look).id;
-    for (const outfit of LOOK_OPTIONS[this.body].outfits) {
+    for (const outfit of playerOutfits(this.body)) {
       const button = make("button", outfit.id === chosen ? "on" : "", outfit.label);
       button.type = "button";
       button.setAttribute("aria-pressed", String(outfit.id === chosen));

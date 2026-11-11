@@ -29,7 +29,7 @@ export interface HudState {
 
 const OUTLINE = "#1c140e";
 
-const COIN = pixelSvg(
+export const COIN = pixelSvg(
   [
     "...KKKKKK...",
     "..KGGGGGGK..",
@@ -47,25 +47,26 @@ const COIN = pixelSvg(
   { K: OUTLINE, G: "#ffd23a", L: "#fff3b0", D: "#c08a20" },
 );
 
-const HEART = pixelSvg(
+/** Trust: two villagers, shoulder to shoulder. */
+export const VILLAGERS = pixelSvg(
   [
     "............",
-    ".KKK....KKK.",
-    "KRRRK..KRRRK",
-    "KRPRRKKRRRRK",
-    "KRPRRRRRRRRK",
-    "KRRRRRRRRRRK",
-    ".KRRRRRRRRK.",
-    "..KRRRRRRK..",
-    "...KRRRRK...",
-    "....KRRK....",
-    ".....KK.....",
-    "............",
+    ".......KKK..",
+    "......KHHHK.",
+    "..KKK.KHHHK.",
+    ".KHHHK.KKK..",
+    ".KHHHKKBBBK.",
+    "..KKKKBBBBBK",
+    ".KGGGGKBBBBK",
+    "KGGGGGGKBBBK",
+    "KGGGGGGKBBBK",
+    "KGGGGGGKKKKK",
+    "KKKKKKKK....",
   ],
-  { K: OUTLINE, R: "#d9301f", P: "#ff8a70" },
+  { K: OUTLINE, B: "#8a5a2c", G: "#3f7a3a", H: "#f0c49a" },
 );
 
-const FLAME = pixelSvg(
+export const FLAME = pixelSvg(
   [
     ".....K......",
     "....KOK.....",
@@ -101,7 +102,7 @@ const KEG = pixelSvg(
   { K: OUTLINE, B: "#b4752c", H: "#8d8d94", T: "#c9c1ac" },
 );
 
-const CUP = pixelSvg(
+export const CUP = pixelSvg(
   [
     "............",
     ".KKKKKKKK...",
@@ -119,7 +120,7 @@ const CUP = pixelSvg(
   { K: OUTLINE, F: "#f4ead0", M: "#8d8d94", L: "#c9c9d0", D: "#5e5e66" },
 );
 
-const DISH = pixelSvg(
+export const DISH = pixelSvg(
   [
     "............",
     "............",
@@ -169,11 +170,15 @@ class Stat {
     this.el.title = `${this.name}: ${value}${of}`;
     this.el.setAttribute("aria-label", this.el.title);
   }
+
+  /** Shows or hides it. The style sheet lays stats out with display, which would beat the hidden attribute. */
+  show(visible: boolean): void {
+    this.el.style.display = visible ? "" : "none";
+  }
 }
 
 export class StatsHud {
   private readonly gold: Stat;
-  private readonly trust: Stat;
   private readonly heat: Stat;
   private readonly tap: Stat;
   private readonly cups: Stat;
@@ -185,7 +190,7 @@ export class StatsHud {
     const row = document.createElement("div");
     row.className = "row";
     this.gold = new Stat(row, "Gold", COIN);
-    this.trust = new Stat(row, "Trust", HEART);
+    // Heat only comes up here as a warning; it, trust and the rest are kept in the journal.
     this.heat = new Stat(row, "Heat", FLAME);
     this.tap = new Stat(row, "Ale left in the tap", KEG);
     this.cups = new Stat(row, "Clean cups", CUP);
@@ -198,10 +203,12 @@ export class StatsHud {
   }
 
   update(state: HudState): void {
-    this.gold.set(String(state.gold), `/${state.debt}`);
-    this.trust.set(String(state.trust), `/${state.trustMax}`);
-    // The last two steps before the baron's men come are shown in red.
-    this.heat.set(String(state.heat), `/${state.heatMax}`, undefined, state.heat >= state.heatMax - 2);
+    // The gold you have; what you owe is in the journal.
+    this.gold.set(String(state.gold));
+    // The last two steps before the baron's men come show up in red, as a warning.
+    const danger = state.heat >= state.heatMax - 2;
+    this.heat.show(danger);
+    this.heat.set(String(state.heat), `/${state.heatMax}`, undefined, danger);
     this.tap.set(String(state.tap), "", undefined, state.tap === 0);
     this.cups.set(String(state.cups), `/${state.cupsOwned}`, undefined, state.cups === 0);
     this.dishes.set(String(state.dishes), `/${state.dishesOwned}`, undefined, state.dishes === 0);

@@ -49,6 +49,9 @@ export const BEDROOM_DOOR_OPEN: Rect = { minX: 7.4, maxX: 8.38, minZ: 0.55, maxZ
 export const DESK_NAME = "Drafting_Desk";
 /** The middle of the desk, which the player stands near to open the plans. */
 export const DESK_SPOT = new Vector3(10.15, 0, 1.82);
+/** Your journal, lying on the chest at the foot of the bed: read it to see how you stand. */
+export const JOURNAL_NAME = "Journal";
+export const JOURNAL_SPOT = new Vector3(10.08, 0, 0.08);
 
 const WALL_HEIGHT = 3.2;
 const WALL = 0.4;
@@ -241,6 +244,16 @@ export function addBedroom(root: Object3D): void {
     .into(root);
   candle(root, "Candle_Chest", new Vector3(10.45, 0.53, 0.1), m);
 
+  // The journal on the chest: a red leather cover, cream pages showing on three sides, and a gold ribbon.
+  const leather = flat("T_journal", 0x7a2418);
+  new Piece(JOURNAL_NAME)
+    .add(box([9.88, 0.53, -0.07], [10.26, 0.542, 0.21]), leather)
+    .add(box([9.895, 0.542, -0.06], [10.25, 0.568, 0.2]), flat("T_pages", 0xe8dcb8))
+    .add(box([9.88, 0.568, -0.07], [10.26, 0.58, 0.21]), leather)
+    .add(box([9.875, 0.53, -0.07], [9.895, 0.58, 0.21]), leather)
+    .add(box([10.12, 0.47, 0.205], [10.15, 0.575, 0.215]), flat("T_ribbon", 0xd9a93a))
+    .into(root);
+
   // The drafting desk in the south-east corner, with the plans for the house spread out on it.
   const plans = new MeshStandardMaterial({ name: "T_blueprint", map: blueprintTexture(), roughness: 0.95 });
   const desk = new Piece(DESK_NAME, true)
@@ -340,6 +353,123 @@ export function addWashTub(root: Object3D): void {
     tub.add(new CylinderGeometry(size, size, 0.03, 7).translate(x + dx, 0.48, z + dz), suds);
   }
   tub.into(root);
+}
+
+/** The crates the bread basket used to sit on, which the bakery corner replaces. */
+const BAKERY_REPLACES = ["Crate_0", "Crate_1", "Crate_2"];
+/** The bread oven's plinth in the south-west corner, against the west wall. Its top is the oven floor. */
+const OVEN = { minX: -7.0, maxX: -5.85, minZ: 3.1, maxZ: 4.95, top: 0.8 };
+/** The middle of the dome, and of the mouth that faces into the room. */
+const OVEN_MID = { x: -6.42, z: 4.03 };
+const OVEN_RADIUS = 0.56;
+
+/** Stretches a shape's texture coordinates, so a texture wrapped round a curve keeps its scale. */
+function scaleUv(geometry: BufferGeometry, u: number, v: number): BufferGeometry {
+  const uv = geometry.getAttribute("uv");
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * u, uv.getY(i) * v);
+  return geometry;
+}
+
+/** A shape turned round the upright axis, from (radius, height) pairs listed bottom to top. */
+function turned(profile: [number, number][], sides: number): LatheGeometry {
+  return new LatheGeometry(profile.map(([r, y]) => new Vector2(r, y)), sides);
+}
+
+const LOAF: [number, number][] = [[0.07, 0], [0.1, 0.04], [0.06, 0.08], [0.012, 0.095], [0, 0.096]];
+const SACK: [number, number][] = [
+  [0.2, 0], [0.25, 0.12], [0.26, 0.32], [0.22, 0.48], [0.12, 0.56], [0.06, 0.6], [0.08, 0.66], [0.03, 0.7], [0, 0.7],
+];
+
+/**
+ * A baker's corner where the crates stood: a domed brick bread oven with its fire showing in the mouth and
+ * firewood stacked underneath, the table the bread basket sits on, flour sacks and a peel against the wall.
+ * The basket itself stays in props.glb, where it was, so taking bread works as before.
+ */
+export function addBakery(root: Object3D): void {
+  const m = roomMaterials(root);
+  for (const name of BAKERY_REPLACES) root.getObjectByName(name)?.removeFromParent();
+  const brick = { tile: 0.7 };
+  const hearth = m("T_hearth");
+  const soot = m("T_soot");
+  const loaf = flat("T_loaf", 0xb8752f);
+  const flour = flat("T_flour", 0xe9e3d3);
+  const burlap = flat("T_burlap", 0xa88a5c);
+  const twine = flat("T_twine", 0x5e4a2e);
+
+  const { minX, maxX, minZ, maxZ, top } = OVEN;
+  const store = { minX: -6.6, minZ: minZ + 0.25, maxZ: maxZ - 0.25 };
+  const oven = new Piece("Bread_Oven", true)
+    // The plinth, open at the front underneath to keep the firewood dry.
+    .add(box([minX, 0.55, minZ], [maxX, top, maxZ], brick), hearth)
+    .add(box([minX, 0, minZ], [maxX, 0.55, store.minZ], brick), hearth)
+    .add(box([minX, 0, store.maxZ], [maxX, 0.55, maxZ], brick), hearth)
+    .add(box([minX, 0, store.minZ], [store.minX, 0.55, store.maxZ], brick), hearth)
+    .add(box([store.minX, 0, store.minZ], [store.minX + 0.02, 0.55, store.maxZ]), soot)
+    .add(box([store.minX, 0, store.minZ], [maxX, 0.01, store.maxZ]), soot);
+  const logs: [number, number][] = [
+    [-6.48, 0.075], [-6.33, 0.075], [-6.18, 0.075], [-6.03, 0.075],
+    [-6.405, 0.205], [-6.255, 0.205], [-6.105, 0.205],
+    [-6.33, 0.335], [-6.18, 0.335],
+  ];
+  logs.forEach(([x, y], i) => {
+    const shift = ((i * 37) % 7) / 7 - 0.5;
+    oven.add(new CylinderGeometry(0.075, 0.075, 1.15, 6).rotateX(Math.PI / 2).translate(x, y, OVEN_MID.z + shift * 0.1), m("T_bark"));
+  });
+
+  // The dome, with a brick collar round the mouth and a ledge for the peel to rest on.
+  const dome = turned([[OVEN_RADIUS, 0], [0.54, 0.17], [0.48, 0.34], [0.36, 0.48], [0.19, 0.58], [0, 0.62]], 10);
+  oven.add(scaleUv(dome, 4, 1).translate(OVEN_MID.x, top, OVEN_MID.z), hearth);
+  const mouthX = maxX + 0.07;
+  oven
+    .add(box([mouthX - 0.26, top, OVEN_MID.z - 0.3], [mouthX, top + 0.52, OVEN_MID.z + 0.3], brick), hearth)
+    .add(box([maxX - 0.02, top - 0.06, OVEN_MID.z - 0.34], [maxX + 0.18, top + 0.02, OVEN_MID.z + 0.34]), m("T_stone"))
+    .add(box([mouthX - 0.01, top + 0.02, OVEN_MID.z - 0.18], [mouthX + 0.01, top + 0.27, OVEN_MID.z + 0.18]), soot)
+    .add(new CylinderGeometry(0.18, 0.18, 0.02, 8, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).translate(mouthX, top + 0.27, OVEN_MID.z), soot)
+    // The fire glowing at the back of the mouth.
+    .add(box([mouthX + 0.01, top + 0.02, OVEN_MID.z - 0.14], [mouthX + 0.02, top + 0.09, OVEN_MID.z + 0.14]), m("T_flame"))
+    .add(box([mouthX + 0.01, top + 0.09, OVEN_MID.z - 0.06], [mouthX + 0.02, top + 0.14, OVEN_MID.z + 0.08]), m("T_flame"));
+  // The flue, running from the back of the dome up the wall to the beams.
+  oven.add(box([minX + 0.02, top + 0.4, OVEN_MID.z - 0.2], [minX + 0.4, WALL_HEIGHT, OVEN_MID.z + 0.2], brick), hearth);
+  // Fresh loaves cooling on the plinth in front of the dome.
+  for (const [x, z] of [[-6.62, 3.27], [-6.36, 3.24], [-6.1, 3.28]]) {
+    oven.add(turned(LOAF, 7).translate(x, top, z), loaf);
+  }
+  oven.into(root);
+
+  const light = new Object3D();
+  light.name = "Light_Oven";
+  light.position.set(mouthX + 0.45, top + 0.25, OVEN_MID.z);
+  light.userData.light = "oven";
+  root.add(light);
+
+  // The baker's table, with the bread basket at its west end and dough being worked at the east.
+  const table = new Piece("Baker_Table", true)
+    .add(box([-5.7, 0.74, 3.95], [-4.4, 0.8, 4.75], { tile: 0.7 }), m("T_tabletop"))
+    .add(box([-5.66, 0.16, 3.99], [-4.44, 0.2, 4.71], { tile: 0.8 }), m("T_wood"));
+  for (const [x, z] of [[-5.66, 3.99], [-4.52, 3.99], [-5.66, 4.63], [-4.52, 4.63]]) {
+    table.add(box([x, 0, z], [x + 0.08, 0.74, z + 0.08], { swap: true }), m("T_wood"));
+  }
+  table
+    .add(box([-4.82, 0.8, 4.05], [-4.45, 0.803, 4.65]), flour)
+    .add(turned([[0.1, 0], [0.11, 0.03], [0.07, 0.06], [0, 0.065]], 7).translate(-4.62, 0.803, 4.45), flour)
+    .add(new CylinderGeometry(0.03, 0.03, 0.26, 6).rotateZ(Math.PI / 2).translate(-4.63, 0.833, 4.16), m("T_tabletop"))
+    .add(new CylinderGeometry(0.012, 0.012, 0.36, 4).rotateZ(Math.PI / 2).translate(-4.63, 0.833, 4.16), m("T_wood"))
+    .add(scaleUv(turned(SACK, 8), 2, 1).scale(0.8, 0.6, 0.8).translate(-5.05, 0.2, 4.35), burlap)
+    .add(new CylinderGeometry(0.06, 0.06, 0.03, 6).translate(-5.05, 0.2 + 0.6 * 0.6, 4.35), twine);
+  table.into(root);
+
+  // Flour sacks and the baker's peel, against the west wall north of the oven.
+  const corner = new Piece("Bakery_Corner", true);
+  for (const [x, z, height] of [[-6.66, 2.42, 1], [-6.2, 2.32, 0.82]]) {
+    corner
+      .add(scaleUv(turned(SACK, 8), 2, 1).scale(1, height, 1).translate(x, 0, z), burlap)
+      .add(new CylinderGeometry(0.07, 0.07, 0.03, 6).translate(x, 0.6 * height, z), twine);
+  }
+  const lean = 0.22;
+  corner
+    .add(box([-0.012, 0.02, -0.15], [0.012, 0.36, 0.15], { tile: 2 }).rotateZ(lean).translate(-6.62, 0, 2.93), m("T_crate"))
+    .add(new CylinderGeometry(0.022, 0.022, 1.25, 5).translate(0, 0.36 + 0.625, 0).rotateZ(lean).translate(-6.62, 0, 2.93), m("T_wood"));
+  corner.into(root);
 }
 
 /** A brass service bell on a wooden foot, standing at the origin. */

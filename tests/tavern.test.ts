@@ -287,8 +287,16 @@ describe("dawn and endings", () => {
     return t;
   }
 
-  it("charges for an upgrade once and refuses when you cannot afford it", () => {
+  it("sells upgrades during the day, not at dawn", () => {
     const t = atDawn(1);
+    t.gold = 25;
+    expect(t.canBuy("bigpot")).toBe(false);
+    t.nextNight();
+    expect(t.canBuy("bigpot")).toBe(true);
+  });
+
+  it("charges for an upgrade once and refuses when you cannot afford it", () => {
+    const t = new Tavern(SEATS);
     t.gold = 25;
     t.buy("bigpot");
     expect(t.gold).toBe(5);
@@ -300,9 +308,13 @@ describe("dawn and endings", () => {
   });
 
   it("resets the night but keeps money and upgrades", () => {
-    const t = atDawn(1);
+    const t = new Tavern(SEATS);
     t.gold = 40;
     t.buy("cushions");
+    clearNight(t);
+    t.chooseLastCall(0);
+    t.sleep();
+    t.gold = 20;
     t.nextNight();
     expect(t.nightIndex).toBe(1);
     expect(t.phase).toBe("day");
@@ -336,7 +348,15 @@ function playWholeGame(pickChoice: number, tripTime: number): Tavern {
   let roll = 12345;
   t.random = () => (roll = (Math.imul(roll, 1664525) + 1013904223) >>> 0) / 0x100000000;
   const dt = 0.1;
-  const sourceOf: Record<Item, Station> = { ale: "tap", bread: "bread", stew: "pot", cask: "barrel" };
+  const sourceOf: Record<Item, Station> = {
+    ale: "tap",
+    wine: "shelf",
+    mead: "shelf",
+    vodka: "shelf",
+    bread: "bread",
+    stew: "pot",
+    cask: "barrel",
+  };
   const hasWareFor = (order: Item) =>
     order === "ale" ? t.aleReady > 0 || t.pourLeft !== null || t.cleanWare.cup > 0 : t.cleanWare.dish > 0;
 

@@ -110,6 +110,8 @@ export interface OutfitDef {
   colors: string[];
   /** The colours it is put on with, over the model's own. Can set colours it doesn't list, such as the shoes' socks. */
   preset: Record<string, string>;
+  /** Only guests wear it for now: the customise panel doesn't offer it, and a saved look can't have it on. */
+  guestOnly?: boolean;
 }
 
 export interface LookOptions {
@@ -137,6 +139,19 @@ const CLOTH_COLORS = [
   "#e8e0cc", "#b8ad96", "#2b2b2b", "#5b1417", "#8c2020", "#2b3d23", "#3d5a48",
   "#24345a", "#2f5590", "#6a4a8a", "#8a7a3e", "#4c3c2b", "#3d2314", "#7d6c55",
 ];
+
+/** Colours of the pirate's rig that both bodies have. */
+function pirateColors(): ColorDef[] {
+  const dye = (id: string, label: string, material: string): ColorDef =>
+    ({ id, label, tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", material]] });
+  return [
+    dye("sash", "Sash", "T_sash"),
+    dye("breeches", "Breeches", "T_breeches"),
+    dye("boots", "Boots", "T_boot"),
+    dye("hat", "Hat", "T_hat"),
+    dye("braid", "Braid", "T_braid"),
+  ];
+}
 
 /**
  * Joints, measured on the models: the female's knee is 0.33 below the hip joint and her ankle about 0.35
@@ -311,6 +326,9 @@ const FEMALE_COLORS: ColorDef[] = [
   { id: "drapes", label: "Drapes", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_drape"]] },
   { id: "jewels", label: "Jewellery", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_jewel"]] },
   { id: "gems", label: "Gems", tab: "clothes", mode: "dye", palette: GEM_COLORS, parts: [["Cloth", "T_gem"]] },
+  // The pirate's rig. Her corset is the bodice, her shirt the blouse, and her belt and corset laces the belt.
+  ...pirateColors(),
+  { id: "feather", label: "Feather", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_plume"]] },
 ];
 
 const FEMALE_OUTFITS: OutfitDef[] = [
@@ -337,6 +355,15 @@ const FEMALE_OUTFITS: OutfitDef[] = [
       gems: "#3aa6d6", shoes: "#9a7430", stockings: "#9a7430", smalls: "#b8892e",
     },
   },
+  {
+    // A cream shirt, an oxblood corset under a red sash, brown breeches, black boots, and a cocked hat with a white feather.
+    id: "pirate", label: "Pirate", mesh: "Pirate", guestOnly: true,
+    colors: ["hat", "braid", "feather", "blouse", "bodice", "sash", "belt", "breeches", "boots", "shoes", "smalls"],
+    preset: {
+      hat: "#1c1716", braid: "#c99a3a", feather: "#efebe2", blouse: "#ece4d2", bodice: "#5b1417", sash: "#9a2420",
+      belt: "#3d2314", breeches: "#4c3c2b", boots: "#221a15", shoes: "#221a15", stockings: "#221a15",
+    },
+  },
 ];
 
 const MALE_COLORS: ColorDef[] = [
@@ -351,10 +378,14 @@ const MALE_COLORS: ColorDef[] = [
     parts: [["Hair", "T_hair_m"], ["Hair", "T_hair_m_warm"], ["Body", "T_hair_m"]],
   },
   { id: "tunic", label: "Tunic", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_tunic"]] },
+  { id: "shirt", label: "Shirt", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_linen"]] },
+  { id: "waistcoat", label: "Waistcoat", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_waistcoat"]] },
   { id: "trousers", label: "Trousers", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_trousers"]] },
   { id: "belt", label: "Belt", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_leather"]] },
-  { id: "boots", label: "Boots", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Shoes", "T_leather"]] },
+  // His shoes, and the pirate's tall boots over them.
+  { id: "boots", label: "Boots", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Shoes", "T_leather"], ["Cloth", "T_boot"]] },
   { id: "smalls", label: "Smallclothes", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Body", "T_smalls"]] },
+  ...pirateColors().filter((def) => def.id !== "boots"),
 ];
 
 export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
@@ -385,6 +416,15 @@ export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
     ],
     outfits: [
       { id: "tunic", label: "Tunic", mesh: "", colors: ["tunic", "trousers", "belt", "boots", "smalls"], preset: {} },
+      {
+        // A cream shirt under a navy waistcoat, a red sash, brown breeches, black boots and a cocked hat.
+        id: "pirate", label: "Pirate", mesh: "Pirate", guestOnly: true,
+        colors: ["hat", "braid", "shirt", "waistcoat", "sash", "breeches", "boots", "smalls"],
+        preset: {
+          hat: "#1c1716", braid: "#c99a3a", shirt: "#ece4d2", waistcoat: "#24345a", sash: "#9a2420",
+          breeches: "#4c3c2b", boots: "#221a15",
+        },
+      },
     ],
   },
 };
@@ -564,11 +604,43 @@ export function hairMeshFor(body: BodyName, look: Pick<Look, "hairstyle">): stri
   return (styles.find((style) => style.id === look.hairstyle) ?? styles[0]).mesh;
 }
 
+/** The outfits a player can choose: all but those only guests wear for now. */
+export function playerOutfits(body: BodyName): OutfitDef[] {
+  return LOOK_OPTIONS[body].outfits.filter((outfit) => !outfit.guestOnly);
+}
+
+/** How many ways a guest's pirate rig can be coloured. */
+export const PIRATE_LOOKS = 4;
+
+/** Colours over the pirate preset, so a crew of them don't all look alike. The first is the preset itself. */
+const PIRATE_VARIANTS: Record<BodyName, Record<string, string>[]> = {
+  Male: [
+    {},
+    { waistcoat: "#5b1417", sash: "#2b3d23" },
+    { waistcoat: "#2b2b2b", sash: "#8a7a3e", breeches: "#7d6c55" },
+    { waistcoat: "#4c3c2b", sash: "#24345a", shirt: "#b8ad96", hat: "#3d2314" },
+  ],
+  Female: [
+    {},
+    { bodice: "#1c1c22", sash: "#24345a", feather: "#8c2020" },
+    { bodice: "#3d2314", sash: "#2b3d23", breeches: "#7d6c55" },
+    { bodice: "#24345a", sash: "#8a7a3e", feather: "#e3cf9c", blouse: "#b8ad96" },
+  ],
+};
+
+/** The colours a guest's pirate rig is put on with: its preset, changed by one of the variants. */
+export function pirateGuestColors(body: BodyName, variant: number): Record<string, string> {
+  const pirate = LOOK_OPTIONS[body].outfits.find((outfit) => outfit.id === "pirate")!;
+  const index = ((variant % PIRATE_LOOKS) + PIRATE_LOOKS) % PIRATE_LOOKS;
+  return { ...pirate.preset, ...PIRATE_VARIANTS[body][index] };
+}
+
 /**
  * Recolours a model's materials for these colours, leaving its shape alone, and shows only its own hair.
- * For guests, which share their meshes.
+ * For guests, which share their meshes. They wear the character's own outfit unless another is named.
  */
-export function dressColors(model: Object3D, body: BodyName, colors: Record<string, string>): void {
+export function dressColors(model: Object3D, body: BodyName, colors: Record<string, string>, outfit?: string): void {
+  const worn = outfitOf(body, { outfit }).mesh;
   const slots: { mesh: SkinnedMesh; part: MeshPart; original: Material }[] = [];
   model.traverse((object) => {
     if (!(object instanceof SkinnedMesh) || Array.isArray(object.material)) return;
@@ -579,8 +651,8 @@ export function dressColors(model: Object3D, body: BodyName, colors: Record<stri
   for (const slot of slots) {
     slot.mesh.material = materialFor(body, slot.part, slot.original, colors, originals);
     if (slot.part === "Hair") slot.mesh.visible = hairMeshOf(slot.mesh, body) === "";
-    // Guests wear the character's own outfit; the others' meshes stay hidden.
-    if (slot.part === "Cloth") slot.mesh.visible = outfitMeshOf(slot.mesh, body) === "";
+    // Only the outfit they wear shows; the others' meshes stay hidden.
+    if (slot.part === "Cloth") slot.mesh.visible = outfitMeshOf(slot.mesh, body) === worn;
   }
 }
 
@@ -1054,7 +1126,7 @@ export function randomLook(body: BodyName, random: () => number = Math.random): 
   for (const piece of options.pieces) if (random() < 0.3) look.hidden.push(piece.id);
   const style = pick(options.hairstyles);
   if (style !== options.hairstyles[0]) look.hairstyle = style.id;
-  const outfit = pick(options.outfits);
+  const outfit = pick(playerOutfits(body));
   if (outfit !== options.outfits[0]) look.outfit = outfit.id;
   return look;
 }
@@ -1086,7 +1158,7 @@ export function readLook(raw: unknown, body: BodyName): Look | null {
   }
   // The character's own style is the default, so it is left out rather than stored.
   if (options.hairstyles.slice(1).some((style) => style.id === data.hairstyle)) look.hairstyle = data.hairstyle;
-  if (options.outfits.slice(1).some((outfit) => outfit.id === data.outfit)) look.outfit = data.outfit;
+  if (playerOutfits(body).slice(1).some((outfit) => outfit.id === data.outfit)) look.outfit = data.outfit;
   return look;
 }
 

@@ -9,7 +9,7 @@ import {
 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { Soundscape } from "./game/audio";
-import { addBedroom, addBin, addFrontDoorway, addWashTub, BEDROOM_FROM_X, BEDROOM_SOUTH_Z, BEDROOM_VIEW } from "./game/furnishings";
+import { addBakery, addBedroom, addBin, addFrontDoorway, addWashTub, BEDROOM_FROM_X, BEDROOM_SOUTH_Z, BEDROOM_VIEW } from "./game/furnishings";
 import { Game, WHOLE_PIECES } from "./game/game";
 import { claimFurniture } from "./game/houseview";
 import { Input } from "./game/input";
@@ -26,6 +26,13 @@ const SHADOW_UPDATE_INTERVAL = 0.1;
 
 async function start(): Promise<void> {
   const status = document.getElementById("status")!;
+
+  // Right-click belongs to the game, not the browser's menu. Text boxes keep it, for copy and paste.
+  window.addEventListener("contextmenu", (event) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("input, textarea, [contenteditable='true']")) return;
+    event.preventDefault();
+  });
 
   const renderer = new WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
   renderer.shadowMap.enabled = true;
@@ -62,6 +69,7 @@ async function start(): Promise<void> {
   addBedroom(worldFile.scene);
   addBin(worldFile.scene);
   addWashTub(worldFile.scene);
+  addBakery(worldFile.scene);
   addFrontDoorway(worldFile.scene);
   const claimed = claimFurniture(worldFile.scene);
   const world = setupWorld(worldFile.scene, [...WHOLE_PIECES, ...claimed.whole]);
@@ -76,7 +84,6 @@ async function start(): Promise<void> {
     props: propsFile.scene,
     furniture: claimed.defaults,
   }, camera, renderer, clock, audio);
-  (window as unknown as { __touchTest: unknown }).__touchTest = game; // TEMP touch test hook
 
   const focus = new Vector3();
   const updateCameraTarget = () => {

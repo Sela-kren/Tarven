@@ -1,17 +1,19 @@
 import {
   AmbientLight,
-  BoxGeometry,
+  BufferAttribute,
+  BufferGeometry,
   Color,
-  CylinderGeometry,
   DirectionalLight,
   Group,
   HemisphereLight,
   MathUtils,
+  Matrix4,
   Mesh,
-  MeshStandardMaterial,
   Object3D,
   PerspectiveCamera,
+  Quaternion,
   Scene,
+  SkinnedMesh,
   Vector3,
   WebGLRenderer,
   WebGLRenderTarget,
@@ -50,53 +52,95 @@ const T = {
   end: 3.25,
 } as const;
 
-/** How the panel frames her: on the face, the chest and arms, or the hips. */
-type Framing = "head" | "torso" | "hips";
-const FRAMING: Record<TouchRegion, Framing> = {
-  hand: "torso",
-  face: "head",
-  hair: "head",
-  shoulder: "torso",
-  waist: "hips",
-  rear: "hips",
-  chest: "torso",
-  lap: "hips",
-  lips: "head",
-  neck: "head",
-  thigh: "hips",
-  clothes: "torso",
-  invite: "head",
-};
-/** How far back the camera stands for each framing, in model units. */
-const DISTANCE: Record<Framing, number> = { head: 1.3, torso: 2.0, hips: 1.9 };
+/** How she stands to the camera: facing it (angled toward the guest), side on, or with her back to it. */
+type View = "front" | "profile" | "behind";
+const TURN: Record<View, number> = { front: Math.PI - 0.5, profile: Math.PI - 1.15, behind: 0.3 };
 
 /**
- * Where each touch lands: a bone, and an offset from it in the model's own space, where the front is -Z, so
- * the point sits on the skin rather than inside the body.
+ * What the guest's hand does once it's there: rests, holds on, strokes across or up, smacks, squeezes, presses
+ * in (a kiss, a coin), taps, or tugs at something. "none" is a touch with no hand in it, such as a long look.
  */
-const CONTACT: Record<TouchRegion, { bone: string; offset: [number, number, number] }> = {
-  hand: { bone: "ForeArm_R", offset: [0, -0.3, -0.02] },
-  face: { bone: "Head", offset: [-0.07, 0.12, -0.07] },
-  hair: { bone: "Head", offset: [-0.09, 0.2, 0] },
-  shoulder: { bone: "UpperArm_R", offset: [0, 0.02, 0] },
-  waist: { bone: "Hips", offset: [-0.14, 0.12, -0.04] },
-  rear: { bone: "Hips", offset: [-0.02, -0.08, 0.15] },
-  chest: { bone: "Torso", offset: [-0.06, 0.26, -0.14] },
-  lap: { bone: "Thigh_R", offset: [0, -0.12, -0.1] },
-  lips: { bone: "Head", offset: [0, 0.075, -0.13] },
-  neck: { bone: "Head", offset: [-0.06, 0.0, -0.04] },
-  thigh: { bone: "Thigh_R", offset: [-0.04, -0.15, -0.09] },
-  clothes: { bone: "Torso", offset: [-0.08, 0.1, -0.13] },
-  invite: { bone: "Head", offset: [-0.1, 0.06, -0.16] },
+type Gesture = "rest" | "hold" | "stroke" | "strokeUp" | "smack" | "squeeze" | "press" | "tap" | "tug" | "none";
+
+/**
+ * The shot for a touch: where it lands (a bone, and an offset from it in the model's own space, where the
+ * front is -Z, so the point sits on the skin rather than inside the body), how close the camera comes, how
+ * she stands to it, and what the hand does. The camera centres on where it lands, so the panel is about
+ * that and nothing else.
+ */
+interface Shot {
+  bone: string;
+  offset: [number, number, number];
+  /** How far back the camera stands, in model units. */
+  distance: number;
+  view: View;
+  gesture: Gesture;
+  /**
+   * On the side of her face: the hand cups her cheek and jaw with its fingers pointing up, and the camera
+   * centres on her face rather than the hand, so the player sees how she takes it.
+   */
+  sideOfFace?: boolean;
+}
+
+/** The side of her face the hand comes from, cheek to jaw, from the head bone: clear of her eyes and mouth. */
+const SIDE_OF_FACE: [number, number, number] = [-0.1, 0.05, 0];
+/** Where the middle of her face is, from the head bone. */
+const MIDDLE_OF_FACE = new Vector3(0, 0.1, -0.08);
+
+/** The usual shot for each place a touch can land. */
+const SHOTS: Record<TouchRegion, Shot> = {
+  hand: { bone: "ForeArm_R", offset: [0, -0.3, -0.02], distance: 0.8, view: "front", gesture: "hold" },
+  face: { bone: "Head", offset: SIDE_OF_FACE, distance: 0.75, view: "front", gesture: "stroke", sideOfFace: true },
+  hair: { bone: "Head", offset: [-0.09, 0.2, 0], distance: 0.8, view: "front", gesture: "stroke" },
+  shoulder: { bone: "UpperArm_R", offset: [0, 0.02, 0], distance: 1.0, view: "front", gesture: "hold" },
+  waist: { bone: "Hips", offset: [-0.14, 0.12, -0.04], distance: 1.05, view: "front", gesture: "hold" },
+  rear: { bone: "Glute_L", offset: [0, -0.07, 0.07], distance: 0.95, view: "behind", gesture: "squeeze" },
+  chest: { bone: "Torso", offset: [-0.06, 0.17, -0.16], distance: 0.85, view: "front", gesture: "squeeze" },
+  lap: { bone: "Thigh_R", offset: [0, -0.12, -0.1], distance: 1.1, view: "front", gesture: "hold" },
+  lips: { bone: "Head", offset: [0, 0.075, -0.13], distance: 0.6, view: "front", gesture: "press" },
+  neck: { bone: "Head", offset: [-0.06, 0.0, -0.04], distance: 0.75, view: "profile", gesture: "stroke" },
+  thigh: { bone: "Thigh_R", offset: [-0.04, -0.15, -0.09], distance: 1.15, view: "front", gesture: "rest" },
+  clothes: { bone: "Torso", offset: [-0.08, 0.1, -0.13], distance: 1.0, view: "front", gesture: "tug" },
+  invite: { bone: "Head", offset: SIDE_OF_FACE, distance: 0.9, view: "front", gesture: "hold", sideOfFace: true },
 };
+
+/** Touches that need a shot of their own, by id: only what differs from their region's. */
+const SHOT_BY_TOUCH: Record<string, Partial<Shot>> = {
+  fingers: { gesture: "rest" },
+  gaze: { offset: [0, 0.12, -0.1], distance: 0.65, gesture: "none" },
+  crumb: { gesture: "stroke" },
+  nose: { offset: [0, 0.11, -0.12], distance: 0.6, gesture: "tap", sideOfFace: false },
+  collar: { bone: "Torso", offset: [-0.02, 0.36, -0.1], distance: 0.8, gesture: "stroke" },
+  whisper: { offset: [-0.08, 0.12, 0], gesture: "none" },
+  lowBack: { offset: [-0.05, 0.18, 0.12], view: "behind", gesture: "stroke" },
+  smack: { gesture: "smack" },
+  kissHand: { gesture: "press" },
+  chin: { offset: [0, 0.02, -0.09], distance: 0.7, gesture: "hold" },
+  cheekKiss: { gesture: "press" },
+  lock: { gesture: "tug" },
+  hip: { offset: [-0.17, 0, -0.02], gesture: "stroke" },
+  nuzzle: { gesture: "press" },
+  coin: { offset: [0, 0.33, -0.14], distance: 0.75, gesture: "press" },
+  neckKiss: { gesture: "press" },
+  thighUp: { gesture: "strokeUp" },
+  roam: { gesture: "stroke" },
+  grab: { gesture: "squeeze" },
+  // A kiss: the guest's face isn't in the panel, so their hand cups her jaw and her lips stay in view.
+  kiss: { offset: SIDE_OF_FACE, distance: 0.7, gesture: "hold", sideOfFace: true },
+  stolenKiss: { offset: SIDE_OF_FACE, distance: 0.7, gesture: "hold", sideOfFace: true },
+  deepKiss: { offset: SIDE_OF_FACE, distance: 0.7, gesture: "hold", sideOfFace: true },
+  bothHands: { gesture: "squeeze" },
+};
+
+function shotFor(id: string, region: TouchRegion): Shot {
+  return { ...SHOTS[region], ...SHOT_BY_TOUCH[id] };
+}
+
 /** The soft part a touch sets bouncing, if any. */
 const SOFT: Partial<Record<TouchRegion, string[]>> = { rear: ["Glute_L", "Glute_R"], chest: ["Bust"], lap: ["Glute_L", "Glute_R", "Bust"] };
 /** Springs for the panel's own copy of the soft parts: only kicks move them. */
 const SPRING = { frequency: 2.3, damping: 0.16, gain: 0, axes: [0.35, 1, 0.35] as const, limit: 0.03 };
 
-/** Sleeves the hand comes out of, by who's reaching. */
-const SLEEVE: Record<GuestKind, number> = { farmer: 0x7a5a36, soldier: 0x8c2a22, smuggler: 0x2c2a30, fugitive: 0x5a5e66 };
-const SKIN = 0xd29a76;
 
 /** The sounds lettered over the panel. */
 interface Lettering {
@@ -115,31 +159,132 @@ function span(t: number, from: number, to: number): number {
 
 const ease = (t: number) => MathUtils.smootherstep(t, 0, 1);
 
-/** A plain blocky hand coming out of a sleeve, fingers along +Z so it can be pointed at what it reaches for. */
-function makeHand(sleeve: number): { hand: Group; fingers: Group } {
-  const skin = new MeshStandardMaterial({ color: SKIN, roughness: 0.85 });
-  const cloth = new MeshStandardMaterial({ color: sleeve, roughness: 0.95 });
-  const hand = new Group();
-  const palm = new Mesh(new BoxGeometry(0.1, 0.035, 0.1), skin);
-  hand.add(palm);
-  const fingers = new Group();
-  fingers.position.z = 0.045;
-  for (let i = 0; i < 4; i++) {
-    const finger = new Mesh(new BoxGeometry(0.021, 0.022, 0.075), skin);
-    finger.position.set(-0.036 + i * 0.024, 0, 0.035);
-    fingers.add(finger);
-  }
-  hand.add(fingers);
-  const thumb = new Mesh(new BoxGeometry(0.02, 0.022, 0.05), skin);
-  thumb.position.set(0.05, 0, 0.01);
-  thumb.rotation.y = -0.6;
-  hand.add(thumb);
-  // Just a cuff and a little forearm: the rest of the arm is off the panel.
-  const cuff = new Mesh(new CylinderGeometry(0.038, 0.045, 0.26, 8), cloth);
-  cuff.rotation.x = Math.PI / 2;
-  cuff.position.z = -0.18;
-  hand.add(cuff);
-  return { hand, fingers };
+/** How much of a vertex has to move with the arm for it to count as part of the arm. */
+const ARM_WEIGHT = 0.5;
+/** Which way the palm faces in the forearm's own space, with the arm hanging down its -Y. */
+const PALM = new Vector3(1, 0, 0);
+/** How far the fingers dip into her, so the wrist and forearm rise off her rather than lying along her. */
+const WRIST_LIFT = 0.4;
+
+/** How long the fingers are, from the knuckles, in metres: what bends when the hand closes. */
+const FINGER = 0.085;
+/** How far closed fingers bend in all, in radians, from knuckle to tip. */
+const CURL = 1.7;
+/** How big a guest's hand is next to hers. */
+const HAND_TO_HERS = 1.15;
+
+/**
+ * A guest's right arm, cut out of their own model as it stands: every triangle that moves with the upper arm
+ * or forearm, skin and sleeve alike, at its true size, in the forearm bone's own space with the hand toward
+ * -Y. It can close its fingers (`curl`), bending everything past the knuckles toward the palm.
+ */
+export interface Arm {
+  group: Group;
+  /** Where the palm is, in the arm's own space. */
+  palm: Vector3;
+  /** Closes the fingers, from 0 (open) to 1 (a fist). */
+  curl(amount: number): void;
+}
+
+export function cutArm(model: Object3D, name: string): Arm {
+  const fore = model.getObjectByName(`${name}_ForeArm_R`);
+  const upper = model.getObjectByName(`${name}_UpperArm_R`);
+  const group = new Group();
+  const none: Arm = { group, palm: new Vector3(0, -0.25, 0), curl: () => {} };
+  if (!fore || !upper) return none;
+  model.updateMatrixWorld(true);
+  const toArm = fore.matrixWorld.clone().invert();
+  const v = new Vector3();
+  const parts: { geometry: BufferGeometry; rest: Float32Array }[] = [];
+  const handPoints: Vector3[] = [];
+  model.traverse((object) => {
+    if (!(object instanceof SkinnedMesh) || !object.visible) return;
+    const geometry = object.geometry;
+    const position = geometry.getAttribute("position");
+    const indices = geometry.getAttribute("skinIndex");
+    const weights = geometry.getAttribute("skinWeight");
+    const bones = object.skeleton.bones;
+    const foreIndex = bones.indexOf(fore as never);
+    const upperIndex = bones.indexOf(upper as never);
+    if (foreIndex < 0 || !indices || !weights) return;
+    object.skeleton.update();
+    const weightOf = (i: number, wanted: number[]) => {
+      let w = 0;
+      for (let k = 0; k < 4; k++) if (wanted.includes(indices.getComponent(i, k))) w += weights.getComponent(i, k);
+      return w;
+    };
+    const index = geometry.getIndex();
+    const triangles = index ? index.count / 3 : position.count / 3;
+    const vertexAt = (t: number, c: number) => (index ? index.getX(t * 3 + c) : t * 3 + c);
+    const arm = [foreIndex, upperIndex];
+    // Keep each shared vertex once, so the cut stays smooth-shaded.
+    const renumber = new Map<number, number>();
+    const kept: number[] = [];
+    for (let t = 0; t < triangles; t++) {
+      const corners = [vertexAt(t, 0), vertexAt(t, 1), vertexAt(t, 2)];
+      if (!corners.every((c) => weightOf(c, arm) >= ARM_WEIGHT)) continue;
+      for (const c of corners) {
+        if (!renumber.has(c)) renumber.set(c, renumber.size);
+        kept.push(renumber.get(c)!);
+      }
+    }
+    if (kept.length === 0) return;
+    const positions = new Float32Array(renumber.size * 3);
+    const uv = geometry.getAttribute("uv");
+    const uvs = uv ? new Float32Array(renumber.size * 2) : null;
+    for (const [old, i] of renumber) {
+      // Where the vertex is now, posed, then in the forearm's own space.
+      object.applyBoneTransform(old, v.fromBufferAttribute(position, old));
+      v.applyMatrix4(object.matrixWorld).applyMatrix4(toArm);
+      positions.set([v.x, v.y, v.z], i * 3);
+      if (weightOf(old, [foreIndex]) >= 0.6) handPoints.push(v.clone());
+      if (uv && uvs) uvs.set([uv.getX(old), uv.getY(old)], i * 2);
+    }
+    const cut = new BufferGeometry();
+    cut.setAttribute("position", new BufferAttribute(positions, 3));
+    if (uvs) cut.setAttribute("uv", new BufferAttribute(uvs, 2));
+    cut.setIndex(kept);
+    cut.computeVertexNormals();
+    parts.push({ geometry: cut, rest: positions.slice() });
+    group.add(new Mesh(cut, object.material));
+  });
+  if (handPoints.length === 0) return none;
+
+  // The fingertips are the far end of the forearm; the knuckles a finger's length back; the palm just behind.
+  const tips = Math.min(...handPoints.map((p) => p.y));
+  const knuckles = tips + FINGER;
+  const palmPoints = handPoints.filter((p) => p.y < knuckles + FINGER * 0.9 && p.y >= knuckles);
+  const palm = palmPoints.reduce((sum, p) => sum.add(p), new Vector3()).divideScalar(Math.max(1, palmPoints.length));
+  const pivotX = palm.x;
+
+  let shown = -1;
+  const curl = (amount: number) => {
+    if (Math.abs(amount - shown) < 0.01) return;
+    shown = amount;
+    for (const { geometry, rest } of parts) {
+      const position = geometry.getAttribute("position") as BufferAttribute;
+      const out = position.array as Float32Array;
+      for (let i = 0; i < rest.length; i += 3) {
+        const x = rest[i];
+        const y = rest[i + 1];
+        const past = knuckles - y;
+        if (past <= 0) {
+          out[i] = x;
+          out[i + 1] = y;
+          continue;
+        }
+        // Bends more the further past the knuckles, toward the palm (+X), like fingers closing.
+        const angle = amount * CURL * Math.min(1, past / FINGER);
+        const dx = x - pivotX;
+        const dy = y - knuckles;
+        out[i] = pivotX + dx * Math.cos(angle) - dy * Math.sin(angle);
+        out[i + 1] = knuckles + dx * Math.sin(angle) + dy * Math.cos(angle);
+      }
+      position.needsUpdate = true;
+      geometry.computeVertexNormals();
+    }
+  };
+  return { group, palm, curl };
 }
 
 export interface TouchShow {
@@ -163,11 +308,20 @@ export class TouchComic {
 
   private model: Object3D | null = null;
   private bones: { torso: Object3D; head: Object3D; upper: Object3D; fore: Object3D } | null = null;
+  /** The guest's arm reaching in, and where its palm is in its own space. */
   private hand: Group | null = null;
-  private fingers: Group | null = null;
+  private palm = new Vector3();
+  /** Each kind of guest's arm, cut once from their model and kept. */
+  private readonly arms = new Map<GuestKind, Arm>();
+  /** The arm showing, to close its fingers. */
+  private arm: Arm | null = null;
+  /** Which way is out of her at the touch, so the palm can lie on her. */
+  private readonly normal = new Vector3();
   private jiggles: Jiggle[] = [];
   private show: TouchShow | null = null;
   private turn = 0;
+  /** The shot for the touch showing. */
+  private shot: Shot = SHOTS.hand;
   private readonly contact = new Vector3();
   private readonly start = new Vector3();
   /** Where her cheeks are, for the blush, in the panel scene. */
@@ -185,6 +339,8 @@ export class TouchComic {
   constructor(
     private readonly renderer: WebGLRenderer,
     private readonly sound: (effect: Effect) => void,
+    /** A male guest of this kind, dressed for it, whose arm reaches in. */
+    private readonly guestModel: (kind: GuestKind) => Object3D,
   ) {
     this.canvas.width = WIDTH;
     this.canvas.height = HEIGHT;
@@ -222,8 +378,11 @@ export class TouchComic {
     this.clear();
     const model = cloneSkinned(body);
     model.position.set(0, 0, 0);
-    // Facing the camera, angled toward the guest on the panel's left; for the backside, turned away, looking back.
-    this.turn = show.region === "rear" ? 0.65 : Math.PI - 0.5;
+    const shot = shotFor(show.id, show.region);
+    this.shot = shot;
+    // Facing the camera angled toward the guest on the panel's left, side on, or turned away so the hand coming
+    // in from the left lands on the near side.
+    this.turn = TURN[shot.view];
     model.rotation.set(0, this.turn, 0);
     model.visible = true;
     const part = (label: string) => model.getObjectByName(`${name}_${label}`);
@@ -231,7 +390,7 @@ export class TouchComic {
     const head = part("Head");
     const upper = part("UpperArm_R");
     const fore = part("ForeArm_R");
-    const anchor = part(CONTACT[show.region].bone) ?? torso;
+    const anchor = part(shot.bone) ?? torso;
     if (!torso || !head || !upper || !fore || !anchor) return;
     this.scene.add(model);
     this.model = model;
@@ -247,27 +406,56 @@ export class TouchComic {
     this.scale = scale;
     // Where the hand lands, on the skin.
     const local = model.worldToLocal(anchor.getWorldPosition(new Vector3()));
-    const [x, y, z] = CONTACT[show.region].offset;
+    const [x, y, z] = shot.offset;
     this.contact.copy(model.localToWorld(local.add(new Vector3(x, y, z))));
 
-    // Frame on the face, the chest, or the hips, with room on the left for the hand to come in.
-    const framing = FRAMING[show.region];
-    const focus = new Vector3();
-    if (framing === "head") head.getWorldPosition(focus).add(new Vector3(0, 0.08 * scale, 0));
-    else if (framing === "torso") torso.getWorldPosition(focus).add(new Vector3(0, 0.12 * scale, 0));
-    else (part("Hips") ?? torso).getWorldPosition(focus).add(new Vector3(0, -0.04 * scale, 0));
-    const look = focus.clone().lerp(this.contact, 0.35).add(new Vector3(-0.06 * scale, 0, 0));
-    this.camera.position.set(look.x + 0.2 * scale, look.y + 0.02 * scale, look.z + DISTANCE[framing] * scale);
+    // Centre on where it lands, close in, with it a little right of the middle so the hand has room to come in;
+    // on her face, centre on her face, so her look is what's seen.
+    const d = shot.distance * scale;
+    const look = this.contact.clone().add(new Vector3(-0.12 * d, 0, 0));
+    if (shot.sideOfFace) {
+      const face = model.localToWorld(model.worldToLocal(head.getWorldPosition(new Vector3())).add(MIDDLE_OF_FACE));
+      look.copy(face).lerp(this.contact, 0.25);
+    }
+    this.camera.position.set(look.x + 0.15 * d, look.y + 0.04 * d, look.z + d);
     this.camera.lookAt(look);
-    this.glowAt.copy(focus);
+    this.glowAt.copy(this.contact);
 
-    // The hand comes from off the panel's left, a little low and nearer the camera.
-    this.start.copy(this.contact).add(new Vector3(-0.85 * scale, -0.2 * scale, 0.35 * scale));
-    const { hand, fingers } = makeHand(SLEEVE[show.kind]);
-    hand.scale.setScalar(scale);
+    // Out of her at the touch: away from the bone it's on, and a little toward the camera, so the back of the
+    // hand is what's seen. On her face, out from the middle of her head and barely toward the camera, so the
+    // hand cups her cheek from the side and its arm stays out to the side, clear of her face and neck.
+    const centre = shot.sideOfFace
+      ? model.localToWorld(model.worldToLocal(head.getWorldPosition(new Vector3())).add(new Vector3(0, 0.08, 0)))
+      : anchor.getWorldPosition(new Vector3());
+    this.normal
+      .copy(this.contact)
+      .sub(centre)
+      .setY(shot.sideOfFace ? 0 : this.contact.y - centre.y)
+      .normalize()
+      .addScaledVector(this.camera.position.clone().sub(this.contact).normalize(), shot.sideOfFace ? 0.25 : 0.6)
+      .normalize();
+
+    // The hand comes from off the panel's left, a little low and nearer the camera; to her face, up from below
+    // on that side, so it never crosses in front of her.
+    if (shot.sideOfFace) this.start.copy(this.contact).addScaledVector(this.normal, 0.6 * d).add(new Vector3(0, -0.6 * d, 0));
+    else this.start.copy(this.contact).add(new Vector3(-0.95 * d, -0.22 * d, 0.3 * d));
+    let cut = this.arms.get(show.kind);
+    if (!cut) {
+      cut = cutArm(this.guestModel(show.kind), "Male");
+      this.arms.set(show.kind, cut);
+    }
+    const hand = cut.group;
+    this.arm = cut;
+    this.palm.copy(cut.palm);
+    cut.curl(0);
+    // Sized to her: a man's hand a little bigger than her own, however the sliders have made her.
+    const hers = Math.abs(cutArm(model, name).palm.y);
+    const his = Math.abs(cut.palm.y);
+    const fit = hers > 0 && his > 0 ? MathUtils.clamp((HAND_TO_HERS * hers) / his, 0.4, 1) : 1;
+    hand.scale.setScalar(scale * fit);
+    hand.visible = shot.gesture !== "none";
     this.scene.add(hand);
     this.hand = hand;
-    this.fingers = fingers;
 
     this.makeLetters(show);
     this.time = 0;
@@ -309,7 +497,7 @@ export class TouchComic {
     this.model = null;
     this.bones = null;
     this.hand = null;
-    this.fingers = null;
+    this.arm = null;
     this.jiggles = [];
     for (const { el } of this.letters) el.remove();
     this.letters = [];
@@ -328,8 +516,22 @@ export class TouchComic {
     switch (show.answer) {
       case "allow":
       case "lean": {
-        const hit = show.id === "smack" ? "SMACK!" : show.region === "rear" || show.region === "chest" ? "squeeze" : show.region === "lips" ? "mwah" : show.region === "clothes" ? "tug!" : "touch";
-        letter(hit, "hit", after, after + 0.9);
+        const kiss = show.region === "lips" || show.region === "neck" || show.region === "face";
+        const words: Record<Gesture, string> = {
+          rest: "...",
+          hold: "hold",
+          stroke: "stroke~",
+          strokeUp: "slide~",
+          smack: "SMACK!",
+          squeeze: "squeeze",
+          press: kiss ? "mwah" : "press",
+          tap: "boop!",
+          tug: "tug!",
+          none: "...",
+        };
+        // A kiss is a kiss, whatever the guest's hand is doing meanwhile.
+        const word = show.region === "lips" && show.id !== "feed" ? "mwah" : words[this.shot.gesture];
+        letter(word, "hit", after, after + 0.9);
         letter(show.answer === "lean" ? "mmh~" : "eep!", "voice", after + 0.35, T.popOut);
         if (show.answer === "lean") letter("♥", "heart", after + 0.6, T.popOut);
         break;
@@ -398,8 +600,10 @@ export class TouchComic {
     bones.head.rotation.set(headX, headY, headZ);
     bones.upper.rotation.set(upper, 0, across);
     bones.fore.rotation.set(elbow, 0, 0);
-    // Pulling away also sways the whole of her back from the hand.
-    model.rotation.y = this.turn + (answer === "pull" ? ease(span(t, T.swing, T.contact)) * fade * 0.4 : 0);
+    // Pulling away also turns the whole of her from the hand and steps her clear of it.
+    const clear = answer === "pull" ? ease(span(t, T.swing, T.contact)) * fade : 0;
+    model.rotation.y = this.turn + clear * 0.6;
+    model.position.x = clear * 0.16 * this.scale;
     model.updateMatrixWorld(true);
     this.poseHand(t, answer);
 
@@ -412,35 +616,122 @@ export class TouchComic {
     this.faceShowing = facing.dot(this.camera.position.clone().sub(this.cheeks[0])) > 0;
   }
 
-  /** The guest's hand: in from the side, then on her, knocked away, or grabbing at nothing. */
+  /**
+   * The guest's arm: in from the side pointing the way it reaches, then turning so the palm lies on her with the
+   * fingers along her and the wrist lifted, and doing what this touch does (resting, holding, stroking,
+   * smacking, squeezing, pressing, tapping or tugging); or knocked away, or grabbing at nothing.
+   */
   private poseHand(t: number, answer: TouchAnswer): void {
-    const { hand, fingers } = this;
-    if (!hand || !fingers) return;
+    const { hand } = this;
+    if (!hand) return;
     const scale = hand.scale.x;
-    const into = ease(span(t, T.reachFrom, T.contact));
+    const gesture = this.shot.gesture;
+    const took = answer === "allow" || answer === "lean";
+    const n = this.normal;
+    // A palm sits just off the skin; a tap or a press lands on the fingertips.
+    const tips = gesture === "tap" || gesture === "press";
+    const target = this.contact.clone().addScaledVector(n, (tips ? 0.03 : 0.015) * scale);
+
+    let into = ease(span(t, T.reachFrom, T.contact));
+    // A smack hangs back, then comes in fast.
+    if (gesture === "smack") into = 0.55 * ease(span(t, T.reachFrom, T.contact - 0.25)) + 0.45 * span(t, T.contact - 0.08, T.contact) ** 2;
     const out = ease(span(t, T.release, T.popOut));
     let reach = into * (1 - out);
     let spin = 0;
-    const position = new Vector3();
     if (answer === "slap") {
       // Stops just short, then is knocked off back the way it came, spinning.
       const knocked = ease(span(t, T.swing + 0.15, T.swing + 0.55));
       reach = Math.min(into, 0.85) * (1 - knocked);
       spin = knocked * 2.5;
     } else if (answer === "pull") {
-      // Gets there, finds nothing, and hangs about grabbing at air.
-      reach = into * (1 - out);
+      // Falls short of where she was, and hangs about grabbing at air.
+      reach = Math.min(into, 0.8) * (1 - out);
     }
-    position.lerpVectors(this.start, this.contact, reach);
-    // It stops on the skin rather than in it.
-    position.add(this.start.clone().sub(this.contact).normalize().multiplyScalar(0.05 * scale));
-    hand.position.copy(position);
-    hand.lookAt(this.contact);
-    hand.rotateZ(spin);
-    // A squeeze, a stroke, or a grab at air, while it's there.
+    const back = this.start.clone().sub(target).normalize();
+    const position = new Vector3().lerpVectors(this.start, target, reach);
+
+    // While it's on her, it does what this touch does.
     const on = span(t, T.contact, T.release);
-    const curl = answer === "allow" || answer === "lean" ? 0.25 + Math.sin(on * Math.PI * 4) * 0.15 : answer === "pull" ? Math.abs(Math.sin(on * Math.PI * 6)) * 0.6 : 0;
-    fingers.rotation.x = on > 0 && on < 1 ? curl : 0;
+    const there = took && on > 0 && on < 1;
+    let press = 0;
+    // The fingers: spread wide as it comes in, then closing on her for a grab, a grip or a tug.
+    const closing = ease(span(t, T.contact - 0.05, T.contact + 0.2));
+    const letGo = 1 - ease(span(t, T.release, T.release + 0.3));
+    const grip: Partial<Record<Gesture, number>> = { squeeze: 0.75, hold: 0.45, tug: 0.9, rest: 0.15, stroke: 0.1, strokeUp: 0.1, press: 0.35, tap: 0.55 };
+    let curl = took ? (grip[gesture] ?? 0) * closing * letGo : 0;
+    if (there && gesture === "squeeze") curl += Math.abs(Math.sin(on * Math.PI * 3)) * 0.25;
+    // Grabbing at air: snatches shut on nothing.
+    if (answer === "pull") curl = ease(span(t, T.contact - 0.05, T.contact + 0.15)) * 0.95 * letGo;
+    if (there) {
+      const right = new Vector3(1, 0, 0);
+      const up = new Vector3(0, 1, 0);
+      switch (gesture) {
+        case "stroke":
+          position.addScaledVector(right, Math.sin(on * Math.PI * 3) * 0.035 * scale);
+          break;
+        case "strokeUp":
+          position.addScaledVector(up, (ease(on) - 0.3) * 0.12 * scale);
+          break;
+        case "smack":
+          // Bounces off, then settles back on for a moment.
+          position.addScaledVector(n, Math.sin(span(on, 0, 0.12) * Math.PI) * 0.06 * scale);
+          break;
+        case "squeeze":
+          press = Math.abs(Math.sin(on * Math.PI * 3));
+          position.addScaledVector(n, -press * 0.015 * scale);
+          break;
+        case "hold":
+          press = 0.4;
+          break;
+        case "press":
+          position.addScaledVector(n, -Math.sin(span(on, 0, 0.3) * Math.PI * 0.5) * 0.015 * scale);
+          break;
+        case "tap":
+          // Two quick boops, then away.
+          position.addScaledVector(n, Math.abs(Math.sin(span(on, 0, 0.4) * Math.PI * 2)) * 0.05 * scale);
+          break;
+        case "tug":
+          // Gets a grip, then pulls back.
+          position.addScaledVector(back, ease(span(on, 0.15, 0.5)) * 0.07 * scale);
+          break;
+        default:
+          break;
+      }
+    }
+
+    // Reaching: the arm points where it's going. On her: fingers along her, palm to her, wrist up off her.
+    const way = target.clone().sub(this.start).normalize();
+    // On the side of her face the fingers point up her cheek, not across it.
+    const along = this.shot.sideOfFace ? new Vector3(0, 1, 0) : way.clone();
+    along.addScaledVector(n, -along.dot(n));
+    if (along.lengthSq() < 1e-6) along.set(0, 1, 0);
+    along.normalize();
+    const dip = WRIST_LIFT + (tips ? 0.35 : 0) + press * 0.15;
+    const fingersOn = along.clone().multiplyScalar(Math.cos(dip)).addScaledVector(n, -Math.sin(dip)).normalize();
+    const reaching = this.orient(way, n.clone().negate().addScaledVector(way, -n.clone().negate().dot(way)).normalize());
+    const lying = this.orient(fingersOn, n.clone().negate());
+    const settle = ease(span(reach, 0.6, 1));
+    hand.quaternion.copy(reaching).slerp(lying, settle);
+    if (spin) hand.quaternion.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), spin));
+
+    this.arm?.curl(Math.min(1, curl));
+    // The arm's origin is its elbow: put it so the palm lands where it should.
+    hand.position.copy(position).sub(this.palm.clone().multiplyScalar(scale).applyQuaternion(hand.quaternion));
+  }
+
+  /**
+   * The turn that points the arm's fingers (its -Y) along `fingers`, with its palm facing `palm`.
+   */
+  private orient(fingers: Vector3, palm: Vector3): Quaternion {
+    const y = fingers.clone().negate().normalize();
+    // The palm axis, kept square to the arm.
+    const p = palm.clone().addScaledVector(y, -palm.dot(y));
+    if (p.lengthSq() < 1e-6) p.set(1, 0, 0).addScaledVector(y, -y.x);
+    p.normalize();
+    // PALM is +X, so X follows the palm; Z makes up the rest.
+    const x = PALM.x >= 0 ? p : p.clone().negate();
+    const z = new Vector3().crossVectors(x, y).normalize();
+    return new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(x, y, z));
   }
 
   private render(): void {

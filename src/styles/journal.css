@@ -1,0 +1,306 @@
+/*
+ * The journal (journal.ts): an open book over the room, in the game's pixel style. Red leather with stepped
+ * corners and a black outline, two parchment pages in flat bands, ink-coloured writing and a dark spine.
+ */
+#panel.journal-open {
+  place-items: center;
+}
+
+#panel .journal {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  width: min(900px, 100%);
+}
+
+#panel .journal-book {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 14px 1fr;
+  width: 100%;
+  padding: 14px;
+  box-sizing: border-box;
+  filter: var(--pixel-outline);
+}
+
+/* The leather cover, cut on its own layer so the outline follows its stepped corners. */
+#panel .journal-book::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  clip-path: var(--pixel-corners);
+  background: repeating-linear-gradient(0deg, #6a1e14 0 6px, #721f15 6px 12px);
+  box-shadow: inset 0 4px 0 #943224, inset 0 -5px 0 #3a0e08, inset 0 0 0 9px #5a1a10, inset 0 0 0 11px var(--gold-dim);
+}
+
+#panel .journal-book .page {
+  position: relative;
+  min-width: 0;
+  padding: 22px 26px 24px;
+  color: var(--ink);
+  text-shadow: none;
+  font: 16px/1.35 var(--font);
+  /* Parchment, in flat bands, darker toward the spine like a page that curves into it. */
+  background: linear-gradient(90deg, #e9dcb6 0 80%, #ddcda2 80% 92%, #cdb98a 92%);
+}
+
+#panel .journal-book .page.left {
+  clip-path: polygon(6px 0, 100% 0, 100% 100%, 6px 100%, 0 calc(100% - 6px), 0 6px);
+}
+
+#panel .journal-book .page.right {
+  background: linear-gradient(270deg, #e9dcb6 0 80%, #ddcda2 80% 92%, #cdb98a 92%);
+  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%);
+}
+
+#panel .journal-book .spine {
+  background: repeating-linear-gradient(180deg, #3a0e08 0 6px, #4a140c 6px 12px);
+}
+
+/* Your name, written across the top of the first page. */
+#panel .journal-book .name {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 0 4px;
+  font: 400 40px/1.1 var(--font-title);
+  color: #6a1e14;
+  background: none;
+  border: none;
+  border-bottom: 3px dashed #b39d6c;
+  outline: none;
+}
+
+#panel .journal-book .name::placeholder {
+  color: #a8936a;
+}
+
+#panel .journal-book .name:focus {
+  border-bottom-style: solid;
+  border-bottom-color: #6a1e14;
+}
+
+#panel .journal-book .role {
+  margin: 6px 0 4px;
+  font-size: 14px;
+  color: #6b5a3e;
+}
+
+#panel .journal-book h2 {
+  margin: 16px 0 8px;
+  padding-bottom: 4px;
+  font: 400 26px/1 var(--font-title);
+  color: #6a1e14;
+  border-bottom: 3px solid #c9b483;
+}
+
+/* A line of the book: icon, label, an optional bar, and the number at the end. */
+#panel .journal-book .line {
+  display: grid;
+  /* Labels in one column, so every bar starts and ends in line with the others. */
+  grid-template-columns: 24px 7em 1fr minmax(44px, auto);
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+
+#panel .journal-book .line .icon svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+  shape-rendering: crispEdges;
+}
+
+#panel .journal-book .line .label {
+  white-space: nowrap;
+}
+
+/* A line with no bar lets its label run on into the bar's room. */
+#panel .journal-book .line.plain .label {
+  grid-column: 2 / 4;
+}
+
+#panel .journal-book .line .value {
+  grid-column: 4;
+  font-weight: 700;
+  text-align: right;
+}
+
+#panel .journal-book .note {
+  margin: 0 0 4px 32px;
+  font-size: 13px;
+  color: #7a6848;
+}
+
+#panel .journal-book .note.good {
+  color: #3f7a3a;
+}
+
+#panel .journal-book .note.danger {
+  color: #b0200f;
+  font-weight: 700;
+}
+
+/* Bars, in pixel segments: a dark groove with a coloured fill, a notch every 8px. */
+#panel .journal-book .meter {
+  position: relative;
+  grid-column: 3;
+  height: 12px;
+  background: #b9a47a;
+  box-shadow: inset 0 0 0 2px #5a4a30;
+}
+
+#panel .journal-book .meter .fill {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  background: repeating-linear-gradient(90deg, var(--fill-color) 0 6px, var(--fill-shade) 6px 8px);
+}
+
+#panel .journal-book .meter.gold {
+  --fill-color: #d9a93a;
+  --fill-shade: #a87c22;
+}
+
+#panel .journal-book .meter.green {
+  --fill-color: #4f9a46;
+  --fill-shade: #36702f;
+}
+
+#panel .journal-book .meter.red,
+#panel .journal-book .meter.low {
+  --fill-color: #c8402c;
+  --fill-shade: #8e2a1c;
+}
+
+/* Two-sided bars mark the middle, where nobody thinks anything of you either way. */
+#panel .journal-book .meter.two-sided::after {
+  content: "";
+  position: absolute;
+  left: calc(50% - 1px);
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: #5a4a30;
+}
+
+/* Closing it: a plank like the rest of the menus. */
+#panel .journal-close {
+  width: auto;
+  min-width: 160px;
+  justify-content: center;
+}
+
+@media (max-width: 720px) {
+  #panel .journal-book {
+    grid-template-columns: 1fr;
+  }
+
+  #panel .journal-book .spine {
+    height: 10px;
+  }
+
+  #panel .journal-book .page.left,
+  #panel .journal-book .page.right {
+    clip-path: none;
+    background: #e9dcb6;
+  }
+
+  #panel .journal-book .name {
+    font-size: 32px;
+  }
+}
+
+/* ---------- Ribbon tabs: one for each spread ---------- */
+
+#panel .journal-tabs {
+  display: flex;
+  gap: 8px;
+  align-self: stretch;
+  margin: 0 0 -16px 28px;
+  filter: var(--pixel-outline-sm);
+}
+
+#panel .journal-tabs .tab {
+  width: auto;
+  gap: 8px;
+  padding: 8px 16px 18px;
+  font-size: 16px;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+}
+
+/* The private ribbon is deep red, like the cover it opens onto. */
+#panel .journal-tabs .tab.private {
+  background: repeating-linear-gradient(90deg, #6a1430 0 18px, #64132d 18px 20px);
+  box-shadow: inset 0 4px 0 #8e2448, inset 0 -5px 0 #3a0a1a;
+}
+
+/* The page you're on stands up taller. */
+#panel .journal-tabs .tab.on {
+  padding-top: 12px;
+  margin-top: -4px;
+  color: var(--gold);
+}
+
+/* ---------- The private pages ---------- */
+
+/* A darker, wine-red cover, so it's clear which side of the book you're reading. */
+#panel .journal-book.private::before {
+  background: repeating-linear-gradient(0deg, #4a0e22 0 6px, #521026 6px 12px);
+  box-shadow: inset 0 4px 0 #7a1a3a, inset 0 -5px 0 #24060f, inset 0 0 0 9px #3a0a1a, inset 0 0 0 11px var(--gold-dim);
+}
+
+#panel .journal-book .title {
+  margin: 0;
+  font: 400 40px/1.1 var(--font-title);
+  color: #7a1a3a;
+  text-align: left;
+  text-shadow: none;
+}
+
+#panel .journal-book .title::after {
+  display: none;
+}
+
+#panel .journal-book.private h2 {
+  color: #7a1a3a;
+}
+
+/* How far you'd let a guest go: the boldness, written large. */
+#panel .journal-book .reach {
+  margin: 2px 0 4px 32px;
+  font: 400 24px/1.1 var(--font-title);
+  color: #7a1a3a;
+}
+
+/* Every kind of touch let happen, as a tally of little tags. */
+#panel .journal-book .tally {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin: 2px 0 6px;
+}
+
+#panel .journal-book .chip {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 3px 7px;
+  font-size: 14px;
+  color: #f3e6c4;
+  background: #8e2448;
+  box-shadow: inset 0 -3px 0 #5a1430;
+}
+
+#panel .journal-book .chip.none {
+  color: #8f7c58;
+  background: #d8c79a;
+  box-shadow: inset 0 -3px 0 #c4b183;
+}
+
+@media (max-width: 720px) {
+  #panel .journal-book .tally {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

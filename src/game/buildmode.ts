@@ -19,6 +19,7 @@ import {
   Vector2,
   Vector3,
 } from "three";
+import { BUILD_ICONS, type BuildIcon } from "./buildicons";
 import type { Rect } from "./collision";
 import {
   edgeAt,
@@ -43,12 +44,12 @@ import type { Input } from "./input";
 
 type Tool = "hand" | "floor" | "sell" | "wall" | "unwall";
 
-const TOOLS: { id: Tool; label: string; hint: string }[] = [
-  { id: "hand", label: "Move", hint: "Click furniture to pick it up. R turns it, X or Delete sends it to storage." },
-  { id: "floor", label: "Buy floor", hint: `Drag over the blue squares to buy floor (${TILE_COST}g each). The walls move out to fit.` },
-  { id: "sell", label: "Sell floor", hint: `Drag over floor you bought to sell it for ${refund(TILE_COST)}g.` },
-  { id: "wall", label: "Draw wall", hint: `Drag along the floor lines to draw walls (${WALL_COST}g each). Leave a gap for a doorway.` },
-  { id: "unwall", label: "Remove wall", hint: "Drag along walls you drew to take them down." },
+const TOOLS: { id: Tool; label: string; icon: BuildIcon; hint: string }[] = [
+  { id: "hand", label: "Move", icon: "move", hint: "Click furniture to pick it up. R turns it, X or Delete sends it to storage." },
+  { id: "floor", label: "Buy floor", icon: "floorBuy", hint: `Drag over the blue squares to buy floor (${TILE_COST}g each). The walls move out to fit.` },
+  { id: "sell", label: "Sell floor", icon: "floorSell", hint: `Drag over floor you bought to sell it for ${refund(TILE_COST)}g.` },
+  { id: "wall", label: "Draw wall", icon: "wallDraw", hint: `Drag along the floor lines to draw walls (${WALL_COST}g each). Leave a gap for a doorway.` },
+  { id: "unwall", label: "Remove wall", icon: "wallRemove", hint: "Drag along walls you drew to take them down." },
 ];
 
 const PAN_SPEED = 9;
@@ -65,8 +66,30 @@ const BLUEPRINT = 0x4a90e2;
 /** Far enough south that the toolbar doesn't cover the front of the room. */
 const STARTING_FOCUS = new Vector3(0, 0.8, 2.5);
 
+/** Something for the tavern bought from the plans: an upgrade (bought once) or more cups or dishes. */
+export interface Supply {
+  name: string;
+  icon: BuildIcon;
+  price: number;
+  /** What it does, shown when the pointer is on it. */
+  detail: string;
+  /** Already bought, for upgrades that can only be had once. */
+  owned: boolean;
+  /** How many you have, for wares that stack, and the most you can keep. */
+  count?: number;
+  max?: number;
+  /** The heading it's shown under; "Upgrades" if not given. */
+  group?: string;
+  canBuy: boolean;
+  buy(): void;
+}
+
 /** What the build mode needs from the game. */
 export interface BuildHost {
+  /** Upgrades and wares on sale, in the order to show them. */
+  supplies(): Supply[];
+  /** A small picture of a piece of furniture, as an image URL. */
+  furnitureImage(kind: FurnitureKind): string;
   camera: Camera;
   plan(): HousePlan;
   gold(): number;
@@ -110,8 +133,7 @@ export class BuildMode {
   private readonly cursorMaterial = new MeshBasicMaterial({ color: GOOD, transparent: true, opacity: 0.5, depthWrite: false });
   private readonly cursor = new Mesh(new PlaneGeometry(1, 1).rotateX(-Math.PI / 2), this.cursorMaterial);
 
-  private readonly toolsEl = document.createElement("div");
-  private readonly shopEl = document.createElement("div");
+  private readonly barEl = document.createElement("div");
   private readonly noteEl = document.createElement("div");
 
   constructor(
@@ -121,10 +143,9 @@ export class BuildMode {
     private readonly input: Input,
     private readonly host: BuildHost,
   ) {
-    this.toolsEl.className = "row";
-    this.shopEl.className = "row";
+    this.barEl.className = "bar";
     this.noteEl.className = "note";
-    root.append(this.toolsEl, this.shopEl, this.noteEl);
+    root.append(this.barEl, this.noteEl);
 
     this.grid = this.makeGrid();
     this.buyable.position.y = OVERLAY_HEIGHT;
@@ -166,7 +187,7 @@ export class BuildMode {
   }
 
   private root(): HTMLElement {
-    return this.toolsEl.parentElement as HTMLElement;
+    return this.barEl.parentElement as HTMLElement;
   }
 
   /** Esc: drops what you're holding, or leaves if your hands are empty. */
@@ -222,48 +243,174 @@ export class BuildMode {
     this.buyable.geometry.setAttribute("position", new BufferAttribute(new Float32Array(points), 3));
   }
 
-  private button(parent: HTMLElement, label: string, onPick: () => void, options: { on?: boolean; off?: boolean } = {}): void {
+  /** A titled cluster of tiles on the bar. */
+  private group(title: string): HTMLElement {
+    const group = document.createElement("div");
+    group.className = "group";
+    const heading = document.createElement("div");
+    heading.className = "title";
+    heading.textContent = title;
+    const tiles = document.createElement("div");
+    tiles.className = "tiles";
+    group.append(heading, tiles);
+    this.barEl.append(group);
+    return tiles;
+  }
+
+  /**
+   * One square on the bar: a picture, with a price tag or a count in its corner. Its name, and what it does,
+   * show in the note line while the pointer is on it.
+   */
+  private tile(
+    parent: HTMLElement,
+    options: {
+      icon?: BuildIcon;
+      image?: string;
+      name: string;
+      hint?: string;
+      price?: number;
+      count?: number;
+      max?: number;
+      on?: boolean;
+      off?: boolean;
+      owned?: boolean;
+      onPick: () => void;
+    },
+  ): void {
     const el = document.createElement("button");
     el.type = "button";
-    el.textContent = label;
+    el.className = "tile";
+    const art = document.createElement("span");
+    art.className = "art";
+    if (options.image) {
+      const img = document.createElement("img");
+      img.src = options.image;
+      img.alt = "";
+      art.append(img);
+    } else if (options.icon) {
+      art.innerHTML = BUILD_ICONS[options.icon];
+    }
+    el.append(art);
+    if (options.price !== undefined && !options.owned) {
+      const price = document.createElement("span");
+      price.className = "price";
+      price.innerHTML = BUILD_ICONS.coin;
+      price.append(String(options.price));
+      el.append(price);
+    }
+    if (options.count !== undefined) {
+      const count = document.createElement("span");
+      count.className = "count";
+      count.textContent = options.max !== undefined ? `${options.count}/${options.max}` : `x${options.count}`;
+      count.classList.toggle("full", options.max !== undefined && options.count >= options.max);
+      el.append(count);
+    }
+    if (options.owned) {
+      const tick = document.createElement("span");
+      tick.className = "tick";
+      tick.innerHTML = BUILD_ICONS.done;
+      el.append(tick);
+    }
     el.disabled = Boolean(options.off);
     el.classList.toggle("on", Boolean(options.on));
-    el.addEventListener("click", onPick);
+    el.classList.toggle("owned", Boolean(options.owned));
+    const cost = options.owned ? "owned" : options.price !== undefined ? `${options.price} gold` : "";
+    const words = [options.name, cost].filter(Boolean).join(" · ");
+    el.setAttribute("aria-label", words);
+    el.addEventListener("click", options.onPick);
+    // The name and what it does show in the note line while the pointer is on it; the note goes back after.
+    el.addEventListener("pointerenter", () => {
+      this.noteEl.textContent = options.hint ? `${words}: ${options.hint}` : words;
+    });
+    el.addEventListener("pointerleave", () => this.render());
     parent.append(el);
   }
 
   private render(): void {
     if (!this.active) return;
     const gold = this.host.gold();
-    this.toolsEl.replaceChildren();
-    for (const { id, label } of TOOLS) {
-      this.button(this.toolsEl, label, () => this.setTool(id), { on: this.tool === id && !this.held });
-    }
-    const done = document.createElement("span");
-    done.className = "spacer";
-    this.toolsEl.append(done);
-    this.button(this.toolsEl, "Done", () => this.tryLeave());
+    this.barEl.replaceChildren();
 
-    this.shopEl.replaceChildren();
-    const heading = (text: string) => {
-      const el = document.createElement("span");
-      el.className = "label";
-      el.textContent = text;
-      this.shopEl.append(el);
-    };
-    heading("Buy");
+    const tools = this.group("Build");
+    for (const { id, label, icon, hint } of TOOLS) {
+      this.tile(tools, { icon, name: label, hint, on: this.tool === id && !this.held, onPick: () => this.setTool(id) });
+    }
+
+    const furniture = this.group("Furniture");
     for (const kind of FURNITURE_KINDS) {
       const price = FURNITURE_PRICES[kind];
-      this.button(this.shopEl, `${FURNITURE_NAMES[kind]} ${price}g`, () => this.buy(kind), { off: gold < price });
+      this.tile(furniture, {
+        image: this.host.furnitureImage(kind),
+        name: FURNITURE_NAMES[kind],
+        hint: "Click it, then click the floor to put it down.",
+        price,
+        off: gold < price,
+        onPick: () => this.buy(kind),
+      });
     }
-    heading("Storage");
+
     const stored = FURNITURE_KINDS.filter((kind) => this.plan.layout.stored.includes(kind));
-    if (stored.length === 0) heading("empty");
-    for (const kind of stored) {
-      const count = this.plan.layout.stored.filter((other) => other === kind).length;
-      this.button(this.shopEl, `${FURNITURE_NAMES[kind]} x${count}`, () => this.takeFromStorage(kind));
-      this.button(this.shopEl, `sell +${refund(FURNITURE_PRICES[kind])}g`, () => this.sellStored(kind));
+    if (stored.length > 0) {
+      const storage = this.group("Storage");
+      for (const kind of stored) {
+        const count = this.plan.layout.stored.filter((other) => other === kind).length;
+        const stack = document.createElement("div");
+        stack.className = "stack";
+        storage.append(stack);
+        this.tile(stack, {
+          image: this.host.furnitureImage(kind),
+          name: FURNITURE_NAMES[kind],
+          hint: "In storage. Click it to put it back in the room.",
+          count,
+          onPick: () => this.takeFromStorage(kind),
+        });
+        // Selling one back: a small coin plank under the picture.
+        const money = refund(FURNITURE_PRICES[kind]);
+        const sell = document.createElement("button");
+        sell.type = "button";
+        sell.className = "sell";
+        sell.innerHTML = BUILD_ICONS.coin;
+        sell.append(`+${money}`);
+        sell.setAttribute("aria-label", `Sell a ${FURNITURE_NAMES[kind].toLowerCase()} for ${money} gold`);
+        sell.addEventListener("click", () => this.sellStored(kind));
+        stack.append(sell);
+      }
     }
+
+    const groups = new Map<string, HTMLElement>();
+    for (const supply of this.host.supplies()) {
+      const title = supply.group ?? "Upgrades";
+      let tiles = groups.get(title);
+      if (!tiles) {
+        tiles = this.group(title);
+        groups.set(title, tiles);
+      }
+      this.tile(tiles, {
+        icon: supply.icon,
+        name: supply.name,
+        hint: supply.detail,
+        price: supply.price,
+        count: supply.count,
+        max: supply.max,
+        owned: supply.owned,
+        off: !supply.canBuy,
+        onPick: () => {
+          supply.buy();
+          this.render();
+        },
+      });
+    }
+
+    const spacer = document.createElement("span");
+    spacer.className = "spacer";
+    this.barEl.append(spacer);
+    const done = document.createElement("button");
+    done.type = "button";
+    done.className = "done";
+    done.innerHTML = BUILD_ICONS.done;
+    done.append("Done");
+    done.addEventListener("click", () => this.tryLeave());
+    this.barEl.append(done);
 
     const seats = seatSpecs(this.plan.layout.furniture).length;
     const hint = this.held

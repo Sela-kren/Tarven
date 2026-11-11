@@ -21,6 +21,9 @@ import {
   LOOK_OPTIONS,
   newLook,
   outfitOf,
+  PIRATE_LOOKS,
+  pirateGuestColors,
+  playerOutfits,
   randomLook,
   readLook,
   readLooks,
@@ -355,10 +358,33 @@ describe("outfits", () => {
     expect([mesh.visible, dirndl.visible]).toEqual([false, true]);
   });
 
-  it("dresses guests in the character's own outfit only", () => {
+  it("dresses guests in the character's own outfit, unless another is named", () => {
     const { model, mesh, dirndl } = outfitRig();
     dressColors(model, "Female", {});
     expect([mesh.visible, dirndl.visible]).toEqual([true, false]);
+    dressColors(model, "Female", {}, "dirndl");
+    expect([mesh.visible, dirndl.visible]).toEqual([false, true]);
+  });
+
+  it("keeps the pirate's rig for guests: never offered, rolled or loaded for a player", () => {
+    for (const body of ["Female", "Male"] as const) {
+      expect(outfitOf(body, { outfit: "pirate" }).mesh).toBe("Pirate");
+      expect(playerOutfits(body).map((o) => o.id)).not.toContain("pirate");
+      expect(readLook({ outfit: "pirate" }, body)!.outfit).toBeUndefined();
+      let seed = 0;
+      const random = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+      for (let i = 0; i < 50; i++) expect(randomLook(body, random).outfit).not.toBe("pirate");
+    }
+  });
+
+  it("colours guests' pirate rigs in a few ways, all from the body's own clothes colours", () => {
+    for (const body of ["Female", "Male"] as const) {
+      const clothes = LOOK_OPTIONS[body].colors.filter((c) => c.tab === "clothes" || c.id === "hair").map((c) => c.id);
+      const looks = Array.from({ length: PIRATE_LOOKS }, (_, i) => pirateGuestColors(body, i));
+      for (const look of looks) for (const id of Object.keys(look)) expect(clothes, `${body}: ${id}`).toContain(id);
+      expect(new Set(looks.map((look) => JSON.stringify(look))).size).toBe(PIRATE_LOOKS);
+      expect(pirateGuestColors(body, PIRATE_LOOKS)).toEqual(looks[0]);
+    }
   });
 
   it("puts an outfit on in its own colours, keeping everything that isn't clothes", () => {

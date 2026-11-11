@@ -17,6 +17,7 @@ const LIGHT_STYLES: Record<string, LightStyle> = {
   fire: { color: 0xff7a2a, intensity: 45, distance: 14, shadow: true, flicker: 0.22 },
   lantern: { color: 0xffb060, intensity: 14, distance: 10, shadow: true, flicker: 0.06 },
   candle: { color: 0xffb56b, intensity: 3.5, distance: 5, shadow: false, flicker: 0.14 },
+  oven: { color: 0xff8a3a, intensity: 6, distance: 4.5, shadow: false, flicker: 0.18 },
 };
 
 /** Longest allowed triangle edge in the room, so affine textures warp without tearing apart. */

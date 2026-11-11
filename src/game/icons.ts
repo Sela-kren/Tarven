@@ -12,6 +12,23 @@ const CRUMB = "#e0ac5c";
 const BOWL = "#c9c1ac";
 const STEW = "#7a3f16";
 const INK = "#1c140e";
+const GLASS = "#3a2a20";
+
+/** The colour of each bottled drink, in its bottle and in the cup. */
+export const DRINK_COLORS = { wine: "#8a1c2c", mead: "#e0a030", vodka: "#dfe8f0" } as const;
+
+/** A bottle of a drink: the glass in its colour, a cork, and a pale label. */
+const bottle = (color: string): { bubble: boolean; draw: Draw } => ({
+  bubble: true,
+  draw: (r) => {
+    r(CRUST, 7, 1, 2, 2);
+    r(GLASS, 7, 3, 2, 2);
+    r(color, 7, 4, 2, 1);
+    r(GLASS, 5, 5, 6, 9);
+    r(color, 6, 6, 4, 7);
+    r(FOAM, 6, 8, 4, 3);
+  },
+});
 
 const ART: Record<IconName, { bubble: boolean; draw: Draw }> = {
   ale: {
@@ -24,6 +41,9 @@ const ART: Record<IconName, { bubble: boolean; draw: Draw }> = {
       r(METAL, 11, 11, 2, 1);
     },
   },
+  wine: bottle(DRINK_COLORS.wine),
+  mead: bottle(DRINK_COLORS.mead),
+  vodka: bottle(DRINK_COLORS.vodka),
   bread: {
     bubble: true,
     draw: (r) => {

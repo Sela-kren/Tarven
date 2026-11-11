@@ -99,10 +99,13 @@ export class GuestActor {
     private readonly entrance: readonly Vec2[],
     private readonly makeItem: (item: Guest["order"]) => Object3D,
     private readonly tableLayer: Object3D,
+    /** Seconds to wait out of sight before walking in, so guests arriving together come through the door in turn. */
+    private wait = 0,
   ) {
     this.walker = new Walker(body);
     this.group = this.walker.group;
     this.group.position.set(entrance[0].x, 0, entrance[0].z);
+    this.group.visible = wait <= 0;
     this.seatedY = body.seatedOffset(seat.height);
     this.walker.setPath([...entrance, ...this.route(this.doorstep, seat.approach)]);
     this.group.add(this.orderIcon.sprite, this.rumorIcon.sprite);
@@ -171,6 +174,11 @@ export class GuestActor {
 
     switch (this.mode) {
       case "walking-in":
+        if (this.wait > 0) {
+          this.wait -= dt;
+          this.group.visible = this.wait <= 0;
+          break;
+        }
         if (this.walker.walk(dt)) this.mode = "sitting";
         break;
       case "sitting":

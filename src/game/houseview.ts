@@ -118,6 +118,13 @@ export class HouseView {
     }
   }
 
+  /** One piece of furniture on its own, sharing the room's geometry and materials, for a catalogue picture. */
+  model(kind: FurnitureKind): Group {
+    const group = new Group();
+    for (const part of this.templates[kind]) group.add(new Mesh(part.geometry, part.material));
+    return group;
+  }
+
   /** Redraws everything from the plan. */
   rebuild(plan: HousePlan): void {
     for (const mesh of this.meshes) {

@@ -23,7 +23,10 @@ import {
   Dresser,
   LOOK_OPTIONS,
   loadLooks,
+  newLook,
   OUTFIT_COLORS,
+  PIRATE_LOOKS,
+  pirateGuestColors,
   randomLook,
   storeLooks,
   type BodyName,
@@ -31,7 +34,7 @@ import {
   type Looks,
   type LookTab,
 } from "./appearance";
-import { falloff, footfalls, musicFor, nextSoundLevel, type Soundscape } from "./audio";
+import { falloff, footfalls, musicFor, type Soundscape } from "./audio";
 import { Customizer } from "./customizer";
 import { resolveCircle, type Rect, type Vec2 } from "./collision";
 import {
@@ -51,20 +54,22 @@ import {
   FRONT_DOOR_OPEN_ANGLE,
   DESK_NAME,
   DESK_SPOT,
+  JOURNAL_NAME,
+  JOURNAL_SPOT,
   makeBell,
   WASH_TUB_NAME,
   WASH_TUB_SPOT,
 } from "./furnishings";
-import { BuildMode } from "./buildmode";
+import { BuildMode, type Supply } from "./buildmode";
 import { GuestActor, Walker } from "./guests";
-import { cloneLayout, emptyLayout, footprint, HousePlan, seatSpecs, type HouseLayout, type Placed } from "./house";
+import { cloneLayout, emptyLayout, footprint, HousePlan, seatSpecs, type FurnitureKind, type HouseLayout, type Placed } from "./house";
 import { HouseView } from "./houseview";
 import { StatsHud } from "./hud";
-import { Icon, type IconName } from "./icons";
+import { DRINK_COLORS, Icon, pixelSvg, type IconName } from "./icons";
 import type { Input } from "./input";
 import { findDustSpots, MessLayer } from "./mess";
 import { Outline, outlineMaterial } from "./outline";
-import { renderPortrait } from "./portraits";
+import { renderPortrait, renderThumbnail } from "./portraits";
 import {
   describeSave,
   latestSave,
@@ -78,6 +83,10 @@ import {
 import { INTRO, StoryBox } from "./story";
 import { Chatter } from "./chatter";
 import { DrinkComic } from "./comic";
+import { journalBook, privateBook } from "./journal";
+import { saveBadges } from "./saveicons";
+import { MAX_DESIRE } from "./touch";
+import { SkyDial } from "./skydial";
 import { TouchComic } from "./touchcomic";
 import type { Reaction, SoftPart } from "./player";
 import { DialogueBox } from "./dialogue";
@@ -87,19 +96,24 @@ import { NavGrid } from "./path";
 import { Body, Sibling, WALK_STYLE_NAMES } from "./player";
 import { applyRetroLook, solidRetroMaterial } from "./retro";
 import {
+  BOTTLE_KINDS,
+  BOTTLES,
   DEBT,
   drunkLabel,
   ENDINGS,
   HEAT_MAX,
+  MAX_WARE,
   NIGHTS,
   STOCK_COST,
   STOCK_PACK,
   Tavern,
   TRAY_SIZE,
   TRUST_MAX,
+  TRUST_TO_OVERTHROW,
   UPGRADE_COST,
   UPGRADES,
   WARE_NAMES,
+  type Bottle,
   type GuestKind,
   type Held,
   type Item,
@@ -126,6 +140,8 @@ const ENTRANCE: readonly Vec2[] = [{ x: -1.5, z: -6.5 }, { x: -1.5, z: -3.5 }];
 const FRONT_DOORWAY: Vec2 = { x: -1.5, z: -5 };
 const FRONT_DOOR_REACH = 2.2;
 const FRONT_DOOR_SWING_SECONDS = 0.5;
+/** How far apart, in seconds, guests who arrive at once come through the door. */
+const ENTRY_GAP_SECONDS = 0.9;
 /** How long the shut door stays shut after the last guest leaves, before the last-call visitor comes in. */
 const VISITOR_WAIT_SECONDS = 2.5;
 const GUEST_CLEARANCE = 0.28;
@@ -200,11 +216,29 @@ const BELL_ROCK = 0.22;
 /** The barrels the barrel station takes casks from. */
 const BARRELS = ["Barrel_0", "Barrel_1", "Barrel_2"];
 /** Room objects the game outlines or moves, which the room must keep whole instead of merging. */
-export const WHOLE_PIECES = [...BARRELS, BED_NAME, BEDROOM_DOOR_NAME, BIN_NAME, DESK_NAME, FRONT_DOOR_NAME, WASH_TUB_NAME];
+/** The bottles along the shelf behind the bar, which the shelf station pours from. */
+const BOTTLES_NAME = "Bottles";
+/** Where to stand to pour from the shelf: behind the bar, under the middle of the bottles. */
+const SHELF_SPOT = new Vector3(4.2, 0, -4.6);
+/** Room objects the game outlines or moves, which the room must keep whole instead of merging. */
+export const WHOLE_PIECES = [
+  ...BARRELS,
+  BED_NAME,
+  BEDROOM_DOOR_NAME,
+  BIN_NAME,
+  BOTTLES_NAME,
+  DESK_NAME,
+  JOURNAL_NAME,
+  FRONT_DOOR_NAME,
+  WASH_TUB_NAME,
+];
 /** How close you need to be to the bedroom door, and how fast it swings (per second, eased). */
 const BEDROOM_DOOR_RANGE = 1.3;
 const BEDROOM_DOOR_SWING_RATE = 7;
 const DESK_RANGE = 1.5;
+/** The journal on the chest: close enough to reach down to it, and the arrow low over it. */
+const JOURNAL_RANGE = 1.2;
+const JOURNAL_ARROW_HEIGHT = 1.4;
 /** How far the camera pulls back to look at the plans. */
 const BUILD_ZOOM = 1.4;
 const SIBLING_RADIUS = 0.3;
@@ -215,7 +249,8 @@ const CAMERA_INSET_Z = 4;
 const BEHIND_THE_BAR: Vec2 = { x: 3.2, z: -3.85 };
 const BY_THE_BEDROOM_DOOR: Vec2 = { x: 6.5, z: 0 };
 
-const ITEM_NODES: Record<Item, string> = {
+/** The props.glb model of each item; the bottled drinks are the ale cup, recoloured (see DRINK_COLORS). */
+const ITEM_NODES: Record<Exclude<Item, Bottle>, string> = {
   ale: "Item_Ale",
   bread: "Item_Bread",
   stew: "Item_Stew",
@@ -224,6 +259,7 @@ const ITEM_NODES: Record<Item, string> = {
 
 const OUTFITS: Record<GuestKind | "visitor", { top: number; legs: number; hair: number }> = {
   farmer: { top: 0x8a7a3e, legs: 0x4c3a24, hair: 0x4a3420 },
+  // Smugglers come in a pirate's rig instead, in colours of their own; only their hair is taken from here.
   smuggler: { top: 0x24242e, legs: 0x18181e, hair: 0x101012 },
   soldier: { top: 0x8c2020, legs: 0x3a3a40, hair: 0x2b2018 },
   fugitive: { top: 0xbcb4a2, legs: 0x6a6252, hair: 0x9a8c7a },
@@ -233,7 +269,33 @@ const OUTFITS: Record<GuestKind | "visitor", { top: number; legs: number; hair: 
 
 /** Who the player can be, by sibling index: the male body, then the female one. */
 const PLAYER_LABELS = ["Male", "Female"];
-const STATIONS: Station[] = ["tap", "bread", "pot", "barrel", "bin", "wash"];
+
+/** Furniture pictures on the house plans, in game pixels; shown at twice this, hard-edged. */
+const FURNITURE_THUMB_SIZE = 32;
+
+/** The gear that marks a settings board, in the same pixel art as the HUD's icons. */
+const GEAR = pixelSvg(
+  [
+    "......KKKK......",
+    "...KK.KGGK.KK...",
+    "..KGGKKGGKKGGK..",
+    "..KGGGGGGGGGGK..",
+    "...KGGGDDGGGK...",
+    ".KKKGGDKKDGGKKK.",
+    "KGGGGDK..KDGGGGK",
+    "KGGGGDK..KDGGGGK",
+    "KDDDGDK..KDGDDDK",
+    "KDDDDDK..KDDDDDK",
+    ".KKKDDDKKDDDKKK.",
+    "...KDDDDDDDDK...",
+    "..KDDDDDDDDDDK..",
+    "..KDDKKDDKKDDK..",
+    "...KK.KDDK.KK...",
+    "......KKKK......",
+  ],
+  { K: "#1c140e", G: "#ffe27a", D: "#b8922c" },
+);
+const STATIONS: Station[] = ["tap", "shelf", "bread", "pot", "barrel", "bin", "wash"];
 
 interface Assets {
   male: Object3D;
@@ -247,6 +309,8 @@ interface Button {
   label: string;
   onPick: () => void;
   disabled?: boolean;
+  /** A save to show on the button, in icons after the label. */
+  save?: SaveData;
 }
 
 function element(id: string): HTMLElement {
@@ -275,7 +339,7 @@ function targetKey(target: Target): string {
 }
 
 /** The prop model of a station: Station_Tap, Station_Bread, Station_Pot. */
-const STATION_NODES: Record<Exclude<Station, "barrel" | "bin" | "wash">, string> = {
+const STATION_NODES: Record<Exclude<Station, "shelf" | "barrel" | "bin" | "wash">, string> = {
   tap: "Station_Tap",
   bread: "Station_Bread",
   pot: "Station_Pot",
@@ -349,6 +413,8 @@ export class Game {
   private readonly staticColliders: Rect[];
   private readonly build: BuildMode;
   private readonly actors = new Map<number, GuestActor>();
+  /** Seconds until the doorway is clear for the next guest to walk in. */
+  private doorQueue = 0;
   /** What the guests are saying out loud, and the bubbles that show it over their heads. */
   private readonly chatter = new Chatter();
   private readonly speech = new SpeechBubbles(element("speech"));
@@ -403,12 +469,13 @@ export class Game {
   private readonly stats = new StatsHud(element("stats"));
   private readonly clockTimeEl = element("clock-time");
   private readonly clockDayEl = element("clock-day");
-  private readonly clockSkyEl = element("clock-sky");
-  private readonly clockMarkerEl = element("clock-marker");
+  /** The sky over Tarven at the top of the screen, with the sun and moon going round. */
+  private readonly skyDial = new SkyDial(element("clock-dial") as HTMLCanvasElement);
   private readonly promptEl = element("prompt");
   private readonly toastEl = element("toast");
   private readonly panelEl = element("panel");
   private readonly selectEl = element("select");
+  private readonly furnitureImages = new Map<FurnitureKind, string>();
   private readonly selectStartEl = element("select-start") as HTMLButtonElement;
   private readonly selectCustomizeEl = element("select-customize") as HTMLButtonElement;
   private readonly fadeEl = element("fade");
@@ -476,19 +543,34 @@ export class Game {
     const { props } = assets;
     props.updateMatrixWorld(true);
     this.itemTemplates = {} as Record<Item, Object3D>;
-    for (const item of Object.keys(ITEM_NODES) as Item[]) {
+    for (const item of Object.keys(ITEM_NODES) as Exclude<Item, Bottle>[]) {
       const template = requireNode(props, ITEM_NODES[item]);
       template.removeFromParent();
       template.scale.setScalar(ITEM_SCALE);
       this.itemTemplates[item] = template;
     }
+    // Wine, mead and vodka go out in the same cup as ale, with their own colour where the foam would be.
+    for (const bottle of BOTTLE_KINDS) {
+      const cup = this.itemTemplates.ale.clone(true);
+      const drink = solidRetroMaterial(`T_${bottle}`, parseInt(DRINK_COLORS[bottle].slice(1), 16));
+      cup.traverse((object) => {
+        if (object instanceof Mesh && (object.material as Material).name.includes("foam")) object.material = drink;
+      });
+      this.itemTemplates[bottle] = cup;
+    }
     this.drinkComic = new DrinkComic(renderer, element("comic"), () => this.makeItem("ale"), (effect) => this.audio.play(effect));
-    this.touchComic = new TouchComic(renderer, (effect) => this.audio.play(effect));
+    this.touchComic = new TouchComic(
+      renderer,
+      (effect) => this.audio.play(effect),
+      // The hand that reaches in is a male guest's of that kind, in their own sleeve.
+      (kind) => this.makeGuestBody(kind, false).root,
+    );
     this.spots = {
       tap: requireNode(props, "Spot_Tap").getWorldPosition(new Vector3()),
       bread: requireNode(props, "Spot_Bread").getWorldPosition(new Vector3()),
       pot: requireNode(props, "Spot_Pot").getWorldPosition(new Vector3()),
       barrel: requireNode(props, "Spot_Barrel").getWorldPosition(new Vector3()),
+      shelf: SHELF_SPOT.clone(),
       bin: BIN_SPOT.clone(),
       wash: WASH_TUB_SPOT.clone(),
     };
@@ -509,6 +591,8 @@ export class Game {
       const objects =
         station === "barrel"
           ? BARRELS.map(piece)
+          : station === "shelf"
+            ? [piece(BOTTLES_NAME)]
           : station === "bin"
             ? [piece(BIN_NAME)]
             : station === "wash"
@@ -521,6 +605,7 @@ export class Game {
     this.bedroomDoor = piece(BEDROOM_DOOR_NAME);
     this.targetOutlines.set(targetKey({ kind: "door" }), outline([this.bedroomDoor]));
     this.targetOutlines.set(targetKey({ kind: "desk" }), outline([piece(DESK_NAME)]));
+    this.targetOutlines.set(targetKey({ kind: "book" }), outline([piece(JOURNAL_NAME)]));
     this.updateBedroomDoor(Infinity);
     this.frontDoorHinge.position.copy(FRONT_DOOR_HINGE);
     world.root.add(this.frontDoorHinge);
@@ -593,6 +678,8 @@ export class Game {
 
     this.build = new BuildMode(element("build"), scene, this.houseView, input, {
       camera,
+      supplies: () => this.supplies(),
+      furnitureImage: (kind) => this.furnitureImage(kind),
       plan: () => this.plan,
       gold: () => this.tavern.gold,
       addGold: (amount) => (this.tavern.gold += amount),
@@ -720,7 +807,13 @@ export class Game {
     return copy;
   }
 
-  private makeGuestBody(kind: GuestKind | "visitor", female: boolean): Body {
+  /** Which colours of a guest's outfit they come in, so guests of one kind don't all look alike. */
+  private guestLook(guest: { id: number; kind: GuestKind }): number {
+    // The id's lowest bit already picks the body, so the rest of it picks the colours.
+    return guest.kind === "smuggler" ? Math.floor(guest.id / 2) % PIRATE_LOOKS : 0;
+  }
+
+  private makeGuestBody(kind: GuestKind | "visitor", female: boolean, look = 0): Body {
     const body: BodyName = female ? "Female" : "Male";
     const model = cloneSkinned(female ? this.guestModels.female : this.guestModels.male);
     const outfit = OUTFITS[kind];
@@ -731,7 +824,11 @@ export class Game {
       // Only the siblings cast shadows, to keep the frame rate up.
       if (object instanceof Mesh) object.castShadow = false;
     });
-    dressColors(model, body, { [slots.top]: hex(outfit.top), [slots.legs]: hex(outfit.legs), [slots.hair]: hex(outfit.hair) });
+    if (kind === "smuggler") {
+      dressColors(model, body, { ...pirateGuestColors(body, look), [slots.hair]: hex(outfit.hair) }, "pirate");
+    } else {
+      dressColors(model, body, { [slots.top]: hex(outfit.top), [slots.legs]: hex(outfit.legs), [slots.hair]: hex(outfit.hair) });
+    }
     return new Body(model, body);
   }
 
@@ -829,17 +926,22 @@ export class Game {
 
   private syncGuests(dt: number): void {
     const { tavern, actors } = this;
+    this.doorQueue = Math.max(0, this.doorQueue - dt);
     for (const guest of [...tavern.guests]) {
       let actor = actors.get(guest.id);
       if (!actor) {
+        // Guests who turn up together (a party, or a backlog once a seat frees) file in one behind another.
+        const wait = this.doorQueue;
+        this.doorQueue += ENTRY_GAP_SECONDS;
         actor = new GuestActor(
-          this.makeGuestBody(guest.kind, guest.id % 2 === 0),
+          this.makeGuestBody(guest.kind, guest.id % 2 === 0, this.guestLook(guest)),
           guest,
           this.world.seats[guest.seat],
           this.nav,
           ENTRANCE,
           (item) => this.makeItem(item),
           this.guestLayer,
+          wait,
         );
         actors.set(guest.id, actor);
         this.guestLayer.add(actor.group);
@@ -947,6 +1049,7 @@ export class Game {
     consider({ kind: "bed" }, BED_SPOT, BED_ARROW_HEIGHT, BED_RANGE);
     consider({ kind: "door" }, BEDROOM_DOOR_SPOT, STATION_ARROW_HEIGHT, BEDROOM_DOOR_RANGE);
     consider({ kind: "desk" }, DESK_SPOT, STATION_ARROW_HEIGHT, DESK_RANGE);
+    consider({ kind: "book" }, JOURNAL_SPOT, JOURNAL_ARROW_HEIGHT, JOURNAL_RANGE);
     return best;
   }
 
@@ -1051,9 +1154,7 @@ export class Game {
     if (this.clockTimeEl.textContent !== time) this.clockTimeEl.textContent = time;
     const day = `Day ${this.tavern.nightIndex + 1} of ${NIGHTS.length} · ${PHASE_LABELS[this.tavern.phase]}`;
     if (this.clockDayEl.textContent !== day) this.clockDayEl.textContent = day;
-    const sky = this.clock.daylight > 0.5 ? "sun" : "moon";
-    if (this.clockSkyEl.className !== sky) this.clockSkyEl.className = sky;
-    this.clockMarkerEl.style.left = `${((hour / 24) * 100).toFixed(1)}%`;
+    this.skyDial.draw(hour);
   }
 
   private setPrompt(text: string): void {
@@ -1071,25 +1172,68 @@ export class Game {
     }
   }
 
-  private openPanel(title: string, paragraphs: string[], buttons: Button[]): void {
+  /**
+   * Opens a menu over the game. The title screen hangs its name on a tavern sign; every other menu is a
+   * framed wooden board.
+   */
+  private openPanel(title: string, paragraphs: string[], buttons: Button[], style: "board" | "title" = "board"): void {
     const box = document.createElement("div");
     box.className = "box";
+    this.panelEl.classList.toggle("title-screen", style === "title");
+    this.panelEl.classList.remove("journal-open");
     const heading = document.createElement("h1");
-    heading.textContent = title;
-    box.append(heading);
-    for (const text of paragraphs) {
-      const paragraph = document.createElement("p");
-      paragraph.textContent = text;
-      box.append(paragraph);
+    if (style === "title") {
+      // "Last Call at" small over the sign, "Tarven" large across it.
+      const split = title.lastIndexOf(" ");
+      const over = document.createElement("span");
+      over.className = "over";
+      over.textContent = title.slice(0, split);
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = title.slice(split + 1);
+      const sign = document.createElement("div");
+      sign.className = "sign";
+      heading.append(over, name);
+      sign.append(heading);
+      box.append(sign);
+    } else {
+      heading.textContent = title;
+      box.append(heading);
     }
+    // The words sit together on one piece of parchment (on the title) or one stretch of board.
+    if (paragraphs.length > 0) {
+      const story = document.createElement("div");
+      story.className = "story";
+      for (const text of paragraphs) {
+        const paragraph = document.createElement("p");
+        paragraph.textContent = text;
+        story.append(paragraph);
+      }
+      box.append(story);
+    }
+    const menu = document.createElement("div");
+    menu.className = "menu";
     buttons.forEach((button, index) => {
       const el = document.createElement("button");
       el.type = "button";
-      el.textContent = `${index + 1}. ${button.label}`;
+      // The key that picks it, on its own little badge.
+      const key = document.createElement("span");
+      key.className = "key";
+      key.textContent = String(index + 1);
+      const label = document.createElement("span");
+      label.className = "label";
+      label.textContent = button.label;
+      el.append(key, label);
+      if (button.save) {
+        el.append(saveBadges(button.save, PLAYER_LABELS));
+        // The icons say it in pictures; screen readers get the words.
+        el.setAttribute("aria-label", `${button.label}: ${describeSave(button.save, PLAYER_LABELS)}`);
+      }
       el.disabled = Boolean(button.disabled);
       el.addEventListener("click", () => this.pressButton(button));
-      box.append(el);
+      menu.append(el);
     });
+    box.append(menu);
     this.panelEl.replaceChildren(box);
     this.panelEl.classList.add("open");
     this.panelButtons = buttons;
@@ -1098,8 +1242,93 @@ export class Game {
     if (this.screen !== "paused") this.screen = "panel";
   }
 
+  /**
+   * Opens the journal: your name and how you stand, or, on its private pages, the adult side. Ribbon tabs (or
+   * 1 and 2) turn between them. The night waits while you read.
+   */
+  private showJournal(page: "ledger" | "private" = "ledger"): void {
+    const { tavern } = this;
+    this.clearTarget();
+    this.audio.play("click");
+    const close = () => {
+      this.closePanel();
+      this.screen = "play";
+    };
+    const book =
+      page === "ledger"
+        ? journalBook(
+            {
+              name: tavern.name,
+              night: tavern.nightIndex + 1,
+              nights: NIGHTS.length,
+              gold: tavern.gold,
+              debt: DEBT,
+              trust: tavern.trust,
+              trustMax: TRUST_MAX,
+              trustToRise: TRUST_TO_OVERTHROW,
+              heat: tavern.heat,
+              heatMax: HEAT_MAX,
+              persona: tavern.persona,
+              desire: tavern.desire,
+              desireMax: MAX_DESIRE,
+            },
+            (name) => (tavern.name = name),
+          )
+        : privateBook({
+            touchable: tavern.playerBody === "Female",
+            desire: tavern.touchMemory.desire,
+            warmth: tavern.heatTonight,
+            desireNow: tavern.desire,
+            desireMax: MAX_DESIRE,
+            flirt: tavern.persona.flirt,
+            roomLust: tavern.persona.lust,
+            tonight: { ...tavern.touchesTonight },
+            clothesLost: tavern.stripped,
+            lets: tavern.touchMemory.lets,
+          });
+
+    // Ribbon tabs over the top of the book, one for each spread.
+    const pages: { id: "ledger" | "private"; label: string }[] = [
+      { id: "ledger", label: "Ledger" },
+      { id: "private", label: "Private" },
+    ];
+    const tabs = document.createElement("div");
+    tabs.className = "journal-tabs";
+    for (const [index, tab] of pages.entries()) {
+      const el = document.createElement("button");
+      el.type = "button";
+      el.className = `tab ${tab.id}`;
+      el.classList.toggle("on", tab.id === page);
+      const key = document.createElement("span");
+      key.className = "key";
+      key.textContent = String(index + 1);
+      el.append(key, tab.label);
+      el.addEventListener("click", () => tab.id !== page && this.showJournal(tab.id));
+      tabs.append(el);
+    }
+
+    const shut = document.createElement("button");
+    shut.type = "button";
+    shut.className = "journal-close";
+    shut.textContent = "Close";
+    shut.addEventListener("click", close);
+    const wrap = document.createElement("div");
+    wrap.className = "journal";
+    wrap.append(tabs, book, shut);
+    this.panelEl.classList.remove("title-screen");
+    this.panelEl.classList.add("open", "journal-open");
+    this.panelEl.replaceChildren(wrap);
+    this.panelButtons = [
+      { label: "Ledger", onPick: () => page !== "ledger" && this.showJournal("ledger") },
+      { label: "Private", onPick: () => page !== "private" && this.showJournal("private") },
+      { label: "Close", onPick: close },
+    ];
+    this.panelBack = close;
+    this.screen = "panel";
+  }
+
   private closePanel(): void {
-    this.panelEl.classList.remove("open");
+    this.panelEl.classList.remove("open", "journal-open");
     this.panelEl.replaceChildren();
     this.panelButtons = [];
     this.panelBack = null;
@@ -1124,30 +1353,56 @@ export class Game {
   }
 
   /** Music and effects levels. Changing one also unmutes, so the change can be heard. */
-  private showSoundMenu(back: () => void): void {
+  /** The settings: music and effects levels, each on a slider. M still mutes everything at any time. */
+  private showSettingsMenu(back: () => void): void {
+    this.openMenu("Settings", [], [], back);
+    const box = this.panelEl.querySelector(".box");
+    const menu = box?.querySelector(".menu");
+    if (!box || !menu) return;
+    // Settings wear a gear in the corner.
+    const gear = document.createElement("div");
+    gear.className = "corner-icon";
+    gear.setAttribute("aria-hidden", "true");
+    gear.innerHTML = GEAR;
+    box.append(gear);
     const { settings } = this.audio;
-    const percent = (level: number) => (level === 0 ? "Off" : `${Math.round(level * 100)}%`);
-    const reopen = () => this.showSoundMenu(back);
-    this.openMenu(
-      "Sound",
-      ["Each press steps the level up. M mutes everything at any time."],
-      [
-        {
-          label: `Music: ${percent(settings.music)}`,
-          onPick: () => {
-            this.audio.change({ music: nextSoundLevel(settings.music), muted: false });
-            reopen();
-          },
-        },
-        {
-          label: `Effects: ${percent(settings.effects)}`,
-          onPick: () => {
-            this.audio.change({ effects: nextSoundLevel(settings.effects), muted: false });
-            reopen();
-          },
-        },
-      ],
-      back,
+    const slider = (name: string, level: number, set: (level: number) => void, onLetGo?: () => void) => {
+      const row = document.createElement("label");
+      row.className = "slider";
+      const label = document.createElement("span");
+      label.className = "name";
+      label.textContent = name;
+      const input = document.createElement("input");
+      input.type = "range";
+      input.min = "0";
+      input.max = "100";
+      input.step = "5";
+      input.value = String(Math.round(level * 100));
+      const shown = document.createElement("span");
+      shown.className = "value";
+      const show = () => {
+        const value = Number(input.value);
+        shown.textContent = value === 0 ? "Off" : `${value}%`;
+        // The track fills up to the thumb.
+        input.style.setProperty("--fill", `${value}%`);
+      };
+      show();
+      input.addEventListener("input", () => {
+        show();
+        set(Number(input.value) / 100);
+      });
+      if (onLetGo) input.addEventListener("change", onLetGo);
+      row.append(label, input, shown);
+      return row;
+    };
+    box.insertBefore(
+      slider("Music", settings.music, (music) => this.audio.change({ music, muted: false })),
+      menu,
+    );
+    box.insertBefore(
+      // Letting go plays a sound at the new level, so you hear what you've picked.
+      slider("Effects", settings.effects, (effects) => this.audio.change({ effects, muted: false }), () => this.audio.play("click")),
+      menu,
     );
   }
 
@@ -1165,40 +1420,40 @@ export class Game {
     const latest = latestSave();
     this.openPanel(
       "Last Call at Tarven",
-      [
-        "An old tavern in a small market town on a dangerous mountain road, and the debt that came with it.",
-        `The baron collects ${DEBT} gold in three nights. Everyone who stops here is hiding something, and everyone will pay to know what you heard.`,
-      ],
+      // The intro tells the story; the title screen is just the sign and the menu.
+      [],
       [
         { label: "New game", onPick: () => this.showCharacterSelect() },
         {
-          label: latest ? `Continue: ${describeSave(latest.data, PLAYER_LABELS)}` : "Continue",
+          label: "Continue",
+          save: latest?.data,
           disabled: !latest,
           onPick: () => latest && this.loadGame(latest.data),
         },
         { label: "Load game", disabled: !latest, onPick: () => this.showLoadMenu(() => this.showTitle()) },
-        { label: "Sound", onPick: () => this.showSoundMenu(() => this.showTitle()) },
+        { label: "Settings", onPick: () => this.showSettingsMenu(() => this.showTitle()) },
       ],
+      "title",
     );
   }
 
   /** Lists the save slots; picking one saves the start of today there. */
   private showSaveMenu(back: () => void, notice?: string): void {
-    const night = this.tavern.nightIndex + 1;
     this.openMenu(
       "Save game",
-      [notice ?? `Saving keeps your progress from the start of today (Day ${night}).`],
+      notice ? [notice] : [],
       MANUAL_SLOTS.map((slot) => {
         const existing = readSave(slot);
-        const label = `${slotName(slot)}: ${existing ? describeSave(existing, PLAYER_LABELS) : "empty"}`;
+        const label = existing ? slotName(slot) : `${slotName(slot)}: empty`;
         const save = () => {
           const saved = writeSave(slot, this.active, this.checkpoint, this.looks);
           this.showSaveMenu(back, saved ? `Saved to ${slotName(slot)}.` : "Could not save: this browser is blocking storage.");
         };
         return {
           label,
+          save: existing ?? undefined,
           onPick: existing
-            ? () => this.confirm(`Overwrite ${slotName(slot)}?`, describeSave(existing, PLAYER_LABELS), save, () => this.showSaveMenu(back))
+            ? () => this.confirm(`Overwrite ${slotName(slot)}?`, null, save, () => this.showSaveMenu(back))
             : save,
         };
       }),
@@ -1211,12 +1466,13 @@ export class Game {
     const midNight = this.screen === "paused";
     this.openMenu(
       "Load game",
-      ["Each save starts at the beginning of a day."],
+      [],
       SLOTS.map((slot) => {
         const data = readSave(slot);
         const load = () => data && this.loadGame(data);
         return {
-          label: `${slotName(slot)}: ${data ? describeSave(data, PLAYER_LABELS) : "empty"}`,
+          label: data ? slotName(slot) : `${slotName(slot)}: empty`,
+          save: data ?? undefined,
           disabled: !data,
           onPick:
             midNight && data
@@ -1228,8 +1484,9 @@ export class Game {
     );
   }
 
-  private confirm(title: string, text: string, yes: () => void, no: () => void): void {
-    this.openMenu(title, [text], [{ label: "Yes", onPick: yes }], no);
+  /** A yes/no question; `warning` says what's at stake, when something is. */
+  private confirm(title: string, warning: string | null, yes: () => void, no: () => void): void {
+    this.openMenu(title, warning ? [warning] : [], [{ label: "Yes", onPick: yes }], no);
   }
 
   /** Fades out, clears the room, and opens the saved night. */
@@ -1241,6 +1498,7 @@ export class Game {
       this.removeVisitor();
       for (const actor of this.actors.values()) this.guestLayer.remove(actor.group);
       this.actors.clear();
+      this.doorQueue = 0;
       this.chatter.reset();
       this.tavern.restore(data.tavern);
       this.plan = new HousePlan(cloneLayout(data.tavern.layout ?? this.defaultLayout));
@@ -1248,10 +1506,13 @@ export class Game {
       this.tavern.setSeats(this.world.seats.map((seat) => seat.table));
       this.active = data.active;
       this.chosen = data.active;
-      if (data.looks) {
-        this.looks = data.looks;
-        this.siblings.forEach((_, index) => this.applyLook(index));
-      }
+      // Always the saved looks, never whatever was last on screen; saves from before customising load as built.
+      this.looks = data.looks ?? { Male: newLook(), Female: newLook() };
+      this.siblings.forEach((_, index) => this.applyLook(index));
+      // Nothing the last character had on (or off) tonight carries over to the loaded one.
+      this.strippedShown = "";
+      this.syncStripped();
+      this.playerPortrait = null;
       this.toastEl.textContent = "";
       this.toastLeft = 0;
       this.enterTavern();
@@ -1271,9 +1532,9 @@ export class Game {
     this.chosen = index;
     this.active = index;
     this.selectStartEl.disabled = false;
-    this.selectStartEl.textContent = `Start as ${PLAYER_LABELS[index].toLowerCase()}`;
+    this.selectStartEl.querySelector(".label")!.textContent = `Start as ${PLAYER_LABELS[index].toLowerCase()}`;
     this.selectCustomizeEl.disabled = false;
-    this.selectCustomizeEl.textContent = `Customize ${PLAYER_LABELS[index].toLowerCase()}`;
+    this.selectCustomizeEl.querySelector(".label")!.textContent = `Customize ${PLAYER_LABELS[index].toLowerCase()}`;
   }
 
   /** Which sibling sits under the pointer, judged by a box around each body. */
@@ -1372,12 +1633,12 @@ export class Game {
     const back = () => this.showPauseMenu();
     this.openPanel(
       "Paused",
-      ["WASD / arrows: move   Shift: run   E: use / serve"],
+      [],
       [
         { label: "Resume (Esc)", onPick: () => this.resume() },
         { label: "Save game", onPick: () => this.showSaveMenu(back) },
         { label: "Load game", disabled: !latestSave(), onPick: () => this.showLoadMenu(back) },
-        { label: "Sound", onPick: () => this.showSoundMenu(back) },
+        { label: "Settings", onPick: () => this.showSettingsMenu(back) },
         {
           label: "Quit to the title",
           onPick: () => this.confirm("Quit to the title?", "Anything you have not saved will be lost.", () => location.reload(), back),
@@ -1396,6 +1657,7 @@ export class Game {
     if (input.pressed("Digit1") || input.pressed("ArrowLeft") || input.pressed("KeyA")) this.choose(0);
     if (input.pressed("Digit2") || input.pressed("ArrowRight") || input.pressed("KeyD")) this.choose(1);
     if (input.pressed("Enter")) this.beginNight();
+    if (input.pressed("KeyC")) this.openCustomizer();
 
     const spot = new Vector3();
     this.siblings.forEach((sibling, index) => {
@@ -1540,10 +1802,11 @@ export class Game {
     if (!guest) return null;
     // Guests are drawn standing, fresh from a body of the same kind, rather than as they sit.
     const female = guest.id % 2 === 0;
-    const key = `${guest.kind}:${female}`;
+    const look = this.guestLook(guest);
+    const key = `${guest.kind}:${female}:${look}`;
     let portrait = this.guestPortraits.get(key);
     if (!portrait) {
-      const body = this.makeGuestBody(guest.kind, female);
+      const body = this.makeGuestBody(guest.kind, female, look);
       body.pose(0, 0);
       portrait = renderPortrait(this.renderer, body.root, SPRITE_TURN);
       this.guestPortraits.set(key, portrait);
@@ -1570,34 +1833,70 @@ export class Game {
     });
   }
 
+  /** A catalogue picture of a piece of furniture, rendered from its model the first time it's asked for. */
+  private furnitureImage(kind: FurnitureKind): string {
+    let image = this.furnitureImages.get(kind);
+    if (!image) {
+      image = renderThumbnail(this.renderer, this.houseView.model(kind), FURNITURE_THUMB_SIZE);
+      this.furnitureImages.set(kind, image);
+    }
+    return image;
+  }
+
+  /** The upgrades and wares sold from the house plans, during the day. */
+  private supplies(): Supply[] {
+    const { tavern } = this;
+    const upgrades = (Object.keys(UPGRADES) as UpgradeId[]).map(
+      (id): Supply => ({
+        name: UPGRADES[id].name,
+        icon: id,
+        price: UPGRADE_COST,
+        detail: UPGRADES[id].detail,
+        owned: tavern.upgrades.has(id),
+        canBuy: tavern.canBuy(id),
+        buy: () => tavern.buy(id),
+      }),
+    );
+    const wares = (Object.keys(WARE_NAMES) as Ware[]).map(
+      (ware): Supply => ({
+        name: `+${STOCK_PACK} ${WARE_NAMES[ware]}`,
+        icon: ware,
+        price: STOCK_COST,
+        detail: `${STOCK_PACK} more ${WARE_NAMES[ware]}, so you run out later in the night. Your shelves hold ${MAX_WARE[ware]}.`,
+        owned: false,
+        count: tavern.stock[ware],
+        max: MAX_WARE[ware],
+        canBuy: tavern.canBuyStock(ware),
+        buy: () => tavern.buyStock(ware),
+      }),
+    );
+    const drinks = BOTTLE_KINDS.map(
+      (bottle): Supply => ({
+        name: BOTTLES[bottle].name,
+        icon: bottle,
+        group: "Drinks",
+        price: BOTTLES[bottle].cost,
+        detail: BOTTLES[bottle].detail,
+        owned: tavern.bottles.has(bottle),
+        canBuy: tavern.canBuyBottle(bottle),
+        buy: () => tavern.buyBottle(bottle),
+      }),
+    );
+    return [...upgrades, ...wares, ...drinks];
+  }
+
+  /** The night's report. Spending happens at the house plans, during the day. */
   private showDawn(): void {
     const { tavern } = this;
-    const upgrades = (Object.keys(UPGRADES) as UpgradeId[]).map((id): Button => ({
-      label: `${UPGRADES[id].name} (${UPGRADE_COST} gold): ${tavern.upgrades.has(id) ? "owned" : UPGRADES[id].detail}`,
-      disabled: !tavern.canBuy(id),
-      onPick: () => {
-        tavern.buy(id);
-        this.showDawn();
-      },
-    }));
-    const wares = (Object.keys(WARE_NAMES) as Ware[]).map((ware): Button => ({
-      label: `${STOCK_PACK} more ${WARE_NAMES[ware]} (${STOCK_COST} gold): you own ${tavern.stock[ware]}`,
-      disabled: !tavern.canBuyStock(),
-      onPick: () => {
-        tavern.buyStock(ware);
-        this.showDawn();
-      },
-    }));
     this.openPanel(
       `Morning after night ${tavern.nightIndex + 1}`,
       [
         tavern.lastResult,
         `Served ${tavern.served}, ${tavern.walkouts} walked out, earned ${tavern.earned} gold.`,
         `Gold ${tavern.gold}/${DEBT}   Trust ${tavern.trust}/${TRUST_MAX}   Heat ${tavern.heat}/${HEAT_MAX}`,
+        ...(tavern.isLastNight ? [] : ["Upgrades and more cups and dishes are on the house plans in your room."]),
       ],
       [
-        ...upgrades,
-        ...wares,
         {
           label: tavern.isLastNight ? "Face the baron" : "Start the next day",
           // Already faded through the night on the way to bed.
@@ -1658,6 +1957,10 @@ export class Game {
       }
       if (found.target.kind === "desk") {
         this.openBuild();
+        return;
+      }
+      if (found.target.kind === "book") {
+        this.showJournal();
         return;
       }
       if (found.target.kind === "bed" && tavern.phase === "dawn") {
