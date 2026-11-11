@@ -13,16 +13,20 @@ import {
 } from "three";
 import {
   activeTerms,
+  copyLook,
   dressColors,
   Dresser,
   dyeColor,
   hairMeshFor,
+  LOOK_OPTIONS,
   newLook,
+  outfitOf,
   randomLook,
   readLook,
   readLooks,
   reshape,
   toneColor,
+  wearOutfit,
   type Look,
 } from "../src/game/appearance";
 
@@ -324,5 +328,63 @@ describe("a fuller bust", () => {
     // A point on the bone's joint still moves by the whole shift.
     const out = reshape([bigger], new Vector3(), new Vector3());
     expect(out.y).toBeCloseTo(-0.03);
+  });
+});
+
+describe("outfits", () => {
+  /** The rig with a dirndl's cloth mesh beside the tavern dress, both on the hips bone. */
+  function outfitRig() {
+    const parts = rig();
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new Float32BufferAttribute([0, 0.9, 0.1], 3));
+    geometry.setAttribute("skinIndex", new Uint16BufferAttribute([0, 0, 0, 0], 4));
+    geometry.setAttribute("skinWeight", new Float32BufferAttribute([1, 0, 0, 0], 4));
+    const dirndl = new SkinnedMesh(geometry, new MeshLambertMaterial({ name: "T_skirt" }));
+    dirndl.name = "Female_ClothDirndl";
+    parts.root.add(dirndl);
+    dirndl.bind(parts.mesh.skeleton);
+    return { ...parts, dirndl };
+  }
+
+  it("shows only the chosen outfit's cloth, starting with the character's own", () => {
+    const { model, mesh, dirndl } = outfitRig();
+    const dresser = new Dresser(model, "Female");
+    dresser.apply(newLook());
+    expect([mesh.visible, dirndl.visible]).toEqual([true, false]);
+    dresser.apply({ ...newLook(), outfit: "dirndl" });
+    expect([mesh.visible, dirndl.visible]).toEqual([false, true]);
+  });
+
+  it("dresses guests in the character's own outfit only", () => {
+    const { model, mesh, dirndl } = outfitRig();
+    dressColors(model, "Female", {});
+    expect([mesh.visible, dirndl.visible]).toEqual([true, false]);
+  });
+
+  it("puts an outfit on in its own colours, keeping everything that isn't clothes", () => {
+    const before: Look = { ...newLook(), colors: { skin: "#c68a64", skirt: "#24345a", belt: "#2b2b2b" }, hairstyle: "long" };
+    const dirndl = wearOutfit("Female", before, "dirndl");
+    expect(dirndl.outfit).toBe("dirndl");
+    expect(dirndl.colors.skin).toBe("#c68a64");
+    expect(dirndl.colors.belt).toBeUndefined();
+    expect(dirndl.colors.apron).toBe(outfitOf("Female", dirndl).preset.apron);
+    expect(dirndl.hairstyle).toBe("long");
+    // Back to the tavern dress: the model's own colours again, and nothing stored for the outfit.
+    const tavern = wearOutfit("Female", dirndl, "tavern");
+    expect(tavern.outfit).toBeUndefined();
+    expect(tavern.colors).toEqual({ skin: "#c68a64" });
+  });
+
+  it("lists only clothes colours each body has, and keeps only known outfits", () => {
+    for (const body of ["Female", "Male"] as const) {
+      const clothes = LOOK_OPTIONS[body].colors.filter((c) => c.tab === "clothes").map((c) => c.id);
+      for (const outfit of LOOK_OPTIONS[body].outfits) {
+        for (const id of [...outfit.colors, ...Object.keys(outfit.preset)]) expect(clothes, `${outfit.id}: ${id}`).toContain(id);
+      }
+    }
+    expect(readLook({ outfit: "priestess" }, "Female")!.outfit).toBe("priestess");
+    expect(readLook({ outfit: "tavern" }, "Female")!.outfit).toBeUndefined();
+    expect(readLook({ outfit: "ballgown" }, "Female")!.outfit).toBeUndefined();
+    expect(copyLook({ ...newLook(), outfit: "dirndl" }).outfit).toBe("dirndl");
   });
 });

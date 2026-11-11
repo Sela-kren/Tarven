@@ -81,6 +81,14 @@ export class Jiggle {
     this.bone.position.copy(this.rest).add(this.offset);
   }
 
+  /**
+   * Sets the part bouncing as a slap or a squeeze would: `velocity` is in metres a second, in the parent's own
+   * frame. The spring settles it back on its own.
+   */
+  kick(velocity: Vector3): void {
+    this.speed.addScaledVector(velocity, this.strength);
+  }
+
   /** Takes where the bone stands now as its new rest, as after the body is reshaped. */
   rebase(): void {
     this.rest = this.bone.position.clone();

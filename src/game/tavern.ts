@@ -1,6 +1,6 @@
 import { cloneLayout, type HouseLayout } from "./house";
 import { faceLine } from "./facetalk";
-import { arrivalFeelings, arrivalMood, feltMood, MOOD_LABELS, moodAfterDrink, moodAfterReply, moodWhenServed, moodWhileWaiting, MOOD_BEHAVIOUR, type Mood } from "./mood";
+import { arrivalFeelings, arrivalMood, feltMood, HIGH_RESPECT, LOW_RESPECT, MOOD_LABELS, moodAfterDrink, moodAfterReply, moodWhenServed, moodWhileWaiting, MOOD_BEHAVIOUR, type Mood } from "./mood";
 import {
   complimentReplies,
   COMPLIMENTS,
@@ -12,11 +12,35 @@ import {
   REMARKS,
   shiftPersona,
   SPEAKERS,
+  stripPiece,
+  stripReplies,
   type BanterContext,
   type Persona,
   type PlayerBody,
   type Reply,
+  type StripPiece,
 } from "./banter";
+import { piecesOff, stripLadder } from "./wardrobe";
+import {
+  afterLine,
+  answerLabel,
+  desireNow,
+  fillPiece,
+  MAX_DESIRE,
+  nerve,
+  newTouchMemory,
+  pickTouch,
+  reachChance,
+  readTouchMemory,
+  thoughtTier,
+  touchAnswers,
+  touchOutcome,
+  type TouchAnswer,
+  type TouchDef,
+  type TouchMemory,
+  type TouchRegion,
+} from "./touch";
+import { GUEST_TOO_DRUNK, PULLS, SLAPS, TOO_DRUNK_TO_ALLOW } from "./touchtalk";
 
 /**
  * The rules of the game, with no graphics. The view layer tells this class what
@@ -133,6 +157,25 @@ const COMPLIMENT_SHARE = 0.6;
 const TIP_DRINK_BONUS = 2;
 /** How often a guest also brings up something they've heard about you, when there's something to bring up. */
 const REMARK_CHANCE = 0.6;
+/**
+ * How likely a guest who's drinking with you is to go for your clothes: a little to begin with, more the drunker
+ * you are, more again from a lusty or drunk guest, a known flirt, or an innkeeper the room no longer respects.
+ */
+const DARE_BASE = 0.08;
+const DARE_PER_DRUNK = 0.3;
+const DARE_LUSTY = 0.25;
+const DARE_DRUNK_GUEST = 0.1;
+const DARE_FLIRT = 0.1;
+const DARE_DISRESPECTED = 0.15;
+const DARE_RESPECTED = -0.06;
+const DARE_MAX = 0.6;
+
+/** How a party's evening with you is going: drinks shared, a jug on the table, and a guest going for your clothes. */
+interface PartyState {
+  drinks: number;
+  jug: boolean;
+  dare: StripPiece | null;
+}
 
 /** "Name: \"Words\"" becomes the name and the words; anything else is narration. */
 function splitSpeaker(text: string): TalkLine {
@@ -534,6 +577,29 @@ export interface TavernSave {
   stock?: Record<Ware, number>;
   /** What was left in the wash tub. */
   tub?: Ware[];
+  /** How far guests' touches have brought the innkeeper along. Older saves start from nothing. */
+  touch?: TouchMemory;
+}
+
+/** A guest reaching for you as you serve them, waiting on your answer. */
+interface TouchChat {
+  guestId: number;
+  touch: TouchDef;
+  lines: TalkLine[];
+  answers: TouchAnswer[];
+  answered: boolean;
+  /** What was just said, after their lines. */
+  reply: TalkLine[];
+}
+
+/** A touch that's just been answered, for the game to play out on screen. */
+export interface TouchMoment {
+  id: string;
+  region: TouchRegion;
+  level: number;
+  answer: TouchAnswer;
+  /** Who reached for you. */
+  kind: GuestKind;
 }
 
 export interface TickContext {
@@ -623,18 +689,36 @@ export class Tavern {
   private talkReply: TalkLine[] = [];
   /** A guest talking to you over the drink they tipped you, or null. */
   private tipChat: TipChat | null = null;
+  /** A guest reaching for you, waiting on your answer, or null. */
+  private touchChat: TouchChat | null = null;
+  /** How far guests' touches have brought you, which lasts from night to night. */
+  touchMemory: TouchMemory = newTouchMemory();
+  /** Touches tried tonight, so the same one doesn't keep coming round. */
+  private readonly touchSeen = new Set<string>();
+  /** How each guest's reaching has gone tonight: touches you let them have, and whether you slapped them. */
+  private readonly touchHistory = new Map<number, { allowed: number; slapped: boolean }>();
+  /** The touch just answered, until the game takes it to show. */
+  private touchMoment: TouchMoment | null = null;
+  /** How warm she's got tonight from touches she let happen, 0 to 10. Gone by morning. */
+  heatTonight = 0;
   /** Who the player is, so what guests say fits them. The game sets it. */
   playerBody: PlayerBody = "Male";
+  /** The outfit the player has on, by id; missing means their own. Guests go for its pieces in its own order. */
+  playerOutfit: string | undefined = undefined;
   /** Where chance comes from: which guests offer a drink, and what they say. Tests replace it. */
   random: () => number = Math.random;
   /** The player's reputation, which changes what guests say. It lasts from night to night. */
   persona: Persona = newPersona();
   /** Lines guests have already said, so they say something new next time. */
   private readonly saidLines = new Set<string>();
+  /** How far down the wardrobe's strip ladder guests have got you tonight: 0 is fully dressed. Back on by morning. */
+  stripped = 0;
+  /** Favors guests have already asked. Each is asked once, so nobody keeps pressing the same letter on you. */
+  private readonly askedFavors = new Set<string>();
   /** What a party was saying as you sat down with them. */
   private talkOpening: TalkLine[] = [];
   /** How each party has treated you tonight: drinks poured, and whether you sold them a jug. */
-  private readonly partyState = new Map<number, { drinks: number; jug: boolean }>();
+  private readonly partyState = new Map<number, PartyState>();
 
   heardRumor = false;
   served = 0;
@@ -979,6 +1063,7 @@ export class Tavern {
     this.say(tipped ? `+${amount} gold, with a tip.` : `+${amount} gold.`);
     this.cue(tipped ? "tip" : "serve");
     if (tipped && this.random() < TIP_CHAT_CHANCE) this.startTipChat(guest);
+    if (!this.tipChat) this.maybeReach(guest);
     const [least, most] = guest.party === null ? EAT_ALONE : EAT_IN_PARTY;
     guest.eatLeft = (least + this.random() * (most - least)) * behaviour.stay + (guest.rumor ? RUMOR_EXTRA_EAT : 0);
   }
@@ -1000,13 +1085,24 @@ export class Tavern {
     if (remark && this.random() < REMARK_CHANCE) lines.push(line(remark.text));
 
     let replies: Reply[];
-    const favor = pick(FAVORS.filter((f) => f.kinds.includes(guest.kind)));
+    const dare = this.dare(guest);
+    // Only favors nobody has asked yet; picked without marking, since a compliment may win instead.
+    const favor = pickLine(
+      FAVORS.filter((f) => f.kinds.includes(guest.kind) && !this.askedFavors.has(f.id)),
+      context,
+      new Set(),
+      this.random,
+    );
     const compliment = pick(COMPLIMENTS);
     const lusty = feltMood(guest) === "lust";
-    if (compliment && (this.random() < (lusty ? LUSTY_COMPLIMENT_SHARE : COMPLIMENT_SHARE) || !favor)) {
+    if (dare) {
+      lines.push(line(dare.dare));
+      replies = stripReplies(dare, this.stripped);
+    } else if (compliment && (this.random() < (lusty ? LUSTY_COMPLIMENT_SHARE : COMPLIMENT_SHARE) || !favor)) {
       lines.push(line(compliment.text));
       replies = complimentReplies(context);
     } else if (favor) {
+      this.askedFavors.add(favor.id);
       lines.push(line(favor.ask));
       replies = [favor.agree, favor.refuse];
     } else {
@@ -1014,6 +1110,40 @@ export class Tavern {
     }
     this.talkingTo = null;
     this.tipChat = { speaker, guestId: guest.id, lines, replies, drank: false, answered: false, reply: [] };
+  }
+
+  /** The next piece of clothing guests would go for, or null once there's nothing left you'd lose. */
+  get nextStripPiece(): StripPiece | null {
+    const garment = stripLadder(this.playerBody, this.playerOutfit)[this.stripped];
+    return garment ? stripPiece(garment) : null;
+  }
+
+  /** The ids of the clothes guests have got off you tonight, for the game to take off the model. */
+  get strippedPieces(): string[] {
+    return piecesOff(this.playerBody, this.stripped, this.playerOutfit);
+  }
+
+  /**
+   * Whether a guest drinking with you goes for your clothes, and if so, which piece. Rolls high rather than
+   * low, so the commonest rolls still bring the usual talk.
+   */
+  private dare(guest: Guest): StripPiece | null {
+    const piece = this.nextStripPiece;
+    if (!piece) return null;
+    const mood = feltMood(guest);
+    let chance = DARE_BASE + this.drunk * DARE_PER_DRUNK;
+    if (mood === "lust") chance += DARE_LUSTY;
+    if (mood === "drunk") chance += DARE_DRUNK_GUEST;
+    if (this.persona.flirt >= 4) chance += DARE_FLIRT;
+    if (this.persona.respect <= LOW_RESPECT) chance += DARE_DISRESPECTED;
+    if (this.persona.respect >= HIGH_RESPECT) chance += DARE_RESPECTED;
+    return this.random() >= 1 - Math.min(DARE_MAX, Math.max(0, chance)) ? piece : null;
+  }
+
+  /** You let a guest have a piece of your clothing. */
+  private loseClothing(): void {
+    this.stripped++;
+    this.cue("tip");
   }
 
   /** What guests can know and notice about the player, for choosing what they say. */
@@ -1031,6 +1161,7 @@ export class Tavern {
       mood: guest && feltMood(guest),
       lust: guest?.lust,
       desires: guest?.desires,
+      stripped: this.stripped,
     };
   }
 
@@ -1043,7 +1174,104 @@ export class Tavern {
 
   /** Whether a conversation is open: with a party at their table, or with a guest who tipped you a drink. */
   get inConversation(): boolean {
-    return this.talkingTo !== null || this.tipChat !== null;
+    return this.talkingTo !== null || this.tipChat !== null || this.touchChat !== null;
+  }
+
+  /** Her desire in the moment, from 0 to 10: what she's grown into, warmed by tonight and a drink or two. */
+  get desire(): number {
+    return desireNow(this.touchMemory.desire, this.heatTonight, this.drunk, SLOPPY_DRUNK);
+  }
+
+  /** The touch just answered, once: the game plays it out in a comic panel. */
+  takeTouchMoment(): TouchMoment | null {
+    const moment = this.touchMoment;
+    this.touchMoment = null;
+    return moment;
+  }
+
+  /**
+   * Whether the guest you've just served reaches for you, and if so, for what. Their nerve decides how bold
+   * they'll be; your desire decides what you can let them do. Only the innkeeper sister is reached for, for now.
+   */
+  private maybeReach(guest: Guest): void {
+    if (this.playerBody !== "Female" || this.inConversation) return;
+    const history = this.touchHistory.get(guest.id) ?? { allowed: 0, slapped: false };
+    const guestNerve = nerve({
+      kind: guest.kind,
+      lust: guest.lust,
+      mood: feltMood(guest),
+      respect: this.persona.respect,
+      lowRespect: LOW_RESPECT,
+      highRespect: HIGH_RESPECT,
+      ...history,
+    });
+    if (this.random() >= reachChance(guestNerve)) return;
+    const piece = stripLadder(this.playerBody, this.playerOutfit)[this.stripped]?.label ?? null;
+    const touch = pickTouch(guest.kind, guestNerve, this.random, { canStrip: piece !== null, seen: this.touchSeen });
+    if (!touch) return;
+    this.touchSeen.add(touch.id);
+
+    const sloppy = this.drunk >= SLOPPY_DRUNK;
+    const guestSloppy = guest.mood === "drunk";
+    const desire = this.desire;
+    const fill = (text: string) => fillPiece(text, piece);
+    let thought = fill(touch.thoughts[thoughtTier(touch, desire)]);
+    if (sloppy) thought = TOO_DRUNK_TO_ALLOW;
+    else if (guestSloppy) thought = GUEST_TOO_DRUNK;
+    this.touchChat = {
+      guestId: guest.id,
+      touch,
+      lines: [{ ...narrate(fill(touch.reach)), guestId: guest.id }, you(thought)],
+      answers: touchAnswers(touch, { desire, sloppy, guestSloppy }),
+      answered: false,
+      reply: [],
+    };
+  }
+
+  /** You answer a guest who reached for you. */
+  private answerTouch(chat: TouchChat, answer: TouchAnswer): void {
+    const { touch } = chat;
+    const out = touchOutcome(touch, answer);
+    const piece = stripLadder(this.playerBody, this.playerOutfit)[this.stripped]?.label ?? null;
+    const fill = (text: string) => fillPiece(text, piece);
+    chat.answered = true;
+    this.adjust(out.gold, 0, 0);
+    this.earned += out.gold;
+    shiftPersona(this.persona, { respect: out.respect, fame: out.fame, flirt: out.flirt });
+    this.heatTonight = clamp(this.heatTonight + out.lust, 0, MAX_DESIRE);
+    this.touchMemory.desire = clamp(this.touchMemory.desire + out.desire, 0, MAX_DESIRE);
+    const guest = this.guests.find((g) => g.id === chat.guestId);
+    if (guest && out.mood) guest.mood = out.mood;
+    const history = this.touchHistory.get(chat.guestId) ?? { allowed: 0, slapped: false };
+
+    const pick = <T>(lines: readonly T[]) => lines[Math.floor(this.random() * lines.length) % lines.length];
+    if (answer === "allow" || answer === "lean") {
+      history.allowed++;
+      const before = this.touchMemory.lets[touch.region] ?? 0;
+      this.touchMemory.lets[touch.region] = before + 1;
+      const tip = out.gold > 0 ? ` (+${out.gold} gold)` : "";
+      chat.reply = [narrate(fill(answer === "allow" ? touch.allow : touch.lean) + tip)];
+      const after = afterLine(touch.region, before);
+      if (after) chat.reply.push(you(after.text));
+      if (touch.strip) this.loseClothing();
+      else this.cue("tip");
+    } else {
+      if (answer === "slap") history.slapped = true;
+      const { say, result } = pick(answer === "slap" ? SLAPS : PULLS);
+      chat.reply = [you(say), narrate(result)];
+    }
+    this.touchHistory.set(chat.guestId, history);
+    this.touchMoment = { id: touch.id, region: touch.region, level: touch.level, answer, kind: guest?.kind ?? "farmer" };
+  }
+
+  /** Your answers to a guest reaching for you, then getting back to work once you've given one. */
+  private touchOptions(chat: TouchChat): (TalkChoice & { run: () => void })[] {
+    if (chat.answered) return [{ label: "Get back to work", disabled: false, run: () => (this.touchChat = null) }];
+    return chat.answers.map((answer) => ({
+      label: answerLabel(chat.touch, answer),
+      disabled: false,
+      run: () => this.answerTouch(chat, answer),
+    }));
   }
 
   /** The options with a tipping guest: drink what they bought you, answer them, and get back to work. */
@@ -1079,8 +1307,10 @@ export class Tavern {
             shiftPersona(this.persona, reply.persona);
             if ((reply.persona?.kindness ?? 0) > 0) shiftPersona(this.persona, { respect: 1 });
             this.changeMood(chat.guestId, (mood) => moodAfterReply(mood, reply.persona?.flirt ?? 0, reply.persona?.kindness ?? 0));
-            // Spoken answers are said aloud; the others are things you do.
-            chat.reply = reply.label.startsWith("\"") ? [you(reply.label), narrate(reply.result)] : [narrate(reply.result)];
+            if (reply.strip) this.loseClothing();
+            // You say your answer first, then what comes of it.
+            const spoken = reply.say ?? (reply.label.startsWith("\"") ? reply.label : null);
+            chat.reply = spoken ? [you(spoken), narrate(reply.result)] : [narrate(reply.result)];
           },
         });
       }
@@ -1330,10 +1560,10 @@ export class Tavern {
     return this.partyGuests(party).length >= 2;
   }
 
-  private stateOf(party: number): { drinks: number; jug: boolean } {
+  private stateOf(party: number): PartyState {
     let state = this.partyState.get(party);
     if (!state) {
-      state = { drinks: 0, jug: false };
+      state = { drinks: 0, jug: false, dare: null };
       this.partyState.set(party, state);
     }
     return state;
@@ -1387,6 +1617,7 @@ export class Tavern {
 
   /** The conversation so far: what was said when it opened, then the latest reply. */
   get talkLines(): TalkLine[] {
+    if (this.touchChat) return [...this.touchChat.lines, ...this.touchChat.reply];
     if (this.tipChat) return [...this.tipChat.lines, ...this.tipChat.reply];
     if (this.talkingTo === null) return [];
     return [...this.talkOpening, ...this.talkReply];
@@ -1394,6 +1625,10 @@ export class Tavern {
 
   /** The guests in the conversation, so the game can show who's talking. */
   get talkGuests(): Guest[] {
+    if (this.touchChat) {
+      const id = this.touchChat.guestId;
+      return this.guests.filter((g) => g.id === id);
+    }
     if (this.tipChat) {
       const id = this.tipChat.guestId;
       return this.guests.filter((g) => g.id === id);
@@ -1403,11 +1638,13 @@ export class Tavern {
 
   /** Just the latest reply, which is all that needs showing after you pick an option. */
   get talkReplyLines(): TalkLine[] {
+    if (this.touchChat) return this.touchChat.reply;
     if (this.tipChat) return this.tipChat.reply;
     return this.talkReply;
   }
 
   get talkChoices(): TalkChoice[] {
+    if (this.touchChat) return this.touchOptions(this.touchChat).map(({ label, disabled }) => ({ label, disabled }));
     if (this.tipChat) return this.tipOptions(this.tipChat).map(({ label, disabled }) => ({ label, disabled }));
     if (this.talkingTo === null) return [];
     const state = this.stateOf(this.talkingTo);
@@ -1423,15 +1660,26 @@ export class Tavern {
     if (state.jug) jug = "They already have a jug";
     else if (this.tapLeft === 0) jug = "Sell them a jug (the tap is empty)";
 
-    return [
+    const choices = [
       { label: drink, disabled: pouredOut || tooDrunk },
       { label: jug, disabled: state.jug || this.tapLeft === 0 },
-      { label: "Get back to work", disabled: false },
     ];
+    // Someone at the table is going for your clothes.
+    if (state.dare) choices.push(...stripReplies(state.dare, this.stripped).map(({ label }) => ({ label, disabled: false })));
+    choices.push({ label: "Get back to work", disabled: false });
+    return choices;
   }
 
-  /** Picks an option in the conversation: 0 drinks with them, 1 sells them a jug, 2 leaves the table. */
+  /**
+   * Picks an option in the conversation: 0 drinks with them, 1 sells them a jug, then, if someone's going for
+   * your clothes, 2 lets them and 3 slaps their hand away. The last leaves the table.
+   */
   chooseTalk(index: number): void {
+    if (this.touchChat) {
+      const option = this.touchOptions(this.touchChat)[index];
+      if (option && !option.disabled) option.run();
+      return;
+    }
     if (this.tipChat) {
       const option = this.tipOptions(this.tipChat)[index];
       if (option && !option.disabled) option.run();
@@ -1470,6 +1718,13 @@ export class Tavern {
       } else {
         this.talkReply = [you("\"One more!\""), narrate("Another cup goes down, and the table cheers. The room has started to tilt.")];
       }
+      // With drink in them, someone may go for your clothes: the boldest of them, if anyone's feeling it.
+      const bold = members.find((g) => feltMood(g) === "lust") ?? members.find((g) => feltMood(g) === "drunk") ?? members[0];
+      const dare = !state.dare && bold ? this.dare(bold) : null;
+      if (dare) {
+        state.dare = dare;
+        this.talkReply.push(this.partySays(dare.dare));
+      }
     } else if (index === 1) {
       const pay = JUG_PAY * members.length;
       state.jug = true;
@@ -1483,8 +1738,17 @@ export class Tavern {
         guest.patience = guest.maxPatience;
         guest.mood = "drunk";
       }
-      this.talkReply = [narrate(`You set a jug on the table. They pay ${pay} gold and stop watching the kitchen.`)];
+      this.talkReply = [you("\"A jug for the table? It'll keep you going till the food comes.\""), narrate(`You set a jug on the table. They pay ${pay} gold and stop watching the kitchen.`)];
       this.say(`+${pay} gold for a jug of ale.`);
+    } else if (state.dare && (index === 2 || index === 3)) {
+      const reply = stripReplies(state.dare, this.stripped)[index - 2];
+      state.dare = null;
+      this.adjust(reply.gold, reply.trust, reply.heat);
+      this.earned += reply.gold;
+      shiftPersona(this.persona, reply.persona);
+      for (const guest of members) guest.mood = moodAfterReply(guest.mood, reply.persona?.flirt ?? 0, 0);
+      if (reply.strip) this.loseClothing();
+      this.talkReply = [you(reply.say ?? reply.label), narrate(reply.result)];
     } else {
       this.talkingTo = null;
       this.talkReply = [];
@@ -1622,6 +1886,7 @@ export class Tavern {
       persona: { ...this.persona },
       stock: { ...this.stock },
       tub: [...this.tub],
+      touch: { desire: this.touchMemory.desire, lets: { ...this.touchMemory.lets } },
       ...(this.layout ? { layout: cloneLayout(this.layout) } : {}),
     };
   }
@@ -1636,6 +1901,7 @@ export class Tavern {
     for (const id of save.upgrades) this.upgrades.add(id);
     this.tapLeft = save.tapLeft;
     this.persona = readPersona(save.persona);
+    this.touchMemory = readTouchMemory(save.touch);
     this.layout = save.layout ? cloneLayout(save.layout) : null;
     this.stock.cup = save.stock?.cup ?? START_CUPS;
     this.stock.dish = save.stock?.dish ?? START_DISHES;
@@ -1677,9 +1943,16 @@ export class Tavern {
     this.earned = 0;
     this.napped = false;
     this.drunk = 0;
+    this.stripped = 0;
     this.talkingTo = null;
     this.talkReply = [];
     this.tipChat = null;
+    this.touchChat = null;
+    this.touchMoment = null;
+    this.touchSeen.clear();
+    this.touchHistory.clear();
+    // Tonight's heat is gone by morning; what she's found she wants stays.
+    this.heatTonight = 0;
     this.partyState.clear();
     this.say(
       messes.length > 0

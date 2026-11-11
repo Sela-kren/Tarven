@@ -76,6 +76,7 @@ async function start(): Promise<void> {
     props: propsFile.scene,
     furniture: claimed.defaults,
   }, camera, renderer, clock, audio);
+  (window as unknown as { __touchTest: unknown }).__touchTest = game; // TEMP touch test hook
 
   const focus = new Vector3();
   const updateCameraTarget = () => {

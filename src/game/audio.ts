@@ -9,7 +9,7 @@ import type { Cue, Phase } from "./tavern";
 export type Track = "bards_tale" | "harvest_season" | "old_tower_inn" | "kings_feast" | "minstrel_dance";
 export type Layer = "fire" | "crowd" | "stew";
 /** Sounds the game itself asks for, on top of what the tavern's rules cue. */
-export type Effect = Cue | "step" | "click" | "page" | "cloth" | "visitor";
+export type Effect = Cue | "step" | "click" | "page" | "cloth" | "visitor" | "cheers";
 
 /** One tavern tune per night, so the three nights don't all sound the same. */
 const NIGHT_TRACKS: readonly Track[] = ["old_tower_inn", "kings_feast", "minstrel_dance"];
@@ -121,6 +121,7 @@ export const EFFECTS: Record<Effect, EffectSound> = {
   tip: { files: ["coins2"], volume: 0.6, pitch: 0.05 },
   buy: { files: ["coins2"], volume: 0.6, pitch: 0.05 },
   drink: { files: ["gulp"], volume: 0.7 },
+  cheers: { files: numbered("clink", 2), volume: 0.6, pitch: 0.06 },
   guestIn: { files: ["door_open2"], volume: 0.2, pitch: 0.06 },
   walkOut: { files: ["door_slam"], volume: 0.55 },
   visitor: { files: ["door_open1"], volume: 0.75 },

@@ -21,6 +21,8 @@ export interface Look {
   hidden: string[];
   /** The hairstyle's id. Missing means the character's own, the first in their list. */
   hairstyle?: string;
+  /** The outfit's id. Missing means the character's own, the first in their list. */
+  outfit?: string;
 }
 
 export function newLook(): Look {
@@ -30,6 +32,7 @@ export function newLook(): Look {
 export function copyLook(look: Look): Look {
   const copy: Look = { sliders: { ...look.sliders }, colors: { ...look.colors }, hidden: [...look.hidden] };
   if (look.hairstyle) copy.hairstyle = look.hairstyle;
+  if (look.outfit) copy.outfit = look.outfit;
   return copy;
 }
 
@@ -94,12 +97,29 @@ export interface HairstyleDef {
   mesh: string | null;
 }
 
+/**
+ * A whole outfit: the cloth mesh that shows for it, "<Body>_Cloth<mesh>" ("" for the character's own), the clothes
+ * colours it has, and the colours it is put on with. Garments shared between outfits share a colour id and a
+ * material name, so they recolour and come off alike.
+ */
+export interface OutfitDef {
+  id: string;
+  label: string;
+  mesh: string;
+  /** Its clothes colours by id: the customise panel shows only these, and only these come off. */
+  colors: string[];
+  /** The colours it is put on with, over the model's own. Can set colours it doesn't list, such as the shoes' socks. */
+  preset: Record<string, string>;
+}
+
 export interface LookOptions {
   sliders: SliderDef[];
   colors: ColorDef[];
   pieces: PieceDef[];
   /** The first is the character's own hair, which the look starts with. */
   hairstyles: HairstyleDef[];
+  /** The first is the character's own outfit, which the look starts with. */
+  outfits: OutfitDef[];
 }
 
 const both = (label: string) => [`${label}_L`, `${label}_R`];
@@ -112,6 +132,7 @@ const SKIN_TONES = ["#f6d5be", "#eab594", "#dba07f", "#c68a64", "#a86f4c", "#8a5
 const HAIR_COLORS = ["#130f0f", "#3b2416", "#6b4226", "#a0663a", "#8c2f1c", "#c9a066", "#e3cf9c", "#9a948a", "#e8e4dc"];
 const EYE_COLORS = ["#0a0807", "#192126", "#3a2416", "#5b8ead", "#3d6e3f", "#7a5a2c", "#6a6a78"];
 const LIP_COLORS = ["#cc706d", "#e59993", "#d88a7a", "#b04a52", "#8c3a3a", "#9e6554"];
+const GEM_COLORS = ["#3aa6d6", "#3f9a5a", "#b0303a", "#7a3fa0", "#e0c040", "#e8e8f0"];
 const CLOTH_COLORS = [
   "#e8e0cc", "#b8ad96", "#2b2b2b", "#5b1417", "#8c2020", "#2b3d23", "#3d5a48",
   "#24345a", "#2f5590", "#6a4a8a", "#8a7a3e", "#4c3c2b", "#3d2314", "#7d6c55",
@@ -281,6 +302,41 @@ const FEMALE_COLORS: ColorDef[] = [
   { id: "belt", label: "Belt", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_leather"]] },
   { id: "stockings", label: "Stockings", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_hose"], ["Shoes", "T_hose"]] },
   { id: "shoes", label: "Shoes", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Shoes", "T_leather"]] },
+  { id: "smalls", label: "Smallclothes", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Body", "T_smalls"]] },
+  // The dirndl's arm ribbons and laces, and the priestess's set. Gems are on both.
+  { id: "ribbons", label: "Ribbons", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_ribbon"]] },
+  { id: "top", label: "Top", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_top"]] },
+  { id: "sleeves", label: "Sleeves", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_sheer"]] },
+  { id: "girdle", label: "Girdle", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_girdle"]] },
+  { id: "drapes", label: "Drapes", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_drape"]] },
+  { id: "jewels", label: "Jewellery", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_jewel"]] },
+  { id: "gems", label: "Gems", tab: "clothes", mode: "dye", palette: GEM_COLORS, parts: [["Cloth", "T_gem"]] },
+];
+
+const FEMALE_OUTFITS: OutfitDef[] = [
+  {
+    id: "tavern", label: "Tavern dress", mesh: "",
+    colors: ["blouse", "bodice", "skirt", "apron", "belt", "stockings", "shoes", "smalls"],
+    preset: {},
+  },
+  {
+    // Olive-gold bodice and skirt, a white chemise, a green apron and ribbons, and white socks.
+    id: "dirndl", label: "Dirndl", mesh: "Dirndl",
+    colors: ["blouse", "ribbons", "bodice", "skirt", "apron", "gems", "shoes", "smalls"],
+    preset: {
+      blouse: "#f1ece0", ribbons: "#2e5e3e", bodice: "#6e6233", skirt: "#5c5530", apron: "#2f6040",
+      gems: "#3f9a5a", stockings: "#f1ece0", shoes: "#3d2314",
+    },
+  },
+  {
+    // Gold and cream: a gold top and girdle, pale sleeves and drapes, gold jewellery with blue gems.
+    id: "priestess", label: "Priestess", mesh: "Priestess",
+    colors: ["top", "sleeves", "girdle", "drapes", "jewels", "gems", "shoes", "smalls"],
+    preset: {
+      top: "#b8892e", sleeves: "#efe4c4", girdle: "#b8892e", drapes: "#efe6cf", jewels: "#c99a3a",
+      gems: "#3aa6d6", shoes: "#9a7430", stockings: "#9a7430", smalls: "#b8892e",
+    },
+  },
 ];
 
 const MALE_COLORS: ColorDef[] = [
@@ -298,6 +354,7 @@ const MALE_COLORS: ColorDef[] = [
   { id: "trousers", label: "Trousers", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_trousers"]] },
   { id: "belt", label: "Belt", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_leather"]] },
   { id: "boots", label: "Boots", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Shoes", "T_leather"]] },
+  { id: "smalls", label: "Smallclothes", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Body", "T_smalls"]] },
 ];
 
 export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
@@ -311,7 +368,9 @@ export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
       { id: "long", label: "Long", mesh: "Long" },
       { id: "ponytail", label: "Ponytail", mesh: "Ponytail" },
       { id: "bun", label: "Bun", mesh: "Bun" },
+      { id: "tail", label: "High tail", mesh: "Tail" },
     ],
+    outfits: FEMALE_OUTFITS,
   },
   Male: {
     sliders: MALE_SLIDERS,
@@ -323,6 +382,9 @@ export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
       { id: "long", label: "Long", mesh: "Long" },
       { id: "ponytail", label: "Ponytail", mesh: "Ponytail" },
       { id: "bald", label: "Bald", mesh: null },
+    ],
+    outfits: [
+      { id: "tunic", label: "Tunic", mesh: "", colors: ["tunic", "trousers", "belt", "boots", "smalls"], preset: {} },
     ],
   },
 };
@@ -470,6 +532,33 @@ export function hairMeshOf(object: Object3D, body: BodyName): string | null {
 }
 
 /** The hair mesh a look shows: "" for the character's own, a style's mesh name, or null for none. */
+export function outfitOf(body: BodyName, look: Pick<Look, "outfit">): OutfitDef {
+  const outfits = LOOK_OPTIONS[body].outfits;
+  return outfits.find((outfit) => outfit.id === look.outfit) ?? outfits[0];
+}
+
+/** The outfit a cloth mesh belongs to, by the mesh name after "<Body>_Cloth": "" for the character's own. */
+export function outfitMeshOf(object: Object3D, body: BodyName): string | null {
+  const pattern = new RegExp(`^${body}_Cloth([A-Z][a-z]+)?`);
+  for (let node: Object3D | null = object; node; node = node.parent) {
+    const match = pattern.exec(node.name);
+    if (match) return match[1] ?? "";
+  }
+  return null;
+}
+
+/** The look with another outfit on, in that outfit's own colours: the clothes colours set before are dropped. */
+export function wearOutfit(body: BodyName, look: Look, id: string): Look {
+  const options = LOOK_OPTIONS[body];
+  const outfit = options.outfits.find((o) => o.id === id) ?? options.outfits[0];
+  const next = copyLook(look);
+  for (const def of options.colors) if (def.tab === "clothes") delete next.colors[def.id];
+  Object.assign(next.colors, outfit.preset);
+  if (outfit === options.outfits[0]) delete next.outfit;
+  else next.outfit = outfit.id;
+  return next;
+}
+
 export function hairMeshFor(body: BodyName, look: Pick<Look, "hairstyle">): string | null {
   const styles = LOOK_OPTIONS[body].hairstyles;
   return (styles.find((style) => style.id === look.hairstyle) ?? styles[0]).mesh;
@@ -490,6 +579,8 @@ export function dressColors(model: Object3D, body: BodyName, colors: Record<stri
   for (const slot of slots) {
     slot.mesh.material = materialFor(body, slot.part, slot.original, colors, originals);
     if (slot.part === "Hair") slot.mesh.visible = hairMeshOf(slot.mesh, body) === "";
+    // Guests wear the character's own outfit; the others' meshes stay hidden.
+    if (slot.part === "Cloth") slot.mesh.visible = outfitMeshOf(slot.mesh, body) === "";
   }
 }
 
@@ -563,6 +654,8 @@ interface MeshSlot {
   mesh: SkinnedMesh;
   part: MeshPart;
   original: Material;
+  /** The material the look puts on it, which a stripped body part gives way to the skin's. */
+  worn: Material;
   /** Vertex positions as built, in the model's bind space. */
   bind: Float32Array;
   /**
@@ -613,6 +706,8 @@ export class Dresser {
   private readonly bodyCount: number;
   /** True while the clothes are taken off to see the body; a preview, never part of the look. */
   private undressed = false;
+  /** Clothes guests have got off this character tonight; a state of the night, never part of the look. */
+  private stripped: [MeshPart, string][] = [];
   private look: Look = newLook();
 
   constructor(model: Object3D, readonly body: BodyName) {
@@ -633,7 +728,8 @@ export class Dresser {
         point.fromBufferAttribute(position, v).applyMatrix4(mesh.bindMatrix).toArray(bind, v * 3);
       }
       const part = partOf(mesh, body)!;
-      this.slots.push({ mesh, part, original: mesh.material as Material, bind, follow: null, bodyStart: bodyCount });
+      const material = mesh.material as Material;
+      this.slots.push({ mesh, part, original: material, worn: material, bind, follow: null, bodyStart: bodyCount });
       if (part === "Body") bodyCount += position.count;
       mesh.skeleton.bones.forEach((bone, i) => {
         if (this.boneIndex.has(bone)) return;
@@ -692,9 +788,25 @@ export class Dresser {
     return { thigh: size("Thigh_L"), shin: size("Shin_L") };
   }
 
-  /** Takes the clothes off (true) or puts them back on, to see the body while shaping it. Shoes stay on. */
+  /**
+   * Takes the clothes off (true) or puts them back on, to see the body while shaping it. The smallclothes come
+   * off too, painted over in skin; the shoes stay on.
+   */
   setUndressed(undressed: boolean): void {
     this.undressed = undressed;
+    this.showPieces();
+  }
+
+  /**
+   * Takes off the clothes with these colour ids (the wardrobe's garment ids), or puts everything back with none.
+   * The shoes stay. Clothing comes off the clothing layer; the smallclothes are painted on the body, so taking
+   * them off paints them over in the skin's colour instead.
+   */
+  setStripped(ids: readonly string[]): void {
+    this.stripped = LOOK_OPTIONS[this.body].colors
+      .filter((color) => color.tab === "clothes" && ids.includes(color.id))
+      .flatMap((color) => color.parts)
+      .filter(([part]) => part !== "Shoes");
     this.showPieces();
   }
 
@@ -834,17 +946,39 @@ export class Dresser {
     this.bodyRoot.scale.setScalar(height);
 
     const originals = (part: MeshPart, name: string) => this.original(part, name);
-    for (const slot of this.slots) slot.mesh.material = materialFor(this.body, slot.part, slot.original, look.colors, originals);
+    for (const slot of this.slots) {
+      slot.worn = materialFor(this.body, slot.part, slot.original, look.colors, originals);
+      slot.mesh.material = slot.worn;
+    }
     this.showPieces();
   }
 
-  /** Shows each mesh unless its piece is taken off, it's clothing while undressed, or it's another hairstyle. */
+  /**
+   * Shows each mesh unless its piece is taken off or stripped, it's clothing while undressed, or it's another
+   * hairstyle or another outfit. Stripped parts of the body itself stay, in the skin's colour.
+   */
   private showPieces(): void {
     const pieces = LOOK_OPTIONS[this.body].pieces.filter((piece) => this.look.hidden.includes(piece.id));
     const hair = hairMeshFor(this.body, this.look);
+    const outfit = outfitOf(this.body, this.look).mesh;
+    const [skinPart, skinName] = LOOK_OPTIONS[this.body].colors.find((color) => color.id === "skin")?.parts[0] ?? ["Body", ""];
+    const skin = this.slots.find((s) => s.part === skinPart && s.original.name === skinName);
+    // Clothing painted on the body itself (the smallclothes), which comes off with the rest when undressed.
+    const painted = LOOK_OPTIONS[this.body].colors
+      .filter((color) => color.tab === "clothes")
+      .flatMap((color) => color.parts)
+      .filter(([part]) => part === "Body");
     for (const slot of this.slots) {
-      const off = pieces.some((piece) => covers(piece.parts, slot.part, slot.original.name));
-      const otherStyle = slot.part === "Hair" && hairMeshOf(slot.mesh, this.body) !== hair;
+      const stripped = covers(this.stripped, slot.part, slot.original.name);
+      if (slot.part === "Body") {
+        const bare = stripped || (this.undressed && covers(painted, slot.part, slot.original.name));
+        slot.mesh.material = bare && skin ? skin.worn : slot.worn;
+        continue;
+      }
+      const off = pieces.some((piece) => covers(piece.parts, slot.part, slot.original.name)) || stripped;
+      const otherStyle =
+        (slot.part === "Hair" && hairMeshOf(slot.mesh, this.body) !== hair) ||
+        (slot.part === "Cloth" && outfitMeshOf(slot.mesh, this.body) !== outfit);
       slot.mesh.visible = !off && !otherStyle && !(this.undressed && slot.part === "Cloth");
     }
   }
@@ -920,6 +1054,8 @@ export function randomLook(body: BodyName, random: () => number = Math.random): 
   for (const piece of options.pieces) if (random() < 0.3) look.hidden.push(piece.id);
   const style = pick(options.hairstyles);
   if (style !== options.hairstyles[0]) look.hairstyle = style.id;
+  const outfit = pick(options.outfits);
+  if (outfit !== options.outfits[0]) look.outfit = outfit.id;
   return look;
 }
 
@@ -950,6 +1086,7 @@ export function readLook(raw: unknown, body: BodyName): Look | null {
   }
   // The character's own style is the default, so it is left out rather than stored.
   if (options.hairstyles.slice(1).some((style) => style.id === data.hairstyle)) look.hairstyle = data.hairstyle;
+  if (options.outfits.slice(1).some((outfit) => outfit.id === data.outfit)) look.outfit = data.outfit;
   return look;
 }
 

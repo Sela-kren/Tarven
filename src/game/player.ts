@@ -18,6 +18,15 @@ const SOFT_PARTS: Record<string, SpringSettings> = {
   Belly: { frequency: 2.8, damping: 0.3, gain: 0.0012, axes: [0.2, 1, 0.4], limit: 0.01 },
 };
 
+/**
+ * How a body answers being touched: a jolt of surprise, a slow melt into it, or a twist away. Each plays over
+ * whatever pose the body is in and fades out by itself.
+ */
+export type Reaction = "jolt" | "melt" | "recoil";
+/** The soft parts a touch can set bouncing. */
+export type SoftPart = "Bust" | "Glute";
+const REACTION_TIME: Record<Reaction, number> = { jolt: 0.4, melt: 1.8, recoil: 0.55 };
+
 const WALK_SPEED = 3.2;
 const RUN_SPEED = 5.2;
 const PLAYER_RADIUS = 0.3;
@@ -305,6 +314,8 @@ export class Body {
   private readonly jiggles: Jiggle[] = [];
   /** A long skirt that swings clear of the legs; only models built with skirt panels have one. */
   private skirt: Skirt | null;
+  /** A reaction to being touched, playing over the pose, and how far through it is (0 to 1). */
+  private reaction: { kind: Reaction; done: number } | null = null;
   /** Time the skirt has not yet caught up with. */
   private skirtTime = 0;
   private readonly head: Object3D;
@@ -451,8 +462,46 @@ export class Body {
   }
 
   /** Moves the standing pose's breathing and weight shift along. */
+  /**
+   * Answers a touch: plays `kind` over the pose, and sets `soft` bouncing, `strength` metres a second, as a
+   * slap or a squeeze would.
+   */
+  react(kind: Reaction, soft: SoftPart | null = null, strength = 0.6): void {
+    this.reaction = { kind, done: 0 };
+    if (!soft) return;
+    const push = new Vector3(0, strength, strength * 0.4);
+    for (const jiggle of this.jiggles) if (jiggle.bone.name.startsWith(`${this.name}_${soft}`)) jiggle.kick(push);
+  }
+
+  /** Lays the reaction to a touch over the pose just set. */
+  private poseReaction(): void {
+    if (!this.reaction) return;
+    const { kind, done } = this.reaction;
+    const k = Math.sin(Math.PI * done);
+    if (kind === "jolt") {
+      // Up on her toes with a squeak, back arched.
+      this.hips.position.y += k * 0.035;
+      this.torso.rotation.x -= k * 0.16;
+      this.head.rotation.x -= k * 0.12;
+    } else if (kind === "melt") {
+      // Leans in, head tipped, slow.
+      this.torso.rotation.x += k * 0.1;
+      this.head.rotation.z += k * 0.22;
+      this.head.rotation.x += k * 0.08;
+    } else {
+      // Twists away from the hand.
+      this.torso.rotation.y += k * 0.45;
+      this.head.rotation.y += k * 0.3;
+      this.hips.position.y += k * 0.015;
+    }
+  }
+
   advance(dt: number): void {
     this.clock += dt;
+    if (this.reaction) {
+      this.reaction.done += dt / REACTION_TIME[this.reaction.kind];
+      if (this.reaction.done >= 1) this.reaction = null;
+    }
     for (const jiggle of this.jiggles) jiggle.update(dt);
     this.skirt?.advance(dt);
     this.skirtTime += dt;
@@ -548,6 +597,7 @@ export class Body {
     }
     this.upperArmR.rotation.y = HAND_ON_HIP.upper.y * hand;
 
+    this.poseReaction();
     this.swayHair(stride, moving);
     this.skirt?.solve(this.skirtTime);
     this.skirtTime = 0;
@@ -585,6 +635,11 @@ export class Sibling {
     if (style === null) return null;
     this.body.setWalkStyle((style % 5) + 1);
     return this.body.walkStyle;
+  }
+
+  /** Answers a touch on the floor: see `Body.react`. */
+  react(kind: Reaction, soft: SoftPart | null = null, strength?: number): void {
+    this.body.react(kind, soft, strength);
   }
 
   /** Call after a new look reshapes this sibling's body. */

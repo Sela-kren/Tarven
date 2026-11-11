@@ -1,0 +1,192 @@
+/*
+ * The panel that bursts open when you drink with a guest. The picture is in the game's own dithered look;
+ * only its shape is a comic's, a panel cut on the slant (the clip-path is set from comic.ts). A dark rim is cut
+ * to the same shape and shows round the picture, which is inset a little inside it. The game drives the
+ * pop and the sound words frame by frame, so they stop when the game pauses.
+ */
+#comic {
+  position: fixed;
+  top: max(16px, 7vh);
+  left: 50%;
+  width: min(440px, calc(100vw - 32px));
+  aspect-ratio: 4 / 3;
+  margin-left: calc(min(440px, calc(100vw - 32px)) / -2);
+  display: none;
+  pointer-events: none;
+  transform-origin: 50% 60%;
+  filter: drop-shadow(8px 8px 0 #000);
+}
+
+#comic.open {
+  display: block;
+}
+
+#comic .rim {
+  position: absolute;
+  inset: 0;
+  background: var(--wood-edge);
+}
+
+#comic .picture {
+  position: absolute;
+  inset: 9px;
+  background: var(--wood-darkest);
+}
+
+#comic canvas {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+/* The sounds, in the game's type: scaled by --pop as each one lands. */
+#comic .sfx {
+  position: absolute;
+  display: none;
+  font: bold 30px/1 var(--font);
+  color: var(--gold);
+  text-shadow: 3px 3px 0 #000;
+  transform: rotate(var(--tilt, 0deg)) scale(var(--pop, 1));
+  transform-origin: 50% 50%;
+  white-space: nowrap;
+}
+
+#comic .sfx.on {
+  display: block;
+}
+
+#comic .clink {
+  top: 14%;
+  left: 10%;
+  --tilt: -12deg;
+  color: var(--text-bright);
+}
+
+#comic .glug {
+  font-size: 24px;
+}
+
+#comic .glug1 {
+  top: 16%;
+  right: 12%;
+  --tilt: 8deg;
+}
+
+#comic .glug2 {
+  top: 36%;
+  right: 8%;
+  --tilt: -6deg;
+}
+
+#comic .glug3 {
+  top: 56%;
+  right: 13%;
+  --tilt: 7deg;
+}
+
+#comic .ahh {
+  bottom: 14%;
+  right: 12%;
+  --tilt: -8deg;
+  color: var(--text-bright);
+  font-size: 34px;
+}
+
+@media (max-width: 520px) {
+  #comic .sfx {
+    font-size: 22px;
+  }
+
+  #comic .glug {
+    font-size: 18px;
+  }
+}
+
+/*
+ * The panel for a guest reaching for you (touchcomic.ts): the same panel as the drink one, in the same place
+ * but tipped the other way, with its own words.
+ */
+#touch-comic {
+  position: fixed;
+  top: max(16px, 7vh);
+  left: 50%;
+  width: min(440px, calc(100vw - 32px));
+  aspect-ratio: 4 / 3;
+  margin-left: calc(min(440px, calc(100vw - 32px)) / -2);
+  display: none;
+  pointer-events: none;
+  transform-origin: 50% 60%;
+  filter: drop-shadow(8px 8px 0 #000);
+  z-index: 5;
+}
+
+#touch-comic.open {
+  display: block;
+}
+
+#touch-comic .rim {
+  position: absolute;
+  inset: 0;
+  background: var(--wood-edge);
+}
+
+#touch-comic .picture {
+  position: absolute;
+  inset: 9px;
+  background: var(--wood-darkest);
+}
+
+#touch-comic canvas {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+#touch-comic .sfx {
+  position: absolute;
+  display: none;
+  font: bold 32px/1 var(--font);
+  color: var(--gold);
+  text-shadow: 3px 3px 0 #000;
+  transform: rotate(var(--tilt, 0deg)) scale(var(--pop, 1));
+  transform-origin: 50% 50%;
+  white-space: nowrap;
+}
+
+#touch-comic .sfx.on {
+  display: block;
+}
+
+#touch-comic .hit {
+  top: 12%;
+  left: 8%;
+  --tilt: -14deg;
+  color: var(--text-bright);
+  font-size: 36px;
+}
+
+#touch-comic .voice {
+  bottom: 14%;
+  right: 10%;
+  --tilt: 8deg;
+  color: #f4a0b4;
+}
+
+#touch-comic .heart {
+  top: 16%;
+  right: 14%;
+  --tilt: 10deg;
+  color: #e8506e;
+  font-size: 40px;
+}
+
+@media (max-width: 520px) {
+  #touch-comic .sfx {
+    font-size: 22px;
+  }
+
+  #touch-comic .hit,
+  #touch-comic .heart {
+    font-size: 26px;
+  }
+}

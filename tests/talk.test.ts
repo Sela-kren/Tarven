@@ -95,7 +95,7 @@ describe("parties", () => {
     expect(t.trust).toBe(trust + 1);
     // Two drinks a table, then they stop pouring.
     expect(t.talkChoices[0].disabled).toBe(true);
-    t.chooseTalk(2);
+    t.chooseTalk(t.talkChoices.length - 1);
     expect(t.talkingTo).toBeNull();
   });
 
@@ -135,7 +135,7 @@ describe("drinking", () => {
     const t = atNight(0, 18);
     t.interact(0, at(partyOf(t, 0)[0]));
     t.chooseTalk(0);
-    t.chooseTalk(2);
+    t.chooseTalk(t.talkChoices.length - 1);
     run(t, 10);
     expect(t.drunk).toBeCloseTo(0.2);
     expect(drunkLabel(t.drunk)).toBe("Tipsy");
@@ -249,12 +249,46 @@ describe("a drink as a tip", () => {
       t.random = () => (rolls++ < 4 ? 0 : 0.7);
     };
     const asked = tipped(favorRolls);
-    expect(said(asked).some((text) => text.includes("letter"))).toBe(true);
+    expect(said(asked).some((text) => /letter|ewe|slate/.test(text))).toBe(true);
     const distrusted = tipped((t) => {
       favorRolls(t);
       t.persona.sold = 1;
     });
     expect(said(distrusted).some((text) => text.includes("I hear you sell what you hear"))).toBe(true);
+  });
+
+  it("says your answer aloud before what comes of it", () => {
+    const t = tipped();
+    t.chooseTalk(t.talkChoices.findIndex((c) => c.label === "Laugh and play along"));
+    expect(t.talkReplyLines[0].speaker).toBe("You");
+    expect(t.talkReplyLines[1].speaker).toBeNull();
+  });
+
+  it("never asks the same favor twice", () => {
+    const t = tipped((t) => {
+      let rolls = 0;
+      t.random = () => (rolls++ < 4 ? 0 : 0.7);
+    });
+    const asks = new Set<string>();
+    const favorText = () => said(t).find((text) => /letter|ewe|slate/.test(text));
+    for (let i = 0; i < 4; i++) {
+      const ask = favorText();
+      if (ask) {
+        expect(asks.has(ask)).toBe(false);
+        asks.add(ask);
+      }
+      t.chooseTalk(t.talkChoices.length - 1);
+      t.interact(0, { kind: "station", station: "tap" });
+      run(t, 2);
+      t.interact(0, { kind: "station", station: "tap" });
+      const guest = t.guests[0];
+      guest.status = "waiting";
+      // The first roll lets them tip you a drink; the rest pass over the compliment for a favor.
+      let rolls = 0;
+      t.random = () => (rolls++ === 0 ? 0 : 0.7);
+      t.interact(0, at(guest));
+    }
+    expect(asks.size).toBeGreaterThanOrEqual(2);
   });
 
   it("doesn't repeat itself while it has something new to say", () => {
@@ -293,5 +327,68 @@ describe("reputation", () => {
     t.persona.flirt = 5;
     t.restore(save);
     expect(t.persona.flirt).toBe(0);
+  });
+});
+
+describe("guests going for your clothes", () => {
+  /** Sitting with the first party on the first night, playing `body`, with every roll as high as it goes. */
+  function sat(body: "Male" | "Female"): Tavern {
+    const t = atNight(0, 18);
+    t.playerBody = body;
+    t.interact(0, at(partyOf(t, 0)[0]));
+    t.random = () => 0.99;
+    return t;
+  }
+
+  it("can happen once you drink with a table, and you choose whether to let them", () => {
+    const t = sat("Female");
+    t.chooseTalk(0);
+    const labels = t.talkChoices.map((c) => c.label);
+    expect(labels).toContain("Let them untie your apron");
+    expect(labels).toContain("Slap their hand away");
+    expect(labels[labels.length - 1]).toBe("Get back to work");
+  });
+
+  it("takes the piece off you for gold, and says your answer", () => {
+    const t = sat("Female");
+    t.chooseTalk(0);
+    const gold = t.gold;
+    t.chooseTalk(t.talkChoices.findIndex((c) => c.label === "Let them untie your apron"));
+    expect(t.stripped).toBe(1);
+    expect(t.strippedPieces).toEqual(["apron"]);
+    expect(t.gold).toBe(gold + 3);
+    expect(t.talkReplyLines[0].speaker).toBe("You");
+    // Answered: the dare is gone from the choices.
+    expect(t.talkChoices.map((c) => c.label)).not.toContain("Slap their hand away");
+  });
+
+  it("leaves you dressed, and more respected, when you slap their hand away", () => {
+    const t = sat("Female");
+    t.chooseTalk(0);
+    const respect = t.persona.respect;
+    t.chooseTalk(t.talkChoices.findIndex((c) => c.label === "Slap their hand away"));
+    expect(t.stripped).toBe(0);
+    expect(t.persona.respect).toBe(respect + 1);
+  });
+
+  it("ends with the smallclothes, then has nothing left to dare", () => {
+    const t = sat("Male");
+    t.stripped = 2;
+    expect(t.nextStripPiece?.id).toBe("smalls");
+    t.stripped = 3;
+    expect(t.nextStripPiece).toBeNull();
+    t.chooseTalk(0);
+    expect(t.talkChoices).toHaveLength(3);
+  });
+
+  it("is all back on by morning", () => {
+    const t = sat("Male");
+    t.stripped = 1;
+    t.phase = "lastcall";
+    t.chooseLastCall(0);
+    t.sleep();
+    t.nextNight();
+    expect(t.stripped).toBe(0);
+    expect(t.strippedPieces).toEqual([]);
   });
 });

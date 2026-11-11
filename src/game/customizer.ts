@@ -1,4 +1,4 @@
-import { copyLook, LOOK_OPTIONS, type BodyName, type Look, type LookTab } from "./appearance";
+import { copyLook, LOOK_OPTIONS, outfitOf, wearOutfit, type BodyName, type Look, type LookTab } from "./appearance";
 
 const TABS: { id: LookTab; label: string }[] = [
   { id: "body", label: "Body" },
@@ -102,7 +102,10 @@ export class Customizer {
     const options = LOOK_OPTIONS[this.body];
     for (const def of options.sliders) if (tab === null || def.tab === tab) delete this.look.sliders[def.id];
     for (const def of options.colors) if (tab === null || def.tab === tab) delete this.look.colors[def.id];
-    if (tab === null || tab === "clothes") this.look.hidden = [];
+    if (tab === null || tab === "clothes") {
+      this.look.hidden = [];
+      delete this.look.outfit;
+    }
     if (tab === null || tab === "hair") delete this.look.hairstyle;
     this.changed();
     this.show(this.current);
@@ -127,6 +130,7 @@ export class Customizer {
     const options = LOOK_OPTIONS[this.body];
     const rows: HTMLElement[] = [];
     if (tab === "hair") rows.push(this.hairstyleRow());
+    if (tab === "clothes" && options.outfits.length > 1) rows.push(this.outfitRow());
     let group: string | undefined;
     for (const def of options.sliders) {
       if (def.tab !== tab) continue;
@@ -134,8 +138,13 @@ export class Customizer {
       group = def.group;
       rows.push(this.sliderRow(def.id, def.label));
     }
-    for (const def of options.colors) if (def.tab === tab) rows.push(this.colorRow(def.id, def.label, def.palette));
-    if (tab === "clothes") for (const piece of options.pieces) rows.push(this.pieceRow(piece.id, piece.label));
+    // The clothes tab shows only what the chosen outfit has, in the outfit's own order.
+    const outfit = outfitOf(this.body, this.look);
+    const worn = (id: string) => tab !== "clothes" || outfit.colors.includes(id);
+    const order = (id: string) => (tab === "clothes" ? outfit.colors.indexOf(id) : 0);
+    const colors = options.colors.filter((def) => def.tab === tab && worn(def.id)).sort((a, b) => order(a.id) - order(b.id));
+    for (const def of colors) rows.push(this.colorRow(def.id, def.label, def.palette));
+    if (tab === "clothes") for (const piece of options.pieces) if (worn(piece.id)) rows.push(this.pieceRow(piece.id, piece.label));
     this.paneEl.replaceChildren(...rows);
     this.hooks.tab(tab);
   }
@@ -165,6 +174,27 @@ export class Customizer {
     };
     mark();
     grid.append(...buttons);
+    row.append(grid);
+    return row;
+  }
+
+  /** The outfits to choose from. Picking one puts on its own colours, which can then be changed below. */
+  private outfitRow(): HTMLElement {
+    const row = make("div", "row styles");
+    row.append(make("span", "name", "Outfit"));
+    const grid = make("div", "style-grid");
+    const chosen = outfitOf(this.body, this.look).id;
+    for (const outfit of LOOK_OPTIONS[this.body].outfits) {
+      const button = make("button", outfit.id === chosen ? "on" : "", outfit.label);
+      button.type = "button";
+      button.setAttribute("aria-pressed", String(outfit.id === chosen));
+      button.addEventListener("click", () => {
+        this.look = wearOutfit(this.body, this.look, outfit.id);
+        this.changed();
+        this.show(this.current);
+      });
+      grid.append(button);
+    }
     row.append(grid);
     return row;
   }

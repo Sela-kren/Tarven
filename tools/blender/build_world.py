@@ -555,6 +555,8 @@ HAIR_SHORT = [
 MALE = {
     "name": "Male", "tunic": "tunic", "hair": "hair", "splay": 0.257, "leg_splay": 0.08, "arm_sides": 10, "cuff_bands": 1,
     "hips_z": 1.06, "torso_z": 1.16, "neck_z": 1.6,
+    # Smallclothes painted on the bare body: braies from this height down to this one on the thighs.
+    "braies": (1.14, 0.9),
     "hip_x": 0.1, "shoulder": (0.187, 1.46), "elbow_z": 1.284, "wrist_z": 0.985,
     "knee_z": 0.58, "hand_scale": 1.0, "foot_scale": 1.1,
     # (z, half width, front depth, back depth[, forward shift])
@@ -626,6 +628,9 @@ FEMALE = {
     "arm_sides": 8, "cuff_bands": 0, "midriff_bands": 2, "bare_arm_bands": 2, "bare_forearm": True,
     "fold": 0.0, "quads": True, "skinned": True, "stripes": True, "drawstring": True, "necklace": True, "sneakers": True, "cute_face": True,
     "hips_z": 0.86, "torso_z": 0.98, "neck_z": 1.37,
+    # Smallclothes painted on the bare body: braies from this height down to this one on the thighs, and a
+    # band over the bust between these two.
+    "braies": (0.93, 0.72), "breast_band": (1.065, 1.205),
     "hip_x": 0.098, "shoulder": (0.105, 1.3), "shoulder_y": -0.03, "arm_lean": (0.36, 0.06), "elbow_z": 1.04, "wrist_z": 0.85,
     "knee_z": 0.47, "hand_scale": 0.76, "foot_scale": 0.9,
     "back_seam": 0.015,
@@ -1355,6 +1360,17 @@ def hair_styles(spec):
                 hair_cap(skull, 0.168, 0.11, 0.05, 0.012), fringe,
                 hair_tube([(0.0, -0.09, 0.155, 0.018), (0.0, -0.118, 0.14, 0.026), (0.0, -0.138, 0.08, 0.03),
                            (0.0, -0.136, 0.0, 0.027), (0.0, -0.126, -0.08, 0.02), (0.0, -0.116, -0.15, 0.007)]),
+            ],
+            # Pulled up into a long tail tied high on the crown, with the fringe and a lock either side of the face.
+            "Tail": [
+                hair_cap(skull, 0.168, 0.11, 0.075, 0.012), fringe,
+                hair_tube([(0.0, -0.05, 0.19, 0.02), (0.0, -0.08, 0.222, 0.024), (0.0, -0.105, 0.236, 0.02),
+                           (0.0, -0.13, 0.238, 0.034), (0.0, -0.16, 0.215, 0.04), (0.0, -0.175, 0.15, 0.04),
+                           (0.0, -0.175, 0.06, 0.037), (0.0, -0.165, -0.04, 0.031), (0.0, -0.152, -0.14, 0.024),
+                           (0.0, -0.14, -0.23, 0.014), (0.0, -0.132, -0.29, 0.004)], sides=10),
+                *[hair_lock([(sx * 0.088, 0.02, 0.15, 0.012, 0.007), (sx * 0.098, 0.032, 0.08, 0.014, 0.007),
+                             (sx * 0.096, 0.036, 0.02, 0.012, 0.006), (sx * 0.088, 0.03, -0.035, 0.006, 0.003)])
+                  for sx in (-1, 1)],
             ],
             # Gathered into a round bun on the crown.
             "Bun": [
@@ -2205,7 +2221,12 @@ def add_jiggle_weights(name, layers):
 # ---------------------------------------------------------------- the medieval outfit
 
 MEDIEVAL_COLOURS = (("linen", (0.86, 0.8, 0.68)), ("bodice", (0.36, 0.08, 0.09)), ("skirt", (0.17, 0.24, 0.14)),
-                    ("apron", (0.9, 0.87, 0.8)), ("hose", (0.2, 0.15, 0.13)), ("sole_dark", (0.16, 0.1, 0.07)))
+                    ("apron", (0.9, 0.87, 0.8)), ("hose", (0.2, 0.15, 0.13)), ("sole_dark", (0.16, 0.1, 0.07)),
+                    ("smalls", (0.74, 0.68, 0.58)),
+                    # The dirndl's arm ribbons and laces, and the priestess's set. Gems are shared.
+                    ("ribbon", (0.12, 0.3, 0.17)), ("top", (0.62, 0.45, 0.16)), ("sheer", (0.93, 0.88, 0.72)),
+                    ("girdle", (0.66, 0.48, 0.17)), ("drape", (0.92, 0.87, 0.74)), ("jewel", (0.8, 0.62, 0.22)),
+                    ("gem", (0.15, 0.55, 0.75)))
 BODICE = (0.955, 1.17)  # bottom and top of the laced bodice
 # A tavern wench's chemise: a wide neckline worn off the shoulders, sleeves pushed up to the elbow.
 NECKLINE = (1.21, 1.25)  # where the chemise stops at the front and at the back
@@ -2229,6 +2250,30 @@ def profile_at(spec, z):
             t = (z - z0) / (z1 - z0)
             return tuple(a + (b - a) * t for a, b in zip(low, high))
     return table[-1][1:]
+
+
+def smallclothes(spec, skin):
+    """
+    Which faces of the bare body the smallclothes cover, painted on so the last layer can never come off:
+    braies from below the navel to the tops of the thighs, and for her a band over the bust.
+    """
+    top, leg = spec["braies"]
+    band = spec.get("breast_band")
+    covered = set()
+    for index, (f, _) in enumerate(skin.faces):
+        weights = {}
+        for i in f:
+            for bone, w in skin.weights[i].items():
+                weights[bone] = weights.get(bone, 0.0) + w
+        bone = max(weights, key=weights.get)
+        cz = sum(skin.points[i][2] for i in f) / len(f)
+        if bone.startswith("Thigh") and cz > leg:
+            covered.add(index)
+        elif bone in ("Hips", "Torso") and cz < top:
+            covered.add(index)
+        elif band and bone in ("Hips", "Torso") and band[0] < cz < band[1]:
+            covered.add(index)
+    return covered
 
 
 def medieval_cloth(spec, m, skin):
@@ -2358,6 +2403,281 @@ def build_skirt(spec, m):
     return extra
 
 
+# ---------------------------------------------------------------- the other outfits
+# Each is a mesh of its own, "<name>_Cloth<Outfit>", on the same bones as the tavern dress; the game shows one
+# at a time. Garments that share a colour id with the tavern dress share its material name, so recolouring and
+# the strip ladder treat them alike. Every outfit leaves the painted smallclothes as the last layer.
+
+# A dirndl: puffed chemise sleeves tied with ribbons, a laced bodice, a knee-length skirt and a bowed apron.
+DIRNDL_PUFF = 0.024  # how far the upper sleeves stand out
+DIRNDL_RIBBON = (1.045, 1.075)  # the ribbon round each arm, just above the elbow
+DIRNDL_SKIRT = [SKIRT_TOP, 0.94, 0.88, 0.82, 0.74, 0.66, 0.58, 0.52]  # hem just above the knee
+DIRNDL_BOW = math.pi / 2 - 0.55  # the apron's bow, at the front a little to her right
+
+# A priestess's set: a gold top over the bust, sheer sleeves with gold bands, a gold girdle low on the hips with
+# long drapes hanging front and back, a choker and a band round one thigh.
+PRIESTESS_TOP = (1.06, 1.215)  # covers the painted breast band (1.065 to 1.205) with room to spare
+PRIESTESS_GIRDLE = (0.85, 0.925)
+PRIESTESS_ARMLET = (1.19, 1.215)  # a band at the top of each sleeve
+PRIESTESS_THIGH = (0.6, 0.65)
+PRIESTESS_DRAPE = [0.88, 0.82, 0.7, 0.58, 0.46, 0.34, 0.24, 0.15]
+PRIESTESS_DRAPE_WIDTH = 0.5  # radians either side of the front and the back
+
+
+def face_bone(skin, f):
+    """The bone a face mostly follows, and its centre."""
+    weights = {}
+    for i in f:
+        for bone, w in skin.weights[i].items():
+            weights[bone] = weights.get(bone, 0.0) + w
+    bone = max(weights, key=weights.get)
+    n = len(f)
+    return bone, tuple(sum(skin.points[i][k] for i in f) / n for k in range(3))
+
+
+def dirndl_cloth(spec, m, skin):
+    """The worn skin's faces the dirndl covers: chemise sleeves and yoke with arm ribbons, and the bodice."""
+    faces = []
+    for f, mat in skin.faces:
+        if mat is m["stripe"]:
+            continue
+        bone, (_, cy, cz) = face_bone(skin, f)
+        if bone.startswith(("UpperArm", "ForeArm")) and DIRNDL_RIBBON[0] < cz < DIRNDL_RIBBON[1]:
+            faces.append((f, m["ribbon"]))
+        elif bone.startswith("UpperArm"):
+            faces.append((f, m["linen"]))
+        elif bone.startswith("ForeArm"):
+            if cz > spec["elbow_z"] - SLEEVE_END:
+                faces.append((f, m["linen"]))
+        elif bone in ("Hips", "Torso"):
+            if BODICE[0] <= cz < BODICE[1]:
+                faces.append((f, m["bodice"]))
+            elif BODICE[1] <= cz < (NECKLINE[0] if cy > 0 else NECKLINE[1]):
+                faces.append((f, m["linen"]))
+    return faces
+
+
+def priestess_cloth(spec, m, skin):
+    """The worn skin's faces the priestess's set covers: the gold top, sleeves and their bands, girdle, thigh band."""
+    faces = []
+    for f, mat in skin.faces:
+        if mat is m["stripe"]:
+            continue
+        bone, (cx, _, cz) = face_bone(skin, f)
+        if bone.startswith("UpperArm"):
+            if PRIESTESS_ARMLET[0] <= cz < PRIESTESS_ARMLET[1]:
+                faces.append((f, m["jewel"]))
+            elif cz < PRIESTESS_ARMLET[0]:
+                faces.append((f, m["sheer"]))
+        elif bone.startswith("ForeArm"):
+            faces.append((f, m["sheer"]))
+        elif bone == "Thigh_R" and PRIESTESS_THIGH[0] < cz < PRIESTESS_THIGH[1]:
+            faces.append((f, m["jewel"]))
+        elif bone in ("Hips", "Torso"):
+            if PRIESTESS_TOP[0] <= cz < PRIESTESS_TOP[1]:
+                faces.append((f, m["top"]))
+            elif PRIESTESS_GIRDLE[0] <= cz < PRIESTESS_GIRDLE[1]:
+                faces.append((f, m["girdle"]))
+    return faces
+
+
+def add_slab(extra, key, corners, depth, weights, mat):
+    """A thin closed plate from four corners, `depth` thick towards (dx, dy, dz), so it shows from both sides."""
+    dx, dy, dz = depth
+    for i, co in enumerate(corners):
+        extra.add(f"{key}_o{i}", 0, co, weights(co))
+        back = (co[0] - dx, co[1] - dy, co[2] - dz)
+        extra.add(f"{key}_i{i}", 0, back, weights(back))
+    o = [f"{key}_o{i}" for i in range(4)]
+    b = [f"{key}_i{i}" for i in range(4)]
+    extra.face(o, 0, mat)
+    extra.face(list(reversed(b)), 0, mat)
+    for i in range(4):
+        j = (i + 1) % 4
+        extra.face((o[j], o[i], b[i], b[j]), 0, mat)
+
+
+def add_sheet(extra, key, point, rows, columns, mat, thickness=0.005):
+    """A closed hanging sheet over a grid: point(r, k) gives (co, weights); the back face sits `thickness` in."""
+    for r in range(rows):
+        for k in range(columns):
+            co, weights = point(r, k)
+            x, y, z = co
+            inwards = thickness / max(1e-6, math.hypot(x, y))
+            extra.add(f"{key}o{r}_{k}", 0, co, weights)
+            extra.add(f"{key}i{r}_{k}", 0, (x * (1 - inwards), y * (1 - inwards), z), weights)
+    for r in range(rows - 1):
+        for k in range(columns - 1):
+            extra.face((f"{key}o{r}_{k}", f"{key}o{r + 1}_{k}", f"{key}o{r + 1}_{k + 1}", f"{key}o{r}_{k + 1}"), 0, mat)
+            extra.face((f"{key}i{r}_{k + 1}", f"{key}i{r + 1}_{k + 1}", f"{key}i{r + 1}_{k}", f"{key}i{r}_{k}"), 0, mat)
+    edges = ([(r, 0) for r in range(rows)], [(r, columns - 1) for r in range(rows)],
+             [(0, k) for k in range(columns)], [(rows - 1, k) for k in range(columns)])
+    for edge in edges:
+        for (r0, k0), (r1, k1) in zip(edge, edge[1:]):
+            extra.face((f"{key}o{r0}_{k0}", f"{key}o{r1}_{k1}", f"{key}i{r1}_{k1}", f"{key}i{r0}_{k0}"), 0, mat)
+
+
+def waist_band(extra, spec, key, zs, reach, mat, sides=SKIRT_SIDES):
+    """A band round the waist between two heights, standing `reach` out from the worn trunk."""
+    for r, z in enumerate(zs):
+        w, f, b = profile_at(spec, z)
+        for k in range(sides):
+            a = 2 * math.pi * k / sides
+            x, y = math.cos(a) * (w + reach), math.sin(a) * ((f if math.sin(a) > 0 else b) + reach)
+            extra.add(f"{key}{r}_{k}", 0, (x, y, z), {"Hips": 1.0})
+    for k in range(sides):
+        extra.face((f"{key}1_{k}", f"{key}0_{k}", f"{key}0_{(k + 1) % sides}", f"{key}1_{(k + 1) % sides}"), 0, mat)
+
+
+def neck_band(extra, spec, key, zs, gap, mat, sides=10):
+    """A choker round the neck between two heights, on the head bone that carries the neck."""
+    table = spec["neck"]
+
+    def at(z):
+        for (z0, *low), (z1, *high) in zip(table, table[1:]):
+            if z <= z1:
+                t = max(0.0, (z - z0) / (z1 - z0))
+                return [a + (b - a) * t for a, b in zip(low, high)]
+        return list(table[-1][1:])
+
+    for r, z in enumerate(zs):
+        w, f, b, cy = at(z)[:4]
+        for k, (x, y, _) in enumerate(ring(z, w + gap, f + gap, b + gap, cy, n=sides)):
+            extra.add(f"{key}{r}_{k}", 0, (x, y, z), {"Head": 1.0})
+    for k in range(sides):
+        extra.face((f"{key}1_{k}", f"{key}0_{k}", f"{key}0_{(k + 1) % sides}", f"{key}1_{(k + 1) % sides}"), 0, mat)
+    return at
+
+
+def facing(extra, key, centre, size, out, weights, mat, depth=0.004):
+    """A small plate facing outwards along `out` (x, y), such as a gem or a knot."""
+    ox, oy = out
+    tx, ty = -oy, ox
+    cx, cy, cz = centre
+    hw, hh = size
+    corners = [(cx + tx * u, cy + ty * u, cz + v) for u, v in ((-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh))]
+    add_slab(extra, key, corners, (ox * depth, oy * depth, 0.0), weights, mat)
+
+
+def build_dirndl_extra(spec, m):
+    """The dirndl's skirt, apron with its waistband and bow, the bodice laces and a gem on the necklace."""
+    extra = Skin()
+    sides = SKIRT_SIDES
+    zs = DIRNDL_SKIRT
+    for r, z in enumerate(zs):
+        for k in range(sides):
+            a = 2 * math.pi * k / sides
+            x, y, _ = skirt_point(spec, a, z)
+            full = 1.0 + 0.12 * (r / (len(zs) - 1))  # fuller towards the hem than the long skirt
+            extra.add(f"skirt{r}_{k}", 0, (x * full, y * full, z), skirt_weights(a, z))
+    for r in range(len(zs) - 1):
+        for k in range(sides):
+            extra.face((f"skirt{r}_{k}", f"skirt{r + 1}_{k}", f"skirt{r + 1}_{(k + 1) % sides}", f"skirt{r}_{(k + 1) % sides}"),
+                       0, m["skirt"])
+
+    # The apron covers most of the front, nearly to the hem, moved out a little with the skirt's own weights.
+    apron_rows = len(zs) - 1
+    apron_columns = range(sides // 8, sides * 3 // 8 + 1)
+    for r in range(apron_rows):
+        for k in apron_columns:
+            x, y, z = extra.points[extra.at(f"skirt{r}_{k}", 0)]
+            reach = 0.012 / math.hypot(x, y)
+            extra.add(f"apron{r}_{k}", 0, (x * (1 + reach), y * (1 + reach), z), skirt_weights(2 * math.pi * k / sides, z))
+    for r in range(apron_rows - 1):
+        for k in list(apron_columns)[:-1]:
+            extra.face((f"apron{r}_{k}", f"apron{r + 1}_{k}", f"apron{r + 1}_{k + 1}", f"apron{r}_{k + 1}"), 0, m["apron"])
+    waist_band(extra, spec, "band", (0.962, 0.992), 0.024, m["apron"])
+
+    # The bow: two loops and a knot on the waistband, and two tails hanging down over the skirt.
+    a = DIRNDL_BOW
+    w, f, _ = profile_at(spec, 0.977)
+    out = (math.cos(a), math.sin(a))
+    bx, by = math.cos(a) * (w + 0.03), math.sin(a) * (f + 0.03)
+    tx, ty = -out[1], out[0]
+    hips = lambda co: {"Hips": 1.0}
+    for i, sx in enumerate((-1, 1)):
+        inner, outer = sx * 0.008, sx * 0.05
+        along = lambda u, z: (bx + tx * u, by + ty * u, z)
+        corners = [along(outer, 0.951), along(inner, 0.971), along(inner, 0.983), along(outer, 1.003)]
+        add_slab(extra, f"loop{i}", corners, (out[0] * 0.006, out[1] * 0.006, 0.0), hips, m["apron"])
+    facing(extra, "knot", (bx + out[0] * 0.003, by + out[1] * 0.003, 0.977), (0.01, 0.012), out, hips, m["apron"])
+    for i, (top, bottom, drop) in enumerate(((-0.006, -0.024, 0.2), (0.006, 0.02, 0.17))):
+        z1 = 0.965 - drop
+        hang = lambda co: skirt_weights(a, co[2])
+        corners = [(bx + tx * (top - 0.008), by + ty * (top - 0.008), 0.968), (bx + tx * (top + 0.008), by + ty * (top + 0.008), 0.968),
+                   (bx + tx * (bottom + 0.01) + out[0] * 0.012, by + ty * (bottom + 0.01) + out[1] * 0.012, z1),
+                   (bx + tx * (bottom - 0.01) + out[0] * 0.012, by + ty * (bottom - 0.01) + out[1] * 0.012, z1)]
+        add_slab(extra, f"tail{i}", corners, (out[0] * 0.004, out[1] * 0.004, 0.0), hang, m["apron"])
+
+    # Laces up the front of the bodice, in the ribbons' colour.
+    blend_start, blend_span = spec.get("trunk_blend", (0.985, 0.05))
+
+    def trunk(co):
+        t = min(1.0, max(0.0, (co[2] - blend_start) / blend_span))
+        return {"Hips": 1 - t, "Torso": t}
+
+    for i, z in enumerate((1.0, 1.035, 1.07, 1.105)):
+        y = profile_at(spec, z)[1] + CLOTH_GAP + 0.004
+        for j, sx in enumerate((-1, 1)):
+            corners = [(sx * 0.022, y, z - 0.004), (sx * 0.022, y, z + 0.002), (-sx * 0.022, y, z + 0.022), (-sx * 0.022, y, z + 0.016)]
+            add_slab(extra, f"lace{i}_{j}", corners, (0.0, 0.003, 0.0), trunk, m["ribbon"])
+
+    # A green gem hanging from the necklace's pendant.
+    facing(extra, "gem", (0.0, 0.097, 1.245), (0.008, 0.01), (0.0, 1.0), lambda co: {"Torso": 1.0}, m["gem"])
+    return extra
+
+
+def build_priestess_extra(spec, m):
+    """The priestess's drapes front and back, the choker and the gems on it and on the girdle."""
+    extra = Skin()
+    zs = PRIESTESS_DRAPE
+    columns = 6
+    for key, middle in (("front", math.pi / 2), ("back", -math.pi / 2)):
+        def point(r, k, middle=middle):
+            a = middle - PRIESTESS_DRAPE_WIDTH + 2 * PRIESTESS_DRAPE_WIDTH * k / (columns - 1)
+            x, y, z = skirt_point(spec, a, zs[r])
+            return (x * 1.02, y * 1.02, z), skirt_weights(a % (2 * math.pi), zs[r])
+        add_sheet(extra, key, point, len(zs), columns, m["drape"])
+
+    at = neck_band(extra, spec, "choker", (1.343, 1.362), 0.006, m["jewel"])
+    w, f, b, cy = at(1.35)[:4]
+    facing(extra, "chokergem", (0.0, cy + f + 0.012, 1.346), (0.009, 0.011), (0.0, 1.0), lambda co: {"Head": 1.0}, m["gem"])
+    gz = sum(PRIESTESS_GIRDLE) / 2
+    facing(extra, "girdlegem", (0.0, profile_at(spec, gz)[1] + 0.024, gz - 0.006), (0.012, 0.014), (0.0, 1.0),
+           lambda co: {"Hips": 1.0}, m["gem"])
+    return extra
+
+
+def more_outfits(spec, m, skin, normals):
+    """{outfit: (worn skin faces, where each corner sits, extra pieces)} for the outfits after the tavern dress."""
+    def lifted(amount):
+        def place(index):
+            normal = normals.get(index)
+            if not normal:
+                return skin.points[index]
+            weights = skin.weights[index]
+            bone = max(weights, key=weights.get)
+            return tuple(a + b * (CLOTH_GAP + amount(bone, skin.points[index][2])) for a, b in zip(skin.points[index], normal))
+        return place
+
+    def dirndl_puff(bone, z):
+        if bone.startswith("UpperArm"):
+            return 0.008 if z < DIRNDL_RIBBON[1] else DIRNDL_PUFF
+        if bone.startswith("ForeArm"):
+            return 0.01  # the cuff flares a little below the ribbon
+        return 0.0
+
+    def priestess_lift(bone, z):
+        if bone.startswith(("UpperArm", "ForeArm")):
+            return 0.006 if PRIESTESS_ARMLET[0] <= z else 0.004
+        return 0.002
+
+    return {
+        "Dirndl": (dirndl_cloth(spec, m, skin), lifted(dirndl_puff), build_dirndl_extra(spec, m)),
+        "Priestess": (priestess_cloth(spec, m, skin), lifted(priestess_lift), build_priestess_extra(spec, m)),
+    }
+
+
 def skin_character(c, m, spec, root):
     """Rebuilds a character as body, cloth, shoe and hair layers, all driven by one set of bones."""
     name = spec["name"]
@@ -2374,8 +2694,9 @@ def skin_character(c, m, spec, root):
         obj.data.transform(matrices[key])
         obj.matrix_world = Matrix.Identity(4)
 
-    # The whole body in skin, so clothes can come off or change without leaving holes.
-    body, kept = bare_skin.mesh(f"{name}_Body", [(f, bare) for f, _ in bare_skin.faces])
+    # The whole body in skin, so clothes can come off or change without leaving holes; only the smallclothes stay.
+    smalls = smallclothes(spec, bare_skin)
+    body, kept = bare_skin.mesh(f"{name}_Body", [(f, m["smalls"] if i in smalls else bare) for i, (f, _) in enumerate(bare_skin.faces)])
     body_obj = bare_skin.link(c, body, kept, name, f"{name}_Body")
 
     # The clothes are pushed out along the normals of their own closed surface.
@@ -2440,6 +2761,15 @@ def skin_character(c, m, spec, root):
         bind(parts[label("Hips")], label("Hips"))
         join(cloth_obj, [parts[label("Hips")]])
 
+    # The other outfits, each its own mesh, which the game shows one at a time instead of the tavern dress.
+    outfits = []
+    if medieval:
+        for outfit, (worn_faces, place, pieces) in more_outfits(spec, m, skin, normals).items():
+            mesh, kept = skin.mesh(f"{name}_Cloth{outfit}", worn_faces, place)
+            obj = skin.link(c, mesh, kept, name, f"{name}_Cloth{outfit}")
+            more, more_kept = pieces.mesh(f"{name}_Cloth{outfit}Pieces", pieces.faces)
+            outfits.append(join(obj, [pieces.link(c, more, more_kept, name, f"{name}_Cloth{outfit}Pieces")]))
+
     shoes = parts[label("Shin_R")]
     shoes.name = shoes.data.name = f"{name}_Shoes"
     bind(shoes, label("Shin_R"))
@@ -2484,9 +2814,9 @@ def skin_character(c, m, spec, root):
 
     if spec.get("jiggle"):
         # The soft parts get more faces, so the game can grow and drop them and they stay round.
-        for layer in (body_obj, cloth_obj):
+        for layer in (body_obj, cloth_obj, *outfits):
             refine_soft_parts(layer, name)
-        add_jiggle_weights(name, (body_obj, cloth_obj))
+        add_jiggle_weights(name, (body_obj, cloth_obj, *outfits))
 
     armature = bpy.data.armatures.new(f"{name}_Bones")
     rig = bpy.data.objects.new(f"{name}_Armature", armature)
@@ -2505,7 +2835,7 @@ def skin_character(c, m, spec, root):
             armature.edit_bones[bone_name].parent = armature.edit_bones[parent]
     bpy.ops.object.mode_set(mode="OBJECT")
 
-    for layer in (body_obj, cloth_obj, shoes, hair, *styles):
+    for layer in (body_obj, cloth_obj, *outfits, shoes, hair, *styles):
         layer.parent = rig
         layer.modifiers.new("Bones", "ARMATURE").object = rig
 

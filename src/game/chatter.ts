@@ -4,7 +4,7 @@
  * A guest calls out their order when they sit down, again when they're tired of waiting, thanks you when
  * served, and grumbles on the way out if they gave up. A party at a table talks among itself: first the
  * night's scripted chat, line by line, each said by the right person, then idle back-and-forth. Guests who
- * came alone strike up short exchanges with each other, with whoever shares their table if they can. Only
+ * came alone strike up short exchanges with whoever shares their table, and nobody else. Only
  * one person in any conversation speaks at a time, so the bubbles read like talk instead of a crowd.
  *
  * Kept apart from the rendering so it can be tested, and the writing changed, on its own.
@@ -323,7 +323,7 @@ export class Chatter {
 
   /**
    * Moves everyone's talk on by `dt` seconds. `parties` are the night's party scripts, `chatting` says
-   * whether a party is sitting together, `tableOf` names the table at a seat, so neighbours talk first,
+   * whether a party is sitting together, `tableOf` names the table at a seat, since only guests at the same table talk,
    * and `facts` is what guests have heard about the innkeeper.
    */
   update(
@@ -462,11 +462,17 @@ export class Chatter {
     if (this.roomWait > 0 || this.roomTalks.length >= MAX_ROOM_TALKS) return;
     const busy = new Set(this.roomTalks.flatMap((talk) => talk.members));
     const free = guests.filter((g) => g.party === null && !busy.has(g.id) && this.canTalk(g));
-    if (free.length < 2) return;
-    const first = this.pick(free);
-    const others = free.filter((g) => g !== first);
-    const neighbours = others.filter((g) => tableOf(g.seat) === tableOf(first.seat));
-    const second = this.pick(neighbours.length > 0 ? neighbours : others);
+    // Only people sharing a table talk; nobody shouts across the room to a stranger.
+    const byTable = new Map<string, Guest[]>();
+    for (const guest of free) {
+      const table = tableOf(guest.seat);
+      byTable.set(table, [...(byTable.get(table) ?? []), guest]);
+    }
+    const tables = [...byTable.values()].filter((group) => group.length >= 2);
+    if (tables.length === 0) return;
+    const group = this.pick(tables);
+    const first = this.pick(group);
+    const second = this.pick(group.filter((g) => g !== first));
     const seconds = Math.min(stayLeft(first), stayLeft(second));
     this.roomTalks.push({ members: [first.id, second.id], lines: this.exchange(first, second, seconds), wait: 0 });
     this.roomWait = ROOM_GAP + this.random() * ROOM_GAP_SPREAD;

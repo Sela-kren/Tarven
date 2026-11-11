@@ -36,6 +36,11 @@ export const INTRO: StoryLine[] = [
   {
     cg: "town",
     speaker: "narrator",
+    text: "You're twenty-four now, a grown adult, and the deed has your name on it. Nobody else is coming to sort this out.",
+  },
+  {
+    cg: "town",
+    speaker: "narrator",
     text: "Everything you own fits in one bag. The tavern is the biggest building on the high street, its old sign still swinging.",
   },
   { speaker: "you", text: "So this is it. Grandma's tavern." },

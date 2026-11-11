@@ -97,6 +97,8 @@ export interface BanterContext {
   mood?: Mood;
   lust?: number;
   desires?: number;
+  /** How many pieces of clothing you've lost to guests tonight. */
+  stripped?: number;
 }
 
 type When = (c: BanterContext) => boolean;
@@ -112,6 +114,10 @@ export interface Line {
 export interface Reply {
   id: string;
   label: string;
+  /** What you say aloud when you pick it. Answers already in quotes are said as they read. */
+  say?: string;
+  /** Taking this answer costs you a piece of clothing. */
+  strip?: boolean;
   /** What happens, shown after you answer. */
   result: string;
   gold: number;
@@ -239,6 +245,9 @@ export const COMPLIMENTS: Line[] = [
   { id: "c.kind", text: "\"A kind heart and a face like that. The village is lucky to have you.\"", when: (c) => c.persona.kindness >= 4 },
   { id: "c.greed", text: "\"Pretty as a coin, and they say just as easy to buy.\"", when: (c) => c.persona.greed >= 4 },
   { id: "c.drinker", text: "\"Anyone who can drink like you and still look that good is a marvel.\"", when: (c) => c.persona.drinks >= 5 },
+  // You've already lost something to the room tonight.
+  { id: "c.stripped.service", text: "\"Now that's what I call service. Don't go putting it all back on.\"", when: (c) => (c.stripped ?? 0) >= 1 },
+  { id: "c.stripped.view", text: "\"Best view on the whole pass, and I didn't even have to climb for it.\"", when: (c) => (c.stripped ?? 0) >= 2 },
 ];
 
 /** Talk about what you've done, which guests have heard about. */
@@ -266,12 +275,18 @@ export const REMARKS: Line[] = [
   { id: "r.flirt", text: "\"Half the pass is in love with the innkeeper, they say.\"", when: bold },
   { id: "r.smut", text: "\"You know what they call this place now? Ask the soldiers. They laugh when they say it.\"", when: disrespected },
   { id: "r.respected", text: "\"Folk mind their manners in here now. That's your doing.\"", when: (c) => c.persona.respect >= HIGH_RESPECT },
+  {
+    id: "r.stripped",
+    text: "\"Lost something tonight, innkeeper? Half the room's wearing a piece of you.\"",
+    when: (c) => (c.stripped ?? 0) >= 2,
+  },
   { id: "r.cold", text: "\"They say you're hard to get a smile out of. I'll keep trying.\"", when: (c) => c.persona.flirt === 0 && c.night >= 1 },
 ];
 
 const SHAMELESS: Reply = {
   id: "flirt.shameless",
   label: "Flirt back shamelessly",
+  say: "\"Come closer. No, closer. I'll tell you a secret.\"",
   result: "You lean in close and whisper something that turns them red to the ears. They empty their purse onto the table. (+5 gold)",
   gold: 5,
   trust: 0,
@@ -290,6 +305,7 @@ const PRICE: Reply = {
 const PLAY_ALONG: Reply = {
   id: "flirt.play",
   label: "Laugh and play along",
+  say: "\"Ha! Keep that up and I'll start charging for it.\"",
   result: "You wink. They laugh far too loudly and press another coin into your hand. (+3 gold)",
   gold: 3,
   trust: 0,
@@ -299,6 +315,7 @@ const PLAY_ALONG: Reply = {
 const THANKS: Reply = {
   id: "flirt.thanks",
   label: "Thank them and brush it off",
+  say: "\"Kind of you. Enjoy your drink.\"",
   result: "You smile, thank them, and move on. They raise their cup to your back.",
   gold: 0,
   trust: 0,
@@ -365,6 +382,39 @@ export const FAVORS: Favor[] = [
     when: (c) => c.night >= 1 && !distrusted(c),
   },
   {
+    id: "f.ewe",
+    kinds: ["farmer"],
+    ask: "\"My ewe's due any night now. If my boy comes running, would you send him to the mill for me?\"",
+    agree: reply("f.ewe.yes", "\"I'll send him straight on.\"", "They grin and raise their cup to you. (+1 trust)", {
+      trust: 1,
+      persona: { kindness: 1 },
+    }),
+    refuse: reply("f.ewe.no", "\"I've no time to run errands.\"", "\"No, no, of course,\" they say, and look at the door all night."),
+  },
+  {
+    id: "f.slate",
+    kinds: ["farmer"],
+    ask: "\"Could you put tonight on my slate? I'll pay when the barley's sold. On my word.\"",
+    agree: reply("f.slate.yes", "\"Your word's good here.\"", "They shake your hand hard. The village hears you're fair. (+1 trust, -2 gold)", {
+      gold: -2,
+      trust: 1,
+      persona: { kindness: 1 },
+    }),
+    refuse: reply("f.slate.no", "\"Coin on the table, friend.\"", "They count out their last coppers, slowly.", { persona: { greed: 1 } }),
+  },
+  {
+    id: "f.seed",
+    kinds: ["farmer"],
+    ask: "\"The baron's men took my seed grain. If you've any barley to spare, I'd pay you back at harvest.\"",
+    agree: reply("f.seed.yes", "\"Take a sack from the cellar.\"", "They go quiet, then hug you over the table. (+2 trust)", {
+      trust: 2,
+      heat: 1,
+      persona: { kindness: 2 },
+    }),
+    refuse: reply("f.seed.no", "\"I've barely enough myself.\"", "\"Aye,\" they say. \"Hard year for all of us.\""),
+    when: (c) => c.night >= 1 && !distrusted(c),
+  },
+  {
     id: "f.never",
     kinds: ["smuggler"],
     ask: "\"If anyone comes asking, I was never here tonight. Understood?\" A coin slides across the table.",
@@ -410,10 +460,22 @@ export const FAVORS: Favor[] = [
     when: (c) => c.persona.flirt >= 4,
   },
   {
+    id: "f.song",
+    kinds: ["soldier"],
+    ask: "\"Sing us one, innkeeper! The lads have heard you've a voice on you.\"",
+    agree: reply("f.song.yes", "Sing them a mountain song", "The whole table bangs their cups in time. The garrison likes you better for it. (-1 heat)", {
+      say: "\"One verse. Then you're all buying.\"",
+      heat: -1,
+      persona: { fame: 2 },
+    }),
+    refuse: reply("f.song.no", "\"I pour. I don't sing.\"", "They boo, cheerfully, and start singing badly themselves."),
+  },
+  {
     id: "f.backway",
     kinds: ["fugitive"],
     ask: "\"Is there a back way out of this place? Just... in case I need to leave quickly.\"",
     agree: reply("f.backway.yes", "Show them the bedroom window", "They let out a long breath and thank you. You've helped someone the baron wants. (+1 trust, +1 heat)", {
+      say: "\"Through the bedroom. The window opens onto the woodpile.\"",
       trust: 1,
       heat: 1,
       persona: { kindness: 1 },
@@ -442,3 +504,153 @@ export const FAVORS: Favor[] = [
     when: distrusted,
   },
 ];
+
+/**
+ * What's said when a guest with a few drinks in them goes for a piece of your clothing. Which piece, and in
+ * what order, is the wardrobe's business (`wardrobe.ts`); this is only the writing.
+ */
+export interface StripPiece {
+  id: string;
+  /** What they say as they reach for it. */
+  dare: string;
+  /** Letting them have it. */
+  accept: string;
+  /** What you say as you do. */
+  say: string;
+  /** What happens. */
+  result: string;
+}
+
+/** Written lines for each garment, by its wardrobe id. Anything without its own gets `stripPiece`'s generic ones. */
+export const DARES: Record<string, Omit<StripPiece, "id">> = {
+  apron: {
+    dare: "\"Off with that apron, innkeeper! Nobody here minds a spill.\" They tug at the strings behind your back.",
+    accept: "Let them untie your apron",
+    say: "\"Go on, then. Just the apron.\"",
+    result: "The apron drops to the floor. The table whistles and slaps the boards.",
+  },
+  belt: {
+    dare: "\"That belt's done nothing for anyone all night.\" A hand hooks under the buckle.",
+    accept: "Let them have the belt",
+    say: "\"Careful with the buckle. It was Grandma's.\"",
+    result: "They wave your belt over their head like a trophy. The room cheers.",
+  },
+  bodice: {
+    dare: "\"Loosen those laces! You can't breathe in that thing.\" They pick at the knot at your side.",
+    accept: "Let them unlace your bodice",
+    say: "\"Slowly. And only the bodice.\"",
+    result: "The laces give and the bodice comes away, leaving you in your chemise. The room goes quiet, then roars.",
+  },
+  skirt: {
+    dare: "\"That skirt's hiding the best part of the evening. Let it drop!\" Someone tugs at the waist tie.",
+    accept: "Untie your skirt",
+    say: "\"You'll pay for the privilege.\"",
+    result: "The skirt pools at your feet and you step out of it in your stockings. The room thunders.",
+  },
+  stockings: {
+    dare: "\"The stockings next! One for the table and one for me.\"",
+    accept: "Roll down your stockings",
+    say: "\"One each. Don't fight over them.\"",
+    result: "You roll them down and toss them over. Two of them nearly come to blows.",
+  },
+  blouse: {
+    dare: "\"The chemise too, innkeeper! You've come this far.\" The whole table is chanting.",
+    accept: "Pull the chemise over your head",
+    say: "\"Fine. But that's plenty for one night.\"",
+    result: "The chemise comes off, and you stand in your smallclothes while coins rain onto the table.",
+  },
+  tunic: {
+    dare: "\"Too warm in here for a tunic. Off with it!\" They grab a fistful of the hem.",
+    accept: "Pull your tunic over your head",
+    say: "\"If it'll stop you pestering me.\"",
+    result: "You pull it off and toss it over your shoulder. The room hollers and coins clatter on the table.",
+  },
+  trousers: {
+    dare: "\"Trousers next! Let's see what the baron's tax left you.\" They're already pulling at your belt.",
+    accept: "Drop your trousers",
+    say: "\"The belt stays on. I've some dignity left.\"",
+    result: "Down to your braies and boots. The room howls and slaps the table.",
+  },
+  smalls: {
+    dare: "\"All of it, innkeeper! Every last stitch!\" The whole room is on its feet, banging their cups.",
+    accept: "Take off your smallclothes",
+    say: "\"Every last stitch, then. You'd better make it worth my while.\"",
+    result: "The last of your smallclothes drops to the boards. The room erupts, and coins rain onto the table.",
+  },
+  ribbons: {
+    dare: "\"Those pretty green ribbons! One for my hat, innkeeper.\" A finger hooks under the bow on your arm.",
+    accept: "Untie your arm ribbons",
+    say: "\"One each side. Don't lose them.\"",
+    result: "The ribbons slip off your sleeves and get tied round two tankards. The table cheers its new decorations.",
+  },
+  sleeves: {
+    dare: "\"Those fancy sleeves are wasted in a tavern. Slip them off, priestess!\"",
+    accept: "Slide off your sleeves",
+    say: "\"Gently. They tear if you look at them wrong.\"",
+    result: "You peel the sleeves down your arms and drape them over the nearest shoulder. Somebody bows to you.",
+  },
+  top: {
+    dare: "\"All that gold on your chest! Let's see if it's real.\" They reach for the clasp at your back.",
+    accept: "Unclasp your gold top",
+    say: "\"It's real. And it costs more than your horse.\"",
+    result: "The gold top comes away with a clink. The room gasps, then stamps and cheers.",
+  },
+  drapes: {
+    dare: "\"Those drapes are hiding the view! Let them fall!\" Someone gathers a fistful of silk.",
+    accept: "Unhook your drapes",
+    say: "\"Front and back, then. Try not to drool on them.\"",
+    result: "The drapes slide from the girdle and pool on the boards. The whole room roars.",
+  },
+  girdle: {
+    dare: "\"And that gold belt! It's holding nothing up any more.\" They pick at the clasp at your hip.",
+    accept: "Let them have your girdle",
+    say: "\"Weigh it if you like. You can't afford it.\"",
+    result: "The girdle comes off in a jingle of gold and goes round the table from hand to hand.",
+  },
+};
+
+/** The lines for a garment: its own if it has them, otherwise ones made from what it's called. */
+export function stripPiece(garment: { id: string; label: string }): StripPiece {
+  const written = DARES[garment.id];
+  if (written) return { id: garment.id, ...written };
+  const { label } = garment;
+  return {
+    id: garment.id,
+    dare: `"Off with that ${label}, innkeeper!" A hand is already reaching for it.`,
+    accept: `Let them have your ${label}`,
+    say: `"Fine. Just the ${label}."`,
+    result: `Your ${label} comes off to whistles and stamping.`,
+  };
+}
+
+/** Gold for each piece; every one after the first is worth more to the room. */
+export const STRIP_GOLD = 3;
+export const STRIP_GOLD_STEP = 2;
+
+/** Your answers when a guest goes for your clothes: let them have it, or slap their hand away. */
+export function stripReplies(piece: StripPiece, alreadyOff: number): Reply[] {
+  const gold = STRIP_GOLD + alreadyOff * STRIP_GOLD_STEP;
+  return [
+    {
+      id: `strip.${piece.id}`,
+      label: piece.accept,
+      say: piece.say,
+      result: `${piece.result} (+${gold} gold)`,
+      gold,
+      trust: 0,
+      heat: 0,
+      persona: { flirt: 1, respect: -1, fame: 2 },
+      strip: true,
+    },
+    {
+      id: "strip.no",
+      label: "Slap their hand away",
+      say: "\"Hands on your cup, not on me.\"",
+      result: "They snatch their hand back, and the table laughs at them instead of you.",
+      gold: 0,
+      trust: 0,
+      heat: 0,
+      persona: { respect: 1 },
+    },
+  ];
+}

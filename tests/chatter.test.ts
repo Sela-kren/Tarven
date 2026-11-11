@@ -187,7 +187,7 @@ describe("guests who came alone", () => {
     expect(listen(chatter, [guest(1, "farmer", { status: "eating" })], 12)).toEqual([]);
   });
 
-  it("prefer someone at their own table", () => {
+  it("only talk with someone at their own table", () => {
     const chatter = new Chatter(() => 0);
     const guests = [guest(1, "farmer", { status: "eating" }), guest(2, "soldier", { status: "eating" }), guest(3, "smuggler", { status: "eating" })];
     const tables = ["", "A", "B", "A"];
@@ -197,6 +197,16 @@ describe("guests who came alone", () => {
       for (const g of guests) if (chatter.saying(g.id)) speakers.add(g.id);
     }
     expect([...speakers].sort()).toEqual([1, 3]);
+  });
+
+  it("don't talk across the room to someone at another table", () => {
+    const chatter = new Chatter(() => 0);
+    const guests = [guest(1, "farmer", { status: "eating" }), guest(2, "soldier", { status: "eating" })];
+    const tables = ["", "A", "B"];
+    for (let i = 0; i < 120; i++) {
+      chatter.update(0.1, guests, [], () => false, (seat) => tables[seat]);
+      for (const g of guests) expect(chatter.saying(g.id)).toBeNull();
+    }
   });
 
   it("stop mid-conversation when one of them leaves", () => {

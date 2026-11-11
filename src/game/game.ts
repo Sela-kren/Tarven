@@ -77,6 +77,9 @@ import {
 } from "./save";
 import { INTRO, StoryBox } from "./story";
 import { Chatter } from "./chatter";
+import { DrinkComic } from "./comic";
+import { TouchComic } from "./touchcomic";
+import type { Reaction, SoftPart } from "./player";
 import { DialogueBox } from "./dialogue";
 import { SpeechBubbles, type Speaker } from "./speech";
 import { formatHour, type WorldClock } from "./time";
@@ -316,6 +319,10 @@ export class Game {
   /** Standing portraits for conversations: yours, and one per kind of guest and body. */
   private playerPortrait: HTMLCanvasElement | null = null;
   private readonly guestPortraits = new Map<string, HTMLCanvasElement>();
+  /** The comic panel that pops up when you drink with a guest. */
+  private readonly drinkComic: DrinkComic;
+  /** The comic panel that pops up when a guest reaches for you, playing out your answer. */
+  private readonly touchComic: TouchComic;
   /** What to return to when the pause menu closes. */
   private pausedFrom: "play" | "visitor" = "play";
   private afterFade: (() => void) | null = null;
@@ -475,6 +482,8 @@ export class Game {
       template.scale.setScalar(ITEM_SCALE);
       this.itemTemplates[item] = template;
     }
+    this.drinkComic = new DrinkComic(renderer, element("comic"), () => this.makeItem("ale"), (effect) => this.audio.play(effect));
+    this.touchComic = new TouchComic(renderer, (effect) => this.audio.play(effect));
     this.spots = {
       tap: requireNode(props, "Spot_Tap").getWorldPosition(new Vector3()),
       bread: requireNode(props, "Spot_Bread").getWorldPosition(new Vector3()),
@@ -1338,6 +1347,7 @@ export class Game {
   private enterTavern(): void {
     this.staging = false;
     this.tavern.playerBody = this.active === 1 ? "Female" : "Male";
+    this.tavern.playerOutfit = this.looks[this.tavern.playerBody].outfit;
     document.body.classList.remove("staging");
     // Only the character the player picked works the night; the other stays out of the game.
     this.siblings.forEach((sibling, index) => {
@@ -1479,10 +1489,25 @@ export class Game {
     this.dialogue.start(lines, this.tavern.talkChoices, (index) => this.pickTalk(index));
   }
 
+  /** What guests have got off the player tonight, as last put on the model: who, and which pieces. */
+  private strippedShown = "";
+
+  /** Takes off the model whatever guests have got off the player, and puts it back on by morning. */
+  private syncStripped(): void {
+    const off = this.tavern.strippedPieces;
+    const key = `${this.active}:${off.join(",")}`;
+    if (key === this.strippedShown) return;
+    this.strippedShown = key;
+    this.dressers.forEach((dresser, index) => dresser.setStripped(index === this.active ? off : []));
+    this.playerPortrait = null;
+  }
+
   private pickTalk(index: number): void {
     const { tavern } = this;
     this.audio.play("click");
     tavern.chooseTalk(index);
+    this.syncStripped();
+    this.showTouch();
     if (!tavern.inConversation) {
       this.dialogue.close();
       this.screen = "play";
@@ -1684,10 +1709,39 @@ export class Game {
     this.speech.render(speakers, this.camera);
   }
 
+  /**
+   * Plays out the answer to a guest who reached for you: on the floor she jolts, melts into it or twists away,
+   * and whatever soft part was touched bounces; over the top, a comic panel shows it close up.
+   */
+  private showTouch(): void {
+    const moment = this.tavern.takeTouchMoment();
+    if (!moment) return;
+    const sibling = this.siblings[this.active];
+    const took = moment.answer === "allow" || moment.answer === "lean";
+    const soft: SoftPart | null = !took ? null : moment.region === "chest" ? "Bust" : moment.region === "rear" || moment.region === "lap" ? "Glute" : null;
+    const reaction: Reaction = !took ? "recoil" : moment.answer === "lean" ? "melt" : "jolt";
+    sibling.react(reaction, soft, moment.id === "smack" ? 0.9 : 0.6);
+    const name = BODY_NAMES[this.active];
+    const body = sibling.root.getObjectByName(name);
+    if (body) this.touchComic.play(body, name, { id: moment.id, region: moment.region, answer: moment.answer, kind: moment.kind });
+  }
+
+  /** Pops up the comic panel of the active sibling knocking back a drink. */
+  private showDrinkComic(): void {
+    const name = BODY_NAMES[this.active];
+    const body = this.siblings[this.active].root.getObjectByName(name);
+    if (body) this.drinkComic.play(body, name, this.tavern.drunk);
+    else this.audio.play("drink");
+  }
+
   /** Plays what the rules cued and sets the music and the room's ambience for this moment. */
   private updateSound(): void {
     const { audio, tavern, focus } = this;
-    for (const cue of tavern.takeCues()) audio.play(cue);
+    for (const cue of tavern.takeCues()) {
+      // Drinking with a guest plays out in a comic panel, which makes its own clink and gulp in time.
+      if (cue === "drink") this.showDrinkComic();
+      else audio.play(cue);
+    }
     audio.setPaused(this.screen === "paused");
     audio.setMusic(musicFor(this.staging, tavern.phase, tavern.nightIndex));
 
@@ -1730,6 +1784,7 @@ export class Game {
     this.time += dt;
     // Time stands still while you're looking at the plans.
     if (this.screen !== "build") this.clock.update(dt);
+    this.syncStripped();
 
     if (this.screen === "story") {
       this.updateStory(dt);
@@ -1770,6 +1825,8 @@ export class Game {
       this.updateVisitor(dt);
     }
 
+    this.drinkComic.update(dt);
+    this.touchComic.update(dt);
     this.syncGuests(dt);
     this.messLayer.sync(this.tavern.messes, dt);
     this.updateBell(dt);
