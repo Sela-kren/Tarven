@@ -24,6 +24,18 @@ import {
   type PassiveFacts,
 } from "./passives";
 import { PASSIVE_ICONS } from "./passiveicons";
+import {
+  ACT_SKILLS,
+  BODY_SKILLS,
+  levelOf,
+  levelProgress,
+  skillBonusText,
+  statBonusText,
+  STATS,
+  type Experience,
+  type SkillId,
+  type StatId,
+} from "./skills";
 
 export interface JournalState {
   name: string;
@@ -272,73 +284,71 @@ export interface PassivesState {
   facts: PassiveFacts;
 }
 
-/** One passive's card, shown when its chip is picked. */
-function passiveDetail(def: PassiveDef, state: PassivesState, detail: HTMLElement): void {
+/** One passive written out in full: its name, what earns it and how close she is, what it does, and her thought. */
+function passiveCard(def: PassiveDef, state: PassivesState): HTMLElement {
   const owned = state.owned.has(def.id);
+  const ready = !owned && earned(def, state.facts);
+  const card = el("div", owned ? "pcard owned" : ready ? "pcard ready" : "pcard");
   const [have, need] = def.progress(state.facts);
-  const parts: HTMLElement[] = [el("b", "name", def.name)];
-  parts.push(el("p", "need", owned ? `Earned: ${def.need.toLowerCase()}.` : `${def.need}. (${have}/${need})`));
-  parts.push(el("p", "benefit", `+ ${def.benefit}`));
-  if (def.cost) parts.push(el("p", "cost", `- ${def.cost}`));
-  if (owned) parts.push(el("p", "thought", def.thought));
-  detail.replaceChildren(...parts);
+  const head = el("div", "phead");
+  head.append(el("b", "pname", def.name), el("span", "pstate", owned ? "Earned" : ready ? "Tonight" : `${have}/${need}`));
+  card.append(head);
+  const req = el("div", "preq");
+  req.append(el("span", "", def.need), meter(owned ? need : have, 0, need, owned ? "pink" : "gold"));
+  card.append(req);
+  card.append(el("p", "benefit", `+ ${def.benefit}`));
+  if (def.cost) card.append(el("p", "cost", `- ${def.cost}`));
+  if (owned) card.append(el("p", "thought", def.thought));
+  return card;
 }
 
 /**
- * The passives, like Karryn's list: each group is a row with its picture, and a chip for each passive in it.
- * Earned ones are coloured, the next to earn shows how close she is, and the rest stay hidden until then.
- * Picking a chip shows what it needs and what it does at the foot of the page.
+ * The passives, laid out like Karryn's list: every group down the left page with its picture and how many of its
+ * passives she holds, and on the right, every passive of the picked group written out in full, earned or not.
  */
 export function passivesBook(state: PassivesState): HTMLElement {
   const book = el("div", "journal-book private passives");
   const left = el("div", "page left");
   const right = el("div", "page right");
   book.append(left, el("div", "spine"), right);
-  const owned = PASSIVES.filter((p) => state.owned.has(p.id)).length;
+  const ownedCount = PASSIVES.filter((p) => state.owned.has(p.id)).length;
   left.append(el("h1", "title", "Passives"));
-  left.append(el("p", "role", `${owned} of ${PASSIVES.length} earned. Earned as you go to bed.`));
-  right.append(el("h2", "", "Habits"));
+  left.append(el("p", "role", `${ownedCount} of ${PASSIVES.length} earned. New ones come as you go to bed.`));
 
-  const details = [el("div", "detail"), el("div", "detail")];
-  details.forEach((d) => d.append(el("p", "note", "Pick a passive to read it.")));
-  let picked: HTMLElement | null = null;
+  const list = el("div", "group-list");
+  left.append(list);
+  const rows = new Map<string, HTMLElement>();
 
-  for (const group of PASSIVE_GROUPS) {
-    const page = group.body ? left : right;
-    const detail = group.body ? details[0] : details[1];
-    const line = el("div", "group");
+  const show = (groupId: (typeof PASSIVE_GROUPS)[number]["id"]) => {
+    const group = PASSIVE_GROUPS.find((g) => g.id === groupId)!;
+    for (const [id, rowEl] of rows) rowEl.classList.toggle("on", id === groupId);
+    const head = el("div", "group-head");
     const icon = el("span", "icon");
     icon.innerHTML = PASSIVE_ICONS[group.id];
-    line.append(icon, el("span", "label", group.name));
-    const chips = el("span", "chips");
-    let hiddenFromHere = false;
-    for (const def of PASSIVES.filter((p) => p.group === group.id)) {
-      const has = state.owned.has(def.id);
-      const chip = el("button", has ? "pchip owned" : hiddenFromHere ? "pchip hidden" : "pchip next");
-      chip.type = "button";
-      if (has) chip.textContent = def.name;
-      else if (hiddenFromHere) chip.textContent = "???";
-      else {
-        const [have, need] = def.progress(state.facts);
-        chip.textContent = earned(def, state.facts) ? `${def.name} · tonight` : `${have}/${need}`;
-        chip.title = def.name;
-        hiddenFromHere = true;
-      }
-      if (!chip.classList.contains("hidden")) {
-        chip.addEventListener("click", () => {
-          picked?.classList.remove("picked");
-          picked = chip;
-          chip.classList.add("picked");
-          passiveDetail(def, state, detail);
-        });
-      }
-      chips.append(chip);
-    }
-    line.append(chips);
-    page.append(line);
+    head.append(icon, el("h2", "", group.name));
+    const cards = el("div", "pcards");
+    for (const def of PASSIVES.filter((p) => p.group === group.id)) cards.append(passiveCard(def, state));
+    right.replaceChildren(head, cards);
+  };
+
+  for (const group of PASSIVE_GROUPS) {
+    const defs = PASSIVES.filter((p) => p.group === group.id);
+    const have = defs.filter((p) => state.owned.has(p.id)).length;
+    const line = el("button", "group");
+    line.type = "button";
+    const icon = el("span", "icon");
+    icon.innerHTML = PASSIVE_ICONS[group.id];
+    const pips = el("span", "pips");
+    for (const def of defs) pips.append(el("span", state.owned.has(def.id) ? "pip on" : earned(def, state.facts) ? "pip ready" : "pip"));
+    line.append(icon, el("span", "label", group.name), pips, el("span", "count", `${have}/${defs.length}`));
+    line.addEventListener("click", () => show(group.id));
+    rows.set(group.id, line);
+    list.append(line);
   }
-  left.append(details[0]);
-  right.append(details[1]);
+
+  // Open on the first group she's made any start on, or the hands.
+  const started = PASSIVE_GROUPS.find((g) => PASSIVES.some((p) => p.group === g.id && (state.owned.has(p.id) || p.progress(state.facts)[0] > 0)));
+  show(started?.id ?? "hands");
   return book;
 }
 
@@ -384,9 +394,71 @@ export function recordsBook(state: RecordsState): HTMLElement {
   right.append(row("Bottles poured", String(r.poured)));
   right.append(row("Washed up", String(r.washed)));
   right.append(row("Drinks with guests", String(state.facts.drinks)));
+  right.append(el("h2", "", "Brawls"));
+  right.append(row("Won", String(r.fightsWon)));
+  right.append(row("Talked down", String(r.talkedDown)));
+  right.append(row("Lost", String(r.fightsLost)));
+  right.append(el("h2", "", "After Hours"));
+  right.append(row("Won", String(r.duelsWon)));
+  right.append(row("Lost", String(r.duelsLost)));
+  right.append(row("Called off", String(r.duelsStopped)));
   right.append(el("h2", "", "Secrets"));
   right.append(row("Kept", String(state.facts.protected)));
   right.append(row("Sold", String(state.facts.sold)));
   right.append(row("Told", String(state.facts.informed)));
+  return book;
+}
+
+// ---------- Stats and skills ----------
+
+export interface SkillsState {
+  xp: Experience;
+  /** Levels given outright by passives. */
+  bonus: Partial<Record<StatId | SkillId, number>>;
+  /** Whether guests touch the player at all: the body skills only grow for the sister, for now. */
+  touchable: boolean;
+}
+
+/** One stat or skill: its name and level, a bar to the next level, and what its level does. */
+function skillLine(name: string, xp: number, bonus: number, does: string): HTMLElement {
+  const level = levelOf(xp) + bonus;
+  const progress = levelProgress(xp);
+  const line = el("div", "skill");
+  const head = el("div", "skill-head");
+  head.append(el("span", "skill-name", name), el("b", "skill-level", `Lv ${level}${bonus > 0 ? ` (+${bonus})` : ""}`));
+  const bar = progress ? meter(progress[0], 0, progress[1], "gold") : meter(1, 0, 1, "green");
+  line.append(head, bar, el("p", "skill-does", does));
+  return line;
+}
+
+/**
+ * Her stats and skills, like Karryn's: each has a level that grows with use, and some passives give a level
+ * outright. Stats on the left, what she's practised on the right.
+ */
+export function skillsBook(state: SkillsState): HTMLElement {
+  const book = el("div", "journal-book skills");
+  const left = el("div", "page left");
+  const right = el("div", "page right");
+  book.append(left, el("div", "spine"), right);
+  const xp = (id: StatId | SkillId) => state.xp[id] ?? 0;
+  const bonus = (id: StatId | SkillId) => state.bonus[id] ?? 0;
+  const level = (id: StatId | SkillId) => levelOf(xp(id)) + bonus(id);
+
+  left.append(el("h1", "title", "Skills"));
+  left.append(el("p", "role", "Everything gets better with practice."));
+  left.append(el("h2", "", "Stats"));
+  for (const stat of STATS) {
+    left.append(skillLine(stat.name, xp(stat.id), bonus(stat.id), `${stat.does}. ${statBonusText(stat.id, level(stat.id))}.`));
+  }
+
+  right.append(el("h2", "", "Body"));
+  if (!state.touchable) right.append(el("p", "note", "Guests keep their hands to themselves with you."));
+  const body = el("div", "skill-grid");
+  for (const skill of BODY_SKILLS) body.append(skillLine(skill.name, xp(skill.id), bonus(skill.id), skillBonusText(skill.id, level(skill.id))));
+  right.append(body);
+  right.append(el("h2", "", "Upstairs"));
+  const acts = el("div", "skill-grid");
+  for (const skill of ACT_SKILLS) acts.append(skillLine(skill.name, xp(skill.id), bonus(skill.id), skillBonusText(skill.id, level(skill.id))));
+  right.append(acts);
   return book;
 }

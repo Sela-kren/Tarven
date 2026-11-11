@@ -374,6 +374,23 @@ Her private epilogue comes from Lewdness × Corruption and is shown next to the 
   - Easing the ache at bedtime, and being Overwhelmed, also show cards.
   - All cards use placeholder wallpaper.
 
+- [x] **Stats, skills and brawls.**
+  - Five stats with levels: Strength, Agility, Endurance, Charm and Mind. They grow from what she does, like Karryn's.
+  - Body skills (Hands, Kissing, Breasts and the rest) and upstairs skills grow with use. Some passives give a level outright, like Karryn's "Kiss level up".
+  - Brawls: an angry or roaring-drunk guest can start a fight, at most 2 a night. It's turn-based: Strike, Shove, Dodge, Talk them down (Charm), Stare them down (Mind), and Throw them out.
+  - Winning throws them out, with respect and fame. Talking them down earns trust. Losing costs gold and respect, and nothing else.
+  - New passive groups: Brawler, Charm and Mind. There's a Skills tab in the journal, and brawls show in the Records.
+
+- [x] **After Hours: pleasure duels she agrees to** (Karryn's sex combat, made consensual).
+  - At bedtime, a sober guest she let touch her tonight may linger and ask for a game. She can say yes or no. It's offered at Lewdness 25+ (or with Upstairs Curious), once a night, and never when she's had too much to drink.
+  - Before it starts she sets her rules: which parts are in play (Hands, Mouth, Breasts, Butt, Pussy), each only if that desire meter is warm enough tonight, and the stake (0, 5, 10 or 20 gold). A kiss is always in play.
+  - Turn-based: her pleasure and stamina against theirs. Her moves are Kiss, Caress, Tease (Charm), Undress (twice), Use your hands, Use your mouth, Ride them, Hold back (Mind), and Stop. Bolder moves cost more stamina; their moves only ever land on what she put in play.
+  - States: Calm, Aroused (50+: her moves hit 25% harder, holding back is weaker) and On the Edge (80+: 50% harder, holding back much weaker).
+  - Win: they give in first, and she takes the stake plus fame. Lose: she goes first and pays the stake. Stop (or Esc) always ends it at once, and costs nothing.
+  - Win or lose, an 18+ placeholder card with one line, then sleep. Every move has one short, non-graphic line.
+  - New passive group, After Hours: Night Owl, Good Sport, House Champion, Queen of the Night, Never Holds Back, Cool as Ice, Edge Walker, Bare and Bold, Clever Fingers, Sweet Tooth, Born Rider.
+  - Brawls never turn into a duel: the two are separate.
+
 ### Next
 
 **4. Titles** (Karryn's Prison style)
@@ -422,7 +439,7 @@ After a few full playthroughs:
 - whether Untouchable and Composure feel as good to play as the lewd groups
 - whether gold from passives breaks the baron's debt
 
-**11. Fighting** (future)
+**11. More fighting** (the first brawls are in)
 
 Brawls in the tavern, throwing out troublemakers, the baron's men. This is where Karryn's Prison-style combat would sit.
 

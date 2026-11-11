@@ -327,102 +327,192 @@
   color: #563274;
 }
 
-/* A group of passives: its picture, its name, and a chip for each passive. */
-#panel .journal-book .group {
+/* The group list down the left page: picture, name, a pip for every passive in it, and how many she holds. */
+#panel .journal-book .group-list {
   display: grid;
-  grid-template-columns: 24px 6.5em 1fr;
-  align-items: center;
-  gap: 8px;
-  min-height: 30px;
-  padding: 2px 0;
-  border-bottom: 2px solid #d8c79a;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 8px;
 }
 
-#panel .journal-book .group .icon svg {
+/* Picture on the left; the name over a pip for each passive; the count on the right. */
+#panel .journal-book .group {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  grid-template-areas: "icon label count" "icon pips count";
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 1px;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 3px 5px;
+  font: 400 14px/1.2 var(--font);
+  color: var(--ink);
+  text-align: left;
+  text-shadow: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid #d8c79a;
+  box-shadow: none;
+  clip-path: none;
+  filter: none;
+  cursor: pointer;
+}
+
+#panel .journal-book .group:hover {
+  background: #e2d3a8;
+}
+
+/* The group open on the right page. */
+#panel .journal-book .group.on {
+  background: #8e2448;
+  color: #f3e6c4;
+  border-bottom-color: #5a1430;
+}
+
+#panel .journal-book .group .icon svg,
+#panel .journal-book .group-head .icon svg {
   display: block;
   width: 24px;
   height: 24px;
   shape-rendering: crispEdges;
 }
 
+#panel .journal-book .group .icon {
+  grid-area: icon;
+}
+
 #panel .journal-book .group .label {
-  font-size: 15px;
+  grid-area: label;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-#panel .journal-book .chips {
+#panel .journal-book .group .pips {
+  grid-area: pips;
+}
+
+#panel .journal-book .pips {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  gap: 3px;
 }
 
-#panel .journal-book .pchip {
-  width: auto;
-  min-height: 0;
-  margin: 0;
-  padding: 2px 7px;
-  font: 400 13px/1.2 var(--font);
-  color: #f3e6c4;
-  text-shadow: none;
-  background: #8e2448;
-  border: none;
-  box-shadow: inset 0 -3px 0 #5a1430;
-  clip-path: none;
-  filter: none;
-  cursor: pointer;
-}
-
-#panel .journal-book .pchip.next {
-  color: #6b5a3e;
-  background: #e2d3a8;
+#panel .journal-book .pip {
+  width: 8px;
+  height: 8px;
+  background: #d8c79a;
   box-shadow: inset 0 0 0 2px #a8936a;
 }
 
-#panel .journal-book .pchip.hidden {
-  color: #a8936a;
-  background: #d8c79a;
-  box-shadow: none;
-  cursor: default;
+#panel .journal-book .pip.on {
+  background: #e0608a;
+  box-shadow: inset 0 0 0 2px #5a1430;
 }
 
-#panel .journal-book .pchip.picked {
-  outline: 2px solid #1c140e;
+#panel .journal-book .pip.ready {
+  background: #f0c040;
+  box-shadow: inset 0 0 0 2px #8a6a10;
 }
 
-/* What a picked passive needs and does, at the foot of its page. */
-#panel .journal-book .detail {
-  min-height: 84px;
-  margin-top: 10px;
-  padding: 8px 10px;
+#panel .journal-book .group .count {
+  grid-area: count;
+  font-weight: 700;
+  font-size: 13px;
+  text-align: right;
+}
+
+/* The right page: the picked group's passives, each written out in full. */
+#panel .journal-book .group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#panel .journal-book .group-head h2 {
+  flex: 1;
+  margin: 0 0 6px;
+}
+
+#panel .journal-book .pcards {
+  display: grid;
+  gap: 8px;
+  max-height: 440px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+#panel .journal-book .pcard {
+  padding: 7px 10px 8px;
   font-size: 14px;
   background: #e2d3a8;
   box-shadow: inset 0 0 0 2px #c9b483;
 }
 
-#panel .journal-book .detail p {
-  margin: 2px 0;
+#panel .journal-book .pcard.owned {
+  background: #f3e2c8;
+  box-shadow: inset 0 0 0 2px #8e2448, inset 4px 0 0 #8e2448;
 }
 
-#panel .journal-book .detail .name {
-  font: 400 20px/1.1 var(--font-title);
+#panel .journal-book .pcard.ready {
+  box-shadow: inset 0 0 0 2px #d9a93a, inset 4px 0 0 #d9a93a;
+}
+
+#panel .journal-book .phead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+#panel .journal-book .pname {
+  font: 400 19px/1.1 var(--font-title);
   color: #7a1a3a;
 }
 
-#panel .journal-book .detail .benefit {
-  color: #3f7a3a;
-}
-
-#panel .journal-book .detail .cost {
-  color: #b0200f;
-}
-
-#panel .journal-book .detail .thought {
-  font-style: italic;
+#panel .journal-book .pcard:not(.owned) .pname {
   color: #6b5a3e;
 }
 
-#panel .journal-book .detail .note {
-  margin-left: 0;
+#panel .journal-book .pstate {
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+#panel .journal-book .pcard.owned .pstate {
+  color: #8e2448;
+}
+
+#panel .journal-book .preq {
+  display: grid;
+  grid-template-columns: 1fr 70px;
+  align-items: center;
+  gap: 8px;
+  margin: 3px 0 2px;
+  color: #6b5a3e;
+}
+
+#panel .journal-book .preq .meter {
+  grid-column: auto;
+  height: 10px;
+}
+
+#panel .journal-book .pcard p {
+  margin: 2px 0 0;
+}
+
+#panel .journal-book .pcard .benefit {
+  color: #3f7a3a;
+}
+
+#panel .journal-book .pcard .cost {
+  color: #b0200f;
+}
+
+#panel .journal-book .pcard .thought {
+  font-style: italic;
+  color: #6b5a3e;
 }
 
 #panel .journal-book.passives .page,
@@ -436,4 +526,56 @@
 
 #panel .journal-book.records h2 {
   margin-top: 10px;
+}
+
+/* ---------- Stats and skills ---------- */
+
+#panel .journal-tabs .tab.skills {
+  background: repeating-linear-gradient(90deg, #2e4a6a 0 18px, #2a4562 18px 20px);
+  box-shadow: inset 0 4px 0 #4a6a8e, inset 0 -5px 0 #16263a;
+}
+
+#panel .journal-book .skill {
+  margin: 0 0 6px;
+}
+
+#panel .journal-book .skill-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+#panel .journal-book .skill-name {
+  font-size: 15px;
+}
+
+#panel .journal-book .skill-level {
+  font-size: 14px;
+  color: #7a1a3a;
+}
+
+#panel .journal-book .skill .meter {
+  display: block;
+  height: 8px;
+  margin: 2px 0;
+}
+
+#panel .journal-book .skill-does {
+  margin: 0;
+  font-size: 12px;
+  color: #7a6848;
+}
+
+#panel .journal-book .skill-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+
+#panel .journal-book.skills .page {
+  padding-top: 16px;
+}
+
+#panel .journal-book.skills h2 {
+  margin-top: 8px;
 }

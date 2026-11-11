@@ -40,11 +40,28 @@ import {
   type TouchRegion,
 } from "./touch";
 import { GUEST_TOO_DRUNK, PULLS, SLAPS, TOO_DRUNK_TO_ALLOW } from "./touchtalk";
+import { Fight, type FightMove, type FightOutcome } from "./fight";
+import { Duel, DUEL_AREAS, type DuelArea, type DuelMove, type DuelOutcome } from "./duel";
+import {
+  ACT_SKILL_OF,
+  actSkillBonus,
+  bodySkillBonus,
+  charmBonus,
+  levelOf,
+  mindBonus,
+  readExperience,
+  SKILL_OF_REGION,
+  STATS,
+  type Experience,
+  type SkillId,
+  type StatId,
+} from "./skills";
 import {
   effectsOf,
   emptyMeters,
   lewdnessOf,
   METER_MAX,
+  METER_NAMES,
   METER_OF,
   METERS,
   newlyEarned,
@@ -228,6 +245,15 @@ const HIGH_RESPECT_NIGHT = 8;
 const INVITES_AT = 25;
 /** How much of their patience everyone waiting loses while she's upstairs. */
 const UPSTAIRS_PATIENCE = 0.35;
+/** The stakes she can play an after-hours game for. */
+const DUEL_STAKES = [0, 5, 10, 20];
+/** Experience for each time she does something upstairs. */
+const UPSTAIRS_XP = 5;
+/** How likely an angry or roaring drunk guest is to start a brawl, each second; at most this many a night. */
+const TROUBLE_PER_SECOND = 0.012;
+const MAX_FIGHTS = 2;
+/** What a guest who knocks her down takes from the till, plus a little more each night. */
+const LOST_FIGHT_GOLD = 6;
 /** Corruption for each point of greed, each secret sold, each time she informs, and each cold choice. */
 const CORRUPT_PER_GREED = 4;
 const CORRUPT_PER_SOLD = 10;
@@ -834,6 +860,21 @@ export class Tavern {
   eased = false;
   /** A moment waiting for its 18+ card, until the game takes it. */
   private adultScene: AdultScene | null = null;
+  /** Experience in every stat and skill. Lasts. */
+  xp: Experience = {};
+  /** A brawl in progress, or null. While set, the game shows the fight and the night waits. */
+  fight: Fight | null = null;
+  /** How the last brawl ended, for the game to show once. */
+  lastFight: { outcome: FightOutcome; text: string } | null = null;
+  /** An after-hours game in progress, or null; and how the last one ended, for the game to show once. */
+  duel: Duel | null = null;
+  lastDuel: { outcome: DuelOutcome; text: string; line: string; gold: number } | null = null;
+  /** Guests she let touch her tonight who weren't drunk: one of them might linger after closing. */
+  private admirers: GuestKind[] = [];
+  private duelTonight = false;
+  /** Brawls tonight, and drinks she's had tonight. */
+  private fightsTonight = 0;
+  private drinksTonight = 0;
   /** Tonight's touches, for the journal: how many guests reached, how many you let, how many you turned away. */
   readonly touchesTonight = { reached: 0, allowed: 0, refused: 0, boldest: 0 };
   /** Who the player is, so what guests say fits them. The game sets it. */
@@ -924,6 +965,8 @@ export class Tavern {
       if (this.touchesTonight.reached > 0 && this.touchesTonight.allowed === 0) r.chasteNights++;
     }
     if (this.persona.respect >= HIGH_RESPECT_NIGHT) r.respectNights++;
+    // A night without a drink keeps her head clear.
+    if (this.drinksTonight === 0) this.gainXp("mind", 3);
     const nightly = this.effects.perNight;
     this.adjust(0, nightly.trust, nightly.heat);
     if (nightly.respect) this.shift({ respect: nightly.respect });
@@ -1039,7 +1082,7 @@ export class Tavern {
         GUEST_KINDS[kind].patience *
         (this.upgrades.has("cushions") ? CUSHION_PATIENCE : 1) *
         this.messPatience *
-        (1 + this.effects.patience);
+        (1 + this.effects.patience + charmBonus(this.level("charm")).patience);
       const context = this.banterContext(kind);
       const { lust, desires } = arrivalFeelings(context, this.random);
       const filth = Math.min(1, this.messes.length / MESS_FOR_FULL_LOSS);
@@ -1166,12 +1209,28 @@ export class Tavern {
 
       const seated = guest.status === "waiting" || guest.status === "eating";
       if (seated && guest.rumor && !this.heardRumor && guest.id === listeningTo) {
-        guest.listened += dt;
+        guest.listened += dt * (1 + mindBonus(this.level("mind")).listen);
         if (guest.listened >= LISTEN_TIME) {
           this.heardRumor = true;
+          this.records.rumors++;
+          this.gainXp("mind", 3);
           this.say(`Overheard: ${this.plan.lastCall.rumor}`);
           this.cue("rumor");
         }
+      }
+
+      // Someone who's angry or roaring drunk might start trouble, now and then.
+      const rowdy = guest.mood === "angry" || guest.mood === "drunk";
+      if (
+        seated &&
+        rowdy &&
+        this.phase === "service" &&
+        !this.fight &&
+        !this.inConversation &&
+        this.fightsTonight < MAX_FIGHTS &&
+        this.random() < TROUBLE_PER_SECOND * dt * Math.max(0, 1 - this.effects.trouble)
+      ) {
+        this.startFight(guest.id);
       }
     }
   }
@@ -1263,11 +1322,13 @@ export class Tavern {
     const base =
       rules.pay +
       (bottle ? BOTTLES[bottle].extraPay + e.bottleGold : 0) +
-      (tipped ? rules.tip + behaviour.tipBonus + e.serveTip : 0) +
+      (tipped ? rules.tip + behaviour.tipBonus + e.serveTip + charmBonus(this.level("charm")).tip : 0) +
       (this.stripped > 0 ? e.strippedGold : 0);
     const amount = Math.round(base * (1 + e.payPct));
     this.records.served++;
     if (bottle) this.records.poured++;
+    this.gainXp("agility", 0.5);
+    if (tipped) this.gainXp("charm", 1);
     if (this.stripped > 0 && e.strippedFame > 0) this.shift({ fame: e.strippedFame });
     const idolized = guest.mood === "idolize";
     guest.mood = moodWhenServed(guest.mood, left);
@@ -1389,6 +1450,7 @@ export class Tavern {
     this.drunk = Math.min(DRUNK_MAX, this.drunk + DRINK_STRENGTH * (1 - Math.min(0.9, this.effects.drunkRate)));
     this.shift({ drinks: 1, fame: 1, respect: this.drunk >= SLOPPY_DRUNK ? -1 : 0 });
     this.raiseAll(DRINK_DESIRE + this.effects.drinkMeters);
+    this.drinksTonight++;
     this.cue("drink");
   }
 
@@ -1405,7 +1467,8 @@ export class Tavern {
 
   /** Her desire for a kind of touch in the moment, 0 to 10: its meter, and whatever her passives take off. */
   desireFor(region: TouchRegion): number {
-    return Math.min(10, (this.meters[METER_OF[region]] + (this.effects.ease[region] ?? 0)) / 10);
+    const skill = bodySkillBonus(this.level(SKILL_OF_REGION[region])).ease;
+    return Math.min(10, (this.meters[METER_OF[region]] + (this.effects.ease[region] ?? 0) + skill) / 10);
   }
 
   /** Whether she's restless enough at bedtime to ease the ache herself. */
@@ -1439,7 +1502,9 @@ export class Tavern {
     r.invitations++;
     r.acts[act] = (r.acts[act] ?? 0) + 1;
     if (!r.upstairsKinds.includes(scene.guestKind)) r.upstairsKinds.push(scene.guestKind);
-    const gold = Math.round(def.gold * (1 + this.effects.upstairsGold));
+    const gold = Math.round(def.gold * (1 + this.effects.upstairsGold + actSkillBonus(this.level(ACT_SKILL_OF[act]))));
+    this.gainXp(ACT_SKILL_OF[act], UPSTAIRS_XP);
+    this.gainXp("charm", 3);
     this.adjust(gold, 0, this.effects.upstairsHeat);
     this.earned += gold;
     this.shift({ fame: 2, respect: -1, flirt: 1 });
@@ -1499,13 +1564,206 @@ export class Tavern {
       trustMax: TRUST_MAX,
       lewdness: this.lewdness,
       corruption: this.corruption,
+      levels: this.statLevels(),
     };
+  }
+
+  /** A stat's or skill's level: what experience has reached, and what passives add. */
+  level(id: StatId | SkillId): number {
+    return levelOf(this.xp[id] ?? 0) + (this.effects.skill[id] ?? 0);
+  }
+
+  statLevels(): Record<StatId, number> {
+    return Object.fromEntries(STATS.map((s) => [s.id, this.level(s.id)])) as Record<StatId, number>;
+  }
+
+  private gainXp(id: StatId | SkillId, n: number): void {
+    if (n > 0) this.xp[id] = (this.xp[id] ?? 0) + n;
+  }
+
+  /** Starts a brawl with a guest. Whoever's playing deals with it. */
+  startFight(guestId: number): void {
+    const guest = this.guests.find((g) => g.id === guestId);
+    if (!guest || this.fight) return;
+    const e = this.effects;
+    this.fight = new Fight(
+      guest.id,
+      guest.kind,
+      guest.mood === "drunk",
+      { levels: this.statLevels(), damage: e.fightDamage, dodge: e.fightDodge, talk: e.fightTalk, stare: e.fightStare },
+      this.random,
+    );
+    this.fightsTonight++;
+    this.say(`A ${guest.kind} is starting trouble!`);
+    this.cue("walkOut");
+  }
+
+  /** She makes a move in the brawl; when it's over, the room sees how it went. */
+  fightMove(move: FightMove): void {
+    const fight = this.fight;
+    if (!fight) return;
+    fight.act(move);
+    if (fight.outcome) this.finishFight(fight);
+  }
+
+  private finishFight(fight: Fight): void {
+    for (const [stat, n] of Object.entries(fight.xp)) this.gainXp(stat as StatId, n ?? 0);
+    this.gainXp("endurance", 3);
+    const r = this.records;
+    r.dodges += fight.dodges;
+    const guest = this.guests.find((g) => g.id === fight.guestId);
+    let text: string;
+    if (fight.outcome === "won") {
+      r.fightsWon++;
+      if (guest) guest.status = "leaving";
+      this.shift({ respect: 2, fame: 3 });
+      // Throwing out one of the baron's men gets back to him.
+      this.adjust(0, 0, fight.kind === "soldier" ? 1 : 0);
+      text = fight.kind === "soldier" ? "Thrown out. The room cheers, but the baron will hear of it. (+1 heat)" : "Thrown out. The room cheers.";
+    } else if (fight.outcome === "talked") {
+      r.talkedDown++;
+      if (guest) guest.mood = "calm";
+      this.shift({ respect: 1 });
+      this.adjust(0, 1, 0);
+      text = "Talked down. They're back in their seat, and the village likes a peacemaker. (+1 trust)";
+    } else {
+      r.fightsLost++;
+      const taken = Math.min(this.gold, LOST_FIGHT_GOLD + this.nightIndex * 2);
+      this.adjust(-taken, 0, 0);
+      if (guest) guest.status = "leaving";
+      this.shift({ respect: -2 });
+      text = `Knocked down. They grab ${taken} gold from the till on their way out.`;
+    }
+    this.lastFight = { outcome: fight.outcome!, text };
+    this.say(text);
+    this.fight = null;
+  }
+
+  /** How the last brawl ended, once. */
+  takeFightResult(): { outcome: FightOutcome; text: string } | null {
+    const result = this.lastFight;
+    this.lastFight = null;
+    return result;
+  }
+
+  // ---------- After hours ----------
+
+  /**
+   * After closing, a guest she warmed to tonight might linger and ask for an after-hours game: only if she's let
+   * someone sober touch her tonight, she's lewd enough to be asked, and she hasn't played tonight already.
+   */
+  duelOffer(): GuestKind | null {
+    if (this.phase !== "bedtime" || this.playerBody !== "Female" || this.duelTonight || this.duel) return null;
+    if (this.lewdness < INVITES_AT && !this.passives.has("upstairsCurious")) return null;
+    return this.admirers[this.admirers.length - 1] ?? null;
+  }
+
+  /** Why she can't play tonight, if she can't: she's had too much to drink. */
+  get duelBlocked(): string | null {
+    return this.drunk >= SLOPPY_DRUNK ? "You've had too much to drink to play tonight." : null;
+  }
+
+  /** Each part of her she could put in play, and whether she's warm enough there tonight. */
+  duelAreas(): { id: DuelArea; name: string; ready: boolean; have: number; need: number; meter: string }[] {
+    return DUEL_AREAS.map((a) => ({ id: a.id, name: a.name, ready: this.meters[a.meter] >= a.need, have: Math.floor(this.meters[a.meter]), need: a.need, meter: METER_NAMES[a.meter] }));
+  }
+
+  /** The stakes she can choose from: what she can afford. */
+  duelStakes(): number[] {
+    return DUEL_STAKES.filter((n) => n <= this.gold);
+  }
+
+  /** She says yes, on her rules: only parts she's warm enough for, and a stake she can pay. */
+  startDuel(areas: readonly DuelArea[], stake: number): boolean {
+    const kind = this.duelOffer();
+    if (!kind || this.duelBlocked) return false;
+    const ready = new Set(this.duelAreas().filter((a) => a.ready).map((a) => a.id));
+    if (areas.some((a) => !ready.has(a)) || stake < 0 || stake > this.gold) return false;
+    const e = this.effects;
+    this.duelTonight = true;
+    this.duel = new Duel(
+      kind,
+      new Set(areas),
+      stake,
+      {
+        level: (id) => this.level(id),
+        sens: e.sens,
+        power: e.duelPower,
+        resist: e.duelResist,
+        stamina: e.duelStamina,
+        hold: e.duelHold,
+        edge: e.duelEdge,
+        undress: e.duelUndress,
+      },
+      this.random,
+    );
+    return true;
+  }
+
+  /** She makes a move; when it's over, it's settled. */
+  duelMove(move: DuelMove): void {
+    const duel = this.duel;
+    if (!duel) return;
+    duel.act(move);
+    if (duel.outcome) this.finishDuel(duel);
+  }
+
+  private finishDuel(duel: Duel): void {
+    const r = this.records;
+    for (const [id, n] of Object.entries(duel.xp)) this.gainXp(id as StatId | SkillId, n ?? 0);
+    for (const [move, n] of Object.entries(duel.used)) r.duelMoves[move as DuelMove] = (r.duelMoves[move as DuelMove] ?? 0) + (n ?? 0);
+    r.heldBack += duel.heldBack;
+    r.undressed += duel.undressed;
+    for (const [meter, n] of Object.entries(duel.meterGains)) this.raise(meter as Meter, n ?? 0);
+    let text: string;
+    let line: string;
+    let change = 0;
+    if (duel.outcome === "won") {
+      r.duelsWon++;
+      if (duel.wonOnEdge) r.edgeWins++;
+      if (duel.heldBack === 0) r.boldWins++;
+      const gold = Math.round(duel.stake * (1 + this.effects.duelGold));
+      change = gold;
+      this.adjust(gold, 0, 0);
+      this.earned += gold;
+      this.shift({ fame: 2, flirt: 1 });
+      text = `You won the game. +${gold} gold.`;
+      line = "They give in first. You win, and the candle burns down on the two of you.";
+    } else if (duel.outcome === "lost") {
+      r.duelsLost++;
+      r.overwhelmed++;
+      const paid = Math.min(this.gold, duel.stake);
+      change = -paid;
+      this.adjust(-paid, 0, 0);
+      this.shift({ fame: 1, flirt: 1 });
+      text = `You lost the game. -${paid} gold.`;
+      line = "It's too much, and you go first. Neither of you minds losing much.";
+    } else {
+      r.duelsStopped++;
+      text = "You called it off. Nothing lost; they kiss your hand goodnight and go.";
+      line = "";
+    }
+    // Played to the end, she's spent, and sleeps easy.
+    if (duel.outcome !== "stopped") {
+      Object.assign(this.meters, emptyMeters());
+      this.pleasure = 0;
+    }
+    this.lastDuel = { outcome: duel.outcome!, text, line, gold: change };
+    this.say(text);
+    this.duel = null;
+  }
+
+  /** How the last after-hours game ended, once. */
+  takeDuelResult(): { outcome: DuelOutcome; text: string; line: string; gold: number } | null {
+    const result = this.lastDuel;
+    this.lastDuel = null;
+    return result;
   }
 
   /** The nerve her passives and her name give every guest: the lewder she's known to be, the bolder they get. */
   private get nerveBonus(): number {
     const lewd = this.lewdness;
-    return this.effects.nerve + (lewd >= 60 ? 2 : lewd >= 30 ? 1 : 0);
+    return this.effects.nerve + (lewd >= 60 ? 2 : lewd >= 30 ? 1 : 0) + mindBonus(this.level("mind")).nerve;
   }
 
   /** The touch just answered, once: the game plays it out in a comic panel. */
@@ -1578,9 +1836,13 @@ export class Tavern {
     let fame = out.fame;
     let mood = out.mood;
     if (took) {
-      gold += (e.touchGold[touch.region] ?? 0) + (answer === "lean" ? e.leanGold : 0);
-      // Tonight's desire: the meter for where it landed most, the rest of her a little.
-      const own = TOUCH_DESIRE * (answer === "lean" ? LEAN_DESIRE : 1);
+      const skill = SKILL_OF_REGION[touch.region];
+      const practised = bodySkillBonus(this.level(skill));
+      gold += (e.touchGold[touch.region] ?? 0) + (answer === "lean" ? e.leanGold : 0) + practised.gold;
+      this.gainXp(skill, answer === "lean" ? 3 : 2);
+      this.gainXp("charm", 1);
+      // Tonight's desire: the meter for where it landed most, the rest of her a little; more the more practised.
+      const own = TOUCH_DESIRE * (answer === "lean" ? LEAN_DESIRE : 1) * (1 + practised.sens);
       const meter = METER_OF[touch.region];
       for (const m of METERS) this.raise(m, m === meter ? own : own / 3);
       this.raiseAll(e.spill + (answer === "lean" ? e.leanMeters : 0));
@@ -1595,12 +1857,15 @@ export class Tavern {
       this.pleasure += touch.level * PLEASURE_PER_LEVEL * (answer === "lean" ? LEAN_DESIRE : 1) * (1 + e.pleasure);
     } else if (answer === "slap") {
       r.slapped++;
+      this.gainXp("mind", 1);
+      this.gainXp("strength", 1);
       respect += e.slapRespect;
       fame += e.slapFame;
       this.raise("body", e.slapMeters);
       if (e.slapCalm) mood = null;
     } else {
       r.pulled++;
+      this.gainXp("mind", 2);
       respect += e.pullRespect;
     }
     this.adjust(gold, 0, 0);
@@ -1614,6 +1879,7 @@ export class Tavern {
     if (answer === "allow" || answer === "lean") {
       history.allowed++;
       this.touchesTonight.allowed++;
+      if (guest && guest.mood !== "drunk") this.admirers.push(guest.kind);
       this.touchesTonight.boldest = Math.max(this.touchesTonight.boldest, touch.level);
       const before = this.touchMemory.lets[touch.region] ?? 0;
       this.touchMemory.lets[touch.region] = before + 1;
@@ -2092,6 +2358,8 @@ export class Tavern {
         }
         if (!this.heardRumor && members.some((g) => g.rumor)) {
           this.heardRumor = true;
+          this.records.rumors++;
+          this.gainXp("mind", 3);
           this.talkReply.push(narrate(`They let slip: ${this.plan.lastCall.rumor}`));
           this.say(`Overheard: ${this.plan.lastCall.rumor}`);
           this.cue("rumor");
@@ -2298,6 +2566,7 @@ export class Tavern {
         records: structuredClone(this.records),
         passives: [...this.passives],
         eased: this.eased,
+        xp: { ...this.xp } as Record<string, number>,
       },
       ...(this.layout ? { layout: cloneLayout(this.layout) } : {}),
     };
@@ -2321,6 +2590,11 @@ export class Tavern {
     for (const id of progress.passives) this.passives.add(id);
     this.effects = effectsOf(this.passives);
     this.eased = progress.eased ?? false;
+    this.xp = readExperience(progress.xp);
+    this.fight = null;
+    this.lastFight = null;
+    this.duel = null;
+    this.lastDuel = null;
     this.newPassives = [];
     this.adultScene = null;
     this.layout = save.layout ? cloneLayout(save.layout) : null;
@@ -2381,6 +2655,13 @@ export class Tavern {
     for (const m of METERS) this.meters[m] = this.peak[m] = Math.min(METER_MAX, this.effects.start[m] + start);
     this.pleasure = 0;
     this.adultScene = null;
+    this.fight = null;
+    this.fightsTonight = 0;
+    this.drinksTonight = 0;
+    this.duel = null;
+    this.lastDuel = null;
+    this.admirers = [];
+    this.duelTonight = false;
     this.partyState.clear();
     this.say(
       messes.length > 0

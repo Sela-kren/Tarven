@@ -15,6 +15,8 @@
  */
 import type { GuestKind } from "./tavern";
 import type { TouchRegion } from "./touchtalk";
+import type { SkillId, StatId } from "./skills";
+import type { DuelMove } from "./duel";
 
 export type Meter = "body" | "mouth" | "breasts" | "butt" | "pussy";
 export const METERS: readonly Meter[] = ["body", "mouth", "breasts", "butt", "pussy"];
@@ -118,6 +120,22 @@ export interface Records {
   /** Nights with no touch let happen, and nights ending with high respect. */
   chasteNights: number;
   respectNights: number;
+  /** Brawls: won, lost, and talked down; dodges that worked; and gossip overheard. */
+  fightsWon: number;
+  fightsLost: number;
+  talkedDown: number;
+  dodges: number;
+  rumors: number;
+  /** After-hours duels: won, lost, called off; won on the edge, won without once holding back. */
+  duelsWon: number;
+  duelsLost: number;
+  duelsStopped: number;
+  edgeWins: number;
+  boldWins: number;
+  /** Times she held back, and undressed, in a duel; and each move she made. */
+  heldBack: number;
+  undressed: number;
+  duelMoves: Partial<Record<DuelMove, number>>;
 }
 
 export function newRecords(): Records {
@@ -141,6 +159,19 @@ export function newRecords(): Records {
     washed: 0,
     chasteNights: 0,
     respectNights: 0,
+    fightsWon: 0,
+    fightsLost: 0,
+    talkedDown: 0,
+    dodges: 0,
+    rumors: 0,
+    duelsWon: 0,
+    duelsLost: 0,
+    duelsStopped: 0,
+    edgeWins: 0,
+    boldWins: 0,
+    heldBack: 0,
+    undressed: 0,
+    duelMoves: {},
   };
 }
 
@@ -214,6 +245,26 @@ export interface Effects {
   protectHeat: number;
   /** What happens to trust, heat and respect every night. */
   perNight: { trust: number; heat: number; respect: number };
+  /** Levels given outright to stats and skills. */
+  skill: Partial<Record<StatId | SkillId, number>>;
+  /** In a fight: extra damage, and extra chance to dodge, talk them down and stare them down. */
+  fightDamage: number;
+  fightDodge: number;
+  fightTalk: number;
+  fightStare: number;
+  /** How much less often trouble starts, as a fraction. */
+  trouble: number;
+  /**
+   * In an after-hours duel: how much harder her moves land, how much less their moves do to her, extra stamina,
+   * more gold for a win, how much better Hold Back works, extra on the edge, and extra for each step undressed.
+   */
+  duelPower: number;
+  duelResist: number;
+  duelStamina: number;
+  duelGold: number;
+  duelHold: number;
+  duelEdge: number;
+  duelUndress: number;
 }
 
 export function noEffects(): Effects {
@@ -258,6 +309,19 @@ export function noEffects(): Effects {
     protectTrust: 0,
     protectHeat: 0,
     perNight: { trust: 0, heat: 0, respect: 0 },
+    skill: {},
+    fightDamage: 0,
+    fightDodge: 0,
+    fightTalk: 0,
+    fightStare: 0,
+    trouble: 0,
+    duelPower: 0,
+    duelResist: 0,
+    duelStamina: 0,
+    duelGold: 0,
+    duelHold: 0,
+    duelEdge: 0,
+    duelUndress: 0,
   };
 }
 
@@ -281,6 +345,8 @@ export interface PassiveFacts {
   trustMax: number;
   lewdness: number;
   corruption: number;
+  /** Her stat levels. */
+  levels: Record<StatId, number>;
 }
 
 const lets = (f: PassiveFacts, ...regions: TouchRegion[]) => regions.reduce((sum, r) => sum + (f.lets[r] ?? 0), 0);
@@ -312,7 +378,11 @@ export type PassiveGroup =
   | "composure"
   | "corruption"
   | "village"
-  | "fame";
+  | "fame"
+  | "brawler"
+  | "charm"
+  | "mind"
+  | "afterHours";
 
 /** The groups in the order the journal shows them; the body's first, then everything else. */
 export const PASSIVE_GROUPS: readonly { id: PassiveGroup; name: string; body: boolean }[] = [
@@ -338,6 +408,10 @@ export const PASSIVE_GROUPS: readonly { id: PassiveGroup; name: string; body: bo
   { id: "corruption", name: "Corruption", body: false },
   { id: "village", name: "Village", body: false },
   { id: "fame", name: "Fame", body: false },
+  { id: "brawler", name: "Brawler", body: false },
+  { id: "charm", name: "Charm", body: false },
+  { id: "mind", name: "Mind", body: false },
+  { id: "afterHours", name: "After Hours", body: false },
 ];
 
 export interface PassiveDef {
@@ -1415,7 +1489,288 @@ export const PASSIVES: readonly PassiveDef[] = [
     },
     thought: "(Every tavern on the pass talks about me.)",
   },
+
+  // ---- Brawler ----
+  {
+    id: "bouncer",
+    name: "Bouncer",
+    group: "brawler",
+    need: "Win a brawl",
+    progress: (f) => count(f.records.fightsWon, 1),
+    benefit: "+1 Strength level",
+    effect: (e) => add(e.skill, ["strength"], 1),
+    thought: "(Out the door, and don't come back.)",
+  },
+  {
+    id: "lightOnHerFeet",
+    name: "Light on Her Feet",
+    group: "brawler",
+    need: "Dodge 8 blows",
+    progress: (f) => count(f.records.dodges, 8),
+    benefit: "+10% to dodge; +1 Agility level",
+    effect: (e) => {
+      e.fightDodge += 0.1;
+      add(e.skill, ["agility"], 1);
+    },
+    thought: "(They can't hit what isn't there.)",
+  },
+  {
+    id: "takesAPunch",
+    name: "Takes a Punch",
+    group: "brawler",
+    need: "Lose 3 brawls",
+    progress: (f) => count(f.records.fightsLost, 3),
+    benefit: "+1 Endurance level",
+    effect: (e) => add(e.skill, ["endurance"], 1),
+    thought: "(Knocked down three times. Got up three times.)",
+  },
+  {
+    id: "heavyHand",
+    name: "Heavy Hand",
+    group: "brawler",
+    need: "Win 5 brawls",
+    progress: (f) => count(f.records.fightsWon, 5),
+    benefit: "+2 damage in a fight",
+    effect: (e) => (e.fightDamage += 2),
+    thought: "(I hit like a smith now.)",
+  },
+  {
+    id: "noTroubleHere",
+    name: "Nobody Starts Trouble Here",
+    group: "brawler",
+    need: "Win 12 brawls",
+    progress: (f) => count(f.records.fightsWon, 12),
+    benefit: "Trouble starts half as often",
+    effect: (e) => (e.trouble += 0.5),
+    thought: "(Word's got round. They behave in my tavern.)",
+  },
+
+  // ---- Charm ----
+  {
+    id: "winningSmile",
+    name: "Winning Smile",
+    group: "charm",
+    need: "Reach Charm level 3",
+    progress: (f) => count(f.levels.charm, 3),
+    benefit: "+10% to talk a fight down",
+    effect: (e) => (e.fightTalk += 0.1),
+    thought: "(One smile and they forget what they were angry about.)",
+  },
+  {
+    id: "silverTongue",
+    name: "Silver Tongue",
+    group: "charm",
+    need: "Talk 5 brawls down",
+    progress: (f) => count(f.records.talkedDown, 5),
+    benefit: "+15% to talk a fight down; +1 Charm level",
+    effect: (e) => {
+      e.fightTalk += 0.15;
+      add(e.skill, ["charm"], 1);
+    },
+    thought: "(Words work better than fists. Usually.)",
+  },
+  {
+    id: "belleOfTheTavern",
+    name: "Belle of the Tavern",
+    group: "charm",
+    need: "Reach Charm level 6",
+    progress: (f) => count(f.levels.charm, 6),
+    benefit: "+1 gold on tipped serves",
+    cost: "Guests reach for you more often",
+    effect: (e) => {
+      e.serveTip += 1;
+      e.reach += 0.15;
+    },
+    lewd: 2,
+    thought: "(Every eye in the room follows me. I like it.)",
+  },
+
+  // ---- Mind ----
+  {
+    id: "sharpEars",
+    name: "Sharp Ears",
+    group: "mind",
+    need: "Overhear gossip 4 times",
+    progress: (f) => count(f.records.rumors, 4),
+    benefit: "+1 Mind level",
+    effect: (e) => add(e.skill, ["mind"], 1),
+    thought: "(I hear everything in this room. Everything.)",
+  },
+  {
+    id: "coolHead",
+    name: "Cool Head",
+    group: "mind",
+    need: "Reach Mind level 3",
+    progress: (f) => count(f.levels.mind, 3),
+    benefit: "+10% to stare a fight down",
+    effect: (e) => (e.fightStare += 0.1),
+    thought: "(Nothing rattles me any more.)",
+  },
+  {
+    id: "steelNerves",
+    name: "Steel Nerves",
+    group: "mind",
+    need: "Reach Mind level 6",
+    progress: (f) => count(f.levels.mind, 6),
+    benefit: "Guests are less bold (-1 nerve)",
+    effect: (e) => (e.nerve -= 1),
+    thought: "(They look at me and think twice.)",
+  },
+
+  // ---- After Hours ----
+  {
+    id: "nightOwl",
+    name: "Night Owl",
+    group: "afterHours",
+    need: "Play an after-hours game to the end",
+    progress: (f) => count(f.records.duelsWon + f.records.duelsLost, 1),
+    benefit: "+5 stamina in after-hours games",
+    effect: (e) => (e.duelStamina += 5),
+    lewd: 3,
+    thought: "(The tavern's quieter after closing. I like it that way.)",
+  },
+  {
+    id: "goodSport",
+    name: "Good Sport",
+    group: "afterHours",
+    need: "Lose 3 after-hours games",
+    progress: (f) => count(f.records.duelsLost, 3),
+    benefit: "Their moves do 10% less to you",
+    effect: (e) => (e.duelResist += 0.1),
+    lewd: 2,
+    thought: "(Losing isn't so bad. Not the way I lose.)",
+  },
+  {
+    id: "houseChampion",
+    name: "House Champion",
+    group: "afterHours",
+    need: "Win 5 after-hours games",
+    progress: (f) => count(f.records.duelsWon, 5),
+    benefit: "A win pays 50% more",
+    effect: (e) => (e.duelGold += 0.5),
+    lewd: 3,
+    thought: "(Word's got round. They line up to lose to me.)",
+  },
+  {
+    id: "queenOfTheNight",
+    name: "Queen of the Night",
+    group: "afterHours",
+    need: "Win 12 after-hours games",
+    progress: (f) => count(f.records.duelsWon, 12),
+    benefit: "Your moves land 15% harder",
+    effect: (e) => (e.duelPower += 0.15),
+    lewd: 5,
+    thought: "(Nobody in Tarven lasts against me.)",
+  },
+  {
+    id: "neverHoldsBack",
+    name: "Never Holds Back",
+    group: "afterHours",
+    need: "Win 3 after-hours games without once holding back",
+    progress: (f) => count(f.records.boldWins, 3),
+    benefit: "Your moves land 10% harder",
+    cost: "Holding back works 30% less",
+    effect: (e) => {
+      e.duelPower += 0.1;
+      e.duelHold -= 0.3;
+    },
+    lewd: 4,
+    thought: "(Why hold back? I win anyway.)",
+  },
+  {
+    id: "coolAsIce",
+    name: "Cool as Ice",
+    group: "afterHours",
+    need: "Hold back 20 times",
+    progress: (f) => count(f.records.heldBack, 20),
+    benefit: "Holding back works 50% better; their moves do 10% less to you",
+    effect: (e) => {
+      e.duelHold += 0.5;
+      e.duelResist += 0.1;
+    },
+    thought: "(Slow down, breathe, and let them come undone first.)",
+  },
+  {
+    id: "edgeWalker",
+    name: "Edge Walker",
+    group: "afterHours",
+    need: "Win 3 games while on the edge",
+    progress: (f) => count(f.records.edgeWins, 3),
+    benefit: "On the edge, your moves land 25% harder",
+    effect: (e) => (e.duelEdge += 0.25),
+    lewd: 3,
+    thought: "(I'm at my best right on the brink.)",
+  },
+  {
+    id: "bareAndBold",
+    name: "Bare and Bold",
+    group: "afterHours",
+    need: "Undress 5 times in after-hours games",
+    progress: (f) => count(f.records.undressed, 5),
+    benefit: "+1 Exhibition level; each step undressed adds 10% more to your moves",
+    effect: (e) => (e.duelUndress += 0.1),
+    lewd: 3,
+    thought: "(The way they look at me when the dress comes off.)",
+  },
+  {
+    id: "cleverFingers",
+    name: "Clever Fingers",
+    group: "afterHours",
+    need: "Use your hands 10 times in after-hours games",
+    progress: (f) => count(f.records.duelMoves.hands ?? 0, 10),
+    benefit: "+1 Handjob level",
+    effect: () => undefined,
+    lewd: 2,
+    thought: "(My hands know exactly what to do now.)",
+  },
+  {
+    id: "sweetTooth",
+    name: "Sweet Tooth",
+    group: "afterHours",
+    need: "Use your mouth 10 times in after-hours games",
+    progress: (f) => count(f.records.duelMoves.mouth ?? 0, 10),
+    benefit: "+1 Blowjob level",
+    effect: () => undefined,
+    lewd: 3,
+    thought: "(I've got a taste for winning.)",
+  },
+  {
+    id: "bornRider",
+    name: "Born Rider",
+    group: "afterHours",
+    need: "Ride them 10 times in after-hours games",
+    progress: (f) => count(f.records.duelMoves.ride ?? 0, 10),
+    benefit: "+1 Sex level",
+    effect: () => undefined,
+    lewd: 4,
+    thought: "(I set the pace now.)",
+  },
 ];
+
+/**
+ * Passives that also give a skill a level outright, the way Karryn's raise "Kiss level" and the like. Kept apart
+ * from the list so each passive above stays about its own benefit.
+ */
+export const LEVEL_UPS: Partial<Record<string, SkillId>> = {
+  handInHand: "hands",
+  sweetLips: "mouth",
+  weakAtTheNeck: "neck",
+  proudChest: "breasts",
+  swayingHips: "hips",
+  pinchable: "butt",
+  lapWarmer: "thighs",
+  aching: "pussy",
+  showOff: "exhibition",
+  practisedMouth: "upMouth",
+  skilledHands: "upHands",
+  backStairs: "upBed",
+  fromBehind: "upBehind",
+  upstairsCurious: "upKiss",
+  bareAndBold: "exhibition",
+  cleverFingers: "upHands",
+  sweetTooth: "upMouth",
+  bornRider: "upBed",
+};
 
 export const PASSIVE_BY_ID: ReadonlyMap<string, PassiveDef> = new Map(PASSIVES.map((p) => [p.id, p]));
 
@@ -1433,18 +1788,22 @@ export function newlyEarned(owned: ReadonlySet<string>, f: PassiveFacts): Passiv
 /** What all the passives she holds add up to. */
 export function effectsOf(owned: ReadonlySet<string>): Effects {
   const e = noEffects();
-  for (const id of owned) PASSIVE_BY_ID.get(id)?.effect(e);
+  for (const id of owned) {
+    PASSIVE_BY_ID.get(id)?.effect(e);
+    const skill = LEVEL_UPS[id];
+    if (skill) e.skill[skill] = (e.skill[skill] ?? 0) + 1;
+  }
   return e;
 }
 
 /**
  * Her lewdness: lewd points from her passives, and a point for every five touches she's allowed, two for every
- * guest she's taken upstairs and two for every time she's been overwhelmed.
+ * guest she's taken upstairs or played after hours, and two for every time she's been overwhelmed.
  */
 export function lewdnessOf(owned: ReadonlySet<string>, letsTotal: number, records: Records): number {
   let points = 0;
   for (const id of owned) points += PASSIVE_BY_ID.get(id)?.lewd ?? 0;
-  return points + Math.floor(letsTotal / 5) + records.invitations * 2 + records.overwhelmed * 2;
+  return points + Math.floor(letsTotal / 5) + (records.invitations + records.duelsWon + records.duelsLost) * 2 + records.overwhelmed * 2;
 }
 
 /** A word for how far she's come, by lewdness, after Karryn's slut levels. */
@@ -1474,8 +1833,11 @@ export interface ProgressSave {
   passives: string[];
   /** Whether she eased the ache last night, for passives that pay off the next night. */
   eased?: boolean;
+  /** Experience in every stat and skill. */
+  xp?: Record<string, number>;
 }
 
+const DUEL_MOVES: readonly DuelMove[] = ["kiss", "caress", "tease", "undress", "hands", "mouth", "ride", "hold", "stop"];
 const num = (raw: unknown, max = 1e6) => (typeof raw === "number" && Number.isFinite(raw) ? Math.min(max, Math.max(0, raw)) : 0);
 const KINDS: readonly GuestKind[] = ["farmer", "smuggler", "soldier", "fugitive"];
 const kindList = (raw: unknown): GuestKind[] =>
@@ -1488,12 +1850,41 @@ export function readProgress(raw: unknown): ProgressSave {
   const fields = raw as Partial<Record<keyof ProgressSave, unknown>>;
   out.corruption = num(fields.corruption, 1000);
   out.eased = fields.eased === true;
+  if (fields.xp && typeof fields.xp === "object") out.xp = fields.xp as Record<string, number>;
   if (Array.isArray(fields.passives)) out.passives = [...new Set(fields.passives.filter((id): id is string => typeof id === "string" && PASSIVE_BY_ID.has(id)))];
   const r = fields.records;
   if (r && typeof r === "object") {
     const src = r as Record<string, unknown>;
     const rec = out.records;
-    for (const key of ["leans", "pulled", "slapped", "rough", "allHigh", "clothesLost", "bareNights", "invitations", "overwhelmed", "alone", "served", "poured", "washed", "chasteNights", "respectNights"] as const) {
+    for (const key of [
+      "leans",
+      "pulled",
+      "slapped",
+      "rough",
+      "allHigh",
+      "clothesLost",
+      "bareNights",
+      "invitations",
+      "overwhelmed",
+      "alone",
+      "served",
+      "poured",
+      "washed",
+      "chasteNights",
+      "respectNights",
+      "fightsWon",
+      "fightsLost",
+      "talkedDown",
+      "dodges",
+      "rumors",
+      "duelsWon",
+      "duelsLost",
+      "duelsStopped",
+      "edgeWins",
+      "boldWins",
+      "heldBack",
+      "undressed",
+    ] as const) {
       rec[key] = Math.floor(num(src[key]));
     }
     rec.upstairsKinds = kindList(src.upstairsKinds);
@@ -1506,6 +1897,12 @@ export function readProgress(raw: unknown): ProgressSave {
       for (const meter of METERS) {
         const n = Math.floor(num((src.maxed as Record<string, unknown>)[meter]));
         if (n > 0) rec.maxed[meter] = n;
+      }
+    }
+    if (src.duelMoves && typeof src.duelMoves === "object") {
+      for (const move of DUEL_MOVES) {
+        const n = Math.floor(num((src.duelMoves as Record<string, unknown>)[move]));
+        if (n > 0) rec.duelMoves[move] = n;
       }
     }
     if (src.acts && typeof src.acts === "object") {

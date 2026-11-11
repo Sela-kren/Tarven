@@ -263,7 +263,71 @@ const STAR = [
   "............",
 ];
 
+const FIST = [
+  "............",
+  "...KKKKKK...",
+  "..KSKSKSKK..",
+  "..KSKSKSKSK.",
+  "..KSKSKSKSK.",
+  "..KSSSSSSSK.",
+  ".KSKKSSSSSK.",
+  ".KSSSKSSSSK.",
+  "..KSSSSSSK..",
+  "...KSSSSK...",
+  "...KBBBBK...",
+  "...KKKKKK...",
+];
+
+const MIRROR = [
+  "....KKKK....",
+  "...KGGGGK...",
+  "..KGWWLLGK..",
+  "..KGWLLLGK..",
+  "..KGLLLLGK..",
+  "..KGLLLLGK..",
+  "...KGGGGK...",
+  "....KKKK....",
+  ".....KK.....",
+  ".....GK.....",
+  ".....GK.....",
+  ".....KK.....",
+];
+
+const BOOK = [
+  "............",
+  "............",
+  ".KKKK..KKKK.",
+  "KPPPPKKPPPPK",
+  "KPLLPKKPLLPK",
+  "KPPPPKKPPPPK",
+  "KPLLPKKPLLPK",
+  "KPPPPKKPPPPK",
+  "KKKKKKKKKKKK",
+  ".KBBBBBBBBK.",
+  "............",
+  "............",
+];
+
+const DICE = [
+  "............",
+  ".KKKKKKKKKK.",
+  "KWWWWWWWWWWK",
+  "KWRRWWWWWWWK",
+  "KWRRWWWWWWWK",
+  "KWWWWRRWWWWK",
+  "KWWWWRRWWWWK",
+  "KWWWWWWWRRWK",
+  "KWWWWWWWRRWK",
+  "KWWWWWWWWWWK",
+  ".KKKKKKKKKK.",
+  "............",
+];
+
 export const PASSIVE_ICONS: Record<PassiveGroup, string> = {
+  brawler: pixelSvg(FIST, { K, S: "#f0c8a0", B: "#8a5a30" }),
+  charm: pixelSvg(MIRROR, { K, G: "#d9a93a", W: "#ffffff", L: "#a8d0f0" }),
+  afterHours: pixelSvg(DICE, { K, W: "#f0e8f0", R: "#c8202c" }),
+  mind: pixelSvg(BOOK, { K, P: "#f0e2b8", L: "#8a7a5a", B: "#5a3a20" }),
   hands: pixelSvg(HAND, { K, S: "#f0c8a0" }),
   mouth: pixelSvg(LIPS, { K, R: "#d0303c", D: "#7a1020", W: "#ff9aa0" }),
   neck: pixelSvg(BOW, { K, P: "#e070a0", R: "#a03060" }),
