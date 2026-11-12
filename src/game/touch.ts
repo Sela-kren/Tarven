@@ -8,11 +8,14 @@ import { CONFIDENT, FIRSTS, TOUCHES, type TouchDef, type TouchRegion } from "./t
  * part of her (see `passives.ts`), and can only let a touch happen once the desire it needs is high enough; here
  * that desire comes in on a scale of 0 to 10. Slapping the hand away and slipping out of reach are always there,
  * and only they are, when either of them has had far too much.
+ *
+ * Force path added: when desire is high enough relative to the touch, resistance can fail
+ * and the touch proceeds without a clean refusal.
  */
 
 export type { TouchDef, TouchRegion } from "./touchtalk";
 
-export type TouchAnswer = "allow" | "lean" | "slap" | "pull";
+export type TouchAnswer = "allow" | "lean" | "slap" | "pull" | "force";
 
 export const MAX_LEVEL = 10;
 export const MAX_DESIRE = 10;
@@ -41,6 +44,9 @@ const SEEN_WEIGHT = 0.2;
 
 /** How far past what a touch needs her desire has to be before she can lean into it. */
 export const LEAN_MARGIN = 2;
+
+/** Desire threshold (0-10) past which resistance can fail for this touch. Tune as needed. */
+export const FORCE_DESIRE_MARGIN = 3;
 
 /** How many times she has to have let something like it before she stops being shocked. */
 const CONFIDENT_AFTER = 3;
@@ -143,14 +149,30 @@ export interface AnswerFacts {
   sloppy: boolean;
   /** So has the guest. */
   guestSloppy: boolean;
+  /** Optional: guest's current nerve (0-10) for force calculations. */
+  guestNerve?: number;
+  /** Optional: her current respect (-10 to 10). */
+  respect?: number;
 }
 
 /**
- * What she can answer, in the order shown. Pulling away is last, so leaving the conversation is always the safe
- * answer. Letting it happen needs her desire to reach what the touch needs, and leaning in needs more again.
+ * What she can answer, in the order shown.
+ * When desire is high enough relative to the touch level, resistance can fail
+ * and only "force" is offered (or the touch auto-resolves).
  */
 export function touchAnswers(touch: TouchDef, f: AnswerFacts): TouchAnswer[] {
   const answers: TouchAnswer[] = [];
+
+  const need = desireNeeded(touch.level);
+  const forceReady = f.desire >= need + FORCE_DESIRE_MARGIN;
+
+  // Force path: high desire relative to the touch → resistance fails
+  if (forceReady && !f.sloppy && !f.guestSloppy) {
+    answers.push("force");
+    return answers;
+  }
+
+  // Original consent path
   if (!f.sloppy && !f.guestSloppy) {
     const tier = thoughtTier(touch, f.desire, f.leanMargin);
     if (tier >= 1) answers.push("allow");
@@ -189,6 +211,14 @@ export function touchOutcome(touch: TouchDef, answer: TouchAnswer): TouchOutcome
         flirt: 1,
         mood: "lust",
       };
+    case "force":
+      return {
+        gold: Math.max(1, Math.floor(level * 0.8)),
+        respect: -Math.floor(level / 2) - 1,
+        fame: level >= 3 ? 2 : 1,
+        flirt: 1,
+        mood: "lust",
+      };
     case "slap":
       return { gold: 0, respect: level >= 6 ? 2 : level >= 3 ? 1 : 0, fame: 0, flirt: 0, mood: "angry" };
     case "pull":
@@ -203,6 +233,8 @@ export function answerLabel(touch: TouchDef, answer: TouchAnswer): string {
       return touch.strip ? "Let them take it" : "Let it happen";
     case "lean":
       return touch.strip ? "Help them with it" : "Lean into it";
+    case "force":
+      return "…"; // or "They don't stop" — UI can auto-resolve instead of showing a button
     case "slap":
       return "Slap them";
     case "pull":

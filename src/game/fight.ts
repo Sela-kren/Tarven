@@ -9,8 +9,10 @@
  */
 import type { GuestKind } from "./tavern";
 import type { StatId } from "./skills";
+import { flavor } from "./flavor";
+import { HIT_WILL, maxWillpower, STARE_WILL, STEEL_STAMINA, STEEL_WILL } from "./willpower";
 
-export type FightMove = "strike" | "shove" | "dodge" | "talk" | "stare" | "throw";
+export type FightMove = "strike" | "shove" | "dodge" | "talk" | "stare" | "steel" | "throw";
 export type FightOutcome = "won" | "talked" | "lost";
 
 /** How tough each kind of guest is in a brawl. */
@@ -32,6 +34,9 @@ export interface FighterStats {
   dodge: number;
   talk: number;
   stare: number;
+  /** Her willpower going in, and at the top. Left out, she starts with all a Mind like hers gives. */
+  will?: number;
+  maxWill?: number;
 }
 
 export interface FightChoice {
@@ -54,11 +59,16 @@ export class Fight {
   private shaken = false;
   /** What just happened, newest last. */
   readonly log: string[] = [];
+  /** The event behind each log line (see say), for the comic panel. */
+  readonly events: string[] = [];
   outcome: FightOutcome | null = null;
   /** Experience earned in the fight, for the tavern to hand out at the end. */
   readonly xp: Partial<Record<StatId, number>> = {};
   /** Dodges that worked, for the records. */
   dodges = 0;
+  /** Her willpower: staring down and steeling herself spend it, blows that land wear it down. */
+  will: number;
+  readonly maxWill: number;
 
   constructor(
     readonly guestId: number,
@@ -72,7 +82,17 @@ export class Fight {
     this.foeMax = this.foeStamina = foe.stamina;
     this.foeAttack = foe.attack + (drunk ? 1 : 0);
     this.foeAccuracy = foe.accuracy - (drunk ? 0.15 : 0);
-    this.log.push(drunk ? `The ${kind} is roaring drunk and wants a fight.` : `The ${kind} squares up to you.`);
+    this.maxWill = stats.maxWill ?? maxWillpower(stats.levels.mind);
+    this.will = Math.max(0, Math.min(this.maxWill, stats.will ?? this.maxWill));
+    this.say("start", drunk ? `The ${kind} is roaring drunk and wants a fight.` : `The ${kind} squares up to you.`);
+  }
+
+  /** What happened, then, if the AI has written one, a line of colour for it. */
+  private say(event: string, text: string): void {
+    this.log.push(text);
+    this.events.push(event);
+    const extra = flavor(`fight:${event}`, this.kind);
+    if (extra) this.log.push(extra);
   }
 
   private gain(stat: StatId, n: number): void {
@@ -86,8 +106,10 @@ export class Fight {
       strike: Math.min(0.95, 0.7 + agi),
       shove: Math.min(0.95, 0.8 + agi),
       dodge: 1,
-      talk: clamp01(0.15 + (levels.charm - 1) * 0.07 + talk - (this.drunk ? 0.1 : 0) - (this.kind === "soldier" ? 0.1 : 0)),
+      // With no willpower left she's rattled, and it shows in her voice.
+      talk: clamp01(0.15 + (levels.charm - 1) * 0.07 + talk - (this.drunk ? 0.1 : 0) - (this.kind === "soldier" ? 0.1 : 0) - (this.will <= 0 ? 0.1 : 0)),
       stare: clamp01(0.1 + (levels.mind - 1) * 0.06 + stare),
+      steel: 1,
       throw: 1,
     };
   }
@@ -101,7 +123,18 @@ export class Fight {
       { move: "shove", label: "Shove", chance: c.shove, disabled: false },
       { move: "dodge", label: "Dodge", chance: null, disabled: false },
       { move: "talk", label: "Talk them down (Charm)", chance: c.talk, disabled: false },
-      { move: "stare", label: "Stare them down (Mind)", chance: c.stare, disabled: this.shaken },
+      {
+        move: "stare",
+        label: `Stare them down (Mind) · ${STARE_WILL} will`,
+        chance: c.stare,
+        disabled: this.shaken || this.will < STARE_WILL,
+      },
+      {
+        move: "steel",
+        label: `Steel yourself · +${this.steelStamina()} stamina · ${STEEL_WILL} will`,
+        chance: null,
+        disabled: this.will < STEEL_WILL || this.stamina >= this.maxStamina,
+      },
       { move: "throw", label: canThrow ? "Throw them out" : "Throw them out (wear them down first)", chance: null, disabled: !canThrow },
     ];
   }
@@ -117,9 +150,9 @@ export class Fight {
         if (roll < c.strike) {
           const damage = 3 + (levels.strength - 1) + this.stats.damage;
           this.foeStamina = Math.max(0, this.foeStamina - damage);
-          this.log.push(`You land a solid blow. (-${damage})`);
+          this.say("strike:hit", `You land a solid blow. (-${damage})`);
           this.gain("strength", 2);
-        } else this.log.push("You swing and miss.");
+        } else this.say("strike:miss", "You swing and miss.");
         break;
       }
       case "shove": {
@@ -127,27 +160,29 @@ export class Fight {
           const damage = 1 + Math.floor((levels.strength - 1) / 2);
           this.foeStamina = Math.max(0, this.foeStamina - damage);
           this.staggered = this.random() < 0.5 + (levels.strength - 1) * 0.05;
-          this.log.push(this.staggered ? `You shove them into a table. They stagger. (-${damage})` : `You shove them back. (-${damage})`);
+          this.say("shove:hit", this.staggered ? `You shove them into a table. They stagger. (-${damage})` : `You shove them back. (-${damage})`);
           this.gain("strength", 1);
-        } else this.log.push("They stand their ground.");
+        } else this.say("shove:miss", "They stand their ground.");
         break;
       }
       case "dodge":
         this.dodging = true;
-        this.log.push("You get light on your feet.");
+        this.say("dodge", "You get light on your feet.");
         break;
       case "talk":
         this.gain("charm", 2);
         if (roll < c.talk) {
-          this.log.push("You talk them round. They sit back down, sheepish.");
+          this.say("talk:ok", "You talk them round. They sit back down, sheepish.");
           this.gain("charm", 5);
           this.outcome = "talked";
           return;
         }
         this.foeAttack++;
-        this.log.push("They don't want to hear it. That made it worse.");
+        this.say("talk:fail", "They don't want to hear it. That made it worse.");
         break;
       case "stare":
+        if (this.will < STARE_WILL) return;
+        this.will -= STARE_WILL;
         this.gain("mind", 2);
         if (roll < c.stare) {
           this.shaken = true;
@@ -155,32 +190,46 @@ export class Fight {
           this.foeAccuracy -= 0.1;
           this.gain("mind", 4);
           if (this.foeStamina <= this.foeMax / 2) {
-            this.log.push("You stare them down. They back away and leave.");
+            this.say("stare:win", "You stare them down. They back away and leave.");
             this.outcome = "won";
             return;
           }
-          this.log.push("You stare them down. Their nerve falters.");
-        } else this.log.push("They meet your stare and laugh.");
+          this.say("stare:ok", "You stare them down. Their nerve falters.");
+        } else this.say("stare:fail", "They meet your stare and laugh.");
         break;
+      case "steel": {
+        if (this.will < STEEL_WILL) return;
+        this.will -= STEEL_WILL;
+        const back = Math.min(this.maxStamina - this.stamina, this.steelStamina());
+        this.stamina += back;
+        this.gain("mind", 2);
+        this.say("steel", `You set your jaw and get your breath back. (+${back} stamina)`);
+        break;
+      }
       case "throw":
         if (this.foeStamina > this.foeMax * THROW_AT) return;
-        this.log.push("You haul them up by the collar and throw them out into the snow.");
+        this.say("throw", "You haul them up by the collar and throw them out into the snow.");
         this.gain("strength", 3);
         this.outcome = "won";
         return;
     }
     if (this.foeStamina <= 0) {
-      this.log.push("They go down and stay down. A couple of regulars carry them out.");
+      this.say("knockout", "They go down and stay down. A couple of regulars carry them out.");
       this.outcome = "won";
       return;
     }
     this.theirTurn();
   }
 
+  /** What steeling herself gives back: more the cooler her head. */
+  private steelStamina(): number {
+    return STEEL_STAMINA + Math.max(0, this.stats.levels.mind - 1);
+  }
+
   private theirTurn(): void {
     if (this.staggered) {
       this.staggered = false;
-      this.log.push("They're still finding their feet.");
+      this.say("staggered", "They're still finding their feet.");
       return;
     }
     const dodge = this.dodging ? 0.35 + (this.stats.levels.agility - 1) * 0.03 + this.stats.dodge : 0;
@@ -188,17 +237,18 @@ export class Fight {
     this.dodging = false;
     if (this.random() < this.foeAccuracy - dodge) {
       this.stamina = Math.max(0, this.stamina - this.foeAttack);
-      this.log.push(`They catch you one. (-${this.foeAttack})`);
+      this.will = Math.max(0, this.will - HIT_WILL);
+      this.say("their:hit", `They catch you one. (-${this.foeAttack})`);
       this.gain("endurance", 1);
     } else {
-      this.log.push(dodged ? "You duck under their swing." : "They swing wide.");
+      this.say(dodged ? "their:dodged" : "their:miss", dodged ? "You duck under their swing." : "They swing wide.");
       if (dodged) {
         this.dodges++;
         this.gain("agility", 3);
       }
     }
     if (this.stamina <= 0) {
-      this.log.push("You go down hard.");
+      this.say("lost", "You go down hard.");
       this.outcome = "lost";
     }
   }

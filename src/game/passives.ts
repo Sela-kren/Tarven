@@ -13,6 +13,7 @@
  * Every count here only rises when she says yes, or (for composure and sadism) when she says no. She can
  * always say no.
  */
+import { CUM_SPOTS, type CumSpot } from "./cum";
 import type { GuestKind } from "./tavern";
 import type { TouchRegion } from "./touchtalk";
 import type { SkillId, StatId } from "./skills";
@@ -136,6 +137,9 @@ export interface Records {
   heldBack: number;
   undressed: number;
   duelMoves: Partial<Record<DuelMove, number>>;
+  /** Every load a man has left on or in her, in ml by where it landed, and how many loads in all. */
+  cum: Partial<Record<CumSpot, number>>;
+  loads: number;
 }
 
 export function newRecords(): Records {
@@ -172,6 +176,8 @@ export function newRecords(): Records {
     heldBack: 0,
     undressed: 0,
     duelMoves: {},
+    cum: {},
+    loads: 0,
   };
 }
 
@@ -265,6 +271,8 @@ export interface Effects {
   duelHold: number;
   duelEdge: number;
   duelUndress: number;
+  /** Extra willpower at the top (see willpower.ts). */
+  willMax: number;
 }
 
 export function noEffects(): Effects {
@@ -322,6 +330,7 @@ export function noEffects(): Effects {
     duelHold: 0,
     duelEdge: 0,
     duelUndress: 0,
+    willMax: 0,
   };
 }
 
@@ -1312,8 +1321,11 @@ export const PASSIVES: readonly PassiveDef[] = [
     group: "composure",
     need: "Pull away from 5 guests",
     progress: (f) => count(f.records.pulled, 5),
-    benefit: "+1 respect every time you pull away",
-    effect: (e) => (e.pullRespect += 1),
+    benefit: "+1 respect every time you pull away; +5 willpower",
+    effect: (e) => {
+      e.pullRespect += 1;
+      e.willMax += 5;
+    },
     thought: "(Not tonight. Not unless I say so.)",
   },
   {
@@ -1343,8 +1355,11 @@ export const PASSIVES: readonly PassiveDef[] = [
     group: "composure",
     need: "End 3 nights with respect 8 or more",
     progress: (f) => count(f.records.respectNights, 3),
-    benefit: "Guests are less bold (-1 nerve)",
-    effect: (e) => (e.nerve -= 1),
+    benefit: "Guests are less bold (-1 nerve); +10 willpower",
+    effect: (e) => {
+      e.nerve -= 1;
+      e.willMax += 10;
+    },
     thought: "(They mind themselves around me.)",
   },
 
@@ -1683,10 +1698,11 @@ export const PASSIVES: readonly PassiveDef[] = [
     group: "afterHours",
     need: "Hold back 20 times",
     progress: (f) => count(f.records.heldBack, 20),
-    benefit: "Holding back works 50% better; their moves do 10% less to you",
+    benefit: "Holding back works 50% better; their moves do 10% less to you; +5 willpower",
     effect: (e) => {
       e.duelHold += 0.5;
       e.duelResist += 0.1;
+      e.willMax += 5;
     },
     thought: "(Slow down, breathe, and let them come undone first.)",
   },
@@ -1837,7 +1853,7 @@ export interface ProgressSave {
   xp?: Record<string, number>;
 }
 
-const DUEL_MOVES: readonly DuelMove[] = ["kiss", "caress", "tease", "undress", "hands", "mouth", "ride", "hold", "stop"];
+const DUEL_MOVES: readonly DuelMove[] = ["kiss", "caress", "tease", "undress", "hands", "mouth", "tits", "ride", "anal", "hold", "stop"];
 const num = (raw: unknown, max = 1e6) => (typeof raw === "number" && Number.isFinite(raw) ? Math.min(max, Math.max(0, raw)) : 0);
 const KINDS: readonly GuestKind[] = ["farmer", "smuggler", "soldier", "fugitive"];
 const kindList = (raw: unknown): GuestKind[] =>
@@ -1884,6 +1900,7 @@ export function readProgress(raw: unknown): ProgressSave {
       "boldWins",
       "heldBack",
       "undressed",
+      "loads",
     ] as const) {
       rec[key] = Math.floor(num(src[key]));
     }
@@ -1903,6 +1920,12 @@ export function readProgress(raw: unknown): ProgressSave {
       for (const move of DUEL_MOVES) {
         const n = Math.floor(num((src.duelMoves as Record<string, unknown>)[move]));
         if (n > 0) rec.duelMoves[move] = n;
+      }
+    }
+    if (src.cum && typeof src.cum === "object") {
+      for (const spot of CUM_SPOTS) {
+        const n = Math.floor(num((src.cum as Record<string, unknown>)[spot]));
+        if (n > 0) rec.cum[spot] = n;
       }
     }
     if (src.acts && typeof src.acts === "object") {

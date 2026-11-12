@@ -26,7 +26,7 @@ const MAX_TESSELLATE_PASSES = 12;
 
 /** Meshes that glow should not block the light they are supposed to be giving off. */
 const NO_SHADOW_CASTERS = new Set([
-  "Floor", "Rug", "Window", "Fire", "BarLantern", "Bedroom_Floor", "Bedroom_Rug", "Bedroom_Window",
+  "Floor", "Rug", "Window", "Fire", "BarLantern", "Bedroom_Floor", "Bedroom_Rug", "Bedroom_Window", "Bathroom_Floor", "Bathroom_Window", "Bath_Mat",
 ]);
 
 interface FlickerLight {

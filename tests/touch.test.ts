@@ -155,7 +155,8 @@ describe("in the tavern", () => {
     const t = served("Female");
     expect(t.inConversation).toBe(true);
     const labels = t.talkChoices.map((c) => c.label);
-    expect(labels.slice(-2)).toEqual(["Slap them", "Pull away"]);
+    // Saying no can carry a willpower cost after it (" · 4 will") when part of her is tempted.
+    expect(labels.slice(-2).map((l) => l.split(" · ")[0])).toEqual(["Slap them", "Pull away"]);
     // With no desire yet, she's not ready to lean into anything.
     expect(labels).not.toContain("Lean into it");
   });

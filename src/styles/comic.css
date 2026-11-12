@@ -190,3 +190,28 @@
     font-size: 26px;
   }
 }
+
+/*
+ * In an after-hours duel the panel plays each moment beside the fight screen, like Karryn's battle picture:
+ * to the left of the log where there's room, otherwise small in the top-left corner.
+ */
+body:has(#panel.fight-open) #touch-comic {
+  --comic-w: min(420px, calc((100vw - 660px) / 2 - 24px));
+  top: max(16px, calc(50vh - var(--comic-w) * 0.375));
+  left: 16px;
+  width: var(--comic-w);
+  margin: 0;
+  z-index: 30;
+}
+
+/* The test sidebar pushes the fight screen left: less room beside it. */
+body:has(#panel.duel-test-open) #touch-comic {
+  --comic-w: min(420px, calc((100vw - 960px) / 2 - 24px));
+}
+
+@media (max-width: 1180px) {
+  body:has(#panel.fight-open) #touch-comic {
+    --comic-w: 220px;
+    top: 12px;
+  }
+}

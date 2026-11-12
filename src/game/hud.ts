@@ -138,6 +138,25 @@ export const DISH = pixelSvg(
   { K: OUTLINE, C: "#c9c1ac", L: "#f0e8d4", D: "#8a7a66" },
 );
 
+/** Willpower: a steady blue flame, like a candle that won't go out. */
+export const WILL = pixelSvg(
+  [
+    ".....KK.....",
+    "....KWBK....",
+    "....KWBK....",
+    "...KWWBBK...",
+    "..KBWWWBBK..",
+    "..KBWWWBBK..",
+    "..KBBWBBDK..",
+    "...KBBBDK...",
+    "....KKKK....",
+    "...KTTTTK...",
+    "...KTTTTK...",
+    "...KKKKKK...",
+  ],
+  { K: OUTLINE, W: "#e4f0ff", B: "#5a8ad8", D: "#36589a", T: "#c9c1ac" },
+);
+
 /** One icon and its number. */
 class Stat {
   readonly el = document.createElement("span");
