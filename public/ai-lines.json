@@ -79,7 +79,8 @@
     "the {guest} holds {name}'s fingers gently. | {name} jerks back and swats his hand, face flushed.",
     "the {guest} intertwines fingers with {name}. | {name} pulls sharply back and hits his hand away, blushing profusely.",
     "The {guest} strokes the back of {name}'s hand. | {name} snatches her hand back and delivers a firm slap on his wrist, looking flustered.",
-    "The {guest} caresses {name}'s palm. | {name} slaps his wrist. \"...Don't touch, stranger.\""
+    "The {guest} caresses {name}'s palm. | {name} slaps his wrist. \"...Don't touch, stranger.\"",
+    "The guest lifts {name}'s hand to lips. | {name} smacks guest's cheek with free hand! \"Dirty bastard... I said don't touch!\""
    ],
    "touch:hand:slap:1": [
     "The {guest} caresses {name}'s fingers. | {name} jerks hand back and slaps his wrist.",
@@ -2500,6 +2501,18 @@
     "The {guest} fingers {name}'s pussy through her clothes. | {name} bats his hand away. \"Not so fast...\"",
     "The {guest} palms {name}'s mound boldly. | {name} smacks his wrist, glaring but flushed.",
     "The {guest} slides hand under skirt, brushing folds directly. | {name} swats invading fingers hard, warning \"Tsk tsk...\"."
+   ],
+   "touch:intimate:slap:2": [
+    "The guest slides his hand up {name}'s skirt. | {name} firmly slaps it away, glaring.",
+    "The guest cups {name}'s sex through pants. | {name} smacks his hand away sharply, face flushed.",
+    "The guest boldly gropes between {name}'s legs. | {name} viciously swats his hand aside, eyes narrowing in warning.",
+    "The {guest} slides a hand up {name}'s skirt. | {name} bats it away. \"...Tch! Not without askin' first!\"",
+    "The guest fondles {name}'s sex through her skirt. | {name} recoils and slaps his wrist hard. \"...Tch. Don't touch without asking first, arse.\"",
+    "The {guest} slides his hand up {name}'s inner thigh under her skirt. | {name} firmly slaps it away. \"Not so fast...\"",
+    "Fingers brush against {name}'s panties as the {guest} cups her sex. | {name} sharply smacks his wrist. \"...Stop it! Keep your hands to yourself.\"",
+    "The {guest} boldly cups {name}'s crotch from behind. | {name} whips around and smacks his wrist hard.",
+    "the {guest} slides his hand up under {name}'s skirt. | {name} clamps her thighs together and SLAPS his wrist. \"Fucking pig...\"",
+    "The {guest} cups and squeezes {name}'s mound through her panties. | {name} gasps loudly, then snarls and SWATS his hand away. \"...Greedy bastard!\""
    ]
   }
  },
