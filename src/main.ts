@@ -78,6 +78,8 @@ async function start(): Promise<void> {
 
   const input = new Input();
   const audio = new Soundscape(base);
+  // For testing: ?mute on the address (development only) starts muted, whatever was saved.
+  if (import.meta.env.DEV && new URLSearchParams(location.search).has("mute")) audio.change({ muted: true });
   const game = new Game(scene, input, world, {
     male: maleFile.scene,
     female: femaleFile.scene,

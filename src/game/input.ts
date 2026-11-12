@@ -2,8 +2,15 @@ const GAME_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD",
   "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
   "ShiftLeft", "ShiftRight",
-  "KeyE", "KeyO", "KeyM", "KeyR", "KeyX", "Delete", "Enter", "Space", "Escape", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5",
+  "KeyE", "KeyO", "KeyM", "KeyP", "KeyR", "KeyX", "Delete", "Enter", "Space", "Escape", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9",
 ]);
+
+/** Whether a key went to a field you type into, rather than to the game. */
+function typing(target: EventTarget | null): boolean {
+  if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
+  if (target instanceof HTMLInputElement) return !["range", "checkbox", "radio", "button"].includes(target.type);
+  return target instanceof HTMLElement && target.isContentEditable;
+}
 
 export class Input {
   private readonly held = new Set<string>();
@@ -12,6 +19,8 @@ export class Input {
   constructor(target: Window = window) {
     target.addEventListener("keydown", (e) => {
       if (!GAME_KEYS.has(e.code)) return;
+      // Typing in a field (a name, a number) is typing, not playing; Esc still closes the menu it's in.
+      if (e.code !== "Escape" && typing(e.target)) return;
       e.preventDefault();
       this.held.add(e.code);
       if (!e.repeat) this.justPressed.add(e.code);

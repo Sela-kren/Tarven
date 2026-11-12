@@ -22,7 +22,7 @@ export const STATS: readonly { id: StatId; name: string; does: string }[] = [
 ];
 
 export type BodySkill = "hands" | "mouth" | "neck" | "breasts" | "hips" | "butt" | "thighs" | "pussy" | "exhibition";
-export type ActSkill = "upKiss" | "upHands" | "upMouth" | "upBed" | "upBehind";
+export type ActSkill = "upKiss" | "upHands" | "upMouth" | "upBed" | "upBehind" | "upTits" | "upAnal";
 export type SkillId = BodySkill | ActSkill;
 
 export const BODY_SKILLS: readonly { id: BodySkill; name: string }[] = [
@@ -37,12 +37,15 @@ export const BODY_SKILLS: readonly { id: BodySkill; name: string }[] = [
   { id: "exhibition", name: "Exhibition" },
 ];
 
-export const ACT_SKILLS: readonly { id: ActSkill; act: UpstairsAct; name: string }[] = [
+/** Skills for what she does upstairs. Ones with no `act` are only trained in the After Hours duel. */
+export const ACT_SKILLS: readonly { id: ActSkill; act?: UpstairsAct; name: string }[] = [
   { id: "upKiss", act: "kiss", name: "Making Out" },
   { id: "upHands", act: "hands", name: "Handjob" },
   { id: "upMouth", act: "mouth", name: "Blowjob" },
   { id: "upBed", act: "bed", name: "Sex" },
   { id: "upBehind", act: "behind", name: "From Behind" },
+  { id: "upTits", name: "Titjob" },
+  { id: "upAnal", name: "Anal" },
 ];
 
 export const ACT_SKILL_OF: Record<UpstairsAct, ActSkill> = {
@@ -115,7 +118,9 @@ export function mindBonus(level: number): { nerve: number; listen: number } {
 
 /** What a skill's level does, in words, for the journal. */
 export function skillBonusText(id: SkillId, level: number): string {
-  if (ACT_SKILLS.some((s) => s.id === id)) return level > 1 ? `+${Math.round(actSkillBonus(level) * 100)}% gold` : "No bonus yet";
+  const act = ACT_SKILLS.find((s) => s.id === id);
+  if (act && !act.act) return level > 1 ? `+${(level - 1) * 10}% in After Hours` : "No bonus yet";
+  if (act) return level > 1 ? `+${Math.round(actSkillBonus(level) * 100)}% gold` : "No bonus yet";
   const b = bodySkillBonus(level);
   if (level <= 1) return "No bonus yet";
   return `Needs ${b.ease} less desire, fills ${Math.round(b.sens * 100)}% faster${b.gold > 0 ? `, +${b.gold} gold` : ""}`;

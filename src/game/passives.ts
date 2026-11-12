@@ -1837,7 +1837,7 @@ export interface ProgressSave {
   xp?: Record<string, number>;
 }
 
-const DUEL_MOVES: readonly DuelMove[] = ["kiss", "caress", "tease", "undress", "hands", "mouth", "ride", "hold", "stop"];
+const DUEL_MOVES: readonly DuelMove[] = ["kiss", "caress", "tease", "undress", "hands", "mouth", "tits", "ride", "anal", "hold", "stop"];
 const num = (raw: unknown, max = 1e6) => (typeof raw === "number" && Number.isFinite(raw) ? Math.min(max, Math.max(0, raw)) : 0);
 const KINDS: readonly GuestKind[] = ["farmer", "smuggler", "soldier", "fugitive"];
 const kindList = (raw: unknown): GuestKind[] =>

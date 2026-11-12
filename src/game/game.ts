@@ -65,7 +65,7 @@ import { GuestActor, Walker } from "./guests";
 import { cloneLayout, emptyLayout, footprint, HousePlan, seatSpecs, type FurnitureKind, type HouseLayout, type Placed } from "./house";
 import { HouseView } from "./houseview";
 import { StatsHud } from "./hud";
-import { DRINK_COLORS, Icon, pixelSvg, type IconName } from "./icons";
+import { DRINK_COLORS, Icon, type IconName } from "./icons";
 import type { Input } from "./input";
 import { findDustSpots, MessLayer } from "./mess";
 import { Outline, outlineMaterial } from "./outline";
@@ -73,23 +73,22 @@ import { renderPortrait, renderThumbnail } from "./portraits";
 import {
   describeSave,
   latestSave,
-  MANUAL_SLOTS,
-  readSave,
-  slotName,
-  SLOTS,
   writeSave,
   type SaveData,
 } from "./save";
 import { INTRO, StoryBox } from "./story";
 import { Chatter } from "./chatter";
 import { DrinkComic } from "./comic";
-import { journalBook, passivesBook, privateBook, recordsBook, skillsBook } from "./journal";
+import { showJournal } from "./journalpanel";
+import { showBedChoice, showDuelTest, showFight, playAdultScene } from "./fightpanels";
+import { confirmMenu, showLoadMenu, showSaveMenu, showSettingsMenu } from "./menus";
 import { PASSIVE_ICONS } from "./passiveicons";
 import { saveBadges } from "./saveicons";
 import { SkyDial } from "./skydial";
 import { TouchComic } from "./touchcomic";
 import type { Reaction, SoftPart } from "./player";
 import { DialogueBox } from "./dialogue";
+import { MessageLog } from "./messagelog";
 import { SpeechBubbles, type Speaker } from "./speech";
 import { formatHour, type WorldClock } from "./time";
 import { NavGrid } from "./path";
@@ -109,7 +108,6 @@ import {
   Tavern,
   TRAY_SIZE,
   TRUST_MAX,
-  TRUST_TO_OVERTHROW,
   UPGRADE_COST,
   UPGRADES,
   WARE_NAMES,
@@ -128,7 +126,6 @@ import {
   type Ware,
 } from "./tavern";
 import { makeSeat, type World } from "./world";
-import { STATE_NAMES, type DuelArea } from "./duel";
 
 const ROOM: Rect = { minX: -7, maxX: 7, minZ: -5, maxZ: 5 };
 /** How far the follow camera moves around the original room. */
@@ -157,7 +154,6 @@ const LISTEN_RANGE = 2.2;
 /** Talk about you can be made out from this close. Further off, it's only whispering. */
 const OVERHEAR_RANGE = 4.5;
 const ITEM_SCALE = 1.6;
-const TOAST_SECONDS = 5;
 const POT_WARNING_SECONDS = 5;
 const STATION_ICON_HEIGHT = 2;
 const STATION_ARROW_HEIGHT = 2.6;
@@ -240,15 +236,6 @@ const BEDROOM_DOOR_SWING_RATE = 7;
 const DESK_RANGE = 1.5;
 /** The journal on the chest: close enough to reach down to it, and the arrow low over it. */
 const JOURNAL_RANGE = 1.2;
-/** The journal's spreads, in tab order. */
-type JournalPage = "ledger" | "private" | "passives" | "skills" | "records";
-const JOURNAL_PAGES: readonly { id: JournalPage; label: string }[] = [
-  { id: "ledger", label: "Ledger" },
-  { id: "private", label: "Private" },
-  { id: "passives", label: "Passives" },
-  { id: "skills", label: "Skills" },
-  { id: "records", label: "Records" },
-];
 const JOURNAL_ARROW_HEIGHT = 1.4;
 /** How far the camera pulls back to look at the plans. */
 const BUILD_ZOOM = 1.4;
@@ -284,28 +271,6 @@ const PLAYER_LABELS = ["Male", "Female"];
 /** Furniture pictures on the house plans, in game pixels; shown at twice this, hard-edged. */
 const FURNITURE_THUMB_SIZE = 32;
 
-/** The gear that marks a settings board, in the same pixel art as the HUD's icons. */
-const GEAR = pixelSvg(
-  [
-    "......KKKK......",
-    "...KK.KGGK.KK...",
-    "..KGGKKGGKKGGK..",
-    "..KGGGGGGGGGGK..",
-    "...KGGGDDGGGK...",
-    ".KKKGGDKKDGGKKK.",
-    "KGGGGDK..KDGGGGK",
-    "KGGGGDK..KDGGGGK",
-    "KDDDGDK..KDGDDDK",
-    "KDDDDDK..KDDDDDK",
-    ".KKKDDDKKDDDKKK.",
-    "...KDDDDDDDDK...",
-    "..KDDDDDDDDDDK..",
-    "..KDDKKDDKKDDK..",
-    "...KK.KDDK.KK...",
-    "......KKKK......",
-  ],
-  { K: "#1c140e", G: "#ffe27a", D: "#b8922c" },
-);
 const STATIONS: Station[] = ["tap", "shelf", "bread", "pot", "barrel", "bin", "wash"];
 
 interface Assets {
@@ -316,7 +281,7 @@ interface Assets {
   furniture: Placed[];
 }
 
-interface Button {
+export interface Button {
   label: string;
   onPick: () => void;
   disabled?: boolean;
@@ -377,7 +342,7 @@ export class Game {
   readonly siblings: [Sibling, Sibling];
   active = 0;
 
-  private screen:
+  screen:
     | "title" | "select" | "customize" | "fade" | "story" | "play" | "talk" | "visitor" | "panel" | "paused" | "build" = "title";
   private readonly dialogue = new DialogueBox(
     {
@@ -435,7 +400,7 @@ export class Game {
   private readonly itemTemplates: Record<Item, Object3D>;
   private readonly guestModels: { male: Object3D; female: Object3D };
   /** Each sibling's look, kept on the customise screen and in saves; both start as the models were built. */
-  private looks: Looks = loadLooks();
+  looks: Looks = loadLooks();
   /** Puts looks on the siblings; one each, in the same order. */
   private readonly dressers: Dresser[];
   private readonly customizer: Customizer;
@@ -483,8 +448,9 @@ export class Game {
   /** The sky over Tarven at the top of the screen, with the sun and moon going round. */
   private readonly skyDial = new SkyDial(element("clock-dial") as HTMLCanvasElement);
   private readonly promptEl = element("prompt");
-  private readonly toastEl = element("toast");
-  private readonly panelEl = element("panel");
+  /** The message log under the stats: news, what was said, and passives as she earns them. */
+  private readonly log = new MessageLog(element("stats"));
+  readonly panelEl = element("panel");
   private readonly selectEl = element("select");
   private readonly furnitureImages = new Map<FurnitureKind, string>();
   private readonly selectStartEl = element("select-start") as HTMLButtonElement;
@@ -506,20 +472,19 @@ export class Game {
     },
   );
 
-  private panelButtons: Button[] = [];
+  panelButtons: Button[] = [];
   /** Where Esc leads from the open menu, or null when it has no way back. */
-  private panelBack: (() => void) | null = null;
+  panelBack: (() => void) | null = null;
   /** An 18+ moment the last answer led to, shown once the conversation closes. */
   private pendingAdult: AdultScene | null = null;
   /** Tonight as it opened: what a save holds. */
-  private checkpoint: TavernSave;
+  checkpoint: TavernSave;
   private visitor: Walker | null = null;
   private visitorWalking = false;
   private visitorWait = 0;
   private readonly frontDoorHinge = new Group();
   /** 0 is shut, 1 is wide open. */
   private frontDoorOpen = 0;
-  private toastLeft = 0;
   private time = 0;
 
   constructor(
@@ -531,7 +496,7 @@ export class Game {
     private readonly renderer: WebGLRenderer,
     /** The world's time of day, shared with the lighting. */
     private readonly clock: WorldClock,
-    private readonly audio: Soundscape,
+    readonly audio: Soundscape,
   ) {
     this.bell = makeBell();
     this.bell.position.copy(BELL_SPOT);
@@ -1174,26 +1139,25 @@ export class Game {
     if (this.promptEl.textContent !== text) this.promptEl.textContent = text;
   }
 
-  private updateToast(dt: number): void {
-    const messages = this.tavern.takeMessages();
-    if (messages.length > 0) {
-      this.toastEl.textContent = messages[messages.length - 1];
-      this.toastLeft = TOAST_SECONDS;
-    } else if (this.toastLeft > 0) {
-      this.toastLeft -= dt;
-      if (this.toastLeft <= 0) this.toastEl.textContent = "";
+  private updateLog(dt: number): void {
+    for (const text of this.tavern.takeMessages()) this.log.add(text);
+    for (const def of this.tavern.takeUnlocks()) {
+      this.log.addPassive(def);
+      // A page turning: it's gone in her journal.
+      this.audio.play("page");
     }
+    this.log.update(dt);
   }
 
   /**
    * Opens a menu over the game. The title screen hangs its name on a tavern sign; every other menu is a
    * framed wooden board.
    */
-  private openPanel(title: string, paragraphs: string[], buttons: Button[], style: "board" | "title" = "board"): void {
+  openPanel(title: string, paragraphs: string[], buttons: Button[], style: "board" | "title" = "board"): void {
     const box = document.createElement("div");
     box.className = "box";
     this.panelEl.classList.toggle("title-screen", style === "title");
-    this.panelEl.classList.remove("journal-open", "adult-open", "fight-open", "duel-open");
+    this.panelEl.classList.remove("journal-open", "adult-open", "fight-open", "duel-open", "duel-test-open");
     const heading = document.createElement("h1");
     if (style === "title") {
       // "Last Call at" small over the sign, "Tarven" large across it.
@@ -1255,398 +1219,15 @@ export class Game {
     if (this.screen !== "paused") this.screen = "panel";
   }
 
-  /**
-   * Opens the journal: your name and how you stand, or the adult side: tonight's desire, her passives, and her
-   * records. Ribbon tabs (or 1 to 4) turn between them. The night waits while you read.
-   */
-  private showJournal(page: JournalPage = "ledger"): void {
-    const { tavern } = this;
-    this.clearTarget();
-    this.audio.play("click");
-    const close = () => {
-      this.closePanel();
-      this.screen = "play";
-    };
-    const facts = tavern.passiveFacts();
-    let book: HTMLElement;
-    if (page === "ledger") {
-      book = journalBook(
-        {
-          name: tavern.name,
-          night: tavern.nightIndex + 1,
-          nights: NIGHTS.length,
-          gold: tavern.gold,
-          debt: DEBT,
-          trust: tavern.trust,
-          trustMax: TRUST_MAX,
-          trustToRise: TRUST_TO_OVERTHROW,
-          heat: tavern.heat,
-          heatMax: HEAT_MAX,
-          persona: tavern.persona,
-          lewdness: tavern.lewdness,
-          corruption: Math.round(tavern.corruption),
-        },
-        (name) => (tavern.name = name),
-      );
-    } else if (page === "private") {
-      book = privateBook({
-        touchable: tavern.playerBody === "Female",
-        lewdness: tavern.lewdness,
-        corruption: Math.round(tavern.corruption),
-        meters: { ...tavern.meters },
-        pleasure: tavern.pleasure,
-        tonight: { ...tavern.touchesTonight },
-        clothesLost: tavern.stripped,
-        lets: tavern.touchMemory.lets,
-        passivesHeld: tavern.passives.size,
-      });
-    } else if (page === "passives") {
-      book = passivesBook({ owned: tavern.passives, facts });
-    } else if (page === "skills") {
-      book = skillsBook({ xp: tavern.xp, bonus: tavern.effects.skill, touchable: tavern.playerBody === "Female" });
-    } else {
-      book = recordsBook({ facts });
-    }
-
-    // Ribbon tabs over the top of the book, one for each spread.
-    const tabs = document.createElement("div");
-    tabs.className = "journal-tabs";
-    for (const [index, tab] of JOURNAL_PAGES.entries()) {
-      const el = document.createElement("button");
-      el.type = "button";
-      el.className = `tab ${tab.id}`;
-      el.classList.toggle("on", tab.id === page);
-      const key = document.createElement("span");
-      key.className = "key";
-      key.textContent = String(index + 1);
-      el.append(key, tab.label);
-      el.addEventListener("click", () => tab.id !== page && this.showJournal(tab.id));
-      tabs.append(el);
-    }
-
-    const shut = document.createElement("button");
-    shut.type = "button";
-    shut.className = "journal-close";
-    shut.textContent = "Close";
-    shut.addEventListener("click", close);
-    const wrap = document.createElement("div");
-    wrap.className = "journal";
-    wrap.append(tabs, book, shut);
-    this.panelEl.classList.remove("title-screen", "adult-open");
-    this.panelEl.classList.add("open", "journal-open");
-    this.panelEl.replaceChildren(wrap);
-    this.panelButtons = [
-      ...JOURNAL_PAGES.map((tab) => ({ label: tab.label, onPick: () => tab.id !== page && this.showJournal(tab.id) })),
-      { label: "Close", onPick: close },
-    ];
-    this.panelBack = close;
-    this.screen = "panel";
-  }
-
-  /**
-   * An 18+ moment, as a card over the room: placeholder wallpaper, the 18+ mark, one short line, and the
-   * choices. Never more than the one line; the art will be the game's own one day.
-   */
-  private showAdultCard(title: string, line: string, scene: "door" | "candle" | "bed", buttons: Button[]): void {
-    this.openPanel(title, [], buttons);
-    this.panelEl.classList.add("adult-open");
-    const box = this.panelEl.querySelector(".box");
-    if (!box) return;
-    const art = document.createElement("div");
-    art.className = `wallpaper ${scene}`;
-    const badge = document.createElement("span");
-    badge.className = "badge";
-    badge.textContent = "18+";
-    const note = document.createElement("span");
-    note.className = "placeholder";
-    note.textContent = "Placeholder art";
-    art.append(badge, note);
-    const words = document.createElement("p");
-    words.className = "adult-line";
-    words.textContent = line;
-    box.insertBefore(words, box.querySelector(".menu"));
-    box.insertBefore(art, words);
-  }
-
-  /** Shows whatever 18+ moment the last answer led to, then gets back to work. */
-  private playAdultScene(scene: AdultScene): void {
-    const { tavern } = this;
-    const back = () => {
-      this.panelEl.classList.remove("adult-open");
-      this.closePanel();
-      this.screen = "play";
-    };
-    if (scene.kind === "overwhelmed") {
-      this.showAdultCard("Overwhelmed", "It all comes over you at once. For a moment the tavern simply isn't there.", "candle", [
-        { label: "Pull yourself together", onPick: back },
-      ]);
-      this.panelBack = back;
-      return;
-    }
-    // She's said yes to going up; what happens there is still hers to choose, and she can still change her mind.
-    const choices: Button[] = tavern.upstairsChoices().map(({ act, label, ready }) => ({
-      label: ready ? label : `${label} (not warm enough yet)`,
-      disabled: !ready,
-      onPick: () => {
-        const line = tavern.goUpstairs(scene, act);
-        this.showAdultCard("Upstairs", line, act === "kiss" ? "candle" : "bed", [{ label: "Go back down to the bar", onPick: back }]);
-        this.panelBack = back;
-      },
-    }));
-    choices.push({ label: "Change your mind, gently", onPick: back });
-    this.showAdultCard("Upstairs", "You lead them up the creaking stairs, and shut the door on the noise below.", "door", choices);
-    this.panelBack = back;
-  }
-
-  /**
-   * A brawl, turn by turn: both sides' stamina, what just happened, and her moves with the chance each has.
-   * When it's over, how it went, and back to work.
-   */
-  private showFight(): void {
-    const { tavern } = this;
-    const fight = tavern.fight;
-    if (!fight) {
-      const result = tavern.takeFightResult();
-      const back = () => {
-        this.closePanel();
-        this.screen = "play";
-      };
-      const title = result?.outcome === "lost" ? "Knocked down" : result?.outcome === "talked" ? "Talked down" : "Thrown out";
-      this.openPanel(title, [result?.text ?? ""], [{ label: "Back to work", onPick: back }]);
-      this.panelBack = back;
-      return;
-    }
-    const buttons: Button[] = fight.choices().map((choice) => ({
-      label: choice.chance === null ? choice.label : `${choice.label} · ${Math.round(choice.chance * 100)}%`,
-      disabled: choice.disabled,
-      onPick: () => {
-        tavern.fightMove(choice.move);
-        this.audio.play(fight.outcome === "lost" ? "walkOut" : "cloth");
-        this.showFight();
-      },
-    }));
-    this.openPanel(`Brawl with a ${fight.kind}`, [], buttons);
-    this.panelEl.classList.add("fight-open");
-    const box = this.panelEl.querySelector(".box");
-    if (!box) return;
-    const bars = document.createElement("div");
-    bars.className = "fight-bars";
-    const bar = (who: string, now: number, max: number, tone: string) => {
-      const line = document.createElement("div");
-      line.className = `fight-bar ${tone}`;
-      const label = document.createElement("span");
-      label.textContent = who;
-      const track = document.createElement("span");
-      track.className = "track";
-      const fill = document.createElement("span");
-      fill.className = "fill";
-      fill.style.width = `${(now / max) * 100}%`;
-      track.append(fill);
-      const value = document.createElement("b");
-      value.textContent = `${now}/${max}`;
-      line.append(label, track, value);
-      return line;
-    };
-    bars.append(bar("You", fight.stamina, fight.maxStamina, "you"), bar(`The ${fight.kind}${fight.drunk ? " (drunk)" : ""}`, fight.foeStamina, fight.foeMax, "foe"));
-    const log = document.createElement("div");
-    log.className = "fight-log";
-    for (const line of fight.log.slice(-4)) {
-      const p = document.createElement("p");
-      p.textContent = line;
-      log.append(p);
-    }
-    box.insertBefore(log, box.querySelector(".menu"));
-    box.insertBefore(bars, log);
-    // No running from it: Esc does nothing until it's settled.
-    this.panelBack = () => undefined;
-  }
-
-  /**
-   * At bedtime: a guest she warmed to might be lingering to ask for an after-hours game, which she can say yes
-   * or no to; and if she's too restless to sleep, she can ease the ache first.
-   */
-  private showBedChoice(): void {
-    const { tavern } = this;
-    const sleep = () => {
-      this.panelEl.classList.remove("adult-open");
-      this.closePanel();
-      tavern.sleep();
-      this.goToSleep();
-    };
-    const paragraphs: string[] = [];
-    const buttons: Button[] = [];
-    const offer = tavern.duelOffer();
-    if (offer) {
-      paragraphs.push(`A ${offer} you warmed to tonight is lingering at the door. "One more game before bed? Loser pays."`);
-      const blocked = tavern.duelBlocked;
-      buttons.push({
-        label: blocked ? `Play after hours (18+) (${blocked.toLowerCase().replace(/\.$/, "")})` : "Play after hours (18+)",
-        disabled: Boolean(blocked),
-        onPick: () => this.showDuelRules(new Set(), tavern.duelStakes()[Math.min(1, tavern.duelStakes().length - 1)] ?? 0),
-      });
-    }
-    if (tavern.restless) paragraphs.push("You lie down, but you can't stop thinking about tonight.");
-    buttons.push({ label: offer ? "Send them home, and sleep" : "Sleep it off", onPick: sleep });
-    if (tavern.restless) {
-      buttons.push({
-        label: "Ease the ache first (18+)",
-        onPick: () => {
-          tavern.easeAche();
-          this.showAdultCard("Alone", "You blow out the candle and take care of it yourself. Sleep comes easily after.", "candle", [
-            { label: "Sleep", onPick: sleep },
-          ]);
-        },
-      });
-    }
-    this.openPanel(offer ? "After Hours" : "Restless", paragraphs, buttons);
-    this.panelBack = () => {
-      this.closePanel();
-      this.screen = "play";
-    };
-  }
-
-  /**
-   * Her rules for an after-hours game, before it starts: which parts of her are in play (only ones she's warm
-   * enough for tonight) and the stake. A kiss is always part of it.
-   */
-  private showDuelRules(areas: Set<DuelArea>, stake: number): void {
-    const { tavern } = this;
-    const kind = tavern.duelOffer();
-    if (!kind) {
-      this.closePanel();
-      this.screen = "play";
-      return;
-    }
-    const stakes = tavern.duelStakes();
-    const buttons: Button[] = tavern.duelAreas().map((area) => ({
-      label: area.ready
-        ? `${areas.has(area.id) ? "[x]" : "[ ]"} ${area.name}`
-        : `[ ] ${area.name} (needs ${area.need} ${area.meter} desire; you're at ${area.have})`,
-      disabled: !area.ready,
-      onPick: () => {
-        if (areas.has(area.id)) areas.delete(area.id);
-        else areas.add(area.id);
-        this.showDuelRules(areas, stake);
-      },
-    }));
-    buttons.push({
-      label: `Stake: ${stake} gold (change)`,
-      disabled: stakes.length < 2,
-      onPick: () => this.showDuelRules(areas, stakes[(stakes.indexOf(stake) + 1) % stakes.length]),
-    });
-    buttons.push({
-      label: "Begin (18+)",
-      onPick: () => {
-        if (tavern.startDuel([...areas], stake)) this.showDuel();
-      },
-    });
-    buttons.push({ label: "Back", onPick: () => this.showBedChoice() });
-    this.openPanel(
-      "Your rules",
-      [`Choose what's in play with the ${kind}. A kiss always is. They'll keep to your rules, and you can stop at any time.`],
-      buttons,
-    );
-    this.panelBack = () => this.showBedChoice();
-  }
-
-  /**
-   * An after-hours game, turn by turn: both sides' pleasure and stamina, how she's feeling, what just happened,
-   * and her moves. Stop is always there, and Esc stops too. When it's over, the 18+ card, then bed.
-   */
-  private showDuel(): void {
-    const { tavern } = this;
-    const duel = tavern.duel;
-    if (!duel) {
-      const result = tavern.takeDuelResult();
-      if (!result || result.outcome === "stopped") {
-        const back = () => {
-          this.closePanel();
-          this.screen = "play";
-        };
-        this.openPanel("Called off", [result?.text ?? ""], [{ label: "Back", onPick: back }]);
-        this.panelBack = back;
-        return;
-      }
-      const sleep = () => {
-        this.panelEl.classList.remove("adult-open");
-        this.closePanel();
-        tavern.sleep();
-        this.goToSleep();
-      };
-      this.showAdultCard(result.outcome === "won" ? `You win · +${result.gold} gold` : `You lose · ${result.gold} gold`, result.line, "bed", [
-        { label: "Sleep", onPick: sleep },
-      ]);
-      this.panelBack = sleep;
-      return;
-    }
-    const buttons: Button[] = duel.choices().map((choice) => ({
-      label: choice.label,
-      disabled: choice.disabled,
-      onPick: () => {
-        tavern.duelMove(choice.move);
-        this.audio.play("cloth");
-        this.showDuel();
-      },
-    }));
-    this.openPanel(`After hours with the ${duel.kind}`, [], buttons);
-    this.panelEl.classList.add("fight-open", "duel-open");
-    const box = this.panelEl.querySelector(".box");
-    if (box) {
-      const bars = document.createElement("div");
-      bars.className = "fight-bars";
-      const bar = (who: string, now: number, max: number, tone: string) => {
-        const line = document.createElement("div");
-        line.className = `fight-bar ${tone}`;
-        const label = document.createElement("span");
-        label.textContent = who;
-        const track = document.createElement("span");
-        track.className = "track";
-        const fill = document.createElement("span");
-        fill.className = "fill";
-        fill.style.width = `${(now / max) * 100}%`;
-        track.append(fill);
-        const value = document.createElement("b");
-        value.textContent = `${now}/${max}`;
-        line.append(label, track, value);
-        return line;
-      };
-      bars.append(
-        bar("Your pleasure", duel.pleasure, 100, "pleasure"),
-        bar("Your stamina", duel.stamina, duel.maxStamina, "you"),
-        bar("Their pleasure", duel.theirPleasure, 100, "pleasure"),
-        bar("Their stamina", duel.theirStamina, duel.theirMax, "foe"),
-      );
-      const state = document.createElement("p");
-      state.className = `duel-state ${duel.state}`;
-      const inPlay = ["Kiss", ...tavern.duelAreas().filter((a) => duel.areas.has(a.id)).map((a) => a.name)].join(", ");
-      state.textContent = `You feel: ${STATE_NAMES[duel.state]} · In play: ${inPlay} · Stake: ${duel.stake} gold`;
-      const log = document.createElement("div");
-      log.className = "fight-log";
-      for (const line of duel.log.slice(-4)) {
-        const p = document.createElement("p");
-        p.textContent = line;
-        log.append(p);
-      }
-      box.insertBefore(log, box.querySelector(".menu"));
-      box.insertBefore(state, log);
-      box.insertBefore(bars, state);
-    }
-    // Esc always stops it.
-    this.panelBack = () => {
-      tavern.duelMove("stop");
-      this.showDuel();
-    };
-  }
-
-  private closePanel(): void {
-    this.panelEl.classList.remove("open", "journal-open", "adult-open", "fight-open", "duel-open");
+  closePanel(): void {
+    this.panelEl.classList.remove("open", "journal-open", "adult-open", "fight-open", "duel-open", "duel-test-open");
     this.panelEl.replaceChildren();
     this.panelButtons = [];
     this.panelBack = null;
   }
 
   /** A menu that Esc (or its Back button) leaves by calling `back`. */
-  private openMenu(title: string, paragraphs: string[], buttons: Button[], back: () => void): void {
+  openMenu(title: string, paragraphs: string[], buttons: Button[], back: () => void): void {
     this.openPanel(title, paragraphs, [...buttons, { label: "Back", onPick: back }]);
     this.panelBack = back;
   }
@@ -1661,60 +1242,6 @@ export class Game {
     const pick = buttons.findIndex((_, index) => this.input.pressed(`Digit${index + 1}`));
     if (pick >= 0 && !buttons[pick].disabled) this.pressButton(buttons[pick]);
     else if (buttons.length === 1 && this.input.pressed("Enter")) this.pressButton(buttons[0]);
-  }
-
-  /** Music and effects levels. Changing one also unmutes, so the change can be heard. */
-  /** The settings: music and effects levels, each on a slider. M still mutes everything at any time. */
-  private showSettingsMenu(back: () => void): void {
-    this.openMenu("Settings", [], [], back);
-    const box = this.panelEl.querySelector(".box");
-    const menu = box?.querySelector(".menu");
-    if (!box || !menu) return;
-    // Settings wear a gear in the corner.
-    const gear = document.createElement("div");
-    gear.className = "corner-icon";
-    gear.setAttribute("aria-hidden", "true");
-    gear.innerHTML = GEAR;
-    box.append(gear);
-    const { settings } = this.audio;
-    const slider = (name: string, level: number, set: (level: number) => void, onLetGo?: () => void) => {
-      const row = document.createElement("label");
-      row.className = "slider";
-      const label = document.createElement("span");
-      label.className = "name";
-      label.textContent = name;
-      const input = document.createElement("input");
-      input.type = "range";
-      input.min = "0";
-      input.max = "100";
-      input.step = "5";
-      input.value = String(Math.round(level * 100));
-      const shown = document.createElement("span");
-      shown.className = "value";
-      const show = () => {
-        const value = Number(input.value);
-        shown.textContent = value === 0 ? "Off" : `${value}%`;
-        // The track fills up to the thumb.
-        input.style.setProperty("--fill", `${value}%`);
-      };
-      show();
-      input.addEventListener("input", () => {
-        show();
-        set(Number(input.value) / 100);
-      });
-      if (onLetGo) input.addEventListener("change", onLetGo);
-      row.append(label, input, shown);
-      return row;
-    };
-    box.insertBefore(
-      slider("Music", settings.music, (music) => this.audio.change({ music, muted: false })),
-      menu,
-    );
-    box.insertBefore(
-      // Letting go plays a sound at the new level, so you hear what you've picked.
-      slider("Effects", settings.effects, (effects) => this.audio.change({ effects, muted: false }), () => this.audio.play("click")),
-      menu,
-    );
   }
 
   /** Starts a day with the tavern closed. Every day starts here, so this is where the autosave is taken. */
@@ -1741,67 +1268,15 @@ export class Game {
           disabled: !latest,
           onPick: () => latest && this.loadGame(latest.data),
         },
-        { label: "Load game", disabled: !latest, onPick: () => this.showLoadMenu(() => this.showTitle()) },
-        { label: "Settings", onPick: () => this.showSettingsMenu(() => this.showTitle()) },
+        { label: "Load game", disabled: !latest, onPick: () => showLoadMenu(this, () => this.showTitle()) },
+        { label: "Settings", onPick: () => showSettingsMenu(this, () => this.showTitle()) },
       ],
       "title",
     );
   }
 
-  /** Lists the save slots; picking one saves the start of today there. */
-  private showSaveMenu(back: () => void, notice?: string): void {
-    this.openMenu(
-      "Save game",
-      notice ? [notice] : [],
-      MANUAL_SLOTS.map((slot) => {
-        const existing = readSave(slot);
-        const label = existing ? slotName(slot) : `${slotName(slot)}: empty`;
-        const save = () => {
-          const saved = writeSave(slot, this.active, this.checkpoint, this.looks);
-          this.showSaveMenu(back, saved ? `Saved to ${slotName(slot)}.` : "Could not save: this browser is blocking storage.");
-        };
-        return {
-          label,
-          save: existing ?? undefined,
-          onPick: existing
-            ? () => this.confirm(`Overwrite ${slotName(slot)}?`, null, save, () => this.showSaveMenu(back))
-            : save,
-        };
-      }),
-      back,
-    );
-  }
-
-  /** Lists every save; picking one loads it. Mid-night, it asks first, since tonight's progress is lost. */
-  private showLoadMenu(back: () => void): void {
-    const midNight = this.screen === "paused";
-    this.openMenu(
-      "Load game",
-      [],
-      SLOTS.map((slot) => {
-        const data = readSave(slot);
-        const load = () => data && this.loadGame(data);
-        return {
-          label: data ? slotName(slot) : `${slotName(slot)}: empty`,
-          save: data ?? undefined,
-          disabled: !data,
-          onPick:
-            midNight && data
-              ? () => this.confirm(`Load ${slotName(slot)}?`, "Anything you have done since today began will be lost.", load, () => this.showLoadMenu(back))
-              : load,
-        };
-      }),
-      back,
-    );
-  }
-
-  /** A yes/no question; `warning` says what's at stake, when something is. */
-  private confirm(title: string, warning: string | null, yes: () => void, no: () => void): void {
-    this.openMenu(title, warning ? [warning] : [], [{ label: "Yes", onPick: yes }], no);
-  }
-
   /** Fades out, clears the room, and opens the saved night. */
-  private loadGame(data: SaveData): void {
+  loadGame(data: SaveData): void {
     this.closePanel();
     this.fadeTo(() => {
       this.selectEl.classList.remove("open");
@@ -1824,8 +1299,7 @@ export class Game {
       this.strippedShown = "";
       this.syncStripped();
       this.playerPortrait = null;
-      this.toastEl.textContent = "";
-      this.toastLeft = 0;
+      this.log.clear();
       this.enterTavern();
     });
   }
@@ -1947,12 +1421,12 @@ export class Game {
       [],
       [
         { label: "Resume (Esc)", onPick: () => this.resume() },
-        { label: "Save game", onPick: () => this.showSaveMenu(back) },
-        { label: "Load game", disabled: !latestSave(), onPick: () => this.showLoadMenu(back) },
-        { label: "Settings", onPick: () => this.showSettingsMenu(back) },
+        { label: "Save game", onPick: () => showSaveMenu(this, back) },
+        { label: "Load game", disabled: !latestSave(), onPick: () => showLoadMenu(this, back) },
+        { label: "Settings", onPick: () => showSettingsMenu(this, back) },
         {
           label: "Quit to the title",
-          onPick: () => this.confirm("Quit to the title?", "Anything you have not saved will be lost.", () => location.reload(), back),
+          onPick: () => confirmMenu(this, "Quit to the title?", "Anything you have not saved will be lost.", () => location.reload(), back),
         },
       ],
     );
@@ -1984,7 +1458,7 @@ export class Game {
   }
 
   /** Hides the prompt, arrow and outline while the player can't act. */
-  private clearTarget(): void {
+  clearTarget(): void {
     this.setPrompt("");
     this.targetArrow.show(null);
     this.highlight(null);
@@ -1994,8 +1468,7 @@ export class Game {
     this.screen = "visitor";
     this.clearTarget();
     this.visitorWait = VISITOR_WAIT_SECONDS;
-    this.toastEl.textContent = "The last guest is gone.";
-    this.toastLeft = TOAST_SECONDS;
+    this.log.add("The last guest is gone.");
   }
 
   private letVisitorIn(): void {
@@ -2006,8 +1479,7 @@ export class Game {
     this.guestLayer.add(visitor.group);
     this.visitor = visitor;
     this.visitorWalking = true;
-    this.toastEl.textContent = "Then the door opens again.";
-    this.toastLeft = TOAST_SECONDS;
+    this.log.add("Then the door opens again.");
     this.audio.play("visitor");
   }
 
@@ -2060,6 +1532,7 @@ export class Game {
     this.clearTarget();
     this.screen = "talk";
     this.dialogue.start(lines, this.tavern.talkChoices, (index) => this.pickTalk(index));
+    for (const line of lines) this.log.addTalk(line);
   }
 
   /** What guests have got off the player tonight, as last put on the model: who, and which pieces. */
@@ -2078,6 +1551,8 @@ export class Game {
   private pickTalk(index: number): void {
     const { tavern } = this;
     this.audio.play("click");
+    const picked = tavern.talkChoices[index];
+    if (picked && !picked.disabled) this.log.addChoice(picked.label);
     tavern.chooseTalk(index);
     this.syncStripped();
     this.showTouch();
@@ -2087,7 +1562,7 @@ export class Game {
       this.screen = "play";
       const scene = this.pendingAdult;
       this.pendingAdult = null;
-      if (scene) this.playAdultScene(scene);
+      if (scene) playAdultScene(this, scene);
       return;
     }
     // Only the answer to what you picked plays; the conversation before it has been seen.
@@ -2139,7 +1614,7 @@ export class Game {
     });
   }
 
-  private goToSleep(): void {
+  goToSleep(): void {
     this.clearTarget();
     this.audio.play("cloth");
     this.fadeTo(() => {
@@ -2260,7 +1735,7 @@ export class Game {
         [ending.text, `Final gold ${tavern.gold}/${DEBT}, Trust ${tavern.trust}, Heat ${tavern.heat}.`],
         [
           { label: "Play again", onPick: () => location.reload() },
-          { label: "Load game", disabled: !latestSave(), onPick: () => this.showLoadMenu(() => this.advanceNight()) },
+          { label: "Load game", disabled: !latestSave(), onPick: () => showLoadMenu(this, () => this.advanceNight()) },
         ],
       );
     } else {
@@ -2280,15 +1755,21 @@ export class Game {
       const sister = this.siblings.find((sibling) => sibling.walkStyle !== null);
       const level = sister?.cycleWalkStyle();
       if (level) {
-        this.toastEl.textContent = `Walk style ${level} of 5: ${WALK_STYLE_NAMES[level - 1]}`;
-        this.toastLeft = TOAST_SECONDS;
+        this.log.add(`Walk style ${level} of 5: ${WALK_STYLE_NAMES[level - 1]}`);
       }
+    }
+
+    // P opens the sex fight test panel, in development only.
+    if (import.meta.env.DEV && input.pressed("KeyP")) {
+      this.clearTarget();
+      showDuelTest(this);
+      return;
     }
 
     const found = this.findTarget();
     if (found && found.prompt.actionable && input.pressed("KeyE") && found.target.kind === "bed" && (tavern.restless || tavern.duelOffer())) {
       this.clearTarget();
-      this.showBedChoice();
+      showBedChoice(this);
       return;
     }
     if (found && found.prompt.actionable && input.pressed("KeyE")) {
@@ -2308,7 +1789,7 @@ export class Game {
         return;
       }
       if (found.target.kind === "book") {
-        this.showJournal();
+        showJournal(this);
         return;
       }
       if (found.target.kind === "bed" && tavern.phase === "dawn") {
@@ -2328,7 +1809,7 @@ export class Game {
     // A guest started a brawl: the night waits while it's settled.
     if (tavern.fight) {
       this.clearTarget();
-      this.showFight();
+      showFight(this);
       return;
     }
 
@@ -2417,8 +1898,7 @@ export class Game {
     if (this.input.pressed("KeyM")) {
       const muted = this.audio.toggleMute();
       if (!this.staging && this.screen !== "paused") {
-        this.toastEl.textContent = muted ? "Sound off" : "Sound on";
-        this.toastLeft = TOAST_SECONDS;
+        this.log.add(muted ? "Sound off" : "Sound on");
       }
     }
     // Paused: nothing moves, not even the guests.
@@ -2494,7 +1974,7 @@ export class Game {
     this.updateHeldIcons();
     // The night's opening message waits until the select scene is over.
     if (!this.staging) {
-      this.updateToast(dt);
+      this.updateLog(dt);
       this.updateClock();
     }
     this.updateSound();

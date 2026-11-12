@@ -41,7 +41,8 @@ import {
 } from "./touch";
 import { GUEST_TOO_DRUNK, PULLS, SLAPS, TOO_DRUNK_TO_ALLOW } from "./touchtalk";
 import { Fight, type FightMove, type FightOutcome } from "./fight";
-import { Duel, DUEL_AREAS, type DuelArea, type DuelMove, type DuelOutcome } from "./duel";
+import { ROLE_PLAYS, type RolePlay } from "./duellines";
+import { Duel, DUEL_AREAS, type DuelArea, type DuelistStats, type DuelMove, type DuelOutcome, type DuelTest, type Partner } from "./duel";
 import {
   ACT_SKILL_OF,
   actSkillBonus,
@@ -65,6 +66,7 @@ import {
   METER_OF,
   METERS,
   newlyEarned,
+  PASSIVE_BY_ID,
   newRecords,
   noEffects,
   readProgress,
@@ -243,6 +245,15 @@ const ALL_HIGH = 60;
 const HIGH_RESPECT_NIGHT = 8;
 /** Guests start asking her upstairs once she's this lewd. */
 const INVITES_AT = 25;
+/** A test partner's starting pleasure and stamina, from the test panel; null stamina is full. */
+export function applyTestPartner(partner: Partner, setup: { pleasure: number; stamina: number | null } | undefined): void {
+  if (!setup) return;
+  partner.pleasure = Math.max(0, Math.min(99, Math.round(setup.pleasure)));
+  partner.stamina = setup.stamina === null ? partner.maxStamina : Math.max(0, Math.min(partner.maxStamina, Math.round(setup.stamina)));
+}
+
+/** How often, in seconds, passives are checked during the night. */
+const PASSIVE_CHECK_SECONDS = 0.5;
 /** How much of their patience everyone waiting loses while she's upstairs. */
 const UPSTAIRS_PATIENCE = 0.35;
 /** The stakes she can play an after-hours game for. */
@@ -868,7 +879,9 @@ export class Tavern {
   lastFight: { outcome: FightOutcome; text: string } | null = null;
   /** An after-hours game in progress, or null; and how the last one ended, for the game to show once. */
   duel: Duel | null = null;
-  lastDuel: { outcome: DuelOutcome; text: string; line: string; gold: number } | null = null;
+  lastDuel: { outcome: DuelOutcome; text: string; line: string; gold: number; test?: boolean } | null = null;
+  /** Whether the duel going on is a test one, which counts for nothing. */
+  private testDuel = false;
   /** Guests she let touch her tonight who weren't drunk: one of them might linger after closing. */
   private admirers: GuestKind[] = [];
   private duelTonight = false;
@@ -913,6 +926,9 @@ export class Tavern {
   /** Seats where ale went on the floor tonight. */
   private readonly spiltAt = new Set<number>();
   private readonly messages: string[] = [];
+  private readonly unlocks: PassiveDef[] = [];
+  /** Seconds until passives are checked again during the night. */
+  private passiveCheck = 0;
   private readonly cues: Cue[] = [];
 
   /** `seatTables` names the table each seat is at, so a party can sit together. "Bar" stools are not a table. */
@@ -970,12 +986,29 @@ export class Tavern {
     const nightly = this.effects.perNight;
     this.adjust(0, nightly.trust, nightly.heat);
     if (nightly.respect) this.shift({ respect: nightly.respect });
-    this.newPassives = newlyEarned(this.passives, this.passiveFacts());
-    for (const def of this.newPassives) {
+    this.awardPassives();
+  }
+
+  /**
+   * Gives her any passive she's earned, the moment she's earned it: checked through the night and once more at
+   * bedtime, once the night's records are in. Each goes in tonight's list for the bedtime summary, and in the
+   * queue for the game's log.
+   */
+  private awardPassives(): void {
+    const earned = newlyEarned(this.passives, this.passiveFacts());
+    if (earned.length === 0) return;
+    for (const def of earned) {
       this.passives.add(def.id);
       this.corruption += def.corruption ?? 0;
+      this.newPassives.push(def);
+      this.unlocks.push(def);
     }
     this.effects = effectsOf(this.passives);
+  }
+
+  /** Passives earned since the game last asked, for the log. Reading them empties the queue. */
+  takeUnlocks(): PassiveDef[] {
+    return this.unlocks.splice(0);
   }
 
   /** Naps through the rest of the day while closed. Only once a day; the clock is moved on by the game. */
@@ -1279,6 +1312,11 @@ export class Tavern {
 
   tick(dt: number, context: TickContext): void {
     this.drunk = Math.max(0, this.drunk - SOBER_RATE * dt);
+    this.passiveCheck -= dt;
+    if (this.passiveCheck <= 0) {
+      this.passiveCheck = PASSIVE_CHECK_SECONDS;
+      this.awardPassives();
+    }
     this.updateWash(dt, context.scrubber ?? null);
     if (this.phase === "day" || this.phase === "dusk") {
       // Closed, but the tap and the pot still work, so you can get ready.
@@ -1674,41 +1712,81 @@ export class Tavern {
   }
 
   /** She says yes, on her rules: only parts she's warm enough for, and a stake she can pay. */
-  startDuel(areas: readonly DuelArea[], stake: number): boolean {
+  startDuel(areas: readonly DuelArea[], stake: number, scene: RolePlay = "plain"): boolean {
     const kind = this.duelOffer();
     if (!kind || this.duelBlocked) return false;
     const ready = new Set(this.duelAreas().filter((a) => a.ready).map((a) => a.id));
     if (areas.some((a) => !ready.has(a)) || stake < 0 || stake > this.gold) return false;
-    const e = this.effects;
     this.duelTonight = true;
-    this.duel = new Duel(
-      kind,
-      new Set(areas),
-      stake,
-      {
-        level: (id) => this.level(id),
-        sens: e.sens,
-        power: e.duelPower,
-        resist: e.duelResist,
-        stamina: e.duelStamina,
-        hold: e.duelHold,
-        edge: e.duelEdge,
-        undress: e.duelUndress,
-      },
-      this.random,
-    );
+    if (!this.rolePlays().some((p) => p.id === scene && p.ready)) return false;
+    this.duel = new Duel(kind, new Set(areas), stake, this.duelistStats(), this.random, [{ kind, female: false }], scene);
     return true;
   }
 
+  /** The role-plays she could choose, and whether she's ready for each: the bolder ones need a passive first. */
+  rolePlays(): { id: RolePlay; name: string; about: string; ready: boolean; needs: string | null }[] {
+    return ROLE_PLAYS.map((p) => ({
+      id: p.id,
+      name: p.name,
+      about: p.about,
+      ready: !p.needs || this.passives.has(p.needs),
+      needs: p.needs ? (PASSIVE_BY_ID.get(p.needs)?.name ?? p.needs) : null,
+    }));
+  }
+
+  /** Her side of a duel: her levels, and what her passives add. */
+  private duelistStats(): DuelistStats {
+    const e = this.effects;
+    return {
+      level: (id) => this.level(id),
+      sens: e.sens,
+      power: e.duelPower,
+      resist: e.duelResist,
+      stamina: e.duelStamina,
+      hold: e.duelHold,
+      edge: e.duelEdge,
+      undress: e.duelUndress,
+    };
+  }
+
+  /**
+   * For testing (the P key, in development only): starts an after-hours game at once, any time, with whoever and
+   * whatever's in play, and both sides starting where the test says. No checks, and nothing is counted or paid.
+   */
+  startTestDuel(test: DuelTest): void {
+    const partners = test.partners.length > 0 ? test.partners : [{ kind: "fugitive" as GuestKind, female: false, pleasure: 0, stamina: null }];
+    const duel = new Duel(partners[0].kind, new Set(test.areas), test.stake, this.duelistStats(), this.random, partners, test.scene);
+    duel.partners.forEach((p, i) => applyTestPartner(p, partners[i]));
+    const clamp = (n: number, max: number) => Math.max(0, Math.min(max, Math.round(n)));
+    duel.pleasure = clamp(test.pleasure, 99);
+    duel.stamina = test.stamina === null ? duel.maxStamina : clamp(test.stamina, duel.maxStamina);
+    duel.undressed = clamp(test.undressed, 2);
+    duel.note("(Test fight: nothing here counts.)");
+    this.duel = duel;
+    this.testDuel = true;
+  }
+
+  /** Whether the duel going on is a test one. */
+  get testing(): boolean {
+    return this.testDuel && this.duel !== null;
+  }
+
   /** She makes a move; when it's over, it's settled. */
-  duelMove(move: DuelMove): void {
+  duelMove(move: DuelMove, target?: number): void {
     const duel = this.duel;
     if (!duel) return;
-    duel.act(move);
+    duel.act(move, target);
     if (duel.outcome) this.finishDuel(duel);
   }
 
   private finishDuel(duel: Duel): void {
+    if (this.testDuel) {
+      this.testDuel = false;
+      const how = duel.outcome === "won" ? "You won" : duel.outcome === "lost" ? "You lost" : "You called it off";
+      this.lastDuel = { outcome: duel.outcome!, text: `${how}. (Test fight: nothing counted.)`, line: "", gold: 0, test: true };
+      this.duel = null;
+      return;
+    }
     const r = this.records;
     for (const [id, n] of Object.entries(duel.xp)) this.gainXp(id as StatId | SkillId, n ?? 0);
     for (const [move, n] of Object.entries(duel.used)) r.duelMoves[move as DuelMove] = (r.duelMoves[move as DuelMove] ?? 0) + (n ?? 0);
@@ -1754,7 +1832,7 @@ export class Tavern {
   }
 
   /** How the last after-hours game ended, once. */
-  takeDuelResult(): { outcome: DuelOutcome; text: string; line: string; gold: number } | null {
+  takeDuelResult(): { outcome: DuelOutcome; text: string; line: string; gold: number; test?: boolean } | null {
     const result = this.lastDuel;
     this.lastDuel = null;
     return result;
@@ -2595,6 +2673,7 @@ export class Tavern {
     this.lastFight = null;
     this.duel = null;
     this.lastDuel = null;
+    this.testDuel = false;
     this.newPassives = [];
     this.adultScene = null;
     this.layout = save.layout ? cloneLayout(save.layout) : null;
@@ -2608,6 +2687,7 @@ export class Tavern {
     this.guests.length = 0;
     this.nextGuestId = 1;
     this.messages.length = 0;
+    this.unlocks.length = 0;
     this.cues.length = 0;
     this.lastResult = "";
     this.ending = null;
@@ -2617,6 +2697,8 @@ export class Tavern {
   /** Starts a new day with the tavern closed, clearing everything that only lasts one night. */
   private openDay(messes: Mess[] = []): void {
     this.phase = "day";
+    // The bedtime summary has shown last night's passives; tonight's start fresh.
+    this.newPassives = [];
     this.messes.splice(0, this.messes.length, ...messes);
     this.nextMessId = Math.max(0, ...messes.map((m) => m.id)) + 1;
     this.spiltAt.clear();
@@ -2660,6 +2742,7 @@ export class Tavern {
     this.drinksTonight = 0;
     this.duel = null;
     this.lastDuel = null;
+    this.testDuel = false;
     this.admirers = [];
     this.duelTonight = false;
     this.partyState.clear();
