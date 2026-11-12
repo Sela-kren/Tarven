@@ -170,3 +170,17 @@
     bottom: 260px;
   }
 }
+
+/* Touch force + lewd log */
+#touch-force{display:none;align-items:center;gap:8px;margin:4px 0 8px;padding:4px 8px;background:#1b120bd1;border:2px solid var(--wood-edge);box-shadow:2px 2px #000;font-size:13px;color:var(--text)}
+#touch-force.visible{display:flex}
+#touch-force .force-label{color:var(--gold);font-weight:700;min-width:42px}
+#touch-force .force-bar{flex:1;height:10px;background:#2a1b0f;border:2px solid #000;box-shadow:inset 1px 1px #0008}
+#touch-force .force-fill{height:100%;width:0%;background:linear-gradient(90deg,#6b3f27,#c68a64,#ffe27a);transition:width .25s}
+#touch-force.high .force-fill{background:linear-gradient(90deg,#8c2020,#e0885a,#ffe27a)}
+#touch-force.extreme .force-fill{background:linear-gradient(90deg,#5b1417,#b0303a,#ff6b6b)}
+#touch-force .force-value{min-width:28px;text-align:right;font-weight:700;color:var(--text-bright)}
+#touch-force .house-mode{font-size:11px;color:#ff9ec8;margin-left:6px;font-weight:700}
+#talk.open #touch-force.visible{display:flex}
+#stats .log .status{color:#ff9ec8;font-weight:600}
+#stats .log .talk.lewd{color:#ffb3d1;font-style:italic}

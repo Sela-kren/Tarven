@@ -1,4 +1,5 @@
 import { cloneLayout, type HouseLayout } from "./house";
+import { bodyLine, flavorLine, mindStage, wildSensitivity } from "./lewd";
 import { faceLine } from "./facetalk";
 import { arrivalFeelings, arrivalMood, feltMood, HIGH_RESPECT, LOW_RESPECT, MOOD_LABELS, moodAfterDrink, moodAfterReply, moodWhenServed, moodWhileWaiting, MOOD_BEHAVIOUR, type Mood } from "./mood";
 import {
@@ -859,6 +860,10 @@ export class Tavern {
   private tipChat: TipChat | null = null;
   /** A guest reaching for you, waiting on your answer, or null. */
   private touchChat: TouchChat | null = null;
+  /** Exposed for the force UI. */
+  get touchChatPublic(): TouchChat | null {
+    return this.touchChat;
+  }
   /** How far guests' touches have brought you, which lasts from night to night. */
   touchMemory: TouchMemory = newTouchMemory();
   /** Touches tried tonight, so the same one doesn't keep coming round. */
@@ -877,6 +882,12 @@ export class Tavern {
   private willSpent = 0;
   /** How far she's sold out, from 0 up. Lasts. */
   corruption = 0;
+  /** Play-mode cache: tavern now, brothel (and more) later. */
+  houseMode: { current: "tavern" | "brothel"; unlocked: Set<string>; brothel: number } = {
+    current: "tavern",
+    unlocked: new Set(["tavern"]),
+    brothel: 0,
+  };
   /** Everything counted about her, for passives. Lasts. */
   records: Records = newRecords();
   /** The passives she holds, by id. */
@@ -1648,8 +1659,16 @@ export class Tavern {
   /** Tonight's desire goes up on one meter, faster with passives that make it so. */
   private raise(meter: Meter, n: number): void {
     const gain = n > 0 ? n * (1 + this.effects.sens[meter]) : n;
+    const prev = this.meters[meter];
     this.meters[meter] = clamp(this.meters[meter] + gain, 0, METER_MAX);
     this.peak[meter] = Math.max(this.peak[meter], this.meters[meter]);
+    const delta = this.meters[meter] - prev;
+    if (delta >= 1) {
+      const name = METER_NAMES[meter];
+      this.say(wildSensitivity(name, delta, this.corruption, this.lewdness, this.houseMode.current === "brothel"));
+      if (this.meters[meter] >= 50 && prev < 50) this.say(`${name} is getting sensitive — future touches there will hit harder`);
+      if (this.meters[meter] >= 80 && prev < 80) this.say(`${name} is very sensitive now`);
+    }
   }
 
   private raiseAll(n: number): void {
@@ -1666,6 +1685,15 @@ export class Tavern {
       Math.max(0, change.informed ?? 0) * CORRUPT_PER_INFORM +
       Math.max(0, -(change.kindness ?? 0)) * CORRUPT_PER_COLD;
     this.corruption = Math.min(1000, this.corruption + gain);
+    if (gain > 0) {
+      const tag = this.corruption >= 150 ? " (rotten)" : this.corruption >= 80 ? " (crooked)" : "";
+      this.say(`Corruption +${Math.round(gain)}${tag}`);
+    }
+    if (this.corruption >= 100 && !this.houseMode.unlocked.has("brothel")) {
+      this.houseMode.unlocked.add("brothel");
+      this.houseMode.brothel = 1;
+      this.say("The house can now become a brothel.");
+    }
   }
 
   /** What passives read about her right now. */
@@ -2018,6 +2046,8 @@ export class Tavern {
     const fill = (text: string) => fillPiece(text, piece);
     const tempted = thoughtTier(touch, desire, leanMargin);
     let thought = fill(touch.thoughts[tempted]);
+    // Past "warming", flavorLine swaps in a body-specific line outright.
+    thought = flavorLine(thought, this.corruption, this.lewdness, touch.region, true);
     if (sloppy) thought = TOO_DRUNK_TO_ALLOW;
     else if (guestSloppy) thought = GUEST_TOO_DRUNK;
     // Too drunk on either side, and it can't happen anyway: saying no takes nothing out of her.
@@ -2081,6 +2111,8 @@ export class Tavern {
       const kinds = (r.kinds[touch.region] ??= []);
       if (guest && !kinds.includes(guest.kind)) kinds.push(guest.kind);
       this.pleasure += touch.level * PLEASURE_PER_LEVEL * (answer === "lean" ? LEAN_DESIRE : 1) * (1 + e.pleasure);
+      if (this.pleasure >= 70 && this.pleasure < PLEASURE_MAX) this.say("You're getting close...");
+      else if (this.pleasure >= PLEASURE_MAX - 10) this.say("So close—");
     } else if (answer === "slap") {
       r.slapped++;
       this.gainXp("mind", 1);
@@ -2112,10 +2144,17 @@ export class Tavern {
       const before = this.touchMemory.lets[touch.region] ?? 0;
       this.touchMemory.lets[touch.region] = before + 1;
       const tip = gold > 0 ? ` (+${gold} gold)` : "";
-      chat.reply = [narrate(fill(answer === "allow" ? touch.allow : touch.lean) + tip)];
+      let line = fill(answer === "allow" ? touch.allow : touch.lean);
+      line = mindStage(this.corruption, this.lewdness) >= 2
+        ? bodyLine(touch.region, mindStage(this.corruption, this.lewdness), false)
+        : flavorLine(line, this.corruption, this.lewdness, touch.region, false);
+      chat.reply = [narrate(line + tip)];
       const after = afterLine(touch.region, before);
       if (after) chat.reply.push(you(after.text));
-      if (touch.strip) this.loseClothing();
+      if (touch.strip) {
+        this.loseClothing();
+        this.say(this.stripped >= 2 ? "More clothes gone. You're really exposed." : "A piece comes off.");
+      }
       else this.cue("tip");
       if (touch.region === "invite" && guest) {
         this.adultScene = { kind: "upstairs", guestId: guest.id, guestKind: guest.kind };

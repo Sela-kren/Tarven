@@ -86,6 +86,7 @@ import { DrinkComic } from "./comic";
 import { showJournal } from "./journalpanel";
 import { showBedChoice, showDuelTest, showFight, playAdultScene } from "./fightpanels";
 import { confirmMenu, showLoadMenu, showSaveMenu, showSettingsMenu } from "./menus";
+import { mindStage, mindStageName } from "./lewd";
 import { PASSIVE_ICONS } from "./passiveicons";
 import { saveBadges } from "./saveicons";
 import { SkyDial } from "./skydial";
@@ -1837,6 +1838,31 @@ export class Game {
       this.log.addTalk(line);
       this.narrator.note(line.speaker ? `${line.speaker} says: ${line.text}` : line.text);
     }
+    this.updateForceUI();
+  }
+
+  private updateForceUI(): void {
+    const el = document.getElementById("touch-force");
+    if (!el) return;
+    const chat = this.tavern.touchChatPublic;
+    const level = chat?.touch.level ?? 0;
+    if (level > 0) {
+      el.classList.add("visible");
+      el.classList.toggle("high", level >= 6);
+      el.classList.toggle("extreme", level >= 9);
+      const fill = el.querySelector<HTMLElement>(".force-fill");
+      const val = el.querySelector(".force-value");
+      const modeEl = el.querySelector(".house-mode");
+      if (fill) fill.style.width = `${(level / 10) * 100}%`;
+      if (val) val.textContent = `${level}/10`;
+      const stage = mindStage(this.tavern.corruption, this.tavern.lewdness);
+      const mode = this.tavern.houseMode.current;
+      if (modeEl) modeEl.textContent = `${mode === "brothel" ? "[Brothel] " : ""}${mindStageName(stage)}`;
+      el.setAttribute("aria-hidden", "false");
+    } else {
+      el.classList.remove("visible", "high", "extreme");
+      el.setAttribute("aria-hidden", "true");
+    }
   }
 
   /** What guests have got off the player tonight, as last put on the model: who, and which pieces. */
@@ -1880,6 +1906,7 @@ export class Game {
     if (!tavern.inConversation) {
       this.dialogue.close();
       this.screen = "play";
+      document.getElementById("touch-force")?.classList.remove("visible", "high", "extreme");
       const scene = this.pendingAdult;
       this.pendingAdult = null;
       if (scene) {
