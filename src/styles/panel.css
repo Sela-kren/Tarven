@@ -660,6 +660,11 @@
   --fill-shade: #8e2a1c;
 }
 
+#panel .fight-bar.will {
+  --fill-color: #5a8ad8;
+  --fill-shade: #36589a;
+}
+
 #panel .fight-bar b {
   text-align: right;
 }

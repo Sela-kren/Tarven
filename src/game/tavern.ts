@@ -39,8 +39,8 @@ import {
   type TouchMemory,
   type TouchRegion,
 } from "./touch";
-import { GUEST_TOO_DRUNK, PULLS, SLAPS, TOO_DRUNK_TO_ALLOW } from "./touchtalk";
-import { Fight, type FightMove, type FightOutcome } from "./fight";
+import { GUEST_TOO_DRUNK, PULLS, SLAPS, TOO_DRUNK_TO_ALLOW, WAVERED, WORN_THIN } from "./touchtalk";
+import { Fight, type FighterStats, type FightMove, type FightOutcome } from "./fight";
 import { ROLE_PLAYS, type RolePlay } from "./duellines";
 import { coatStages, loadOf, type CoatSection, type CumSpot } from "./cum";
 
@@ -94,6 +94,7 @@ import {
   type Records,
   type UpstairsAct,
 } from "./passives";
+import { ALLOW_WILL, DRINK_WILL, LEAN_WILL, maxWillpower, NAP_RESTORE, refuseCost, STEADY_WILL } from "./willpower";
 
 /**
  * The rules of the game, with no graphics. The view layer tells this class what
@@ -741,6 +742,8 @@ interface TouchChat {
   lines: TalkLine[];
   answers: TouchAnswer[];
   answered: boolean;
+  /** How tempted she was when the hand came in: 0 not ready, 1 torn, 2 wanting it. Saying no costs willpower past 0. */
+  tier: number;
   /** What was just said, after their lines. */
   reply: TalkLine[];
 }
@@ -870,6 +873,8 @@ export class Tavern {
   private readonly peak: Meters = emptyMeters();
   /** Pleasure tonight, 0 to 100. At the top, she's overwhelmed. */
   pleasure = 0;
+  /** Willpower she's spent since she last slept (see willpower.ts). Kept as what's spent, so it's right whatever her Mind does. */
+  private willSpent = 0;
   /** How far she's sold out, from 0 up. Lasts. */
   corruption = 0;
   /** Everything counted about her, for passives. Lasts. */
@@ -1035,6 +1040,7 @@ export class Tavern {
     if (this.phase !== "day" || this.napped) return;
     this.napped = true;
     this.drunk = 0;
+    this.restoreWill(Math.round(this.maxWillpower * NAP_RESTORE));
     this.say("You wake up in the late afternoon. Ring the bell when you're ready.");
   }
 
@@ -1520,6 +1526,7 @@ export class Tavern {
     this.drunk = Math.min(DRUNK_MAX, this.drunk + DRINK_STRENGTH * (1 - Math.min(0.9, this.effects.drunkRate)));
     this.shift({ drinks: 1, fame: 1, respect: this.drunk >= SLOPPY_DRUNK ? -1 : 0 });
     this.raiseAll(DRINK_DESIRE + this.effects.drinkMeters);
+    this.spendWill(DRINK_WILL);
     this.drinksTonight++;
     this.cue("drink");
   }
@@ -1688,6 +1695,32 @@ export class Tavern {
     return Object.fromEntries(STATS.map((s) => [s.id, this.level(s.id)])) as Record<StatId, number>;
   }
 
+  /** Her willpower at the top: from Mind, and composure passives. */
+  get maxWillpower(): number {
+    return maxWillpower(this.level("mind"), this.effects.willMax);
+  }
+
+  /** Her willpower now, 0 up to the top. Full every morning. */
+  get willpower(): number {
+    const max = this.maxWillpower;
+    return Math.max(0, Math.min(max, max - this.willSpent));
+  }
+
+  /** Spends willpower, never below none. */
+  private spendWill(n: number): void {
+    this.willSpent = Math.min(this.maxWillpower, this.willSpent + Math.max(0, n));
+  }
+
+  /** Gives willpower back, never past the top. */
+  private restoreWill(n: number): void {
+    this.willSpent = Math.max(0, this.willSpent - Math.max(0, n));
+  }
+
+  /** After a brawl or a duel: she has what it left her with. */
+  private settleWill(left: number): void {
+    this.willSpent = Math.max(0, this.maxWillpower - left);
+  }
+
   private gainXp(id: StatId | SkillId, n: number): void {
     if (n > 0) this.xp[id] = (this.xp[id] ?? 0) + n;
   }
@@ -1697,25 +1730,31 @@ export class Tavern {
     if (this.fight) return;
     const kinds = Object.keys(GUEST_KINDS) as GuestKind[];
     const kind = kinds[Math.floor(this.random() * kinds.length) % kinds.length];
-    const e = this.effects;
-    this.fight = new Fight(-1, kind, false, { levels: this.statLevels(), damage: e.fightDamage, dodge: e.fightDodge, talk: e.fightTalk, stare: e.fightStare }, this.random);
+    this.fight = new Fight(-1, kind, false, this.fighterStats(), this.random);
   }
 
   /** Starts a brawl with a guest. Whoever's playing deals with it. */
   startFight(guestId: number): void {
     const guest = this.guests.find((g) => g.id === guestId);
     if (!guest || this.fight) return;
-    const e = this.effects;
-    this.fight = new Fight(
-      guest.id,
-      guest.kind,
-      guest.mood === "drunk",
-      { levels: this.statLevels(), damage: e.fightDamage, dodge: e.fightDodge, talk: e.fightTalk, stare: e.fightStare },
-      this.random,
-    );
+    this.fight = new Fight(guest.id, guest.kind, guest.mood === "drunk", this.fighterStats(), this.random);
     this.fightsTonight++;
     this.say(`A ${guest.kind} is starting trouble!`);
     this.cue("walkOut");
+  }
+
+  /** Her side of a brawl: her levels, what her passives add, and the willpower she has left. */
+  private fighterStats(): FighterStats {
+    const e = this.effects;
+    return {
+      levels: this.statLevels(),
+      damage: e.fightDamage,
+      dodge: e.fightDodge,
+      talk: e.fightTalk,
+      stare: e.fightStare,
+      will: this.willpower,
+      maxWill: this.maxWillpower,
+    };
   }
 
   /** She makes a move in the brawl; when it's over, the room sees how it went. */
@@ -1727,6 +1766,7 @@ export class Tavern {
   }
 
   private finishFight(fight: Fight): void {
+    this.settleWill(fight.will);
     for (const [stat, n] of Object.entries(fight.xp)) this.gainXp(stat as StatId, n ?? 0);
     this.gainXp("endurance", 3);
     const r = this.records;
@@ -1828,6 +1868,8 @@ export class Tavern {
       hold: e.duelHold,
       edge: e.duelEdge,
       undress: e.duelUndress,
+      will: this.willpower,
+      maxWill: this.maxWillpower,
     };
   }
 
@@ -1870,6 +1912,7 @@ export class Tavern {
       this.duel = null;
       return;
     }
+    this.settleWill(duel.will);
     const r = this.records;
     for (const [id, n] of Object.entries(duel.xp)) this.gainXp(id as StatId | SkillId, n ?? 0);
     for (const [move, n] of Object.entries(duel.used)) r.duelMoves[move as DuelMove] = (r.duelMoves[move as DuelMove] ?? 0) + (n ?? 0);
@@ -1973,15 +2016,21 @@ export class Tavern {
     const desire = this.desireFor(touch.region);
     const leanMargin = Math.max(0, LEAN_MARGIN - this.effects.leanMargin / 10);
     const fill = (text: string) => fillPiece(text, piece);
-    let thought = fill(touch.thoughts[thoughtTier(touch, desire, leanMargin)]);
+    const tempted = thoughtTier(touch, desire, leanMargin);
+    let thought = fill(touch.thoughts[tempted]);
     if (sloppy) thought = TOO_DRUNK_TO_ALLOW;
     else if (guestSloppy) thought = GUEST_TOO_DRUNK;
+    // Too drunk on either side, and it can't happen anyway: saying no takes nothing out of her.
+    const tier = sloppy || guestSloppy ? 0 : tempted;
+    const lines: TalkLine[] = [{ ...narrate(fill(touch.reach)), guestId: guest.id }, you(thought)];
+    if (tier > 0 && this.willpower < refuseCost(tier, touch.level)) lines.push(narrate(WORN_THIN));
     this.touchChat = {
       guestId: guest.id,
       touch,
-      lines: [{ ...narrate(fill(touch.reach)), guestId: guest.id }, you(thought)],
+      lines,
       answers: touchAnswers(touch, { desire, sloppy, guestSloppy, leanMargin }),
       answered: false,
+      tier,
       reply: [],
     };
   }
@@ -2001,6 +2050,17 @@ export class Tavern {
     let respect = out.respect;
     let fame = out.fame;
     let mood = out.mood;
+    // Willpower: giving in wears it down; saying no costs it when part of her wanted it, and steadies her when not.
+    const refusing = answer === "slap" || answer === "pull";
+    const willCost = refusing ? refuseCost(chat.tier, touch.level) : 0;
+    const shaky = refusing && willCost > 0 && this.willpower < willCost;
+    if (took) this.spendWill(answer === "lean" ? LEAN_WILL : ALLOW_WILL);
+    else if (refusing && willCost === 0) this.restoreWill(STEADY_WILL);
+    else if (shaky) this.spendWill(this.willpower);
+    else if (refusing) {
+      this.spendWill(willCost);
+      this.gainXp("mind", 1);
+    }
     if (took) {
       const skill = SKILL_OF_REGION[touch.region];
       const practised = bodySkillBonus(this.level(skill));
@@ -2034,6 +2094,8 @@ export class Tavern {
       this.gainXp("mind", 2);
       respect += e.pullRespect;
     }
+    // Said no with nothing left to say it with: it's still no, but the room saw her waver.
+    if (shaky) respect = Math.min(respect, 0);
     this.adjust(gold, 0, 0);
     this.earned += gold;
     this.shift({ respect, fame, flirt: out.flirt });
@@ -2069,6 +2131,7 @@ export class Tavern {
       if (answer === "slap") history.slapped = true;
       const { say, result } = pick(answer === "slap" ? SLAPS : PULLS);
       chat.reply = [you(say), narrate(result)];
+      if (shaky) chat.reply.push(narrate(WAVERED));
     }
     this.touchHistory.set(chat.guestId, history);
     this.touchMoment = { id: touch.id, region: touch.region, level: touch.level, answer, kind: guest?.kind ?? "farmer" };
@@ -2077,8 +2140,13 @@ export class Tavern {
   /** Your answers to a guest reaching for you, then getting back to work once you've given one. */
   private touchOptions(chat: TouchChat): (TalkChoice & { run: () => void })[] {
     if (chat.answered) return [{ label: "Get back to work", disabled: false, run: () => (this.touchChat = null) }];
+    const cost = refuseCost(chat.tier, chat.touch.level);
+    const willNote = (answer: TouchAnswer): string => {
+      if ((answer !== "slap" && answer !== "pull") || cost === 0) return "";
+      return this.willpower >= cost ? ` · ${cost} will` : " (no willpower left: it'll show)";
+    };
     return chat.answers.map((answer) => ({
-      label: answerLabel(chat.touch, answer),
+      label: answerLabel(chat.touch, answer) + willNote(answer),
       disabled: false,
       run: () => this.answerTouch(chat, answer),
     }));
@@ -2830,6 +2898,8 @@ export class Tavern {
     const start = this.eased ? this.effects.aloneStart : 0;
     for (const m of METERS) this.meters[m] = this.peak[m] = Math.min(METER_MAX, this.effects.start[m] + start);
     this.pleasure = 0;
+    // A night's sleep, and she has all her willpower back.
+    this.willSpent = 0;
     this.adultScene = null;
     this.fight = null;
     this.fightsTonight = 0;

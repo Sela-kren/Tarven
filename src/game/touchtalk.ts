@@ -643,6 +643,10 @@ export const PULLS: readonly { say: string; result: string }[] = [
 export const TOO_DRUNK_TO_ALLOW = "(Not like this. Not when I can barely stand.)";
 export const GUEST_TOO_DRUNK = "(They're too drunk to know what they're doing. No.)";
 
+/** When her willpower is too low to say no cleanly to a touch part of her wants: she still can, but it shows. */
+export const WORN_THIN = "You're worn thin tonight. You can still say no, but it won't come out steady.";
+export const WAVERED = "Your voice wobbles. The table saw how close you came, and nobody's impressed.";
+
 /** What she thinks the first time she lets something like it happen, by where it lands. */
 export const FIRSTS: Record<TouchRegion, string> = {
   hand: "(Nobody's ever held my hand like that.)",

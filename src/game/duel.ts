@@ -22,6 +22,7 @@ import { fill, SCENES, type RolePlay } from "./duellines";
 import { flavor } from "./flavor";
 import { CUM_LINES, loadOf, spotFor, type CumSpot } from "./cum";
 import { MOANS, TALK, THEIR_STAGES } from "./dueltalk";
+import { HOLD_WILL, maxWillpower, SECOND_WIND_WILL, SPENT_EDGE } from "./willpower";
 
 export type DuelArea = "hands" | "mouth" | "breasts" | "butt" | "pussy";
 export type DuelMove = "kiss" | "caress" | "tease" | "undress" | "hands" | "mouth" | "tits" | "ride" | "anal" | "hold" | "stop";
@@ -99,6 +100,9 @@ export interface DuelistStats {
   hold: number;
   edge: number;
   undress: number;
+  /** Her willpower going in, and at the top. Left out, she starts with all a Mind like hers gives. */
+  will?: number;
+  maxWill?: number;
 }
 
 /** Who a partner is, before the game starts. */
@@ -149,7 +153,7 @@ export interface DuelEffect {
   who: string;
   side: "her" | "partner";
   /** "cum" is a load, in ml, and `who` is where it landed. */
-  stat: "pleasure" | "stamina" | "cum";
+  stat: "pleasure" | "stamina" | "will" | "cum";
   amount: number;
 }
 
@@ -191,6 +195,9 @@ export class Duel {
   /** Her stamina at full against one partner. */
   private readonly soloStamina: number;
   pleasure = 0;
+  /** Her willpower: holding back spends it. With too little left she can't hold back, only Stop. */
+  will: number;
+  readonly maxWill: number;
   readonly partners: Partner[] = [];
   /** What's in play; the test panel can change it mid-game. */
   readonly areas: Set<DuelArea>;
@@ -227,6 +234,8 @@ export class Duel {
     this.areas = new Set(areas);
     this.scene = scene;
     this.soloStamina = this.maxStamina = this.stamina = BASE_STAMINA + (stats.level("endurance") - 1) * 3 + stats.stamina;
+    this.maxWill = stats.maxWill ?? maxWillpower(stats.level("mind"));
+    this.will = Math.max(0, Math.min(this.maxWill, stats.will ?? this.maxWill));
     for (const setup of partners.slice(0, MAX_PARTNERS)) this.addPartner(setup);
     const who = this.partners.length === 1 ? `The ${this.partners[0].kind} grins.` : `${this.partners.length} of them gather round.`;
     this.note(`${who} "Loser pays ${stake} gold. Say stop whenever you like."`);
@@ -365,6 +374,11 @@ export class Duel {
     return Math.max(1, Math.round((HOLD_BACK + (this.stats.level("mind") - 1) * 2) * factor * Math.max(0.1, 1 + this.stats.hold)));
   }
 
+  /** What Hold Back costs in willpower now: more the more worked up she is. */
+  holdCost(): number {
+    return HOLD_WILL[this.state];
+  }
+
   /** How many partners hold a part of her, leaving one partner out of the count. */
   private holding(area: DuelArea, except?: Partner): number {
     return this.active.filter((p) => p.area === area && p !== except).length;
@@ -394,7 +408,13 @@ export class Duel {
       const why = tired ? " (too tired)" : busy ? " (taken)" : "";
       out.push({ move, label: `${def.label} · +${this.power(move, partner)}${everyone} · ${cost} stamina${why}`, disabled: tired || busy });
     }
-    out.push({ move: "hold", label: `Hold back (Mind) · -${this.holdAmount()} to you`, disabled: false });
+    const cost = this.holdCost();
+    const spent = this.will < cost;
+    out.push({
+      move: "hold",
+      label: `Hold back (Mind) · -${this.holdAmount()} to you · ${cost} will${spent ? " (no willpower left)" : ""}`,
+      disabled: spent,
+    });
     out.push({ move: "stop", label: "Stop", disabled: false });
     return out;
   }
@@ -419,6 +439,9 @@ export class Duel {
       return;
     }
     if (move === "hold") {
+      const cost = this.holdCost();
+      if (this.will < cost) return;
+      this.will -= cost;
       this.used.hold = (this.used.hold ?? 0) + 1;
       const n = this.holdAmount();
       this.pleasure = Math.max(0, this.pleasure - n);
@@ -433,6 +456,7 @@ export class Duel {
         effects: [
           { who: "You", side: "her", stat: "pleasure", amount: -n },
           { who: "You", side: "her", stat: "stamina", amount: HOLD_STAMINA },
+          { who: "You", side: "her", stat: "will", amount: -cost },
         ],
       });
     } else if (!this.herMove(move, target)) return;
@@ -542,9 +566,12 @@ export class Duel {
         const stamina = Math.round(this.maxStamina * SECOND_WIND_STAMINA);
         this.stamina = Math.min(this.maxStamina, this.stamina + stamina);
         this.pleasure = Math.max(0, this.pleasure - SECOND_WIND_CALM);
+        const will = Math.min(this.maxWill - this.will, SECOND_WIND_WILL);
+        this.will += will;
         this.note("Seeing one of them give in, you get a second wind.", [
           { who: "You", side: "her", stat: "stamina", amount: stamina },
           { who: "You", side: "her", stat: "pleasure", amount: -SECOND_WIND_CALM },
+          ...(will > 0 ? [{ who: "You", side: "her" as const, stat: "will" as const, amount: will }] : []),
         ]);
       }
     }
@@ -600,9 +627,13 @@ export class Duel {
     const slowed = partner.teased ? 1 - TEASE_SLOW : 1;
     partner.teased = false;
     const group = Math.pow(this.active.length, -GROUP_EXPONENT);
+    // On the edge with no willpower left to hold it back with, it all lands that bit harder.
+    const spent = this.will <= 0 && this.state === "edge" ? 1 + SPENT_EDGE : 1;
     const n = Math.max(
       1,
-      Math.round(def.power * PARTNERS[partner.kind].skill * (1 + this.stats.sens[def.meter]) * Math.max(0.2, 1 - this.stats.resist) * slowed * group * STAGE_POWER[stage]),
+      Math.round(
+        def.power * PARTNERS[partner.kind].skill * (1 + this.stats.sens[def.meter]) * Math.max(0.2, 1 - this.stats.resist) * slowed * group * STAGE_POWER[stage] * spent,
+      ),
     );
     this.pleasure = Math.min(PLEASURE_MAX, this.pleasure + n);
     partner.pleasure = Math.min(PLEASURE_MAX, partner.pleasure + 2);

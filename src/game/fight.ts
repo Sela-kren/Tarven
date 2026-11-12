@@ -10,8 +10,9 @@
 import type { GuestKind } from "./tavern";
 import type { StatId } from "./skills";
 import { flavor } from "./flavor";
+import { HIT_WILL, maxWillpower, STARE_WILL, STEEL_STAMINA, STEEL_WILL } from "./willpower";
 
-export type FightMove = "strike" | "shove" | "dodge" | "talk" | "stare" | "throw";
+export type FightMove = "strike" | "shove" | "dodge" | "talk" | "stare" | "steel" | "throw";
 export type FightOutcome = "won" | "talked" | "lost";
 
 /** How tough each kind of guest is in a brawl. */
@@ -33,6 +34,9 @@ export interface FighterStats {
   dodge: number;
   talk: number;
   stare: number;
+  /** Her willpower going in, and at the top. Left out, she starts with all a Mind like hers gives. */
+  will?: number;
+  maxWill?: number;
 }
 
 export interface FightChoice {
@@ -62,6 +66,9 @@ export class Fight {
   readonly xp: Partial<Record<StatId, number>> = {};
   /** Dodges that worked, for the records. */
   dodges = 0;
+  /** Her willpower: staring down and steeling herself spend it, blows that land wear it down. */
+  will: number;
+  readonly maxWill: number;
 
   constructor(
     readonly guestId: number,
@@ -75,6 +82,8 @@ export class Fight {
     this.foeMax = this.foeStamina = foe.stamina;
     this.foeAttack = foe.attack + (drunk ? 1 : 0);
     this.foeAccuracy = foe.accuracy - (drunk ? 0.15 : 0);
+    this.maxWill = stats.maxWill ?? maxWillpower(stats.levels.mind);
+    this.will = Math.max(0, Math.min(this.maxWill, stats.will ?? this.maxWill));
     this.say("start", drunk ? `The ${kind} is roaring drunk and wants a fight.` : `The ${kind} squares up to you.`);
   }
 
@@ -97,8 +106,10 @@ export class Fight {
       strike: Math.min(0.95, 0.7 + agi),
       shove: Math.min(0.95, 0.8 + agi),
       dodge: 1,
-      talk: clamp01(0.15 + (levels.charm - 1) * 0.07 + talk - (this.drunk ? 0.1 : 0) - (this.kind === "soldier" ? 0.1 : 0)),
+      // With no willpower left she's rattled, and it shows in her voice.
+      talk: clamp01(0.15 + (levels.charm - 1) * 0.07 + talk - (this.drunk ? 0.1 : 0) - (this.kind === "soldier" ? 0.1 : 0) - (this.will <= 0 ? 0.1 : 0)),
       stare: clamp01(0.1 + (levels.mind - 1) * 0.06 + stare),
+      steel: 1,
       throw: 1,
     };
   }
@@ -112,7 +123,18 @@ export class Fight {
       { move: "shove", label: "Shove", chance: c.shove, disabled: false },
       { move: "dodge", label: "Dodge", chance: null, disabled: false },
       { move: "talk", label: "Talk them down (Charm)", chance: c.talk, disabled: false },
-      { move: "stare", label: "Stare them down (Mind)", chance: c.stare, disabled: this.shaken },
+      {
+        move: "stare",
+        label: `Stare them down (Mind) · ${STARE_WILL} will`,
+        chance: c.stare,
+        disabled: this.shaken || this.will < STARE_WILL,
+      },
+      {
+        move: "steel",
+        label: `Steel yourself · +${this.steelStamina()} stamina · ${STEEL_WILL} will`,
+        chance: null,
+        disabled: this.will < STEEL_WILL || this.stamina >= this.maxStamina,
+      },
       { move: "throw", label: canThrow ? "Throw them out" : "Throw them out (wear them down first)", chance: null, disabled: !canThrow },
     ];
   }
@@ -159,6 +181,8 @@ export class Fight {
         this.say("talk:fail", "They don't want to hear it. That made it worse.");
         break;
       case "stare":
+        if (this.will < STARE_WILL) return;
+        this.will -= STARE_WILL;
         this.gain("mind", 2);
         if (roll < c.stare) {
           this.shaken = true;
@@ -173,6 +197,15 @@ export class Fight {
           this.say("stare:ok", "You stare them down. Their nerve falters.");
         } else this.say("stare:fail", "They meet your stare and laugh.");
         break;
+      case "steel": {
+        if (this.will < STEEL_WILL) return;
+        this.will -= STEEL_WILL;
+        const back = Math.min(this.maxStamina - this.stamina, this.steelStamina());
+        this.stamina += back;
+        this.gain("mind", 2);
+        this.say("steel", `You set your jaw and get your breath back. (+${back} stamina)`);
+        break;
+      }
       case "throw":
         if (this.foeStamina > this.foeMax * THROW_AT) return;
         this.say("throw", "You haul them up by the collar and throw them out into the snow.");
@@ -188,6 +221,11 @@ export class Fight {
     this.theirTurn();
   }
 
+  /** What steeling herself gives back: more the cooler her head. */
+  private steelStamina(): number {
+    return STEEL_STAMINA + Math.max(0, this.stats.levels.mind - 1);
+  }
+
   private theirTurn(): void {
     if (this.staggered) {
       this.staggered = false;
@@ -199,6 +237,7 @@ export class Fight {
     this.dodging = false;
     if (this.random() < this.foeAccuracy - dodge) {
       this.stamina = Math.max(0, this.stamina - this.foeAttack);
+      this.will = Math.max(0, this.will - HIT_WILL);
       this.say("their:hit", `They catch you one. (-${this.foeAttack})`);
       this.gain("endurance", 1);
     } else {

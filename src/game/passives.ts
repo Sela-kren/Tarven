@@ -271,6 +271,8 @@ export interface Effects {
   duelHold: number;
   duelEdge: number;
   duelUndress: number;
+  /** Extra willpower at the top (see willpower.ts). */
+  willMax: number;
 }
 
 export function noEffects(): Effects {
@@ -328,6 +330,7 @@ export function noEffects(): Effects {
     duelHold: 0,
     duelEdge: 0,
     duelUndress: 0,
+    willMax: 0,
   };
 }
 
@@ -1318,8 +1321,11 @@ export const PASSIVES: readonly PassiveDef[] = [
     group: "composure",
     need: "Pull away from 5 guests",
     progress: (f) => count(f.records.pulled, 5),
-    benefit: "+1 respect every time you pull away",
-    effect: (e) => (e.pullRespect += 1),
+    benefit: "+1 respect every time you pull away; +5 willpower",
+    effect: (e) => {
+      e.pullRespect += 1;
+      e.willMax += 5;
+    },
     thought: "(Not tonight. Not unless I say so.)",
   },
   {
@@ -1349,8 +1355,11 @@ export const PASSIVES: readonly PassiveDef[] = [
     group: "composure",
     need: "End 3 nights with respect 8 or more",
     progress: (f) => count(f.records.respectNights, 3),
-    benefit: "Guests are less bold (-1 nerve)",
-    effect: (e) => (e.nerve -= 1),
+    benefit: "Guests are less bold (-1 nerve); +10 willpower",
+    effect: (e) => {
+      e.nerve -= 1;
+      e.willMax += 10;
+    },
     thought: "(They mind themselves around me.)",
   },
 
@@ -1689,10 +1698,11 @@ export const PASSIVES: readonly PassiveDef[] = [
     group: "afterHours",
     need: "Hold back 20 times",
     progress: (f) => count(f.records.heldBack, 20),
-    benefit: "Holding back works 50% better; their moves do 10% less to you",
+    benefit: "Holding back works 50% better; their moves do 10% less to you; +5 willpower",
     effect: (e) => {
       e.duelHold += 0.5;
       e.duelResist += 0.1;
+      e.willMax += 5;
     },
     thought: "(Slow down, breathe, and let them come undone first.)",
   },

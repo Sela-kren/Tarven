@@ -11,6 +11,7 @@
  */
 import type { TouchRegion } from "./touchtalk";
 import type { UpstairsAct } from "./passives";
+import { WILLPOWER_PER_MIND } from "./willpower";
 
 export type StatId = "strength" | "agility" | "endurance" | "charm" | "mind";
 export const STATS: readonly { id: StatId; name: string; does: string }[] = [
@@ -18,7 +19,7 @@ export const STATS: readonly { id: StatId; name: string; does: string }[] = [
   { id: "agility", name: "Agility", does: "Lands more blows and dodges more" },
   { id: "endurance", name: "Endurance", does: "Lasts longer in a fight" },
   { id: "charm", name: "Charm", does: "Better tips, longer patience, talks fights down" },
-  { id: "mind", name: "Mind", does: "Guests mind themselves, gossip comes faster, stares fights down" },
+  { id: "mind", name: "Mind", does: "More willpower, guests mind themselves, gossip comes faster, stares fights down" },
 ];
 
 export type BodySkill = "hands" | "mouth" | "neck" | "breasts" | "hips" | "butt" | "thighs" | "pussy" | "exhibition";
@@ -142,7 +143,7 @@ export function statBonusText(id: StatId, level: number): string {
     }
     case "mind": {
       const m = mindBonus(level);
-      return `Guests ${m.nerve.toFixed(1)} nerve, gossip ${Math.round(m.listen * 100)}% faster`;
+      return `Guests ${m.nerve.toFixed(1)} nerve, gossip ${Math.round(m.listen * 100)}% faster, +${above * WILLPOWER_PER_MIND} willpower`;
     }
   }
 }

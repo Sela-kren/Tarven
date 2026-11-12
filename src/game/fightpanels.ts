@@ -9,6 +9,7 @@ import { ROLE_PLAYS, type RolePlay } from "./duellines";
 import { PARTNERS } from "./duelmoves";
 import type { Button, Game } from "./game";
 import { GUEST_KINDS, type AdultScene, type GuestKind } from "./tavern";
+import { willLabel } from "./willpower";
 
 /** One bar on a fight screen: who, a track filled to how much they have left, and the number. */
 function statBar(who: string, now: number, max: number, tone: string): HTMLElement {
@@ -133,6 +134,7 @@ export function showFight(game: Game): void {
   const off = tavern.strippedPieces.length;
   game.showBattle("brawl", "You · Brawl", 0, false, [
     { label: "Stamina", value: `${fight.stamina}/${fight.maxStamina}`, tone: fight.stamina < fight.maxStamina / 2 ? "hurt" : undefined },
+    { label: "Willpower", value: `${fight.will}/${fight.maxWill} · ${willLabel(fight.will, fight.maxWill)}` },
     { label: `The ${fight.kind}`, value: `${fight.foeStamina}/${fight.foeMax}` },
     { label: "Clothes", value: off === 0 ? "Dressed" : `${off} ${off === 1 ? "piece" : "pieces"} off` },
   ]);
@@ -140,7 +142,11 @@ export function showFight(game: Game): void {
   if (!box) return;
   const bars = document.createElement("div");
   bars.className = "fight-bars";
-  bars.append(statBar("You", fight.stamina, fight.maxStamina, "you"), statBar(`The ${fight.kind}${fight.drunk ? " (drunk)" : ""}`, fight.foeStamina, fight.foeMax, "foe"));
+  bars.append(
+    statBar("You", fight.stamina, fight.maxStamina, "you"),
+    statBar("Willpower", fight.will, fight.maxWill, "will"),
+    statBar(`The ${fight.kind}${fight.drunk ? " (drunk)" : ""}`, fight.foeStamina, fight.foeMax, "foe"),
+  );
   const log = fightLog(fight.log);
   box.insertBefore(log, box.querySelector(".menu"));
   box.insertBefore(bars, log);
@@ -429,7 +435,11 @@ export function showDuel(game: Game): void {
   if (box) {
     const bars = document.createElement("div");
     bars.className = "fight-bars";
-    bars.append(statBar("Your pleasure", duel.pleasure, 100, "pleasure"), statBar("Your stamina", duel.stamina, duel.maxStamina, "you"));
+    bars.append(
+      statBar("Your pleasure", duel.pleasure, 100, "pleasure"),
+      statBar("Your stamina", duel.stamina, duel.maxStamina, "you"),
+      statBar("Your willpower", duel.will, duel.maxWill, "will"),
+    );
     const partners = document.createElement("div");
     partners.className = "partners";
     for (const partner of duel.partners) {
@@ -475,6 +485,7 @@ function showDuelBattle(game: Game, duel: Duel): void {
   game.showBattle("duel", "You · After hours", duel.pleasure / 100, duel.state === "edge", [
     { label: "Feeling", value: STATE_NAMES[duel.state], tone: duel.state === "calm" ? undefined : "hot" },
     { label: "Pleasure", value: `${duel.pleasure}/100`, tone: "hot" },
+    { label: "Willpower", value: `${duel.will}/${duel.maxWill} · ${willLabel(duel.will, duel.maxWill)}` },
     { label: "Clothes", value: UNDRESSED[Math.min(2, duel.undressed)] },
     ...(cum.length
       ? cum.map((spot) => ({ label: CUM_NAMES[spot], value: `${duel.cum[spot]} ml`, tone: "cum" as const }))
