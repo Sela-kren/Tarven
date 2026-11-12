@@ -66,7 +66,9 @@ import { BuildMode, type Supply } from "./buildmode";
 import { GuestActor, Walker } from "./guests";
 import { cloneLayout, emptyLayout, footprint, HousePlan, seatSpecs, type FurnitureKind, type HouseLayout, type Placed } from "./house";
 import { HouseView } from "./houseview";
-import { StatsHud } from "./hud";
+import { COIN, FLAME, StatsHud, VILLAGERS } from "./hud";
+import { changeLabel, dayIcon, dayStory, statusLines, townTalk, type Standing } from "./daystory";
+import { StatusCard } from "./statuscard";
 import { DRINK_COLORS, Icon, type IconName } from "./icons";
 import type { Input } from "./input";
 import { findDustSpots, MessLayer } from "./mess";
@@ -109,6 +111,7 @@ import {
   BOTTLE_KINDS,
   BOTTLES,
   DEBT,
+  DRUNK_MAX,
   drunkLabel,
   ENDINGS,
   HEAT_MAX,
@@ -119,6 +122,7 @@ import {
   Tavern,
   TRAY_SIZE,
   TRUST_MAX,
+  TRUST_TO_OVERTHROW,
   UPGRADE_COST,
   UPGRADES,
   WARE_NAMES,
@@ -157,6 +161,11 @@ const ENTRY_GAP_SECONDS = 0.9;
 const VISITOR_WAIT_SECONDS = 2.5;
 const GUEST_CLEARANCE = 0.28;
 const STATION_RANGE = 1.35;
+/**
+ * How much turning away from a thing counts against it when choosing what to use, in metres per unit of turn:
+ * something straight to her side counts as this much further away, and something straight behind her twice that.
+ */
+const FACING_WEIGHT = 0.6;
 const GUEST_RANGE = 1.7;
 /** How close you need to be to dirty dishes on a table, or to a mess on the floor. */
 const DISHES_RANGE = 1.3;
@@ -572,6 +581,8 @@ export class Game {
   private readonly heldIcons = [new Icon(0.45), new Icon(0.45)];
 
   private readonly stats = new StatsHud(element("stats"));
+  /** Her status window in the bottom-left, Karryn-style: face, willpower, pleasure, drink, desire. */
+  private readonly statusCard = new StatusCard(element("status-card"));
   private readonly clockTimeEl = element("clock-time");
   private readonly clockDayEl = element("clock-day");
   /** The sky over Tarven at the top of the screen, with the sun and moon going round. */
@@ -624,6 +635,8 @@ export class Game {
   private pendingAdult: AdultScene | null = null;
   /** Tonight as it opened: what a save holds. */
   checkpoint: TavernSave;
+  /** Where she stood as today began, for the morning after to say what changed. */
+  private dayStart: Standing | null = null;
   private visitor: Walker | null = null;
   private visitorWalking = false;
   private visitorWait = 0;
@@ -1145,18 +1158,26 @@ export class Game {
   }
 
   private findTarget(): { target: Target; at: Vector3; height: number; prompt: Prompt } | null {
-    const position = this.siblings[this.active].position;
+    const player = this.siblings[this.active];
+    const position = player.position;
+    // The way she faces: the model looks down -Z at rest.
+    const heading = player.root.rotation.y;
+    const [forwardX, forwardZ] = [-Math.sin(heading), -Math.cos(heading)];
     let best: { target: Target; at: Vector3; height: number; prompt: Prompt; score: number } | null = null;
 
     const consider = (target: Target, at: Vector3, height: number, range: number) => {
-      const distance = position.distanceTo(new Vector3(at.x, position.y, at.z));
+      const [dx, dz] = [at.x - position.x, at.z - position.z];
+      const distance = Math.hypot(dx, dz);
       if (distance > range) return;
       const prompt = this.tavern.prompt(this.active, target);
       if (!prompt) return;
       // Anything you can actually do beats a status message, and serving a guest
       // beats putting the item back on a station that happens to be closer.
       const serving = target.kind === "guest" && this.tavern.carrying[this.active] !== null;
-      const score = distance + (prompt.actionable ? 0 : 100) - (serving ? 50 : 0);
+      // What she is facing beats what is a little nearer behind her or off to the side.
+      const ahead = distance > 0.01 ? (dx * forwardX + dz * forwardZ) / distance : 1;
+      const turned = (1 - ahead) * FACING_WEIGHT;
+      const score = distance + turned + (prompt.actionable ? 0 : 100) - (serving ? 50 : 0);
       if (!best || score < best.score) best = { target, at, height, prompt, score };
     };
 
@@ -1274,12 +1295,24 @@ export class Game {
       count: tavern.carryCount[this.active],
       traySize: TRAY_SIZE,
       drunk: drunkLabel(tavern.drunk),
-      will: tavern.willpower,
-      willMax: tavern.maxWillpower,
       cups: tavern.cleanWare.cup,
       cupsOwned: tavern.stock.cup,
       dishes: tavern.cleanWare.dish,
       dishesOwned: tavern.stock.dish,
+    });
+    this.playerPortrait ??= renderPortrait(this.renderer, this.siblings[this.active].root, -SPRITE_TURN);
+    this.statusCard.update({
+      name: tavern.name,
+      portrait: this.playerPortrait,
+      will: tavern.willpower,
+      willMax: tavern.maxWillpower,
+      pleasure: tavern.pleasure,
+      drunk: tavern.drunk / DRUNK_MAX,
+      drunkLabel: drunkLabel(tavern.drunk),
+      meters: tavern.meters,
+      piecesOff: tavern.strippedPieces.length,
+      lewdness: Math.floor(tavern.lewdness),
+      corruption: Math.floor(tavern.corruption),
     });
   }
 
@@ -1415,6 +1448,100 @@ export class Game {
     this.clock.run(DAY_HOURS_PER_SECOND, AFTERNOON_HOLD_HOUR);
     this.checkpoint = this.tavern.snapshot();
     writeSave("auto", this.active, this.checkpoint, this.looks);
+    // The morning after measures the night against this.
+    this.dayStart = this.standing();
+  }
+
+  /** Where she stands right now, for the day's cards. */
+  private standing(): Standing {
+    const { tavern } = this;
+    const p = tavern.persona;
+    return {
+      gold: tavern.gold,
+      trust: tavern.trust,
+      heat: tavern.heat,
+      respect: p.respect,
+      fame: p.fame,
+      lewdness: Math.floor(tavern.lewdness),
+      corruption: Math.floor(tavern.corruption),
+      flirt: p.flirt,
+      kindness: p.kindness,
+      greed: p.greed,
+      drinks: p.drinks,
+      protected: p.protected,
+      informed: p.informed,
+      sold: p.sold,
+    };
+  }
+
+  /**
+   * The card that opens each day: the day's own icon, a few lines on how things stand this morning, and her
+   * status. Starting the day is its only button.
+   */
+  private showDayCard(): void {
+    const { tavern } = this;
+    const day = tavern.nightIndex;
+    this.openPanel(
+      `Day ${day + 1} of ${NIGHTS.length}`,
+      dayStory({
+        day,
+        days: NIGHTS.length,
+        gold: tavern.gold,
+        debt: DEBT,
+        trust: tavern.trust,
+        trustMax: TRUST_MAX,
+        trustToRise: TRUST_TO_OVERTHROW,
+        heat: tavern.heat,
+        heatMax: HEAT_MAX,
+        messes: tavern.messes.length,
+      }),
+      [{ label: "Begin the day", onPick: () => this.startDay() }],
+    );
+    this.addDayIcon(day);
+    this.addStatus(this.standing(), null);
+  }
+
+  /** Puts a day's icon in front of the open panel's heading. */
+  private addDayIcon(day: number): void {
+    const heading = this.panelEl.querySelector(".box h1");
+    if (!heading) return;
+    const icon = document.createElement("span");
+    icon.className = "day-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.innerHTML = dayIcon(day);
+    heading.prepend(icon);
+  }
+
+  /** Lists her status under the open panel's words, each with how it moved since `before` if given. */
+  private addStatus(now: Standing, before: Standing | null): void {
+    const box = this.panelEl.querySelector(".box");
+    if (!box) return;
+    const list = document.createElement("div");
+    list.className = "day-status";
+    const rows = statusLines(now, before, { debt: DEBT, trustMax: TRUST_MAX, heatMax: HEAT_MAX }, { gold: COIN, trust: VILLAGERS, heat: FLAME });
+    for (const row of rows) {
+      const item = document.createElement("div");
+      item.className = "day-stat";
+      const icon = document.createElement("span");
+      icon.className = "icon";
+      icon.innerHTML = row.icon;
+      const label = document.createElement("span");
+      label.className = "label";
+      label.textContent = row.label;
+      const value = document.createElement("b");
+      value.textContent = row.value;
+      item.append(icon, label, value);
+      if (row.change !== 0) {
+        const change = document.createElement("span");
+        change.className = `change ${row.tone}`;
+        change.textContent = changeLabel(row.change);
+        item.append(change);
+      }
+      list.append(item);
+    }
+    const story = box.querySelector(".story");
+    if (story) story.after(list);
+    else box.querySelector(".menu")?.before(list);
   }
 
   private showTitle(): void {
@@ -1576,7 +1703,7 @@ export class Game {
     });
     // Removed while the screen is black, so the shader rebuild for one less light is not seen.
     this.stageLight.removeFromParent();
-    this.startDay();
+    this.showDayCard();
   }
 
   /** Stops the night and opens the pause menu. Only works mid-night. */
@@ -1880,14 +2007,16 @@ export class Game {
   /** The night's report. Spending happens at the house plans, during the day. */
   private showDawn(): void {
     const { tavern } = this;
+    const now = this.standing();
     this.openPanel(
       `Morning after night ${tavern.nightIndex + 1}`,
       [
         tavern.lastResult,
         `Served ${tavern.served}, ${tavern.walkouts} walked out, earned ${tavern.earned} gold.`,
-        `Gold ${tavern.gold}/${DEBT}   Trust ${tavern.trust}/${TRUST_MAX}   Heat ${tavern.heat}/${HEAT_MAX}`,
+        // What the town is saying about her this morning, from what she did since the day began.
+        ...(this.dayStart ? townTalk(this.dayStart, now) : []),
         ...(tavern.isLastNight ? [] : ["Upgrades and more cups and dishes are on the house plans in your room."]),
-      ],
+      ].filter((line) => line !== ""),
       [
         {
           label: tavern.isLastNight ? "Face the baron" : "Start the next day",
@@ -1896,6 +2025,8 @@ export class Game {
         },
       ],
     );
+    this.addDayIcon(tavern.nightIndex);
+    this.addStatus(now, this.dayStart);
     // What she earned as she lay down, each with her thought on it, the way Karryn's are shown at bedtime.
     if (tavern.newPassives.length > 0) {
       const list = document.createElement("div");
@@ -1941,7 +2072,7 @@ export class Game {
         ],
       );
     } else {
-      this.startDay();
+      this.showDayCard();
     }
   }
 

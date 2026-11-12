@@ -569,6 +569,72 @@
   text-align: center;
 }
 
+/* ---------- Day cards: the day's icon, and her status with what changed ---------- */
+
+#panel h1 .day-icon {
+  display: inline-block;
+  width: 40px;
+  height: 40px;
+  margin-right: 12px;
+  vertical-align: -6px;
+}
+
+#panel h1 .day-icon svg,
+#panel .day-stat .icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  shape-rendering: crispEdges;
+}
+
+#panel .day-status {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 6px 18px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.28);
+  box-shadow: inset 0 0 0 2px var(--gold-dim);
+}
+
+#panel .day-stat {
+  display: grid;
+  grid-template-columns: 24px 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 15px;
+}
+
+#panel .day-stat .icon {
+  width: 24px;
+  height: 24px;
+}
+
+#panel .day-stat b {
+  font-weight: 400;
+  color: #fff3d6;
+}
+
+#panel .day-stat .change {
+  min-width: 34px;
+  padding: 1px 4px;
+  text-align: center;
+  font-size: 13px;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+#panel .day-stat .change.good {
+  color: #9fd08a;
+}
+
+#panel .day-stat .change.bad {
+  color: #f08a6a;
+}
+
+#panel .day-stat .change.plain {
+  color: #e8d8b0;
+}
+
 /* ---------- New passives, on the morning report ---------- */
 
 #panel .new-passives {

@@ -57,7 +57,7 @@ function toRetroMaterial(source: MeshStandardMaterial): MeshLambertMaterial {
     emissive: source.emissive,
     emissiveMap: source.emissiveMap,
     emissiveIntensity: source.emissiveIntensity,
-    // Kept for the few see-through things, like the steam over her bath.
+    // Kept for the few see-through things.
     transparent: source.transparent,
     opacity: source.opacity,
     depthWrite: source.depthWrite,

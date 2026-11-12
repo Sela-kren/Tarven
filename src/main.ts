@@ -9,7 +9,18 @@ import {
 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { Soundscape } from "./game/audio";
-import { addBakery, addBedroom, addBin, addFrontDoorway, addWashTub, BEDROOM_FROM_X, BEDROOM_SOUTH_Z, BEDROOM_VIEW } from "./game/furnishings";
+import {
+  addBakery,
+  addBedroom,
+  addBin,
+  addFrontDoorway,
+  addWashTub,
+  BATHROOM_FROM_X,
+  BATHROOM_VIEW,
+  BEDROOM_FROM_X,
+  BEDROOM_SOUTH_Z,
+  BEDROOM_VIEW,
+} from "./game/furnishings";
 import { Game, WHOLE_PIECES } from "./game/game";
 import { claimFurniture } from "./game/houseview";
 import { Input } from "./game/input";
@@ -93,9 +104,9 @@ async function start(): Promise<void> {
       focus.copy(game.buildFocus);
       return;
     }
-    // The bedroom is off the side of the main room's shot, so the camera moves over to look at it.
+    // The bedroom and the bathroom past it are off the side of the main room's shot, so the camera moves over.
     if (game.focus.x > BEDROOM_FROM_X && game.focus.z < BEDROOM_SOUTH_Z) {
-      focus.copy(BEDROOM_VIEW);
+      focus.copy(game.focus.x > BATHROOM_FROM_X ? BATHROOM_VIEW : BEDROOM_VIEW);
       return;
     }
     const limits = game.cameraLimits;

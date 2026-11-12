@@ -9,16 +9,204 @@
   pointer-events: none;
 }
 
+/* The controls, small in the bottom-right; the bottom-left is her status window. */
 #hud {
-  left: 16px;
+  right: 16px;
   bottom: 12px;
+  text-align: right;
+  font-size: 12px;
 }
 
-/* Controls, stats and the clock are hidden on character select, until the night starts. */
+/* Controls, stats, her status and the clock are hidden on character select, until the night starts. */
 body.staging #hud,
 body.staging #stats,
+body.staging #status-card,
 body.staging #clock {
   display: none;
+}
+
+/* ---------- Her status window, bottom-left, Karryn's Prison style ---------- */
+#status-card {
+  position: fixed;
+  left: 16px;
+  bottom: 12px;
+  width: 248px;
+  padding: 8px 10px 9px;
+  background: rgba(27, 18, 11, 0.86);
+  border: 2px solid var(--wood-edge);
+  box-shadow: 3px 3px 0 #000;
+  font: 13px/1.2 var(--font);
+  color: var(--text);
+  text-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+#status-card[hidden] {
+  display: none;
+}
+
+/* Out of the way while a conversation, a story beat or a panel has the screen. */
+body:has(#talk.open) #status-card,
+body:has(#story.open) #status-card,
+body:has(#panel.open) #status-card {
+  display: none;
+}
+
+#status-card .head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+#status-card .face {
+  width: 56px;
+  height: 56px;
+  flex: none;
+  image-rendering: pixelated;
+  background: radial-gradient(circle at 50% 40%, #4a3220, #1b120b 75%);
+  border: 2px solid var(--gold-dim);
+  box-shadow: 2px 2px 0 #000;
+}
+
+#status-card .who .name {
+  font-size: 17px;
+  font-weight: bold;
+  color: var(--text-bright);
+}
+
+#status-card .feel {
+  font-size: 13px;
+}
+
+#status-card .feel.calm {
+  color: #a8c0a0;
+}
+
+#status-card .feel.aroused {
+  color: #f090b0;
+}
+
+#status-card .feel.edge {
+  color: #ff5a8a;
+}
+
+#status-card .bar {
+  display: grid;
+  grid-template-columns: 62px 1fr 44px;
+  align-items: center;
+  gap: 6px;
+  margin: 3px 0;
+}
+
+#status-card .bar .track {
+  position: relative;
+  height: 10px;
+  background: #120c07;
+  border: 1px solid #000;
+  box-shadow: inset 0 0 0 1px #3a2615;
+}
+
+#status-card .bar .fill {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  left: 1px;
+  max-width: calc(100% - 2px);
+  background: repeating-linear-gradient(90deg, var(--fill-color) 0 5px, var(--fill-shade) 5px 6px);
+}
+
+#status-card .bar b {
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-bright);
+}
+
+#status-card .bar.warn b {
+  color: #ff6b4a;
+}
+
+#status-card .bar.will {
+  --fill-color: #5a8ad8;
+  --fill-shade: #36589a;
+}
+
+#status-card .bar.pleasure {
+  --fill-color: #e8607c;
+  --fill-shade: #a8304c;
+}
+
+#status-card .bar.drink {
+  --fill-color: #e0a030;
+  --fill-shade: #a06a14;
+}
+
+#status-card .desire {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid var(--wood-edge);
+}
+
+#status-card .desire .title {
+  font-size: 12px;
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 2px;
+}
+
+#status-card .desire .bar {
+  grid-template-columns: 62px 1fr 28px;
+  margin: 2px 0;
+  font-size: 12px;
+}
+
+#status-card .desire .track {
+  height: 7px;
+}
+
+#status-card .bar.meter {
+  --fill-color: #c86aa8;
+  --fill-shade: #8a3a70;
+}
+
+#status-card .tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 7px;
+}
+
+#status-card .tags span {
+  padding: 0 5px;
+  border: 1px solid var(--gold-dim);
+  background: rgba(0, 0, 0, 0.35);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Phones: a compact card along the bottom, the clock above it, and no controls (there's no keyboard). */
+@media (max-width: 720px) {
+  #hud {
+    display: none;
+  }
+
+  #status-card {
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: auto;
+    font-size: 12px;
+  }
+
+  #status-card .desire {
+    display: none;
+  }
+
+  body #clock {
+    bottom: 176px;
+  }
 }
 
 /* The world clock: the time, a sun or moon, the day, and a bar across the whole day. */

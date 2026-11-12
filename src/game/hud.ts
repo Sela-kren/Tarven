@@ -25,9 +25,6 @@ export interface HudState {
   traySize: number;
   /** How drunk you are, in a word, or "" when sober. */
   drunk: string;
-  /** Her willpower now and at the top (see willpower.ts). */
-  will: number;
-  willMax: number;
 }
 
 const OUTLINE = "#1c140e";
@@ -202,7 +199,6 @@ class Stat {
 export class StatsHud {
   private readonly gold: Stat;
   private readonly heat: Stat;
-  private readonly will: Stat;
   private readonly tap: Stat;
   private readonly cups: Stat;
   private readonly dishes: Stat;
@@ -215,7 +211,6 @@ export class StatsHud {
     this.gold = new Stat(row, "Gold", COIN);
     // Heat only comes up here as a warning; it, trust and the rest are kept in the journal.
     this.heat = new Stat(row, "Heat", FLAME);
-    this.will = new Stat(row, "Willpower", WILL);
     this.tap = new Stat(row, "Ale left in the tap", KEG);
     this.cups = new Stat(row, "Clean cups", CUP);
     this.dishes = new Stat(row, "Clean dishes", DISH);
@@ -233,8 +228,6 @@ export class StatsHud {
     const danger = state.heat >= state.heatMax - 2;
     this.heat.show(danger);
     this.heat.set(String(state.heat), `/${state.heatMax}`, undefined, danger);
-    // Willpower turns red once there's under a quarter left.
-    this.will.set(String(state.will), `/${state.willMax}`, undefined, state.will < state.willMax / 4);
     this.tap.set(String(state.tap), "", undefined, state.tap === 0);
     this.cups.set(String(state.cups), `/${state.cupsOwned}`, undefined, state.cups === 0);
     this.dishes.set(String(state.dishes), `/${state.dishesOwned}`, undefined, state.dishes === 0);
