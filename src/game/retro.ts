@@ -57,6 +57,10 @@ function toRetroMaterial(source: MeshStandardMaterial): MeshLambertMaterial {
     emissive: source.emissive,
     emissiveMap: source.emissiveMap,
     emissiveIntensity: source.emissiveIntensity,
+    // Kept for the few see-through things, like the steam over her bath.
+    transparent: source.transparent,
+    opacity: source.opacity,
+    depthWrite: source.depthWrite,
   }));
 }
 
@@ -66,6 +70,7 @@ export function solidRetroMaterial(name: string, color: number): MeshLambertMate
 }
 
 let coat: MeshPhongMaterial | null = null;
+let stain: MeshPhongMaterial | null = null;
 
 /**
  * How far the coat is drawn towards the camera, and further still the clothes that should cover it. Flat amounts
@@ -73,6 +78,8 @@ let coat: MeshPhongMaterial | null = null;
  */
 const COAT_OFFSET = { factor: 0, units: -6 };
 const COVER_OFFSET = { factor: 0, units: -16 };
+/** The stains on her clothes, a little in front of the clothes they lie on. */
+const STAIN_OFFSET = { factor: 0, units: -20 };
 
 /**
  * Draws clothing in front of the coat beneath it. The coat is pulled forwards so the vertex snapping never sinks
@@ -82,6 +89,18 @@ export function coverCoat(material: Material): void {
   material.polygonOffset = true;
   material.polygonOffsetFactor = COVER_OFFSET.factor;
   material.polygonOffsetUnits = COVER_OFFSET.units;
+}
+
+/** The same as the coat, for where it landed on her clothes: drawn in front of the clothes, which cover the coat. */
+export function stainRetroMaterial(): MeshPhongMaterial {
+  if (!stain) {
+    // A clone keeps the coat's look but not its compile hook, which snaps its vertices like the cloth under it.
+    stain = withPs1Rasterizer(coatRetroMaterial().clone());
+    stain.name = "T_cum_stain";
+    stain.polygonOffsetFactor = STAIN_OFFSET.factor;
+    stain.polygonOffsetUnits = STAIN_OFFSET.units;
+  }
+  return stain;
 }
 
 /**

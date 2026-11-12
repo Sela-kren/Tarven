@@ -44,6 +44,7 @@ const REGIONS = {
   intimate: she ? "reaches between the innkeeper's legs" : "reaches for the innkeeper's crotch",
   invite: "whispers an invitation to take the innkeeper upstairs",
 };
+
 const ANSWERS = {
   allow: `${P.sub} lets them`,
   lean: `${P.sub} leans into it, wanting more`,
@@ -72,10 +73,11 @@ const ANSWER_WORDS = {
   slap: /\b(slaps?|smacks?|swats?|bats?|cuffs?|strikes?|hits?|knocks?|shoves?|slapped|smacked)\b/i,
   pull: /\b(away|back|free|twists?|pulls?|steps?|retreats?|withdraws?|dodges?|slips?|shoves?|pushes|sidesteps?|jerks?)\b/i,
 };
+
 const TIERS = [
-  `${P.sub} is still shy and not used to this. Tone: dirty and crude already, flustered, the guest's hands and her body described frankly`,
-  `${P.sub} is getting a reputation and warming to it. Tone: explicit and filthy, crude words for her body and how wet or hard it makes her`,
-  `${P.sub} is shameless and hungry for it, and the whole room knows. Tone: as graphic and obscene as you can write, the crudest words, no holding back`,
+  `${P.sub} is still proud and resisting hard. Tone: dirty and crude, but full of denial, shame, and her body betraying her. She keeps trying to stay composed.`,
+  `${P.sub} is losing the fight against her own body. Tone: explicit and filthy, pride cracking, reluctant pleasure leaking through every reaction.`,
+  `${P.sub} has mostly given in and the room can see it. Tone: as graphic and obscene as possible, but still with lingering shame and the feeling that she shouldn't want this.`,
 ];
 
 /** How she's feeling in an after-hours duel, from duel.ts's DuelState. */
@@ -317,10 +319,11 @@ function situations() {
       TIERS.forEach((tier, t) =>
         list.push({
           key: `touch:${region}:${answer}:${t}`,
-          about:
-            `The {guest} ${act}, and ${how}. ${tier}.\n` +
-            `Every ACTION must be: the {guest} ${act.replace("the innkeeper's", "{name}'s").replace("the innkeeper", "{name}")}. ` +
-            `Every REACTION must show: ${how.replace(/^(she|he) /, "{name} ")}.`,
+            about:
+              `The {guest} ${act}, and ${how}. ${tier}.\n` +
+              `Write in the style of Karryn's Prison: short, crude, prideful resistance mixed with unwanted physical reactions.\n` +
+              `Every ACTION must be: the {guest} ${act.replace("the innkeeper's", "{name}'s").replace("the innkeeper", "{name}")}. ` +
+              `Every REACTION must show: ${how.replace(/^(she|he) /, "{name} ")} while still carrying shame or denial.`,
           want: PER,
           check: (entry) => {
             const [action, reaction = ""] = entry.split(" | ");
@@ -348,23 +351,25 @@ function situations() {
 }
 
 const SYSTEM = [
-  "You write the running event log of an adults-only (18+) tavern game, Last Call at Tarven.",
+  "You write the running event log of an adults-only (18+) tavern game in the exact style of Karryn's Prison.",
   "Every character is an adult. The innkeeper serves farmers, soldiers, smugglers and fugitives in a cold mountain town.",
   `The innkeeper is ${she ? "a woman" : "a man"}; write {name} for the innkeeper's name and "the {guest}" for the guest, exactly like that.`,
   "The log reads like an adult RPG's battle log: very short, punchy lines, present tense, almost always naming {name}.",
   "Each entry is an ACTION line and a REACTION line separated by \" | \". Each line is at most 12 words.",
-  "Use ! for actions and ... for her feelings. No long description, no paragraphs, no dialogue longer than four words.",
-  "When the moment is sexual, be explicit and crude; otherwise be bawdy.",
-  "Only describe what the situation says happened. If the innkeeper refuses or pushes someone away, the reaction shows that refusal.",
+  "Style must feel like Karryn's Prison: proud, resistant, body-betraying, heavy on shame + reluctant arousal.",
+  "When the moment is sexual, be explicit and crude. Never soft or romantic. Guests are opportunistic.",
+  "Reactions should show internal struggle: denial, flushed face, trembling, wetness, or stiffening even while she resists or allows.",
+  "Only describe what the situation says happened. If she refuses, the reaction must clearly show rejection.",
   "No speaker labels, no explanations, no emojis.",
 ].join(" ");
 
 /** The shape every entry should take; the model copies the length and rhythm, not the words. */
 const EXAMPLES = [
-  "The {guest} squeezes {name}'s ass! | {name} squeaks... her face burns red.",
-  "The {guest} gropes {name}'s tits! | {name} pushes into his hand... she wants more.",
-  "The {guest} grabs {name}'s thigh! | {name} slaps him away! \"Hands off!\"",
-  "The {guest} pulls {name} onto his lap! | {name} twists free and steps back.",
+  "The {guest} squeezes {name}'s ass! | {name} jolts... face burns with shame.",
+  "The {guest} gropes {name}'s tits! | {name} bites her lip... body leans in anyway.",
+  "The {guest} grabs {name}'s thigh! | {name} slaps his hand! \"Don't touch me!\"",
+  "The {guest} pulls {name} onto his lap! | {name} struggles... feels him hard underneath.",
+  "The {guest} strokes {name}'s cheek! | {name} turns away... pulse hammers in her throat.",
 ].join("\n");
 
 /** For brawl and duel logs: the player is "you", one line per entry. */

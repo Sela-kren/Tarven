@@ -38,6 +38,8 @@ import { falloff, footfalls, musicFor, type Soundscape } from "./audio";
 import { Customizer } from "./customizer";
 import { resolveCircle, type Rect, type Vec2 } from "./collision";
 import {
+  BATH_NAME,
+  BATH_SPOT,
   BED_NAME,
   BED_SPOT,
   BEDROOM_DOOR_NAME,
@@ -239,7 +241,10 @@ export const WHOLE_PIECES = [
   JOURNAL_NAME,
   FRONT_DOOR_NAME,
   WASH_TUB_NAME,
+  BATH_NAME,
 ];
+/** How close you need to be to the middle of the bath to climb in. */
+const BATH_RANGE = 1.3;
 /** How close you need to be to the bedroom door, and how fast it swings (per second, eased). */
 const BEDROOM_DOOR_RANGE = 1.3;
 const BEDROOM_DOOR_SWING_RATE = 7;
@@ -728,6 +733,7 @@ export class Game {
     this.targetOutlines.set(targetKey({ kind: "door" }), outline([this.bedroomDoor]));
     this.targetOutlines.set(targetKey({ kind: "desk" }), outline([piece(DESK_NAME)]));
     this.targetOutlines.set(targetKey({ kind: "book" }), outline([piece(JOURNAL_NAME)]));
+    this.targetOutlines.set(targetKey({ kind: "bath" }), outline([piece(BATH_NAME)]));
     this.updateBedroomDoor(Infinity);
     this.frontDoorHinge.position.copy(FRONT_DOOR_HINGE);
     world.root.add(this.frontDoorHinge);
@@ -1176,6 +1182,7 @@ export class Game {
     consider({ kind: "door" }, BEDROOM_DOOR_SPOT, STATION_ARROW_HEIGHT, BEDROOM_DOOR_RANGE);
     consider({ kind: "desk" }, DESK_SPOT, STATION_ARROW_HEIGHT, DESK_RANGE);
     consider({ kind: "book" }, JOURNAL_SPOT, JOURNAL_ARROW_HEIGHT, JOURNAL_RANGE);
+    consider({ kind: "bath" }, BATH_SPOT, STATION_ARROW_HEIGHT, BATH_RANGE);
     return best;
   }
 

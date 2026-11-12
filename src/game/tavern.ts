@@ -123,7 +123,8 @@ export type Target =
   | { kind: "bed" }
   | { kind: "door" }
   | { kind: "desk" }
-  | { kind: "book" };
+  | { kind: "book" }
+  | { kind: "bath" };
 /** A sound the rules ask for. What each one actually sounds like is up to the audio layer. */
 export type Cue =
   | "pour" | "aleReady" | "takeAle" | "takeBread" | "takeStew" | "takeCask" | "putDown" | "refill"
@@ -1603,6 +1604,22 @@ export class Tavern {
     r.loads += loads;
   }
 
+  /** Whether anything men left is still on her. */
+  get messy(): boolean {
+    return Object.values(this.coatStages).some((stage) => stage > 0);
+  }
+
+  /**
+   * She climbs into the bath in her room and scrubs it all off. Her records keep every load; only what shows on
+   * her goes. Morning washes it off too, if she never gets to the bath.
+   */
+  bathe(): void {
+    this.coated = {};
+    this.endedTest = null;
+    this.cue("refill");
+    this.say("You sink into the hot bath and scrub yourself clean, then dry off and dress again.");
+  }
+
   /** How much shows on each part of her tonight, by stage: 0 is clean. A duel going on shows as it happens. */
   get coatStages(): Record<CoatSection, number> {
     const duel = (this.duel ?? this.endedTest)?.cum;
@@ -2292,6 +2309,10 @@ export class Tavern {
       };
     }
     if (target.kind === "book") return { label: "Read your journal", run: () => undefined };
+    if (target.kind === "bath") {
+      if (this.duel) return null;
+      return this.messy ? { label: "Bathe and wash yourself clean", run: () => this.bathe() } : { label: "You're clean" };
+    }
     if (target.kind === "desk") {
       if (this.phase !== "day") return this.phase === "dusk" ? { label: "No time for plans now" } : null;
       // Dirty dishes and spills are tied to the seats they're at, so those have to go first.

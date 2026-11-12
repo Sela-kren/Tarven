@@ -1817,6 +1817,689 @@
     "The {guest} makes a grab for {name}'s heaving breasts. | {name} quickly smacks his groping hand. \"...Fuck off with that shite!",
     "The {guest} kneads {name}'s breasts through her top. | {name} batten his wrist with a sharp slap, glaring.",
     "The {guest} gropes {name}'s right breast roughly. | {name} swiftly slaps the {guest}'s wrist hard, glaring... \"No touching without asking!\""
+   ],
+   "touch:chest:pull:0": [
+    "The {guest} brazenly palms both of {name}'s breasts simultaneously. | {name} flushes crimson, batting hands away, \"Stop groping me, you brute!\" before fleeing.",
+    "The {guest} pinches {name}'s nipples through her shirt! | {name} gasps and wrenches away!",
+    "The {guest} brazenly gropes both of {name}'s tits simultaneously! | {name} blushes deeply and retreats!",
+    "The {guest} aggressively grope-pinches her nipples through the thin fabric of her dress. | {name} squirms away, cheeks burning - \"I-I couldn't possibly...",
+    "The {guest}'s hands grope {name}'s ample bosom. | {name} startles, pushing them away; \"No touching without asking!\"",
+    "The {guest} brazenly knead {name}'s pliant breasts. | {name}, flustered and shy, withdraws swiftly; \"...Let's slow down...\"",
+    "The {guest}'s hands paw at {name}'s ample bosom. | {name} shrinks back shyly... heart races.",
+    "The {guest} squeezes and fondles her chest. | {name} gasps softly... pushes his wrists away."
+   ],
+   "touch:chest:pull:1": [
+    "The guest mauls {name}'s heaving breasts. | {name} jerks away. \"Not in public!",
+    "The {guest} roughly paw at {name}'s generous breasts! | {name} stumbles back, cheeks flushed!",
+    "The {guest} brazenly fondles {name}'s heaving breasts under her blouse. | {name} stumbles back, breath catching... \"N-not here! I have standards.\"",
+    "The {guest} lewdly squeezes the soft mounds of {name}'s chest through her top. | {name} swats his hands away firmly... \"I'm not that kind of tavern wench!\"",
+    "The {guest}, drunk, shamelessly mauls {name}'s breasts over her clothes. | {name}, voice raised, pushes him back... \"Less touching or get out, lout!\"",
+    "The {guest} gropes {name}'s tits roughly. | {name} recoils, pulling away sharply.",
+    "The {guest} paw at {name}'s chest boldly. | {name} squirms away...",
+    "The {guest} roughly fondles {name}'s breasts through her top. | {name} gasps, jerking back. \"Easy there...\" She adjusts her clothing, cheeks flushed.",
+    "The {guest} aggressively mauls {name}'s breasts through her blouse. | {name} yanks herself free, blushing furiously.",
+    "The {guest} lewdly kneads {name}'s soft mounds, pinching erect nipples through fabric. | {name} gasps sharply, pushing his hands away."
+   ],
+   "touch:chest:pull:2": [
+    "The {guest} grope and fondle the innkeeper's huge tits for all the tavern patrons to see! | {name}, eyes glazed with lust, stumbles back from the intensity, panting.",
+    "The {guest} kneads {name}'s breasts lewdly! | {name} jerks back... \"No touchin', ya prick!\"",
+    "The {guest} gropes {name}'s chest hard! | {name} swats his hand away... \"Not without my say-so!\"",
+    "The {guest} pinches and tugs at {name}'s breasts like handles on a mug of ale. | {name} bites back a yelp, twisting away to put distance between them. Her body trembles."
+   ],
+   "touch:lap:allow:0": [
+    "The {guest} grips {name}'s hips, yanking her onto their lap. | {name} lands with a gasp, legs dangling, heart pounding.",
+    "The {guest} yanks {name} onto their lap. | {name} lands with a surprised yelp, heart pounding.",
+    "The {guest} firmly grips {name}'s hips, yanking her onto their lap. | {name} gasps, legs spreading automatically as she sits, cheeks flushed.",
+    "The {guest} tugs hard on {name}'s waistband, dragging her into their lap. | {name} stumbles forward, catching herself by bracing on their shoulders.",
+    "the {guest} tugs {name} onto their knees. | {name} allows herself to be pulled, thighs spreading over {guest}'s legs.",
+    "The {guest} pulls {name}'s hips, forcing her to sit on lap. | {name} stiffens, then slowly yields.",
+    "The {guest} forces {name}'s plush rump onto their lap suddenly. | {name} stiffens initially before relaxing slightly in his hold, face flaming."
+   ],
+   "touch:lap:allow:1": [
+    "The {guest} pulls {name} down onto their lap. | {name} allows herself to be pulled down, straddling his thighs.",
+    "The guest roughly yanks {name} onto their lap. | {name} gasps, squirming as she settles in, cheeks flushed.",
+    "The guest yanks {name} onto their lap! | {name} settles in with a smirk...",
+    "The {guest} yanks {name} onto their lap. | {name} settles herself with a breathy sigh.",
+    "The {guest} yanks {name}'s hips onto their lap. | {name} straddles them, skirt riding up.",
+    "The {guest} aggressively pulls {name} into sitting position on lap. | {name} lands with a thump, legs spreading.",
+    "The {guest} yanks {name} onto their lap! | {name} settles in, squirming slightly. \"...I've been wanting a strong grip like that.\"",
+    "The {guest} yanks {name} onto their lap. | {name} settles in with a sigh...",
+    "The {guest} roughly yanks {name}'s hips onto their lap! | {name} gasps sharply, legs parting as she allows herself to be pulled close!",
+    "The {guest} yanks {name} onto their lap. | {name} allows herself to be pulled, straddling his thighs."
+   ],
+   "touch:lap:allow:2": [
+    "The {guest} yanks {name} onto their lap. | {name} settles in with a moan...",
+    "The {guest} yanks {name} onto their lap. | {name} straddles him, skirt riding up.",
+    "The {guest} yanks {name} onto their lap forcefully. | {name} lands with a surprised oof!, legs sprawling.",
+    "The {guest} roughly yanks {name} into their lap. | {name} falls into their strong arms, letting out a surprised gasp.",
+    "The guest yanks {name} onto his lap! | {name} straddles him shamelessly, dress riding up!",
+    "The {guest} drags {name} onto their lap forcefully. | {name} yelps in surprise, settling on their thighs without resistance, face flushed.",
+    "The guest yanks {name}'s hips onto his lap. | {name} settles in, rubbing against him shamelessly...",
+    "The guest demands {name} sit on his lap in front of all. | {name} obeys, facing out... putting on a lewd show.",
+    "The guest forcefully drags {name} onto his knees. | {name} remains seated submissively, thighs parted.",
+    "The {guest} yanks {name} onto their lap! | {name} grinds down shamelessly..."
+   ],
+   "touch:lap:lean:0": [
+    "The {guest} pulls {name} down forcefully onto their lap. | {name} yelps in surprise but melts into their embrace, thighs parting slightly.",
+    "The {guest} yanks {name}'s hips to his lap. | {name} melts against him, desire stirring deep inside.",
+    "The {guest} wedges knee between {name}'s thighs. | {name} shifts hips instinctively, rubbing against his leg, flustered but eager."
+   ],
+   "touch:lap:lean:1": [
+    "The {guest} pulls {name} down onto their lap! | {name} melts into their embrace, craving more!",
+    "The {guest} yanks {name} onto their lap. | {name} melts against them, spreading legs eagerly.",
+    "The {guest} yanks {name} down on his lap. | {name} settles against him, wiggling closer."
+   ],
+   "touch:lap:lean:2": [
+    "The {guest} forcefully yanks {name} onto his lap. | {name} gasps, pressing herself against him urgently.",
+    "The {guest} roughly yanks {name} down onto his lap. | {name}'s breath hitches; she grinds herself against him, craving friction.",
+    "The {guest} drags {name} onto his lap forcefully! | {name} grinds against him, moaning shamelessly!",
+    "{guest} spanks {name} hard as she sits on his lap! | {name} cries out in pained pleasure, clenching around him!",
+    "The {guest} yanks {name} onto his lap, spreading legs wide! | {name} grinds against him, moaning shamelessly!",
+    "The {guest} yanks {name} onto his lap. | {name} grinds against him, eager for more friction.",
+    "The {guest} yanks {name} onto their lap. | {name} wiggles, settling in. Her breath hitches... she craves more."
+   ],
+   "touch:lap:slap:0": [
+    "The guest grabs {name}'s hips, pulling her onto their lap. | {name} slaps their hands, sputtering. \"...Stop that!\"",
+    "The {guest} forcefully yanks {name} onto their lap. | {name} slaps his hands harshly, leaping up - \"Don't touch!\""
+   ],
+   "touch:lap:slap:1": [
+    "The {guest} pulls {name} down onto his lap. | {name} slaps his hand away hard!",
+    "The {guest} yanks {name} onto their lap. | {name} slaps his wrist hard. \"...I'm not that kind of girl!\"",
+    "the {guest} drags {name} onto his lap, gripping her hips tightly. | {name} wrenches free and slaps his hands, glaring \"I said NO!\"",
+    "the {guest} swiftly pulls {name} onto his lap, fingers digging in. | {name}, furious, delivers a sharp slap to his face \"Fuck you, I'm not your toy!\"",
+    "The {guest} yanks {name} onto their lap. | {name} smacks their wrist hard. \"...Bold today, aren't you?!\"",
+    "The {guest} forcefully pulls {name} onto their lap. | {name} firmly slaps their hand away, glaring... \"I meant no harm!\"",
+    "The {guest} grabs {name}'s hips, pulling her onto lap. | {name} smacks his hands, stands tall. \"...Keep your hands to yourself!\"",
+    "The {guest} suddenly pulls {name} onto their lap! | {name} slaps their chest and leaps up!",
+    "The {guest} abruptly grabs {name}, pulling her onto their lap. | {name} swiftly smacks the guest's wrist and rises, glowering.",
+    "The {guest} yanks {name} onto their lap. | {name} slaps his wrist. \"Keep your hands to yourself!\""
+   ],
+   "touch:lap:slap:2": [
+    "The {guest} manhandles {name}, pulling her onto his lap. | {name} roughly slaps his wrist. \"I'm not some tavern wench!\"",
+    "The {guest} yanks {name} onto their lap! | {name} slaps their hand, glares... \"No touching!\"...",
+    "The {guest} forces {name} onto their knees! | {name} shoves them away hard! \"...Not like that!\"",
+    "The {guest} forcefully yanks {name} onto his lap, spreading her legs. | {name} smacks his wrist hard. \"Keep your filthy paws off me!\"",
+    "The {guest} drags {name} onto his lap! | {name} shoves him back hard!",
+    "The {guest} yanks {name} onto their lap. | {name} roughly slaps {guest}'s hands.",
+    "The {guest} forcefully pulls {name} onto his lap, gripping her hips. | {name} slaps his hands away hard, glaring. \"...Keep your filthy mitts to yourself!\"",
+    "The {guest} drags {name} onto their lap. | {name} smacks {guest}'s wrist. \"...Don't touch!\"",
+    "The {guest} grabs {name}, forcing them onto their lap. | {name} shoves two fingers in {guest}'s face. \"...Try that again, fucker.\""
+   ],
+   "touch:lap:pull:0": [
+    "The {guest} wraps an arm around {name}'s waist, attempting to seat her on his lap. | {name} wriggles free, backing away shyly. \"...Let's slow down...\"",
+    "The {guest} yanks {name} onto their lap! | {name} wriggles out and moves away flushed!",
+    "The {guest} forcefully yanks {name} onto their lap. | {name} shoves herself off and backs away.",
+    "The {guest} seizes {name}'s waist, yanking her down onto his lap with force. | {name} cries out in shock, frantically pushes off him, heart racing..."
+   ],
+   "touch:lap:pull:1": [
+    "The {guest} forces {name} onto his lap! | {name} wrenches herself free!",
+    "The {guest} yanks {name}'s hips, pulling her onto his lap! | {name} jerks herself free, heart pounding!",
+    "The {guest} hauls {name} onto his knees! | {name} leaps up and staggers back!",
+    "The {guest} yanks {name} onto their lap! | {name} wiggles free and stands tall!"
+   ],
+   "touch:lap:pull:2": [
+    "The {guest} manhandles {name} onto his lap, crude grin. | {name} leaps up, pushing him away.",
+    "The {guest} yanks {name}'s hips down onto their lap. | {name} wrenches herself free, slapping his hands. \"...Don't touch me!\"",
+    "The {guest} grips {name}'s waist, pulling her to sit on his lap. | {name} stands abruptly, glaring as she moves away. \"...Not happening, bucko.\"",
+    "The {guest} forcesfully drags {name} into their lap. | {name} shoves him hard, stepping back fast. \"...Keep your filthy hands to yourself!\"",
+    "The {guest} yanks {name} onto his lap forcefully. | {name} wrenches herself free, face flushed. \"Too rough, I'm warning you...\"",
+    "The {guest} seizes {name}, attempting to pull her onto his lap roughly. | {name} yanks free of his grip, glaring. \"...I said, hands off me, you oaf!\"",
+    "The {guest} yanks {name} onto his lap! | {name} wriggles free, face flushed!",
+    "The {guest} seizes {name}'s hips, trying to pull her onto their lap. | {name} bats his hands away, stepping out of reach.",
+    "The {guest} reaches out, trying to drag {name} into his lap. | {name} jerks free, slaps his cheek, glares at him."
+   ],
+   "touch:lips:allow:0": [
+    "The {guest} claims her mouth in a deep, hungry kiss. | {name} parts her lips, kissing back shyly yet eagerly. Her body tingles all over.",
+    "The {guest} sucks on {name}'s lower lip as he kisses her fiercely. | {name} whimpers softly, fingers gripping his shirt collar. His passion ignites her own.",
+    "The {guest} leans in, capturing {name}'s lips. | {name} freezes briefly before melting into the kiss, eyes fluttering closed.",
+    "The {guest} cups {name}'s face, pulling her close to deepen the kiss. | {name} blushes fiercely but parts her lips, allowing him access.",
+    "The {guest} grabs {name}'s hips, pulling her body against his as he kisses her hard. | {name} gasps softly against his mouth but makes no move to pull away.",
+    "The {guest} slides a hand up under {name}'s skirt while kissing her. | {name} trembles slightly, knees weakening at his touch but doesn't stop him.",
+    "The {guest} grips {name}'s hair, forcing her head back to trail kisses down her neck. | {name} whimpers needily but arches her neck, giving him more room despite her shy nature.",
+    "The {guest}'s hands grip her hips as he kisses {name}. | {name}'s knees go weak, she clings to him.",
+    "Leaning in, the {guest} claims {name}'s mouth in a deep kiss. | {name} responds clumsily but eagerly, inexperienced yet aroused.",
+    "The {guest} holds the back of {name}'s neck, kissing her hard. | {name} whimpers softly against his lips, pulse racing."
+   ],
+   "touch:lips:allow:1": [
+    "The {guest} captures {name}'s lips in a heated kiss. | {name} melts into the passionate liplock, kissing back wantonly.",
+    "The {guest} claims {name}'s mouth forcefully. | {name} submits to the dominate kiss, feeling herself grow wet.",
+    "The {guest} traces {name}'s lips with his tongue demandingly. | {name} parts her lips, allowing the lewd invasion, moaning softly.",
+    "The {guest}'s mouth claims hers roughly! | {name} melts against them, responding hungrily!",
+    "The {guest}'s tongue plunders her mouth! | {name} whimpers needily, grabbing at their shirt!",
+    "The {guest} captures {name}'s lips in a passionate kiss. | {name} melts into the intimate embrace...",
+    "The {guest} forces his tongue into {name}'s mouth. | {name} grudgingly accepts the aggressive invasion...",
+    "The {guest} mashes his lips against {name}'s roughly. | {name} whimpers submissively under the forceful kiss.",
+    "The {guest} moves in swiftly, capturing {name}'s lips. | {name} melts into the sudden kiss, lips parting slightly.",
+    "The {guest}'s mouth claims hers dominantly. | {name} sighs softly, kissing back with building heat."
+   ],
+   "touch:lips:allow:2": [
+    "The guest claims {name}'s mouth in a rough kiss! | {name} moans shamelessly into it!",
+    "The guest fondles {name}'s lips with his own! | {name} kisses back wildly, hungry!",
+    "The guest forcefully kisses {name}. | {name} melts into the kiss, tongue delving deep.",
+    "The {guest} goes in for a deep, sloppy kiss... | {name} opens wide, moaning into it shamelessly!",
+    "the {guest} claims {name}'s mouth roughly! | {name} melts under his forceful kiss!",
+    "the {guest} slides tongue past {name}'s lips! | {name} sucks it eagerly, moaning!",
+    "the {guest} kisses {name} deeply, passionately! | {name}'s knees weaken; she clings to him!",
+    "the {guest} ravishes {name}'s mouth hungrily! | {name} returns kiss sloppily, lost in lust!",
+    "The {guest} captures {name}'s lips in a deep, lustful kiss. | {name} melts, returning the passionate kiss hungrily.",
+    "The {guest} forces his tongue into {name}'s mouth. | {name} moans wantonly around the invading tongue."
+   ],
+   "touch:lips:lean:0": [
+    "The {guest} captures her lips. | {name} melts against him, craving kisses deeper.",
+    "{guest}'s tongue invades her mouth. | {name} whimpers, surrendering to intense sensations.",
+    "The {guest} captures {name}'s lips with his own. | {name} melts against him, craving more.",
+    "The {guest} claims {name}'s mouth in a forceful kiss. | {name} gasps and arches, returning the intensity.",
+    "The {guest}'s tongue demands entrance as he kisses {name}. | {name}'s knees weaken; she parts her lips invitingly.",
+    "The {guest} ravishes {name}'s lips with hunger. | {name}'s body flushes hot; shyly, she winds arms around his neck.",
+    "the {guest} brushes her lips teasingly... | {name} shivers, tilting her head eagerly.",
+    "the {guest} captures her mouth in a passionate kiss... | {name} kisses back shyly yet urgently, body trembling.",
+    "The guest claims {name}'s mouth forcefully. | {name} whimpers and parts her lips further.",
+    "The {guest} trails kisses along {name}'s neck. | {name} tilts her head submissively, pulse racing under his lips."
+   ],
+   "touch:lips:lean:1": [
+    "The {guest} captures {name}'s lips with a hungry kiss. | {name} melts, opening her mouth, craving more.",
+    "The {guest} pulls {name} close by her waist as he kisses her deeply. | {name} arches against him, desire stirring within her.",
+    "The {guest} claims {name}'s mouth in a dominating, passionate liplock. | {name} whimpers softly, surrendering to the intense kiss.",
+    "The {guest} grips the back of {name}'s neck, drawing her into an aggressive kiss. | {name} shivers, wrapping her arms around him, yearning for more.",
+    "The {guest} seizes the opportunity to shove his tongue into {name}'s mouth. | {name}'s body trembles with lust as their tongues entwine.",
+    "The {guest} captures {name}'s mouth in a hungry kiss. | {name} moaned softly, tongue eagerly tangling with his.",
+    "The {guest} kisses {name} deeply and passionately. | {name} melts into the kiss, craving more of his touch.",
+    "The {guest} forces his tongue into {name}'s mouth, dominating her. | {name} submits, a moan escaping her as she parts her lips further.",
+    "The {guest} licks the seam of {name}'s closed lips demandingly. | {name} gasps softly, opening her mouth and inviting him inside greedily.",
+    "The guest goes in to claim {name}'s mouth... | {name} parts her lips eagerly..."
+   ],
+   "touch:lips:lean:2": [
+    "The {guest} crashes his lips against {name}'s! | {name} moans into his mouth, pressing close!",
+    "The {guest} roughly kisses {name}, pinning her down. | {name} thrashes underneath him, tears stinging eyes - unwanted lust boiling over.",
+    "The guest claims {name}'s mouth with a forceful kiss. | {name} melts into his dominant embrace, craving more of his tongue invading hers.",
+    "The guest grips {name}'s hips, pulling her flush against him as he kisses her hard. | {name} arches wantonly, grinding herself on him, panting into the lewd liplock.",
+    "The guest reaches down to grope {name}'s ass roughly as he kisses her breathless. | {name} moans shamelessly into his mouth, pushing her rear back into his groping hand.",
+    "The guest thrusts his tongue deep, fucking {name}'s mouth obscenely. | {name} takes it eagerly, suckling his invading muscle, lost in depraved passion for more.",
+    "the {guest} traces {name}'s full lips teasingly! | {name} chases his touch, hungry for that kiss!",
+    "the {guest} ravishes {name}'s neck hungrily kissing. | {name} throws head back offering more, breathless moans.",
+    "the {guest} goes in to capture {name}'s lips roughly. | {name} melts against him, kissing back fiercely.",
+    "The {guest}'s tongue invades her mouth. | {name} moans shamelessly around his probing muscle."
+   ],
+   "touch:lips:slap:0": [
+    "Boldly, the {guest} grips {name}'s hips, pulls her close to claim her mouth. | {name} stiffens, then shoves him back forcefully.",
+    "The {guest} goes in to capture {name}'s lips... | {name} swiftly slaps his wrist - \"Unhand me, sir!\"",
+    "The guest leans in, captures {name}'s mouth in an aggressive kiss. | {name} SLAP! Pushes him hard. \"...how dare you!?",
+    "The guest lunges, aiming for her lips. | {name} swiftly smacks his hand, blushing hotly.",
+    "The guest's hands dart out, trying to claim her mouth. | {name} deftly swats them away, cheeks aflame.",
+    "Boldly, the guest reaches up to capture her lips. | {name} bats his wandering hands aside, flustered.",
+    "The {guest} leans in to capture {name}'s lips. | {name} swiftly smacks his hand away, blush spreading."
+   ],
+   "touch:lips:slap:1": [
+    "The guest leans in fast, aiming for {name}'s lips. | {name} swiftly slaps his wrist, frowning.",
+    "The guest surprises {name}, moving to capture her lips. | {name} jerks back and smacks his reaching hand.",
+    "The {guest} puckers up, going for the innkeeper's mouth. | {name} swats his advance aside firmly, crossing arms... \"Not a kissin' kind of gal.\"",
+    "The {guest} leans in to capture {name}'s lips! | {name} swiftly slaps his hand away!",
+    "The {guest} pursues {name}'s mouth eagerly as she dodges! | {name} swats his hands away again and again! \"...So crude, learn restraint!\"",
+    "The guest lunges, aiming for {name}'s lips. | {name} swiftly swats his hand aside. \"Uh uh, none of that!\"",
+    "The guest tries to catch {name}'s mouth with his own. | Quick as a flash, {name} deflects him with a sharp slap. \"I've told you, no kisses!\"",
+    "The {guest} licks lips, moves in quick... | {name} shoves him back, scowls fiercely! \"Not on your life!\""
+   ],
+   "touch:lips:slap:2": [
+    "The {guest} lunges to plant a wet smooch on {name}'s lips. | {name} swiftly swats his wandering mitt away.",
+    "The {guest} makes a bold grab for {name}, aiming straight for puckered lips. | {name} firmly rejects him with a sharp smack of his arm.",
+    "The {guest} leans in, aiming for {name}'s mouth. | {name} swats his hand away hard. \"...Get your filthy mitts off me!\"",
+    "The {guest} tries to catch her lips, quick-like. | {name} swats him away, nose wrinkling. \"...Dirty dog.\"",
+    "The guest lunges, aiming for {name}'s mouth. | {name} swiftly slaps his wrist, breaking the attempt.",
+    "Brazenly, guest chases her lips as she moves away. | {name} swats his hands down, keeping distance.",
+    "The {guest} lunges forward to claim {name}'s lips! | {name} forcefully swats his hands aside!",
+    "The {guest} leans in for a deep kiss. | {name} swiftly smacks his wrist. \"...Keep your hands to yourself!\"",
+    "The {guest} tries to capture her lips. | {name} firmly slaps his grasping hand away... \"...I'm not some tavern wench.\""
+   ],
+   "touch:lips:pull:0": [
+    "The {guest} lunges forward, trying to steal a kiss! | {name} swiftly pushes against his chest, halting him.",
+    "The {guest} lunges forward mouth open. | {name} jerks head back, cheeks flushed.",
+    "The {guest} goes in to kiss {name} on the lips. | {name} turns her head away sharply refusing his advance. \"...Not ready for that.\""
+   ],
+   "touch:lips:pull:1": [
+    "The {guest} leans in to capture {name}'s lips. | {name} turns her head sharply, pulling back. \"...Not tonight.\"",
+    "The {guest} reaches up to claim {name}'s mouth. | {name} jerks away, cheeks flushed. \"I said, no kissing.\"",
+    "The {guest} aims his mouth at hers urgently. | {name} deftly dodges, eyes narrowing. \"...Keep your distance.\"",
+    "The {guest}'s mouth seeks to claim {name}'s as he lunges forward. | {name} deftly sidesteps, leaving him kissing air.",
+    "The {guest} lunges to capture {name}'s lips. | {name} jerks head aside - \"Not so fast!\""
+   ],
+   "touch:lips:pull:2": [
+    "The {guest} lunges, aiming for {name}'s mouth... | {name} jerks back, breaking the kiss attempt.",
+    "The {guest} pounces, trying to catch {name}'s lips... | {name} leans away, leaving him empty-mouthed.",
+    "The guest leans in, aiming his mouth at hers hungrily. | {name} jerks her face aside, avoiding his eager lips.",
+    "The {guest}, emboldened by drink, leans in for a sloppy kiss. | {name}, revolted, turns her face away sharply."
+   ],
+   "touch:neck:allow:0": [
+    "The {guest} traces his tongue along {name}'s neck. | {name} shivers, eyes fluttering shut as he explores her sensitive skin.",
+    "The {guest} nips at her throat while fondling her breast through her dress. | {name} bites her lip, suppressing a moan, body trembling from the dual stimulation.",
+    "The {guest} plants hot kisses on {name}'s neck. | {name} shivers, skin tingling, as unaccustomed pleasure courses through her.",
+    "The {guest} kisses {name}'s neck softly. | {name} shivers slightly, letting it linger...",
+    "The {guest} licks a hot stripe up {name}'s slender throat. | {name} tilts her head, granting him access unconsciously.",
+    "The {guest} scrapes teeth along {name}'s sensitive neck. | {name} gasps softly, arousal starting to build within her.",
+    "The guest's lips brush {name}'s neck. | {name}'s breath hitches... skin tingles with unfamiliar touch.",
+    "The guest plants a firm kiss on {name}'s throat. | {name} swallows hard, pulse racing beneath his lips.",
+    "The guest traces the curve of {name}'s neck with kissing. | {name}'s knees weaken slightly as she tries to stay composed.",
+    "The guest sucks gently at {name}'s neck. | {name} bites her lip, suppressing a soft moan that threatens to escape."
+   ],
+   "touch:neck:allow:1": [
+    "The {guest} nibbles {name}'s neck. | {name} tilts head, sighs...",
+    "The {guest} sucks on {name}'s neck... | {name} tilts head submissively...",
+    "The {guest} traces lips along {name}'s neck. | {name} shivers, tilts head to bare neck.",
+    "The {guest} nuzzles {name}'s throat, inhaling deeply. | {name} sighs softly as he explores.",
+    "The {guest} trails kisses along {name}'s neck. | {name} tilts head, letting him explore...",
+    "The {guest} nibbles at {name}'s throat. | {name} shivers, pulse quickening.",
+    "The {guest} sucks on {name}'s neck possessively. | {name} whimpers, desire building.",
+    "The {guest} nibbles on {name}'s neck! | {name} shivers in delight...",
+    "The {guest} licks {name}'s throat slowly! | {name} tilts her head, letting him...",
+    "The {guest}'s mouth trails down {name}'s neck! | {name}'s breath catches... She tingles all over!"
+   ],
+   "touch:neck:allow:2": [
+    "The {guest} sucks hard on {name}'s neck. | {name} arches her back, moaning quietly, lost in sensation...",
+    "The {guest} bites {name}'s neck roughly. | {name} gasps sharply... but presses closer, craving more.",
+    "The {guest} licks a stripe up {name}'s neck. | {name} shivers, tilting her head submissively...",
+    "The {guest} scrapes teeth along {name}'s throat. | {name} writhes subtly, an animalistic hunger growing between her thighs.",
+    "The {guest} sucks hard on {name}'s neck! | {name} moans loudly... leaving a mark, yes!",
+    "The {guest} bites {name}'s neck roughly! | {name} gasps... more, please!",
+    "The {guest}'s tongue trails up {name}'s neck! | {name} shivers... oh fuck yes!",
+    "The {guest} licks along {name}'s neck. | {name} shivers, tilting her head.",
+    "The {guest}'s lips travel down {name}'s throat. | {name} arches subtly, craving more.",
+    "The {guest} suckles {name}'s neck hard. | {name} grips the bar, knees weak."
+   ],
+   "touch:neck:lean:0": [
+    "The {guest} suckles {name}'s neck, leaving mark. | {name} gasps quietly, pulse races.",
+    "The {guest} kisses {name}'s neck more insistently. | {name} shivers, tilting head to give access...",
+    "{guest}'s lips trail down {name}'s neck as his hands grip her hips. | {name}'s breath catches, body melting against his.",
+    "{guest} lavishes attention on {name}'s sensitive neck, making her weak. | {name}'s knees tremble slightly, needing support from his touch.",
+    "the {guest}'s mouth trails down {name}'s throat. | {name} tilts head back submissively.",
+    "the {guest} bites down gently where neck meets shoulder. | {name} whimpers softly in delight, pushing hips forward instinctively.",
+    "The guest's lips brush {name}'s neck. | {name} shivers, leaning in, craving more...",
+    "The guest plants firm kisses on {name}'s neck. | {name} arches, pulse quickening, desire igniting.",
+    "The guest sucks hard on {name}'s neck. | {name} gasps, head lolling back, losing herself.",
+    "The {guest} traces lips along {name}'s neck. | {name} shivers, tilting head to expose more."
+   ],
+   "touch:neck:lean:1": [
+    "The {guest} traces tongue along {name}'s neck. | {name} arches back in delight.",
+    "The {guest}'s lips caress {name}'s throat. | {name} shivers, craving more touch.",
+    "The {guest} plants hot kisses on {name}'s neck. | {name} arches, pushing her neck towards his lips, craving more contact.",
+    "The {guest}'s mouth trails along {name}'s throat, his teeth grazing her skin. | {name} shivers, tilting her head to give him better access, desire pooling in her belly.",
+    "Wet, open-mouthed kisses cover {name}'s neck as the {guest}'s hands grip her waist. | {name} melts against him, panting softly, aching for his touch elsewhere.",
+    "The {guest} kisses and sucks {name}'s neck fiercely. | {name} shivers, tilting her head submissively.",
+    "The {guest} traces tongue along {name}'s neck to ear. | {name} whimpers softly in arousal.",
+    "The {guest} bites {name}'s neck possessively. | {name} gasps and arches her back.",
+    "The {guest} traces his tongue along {name}'s neck. | {name} tilts her head, craving more contact.",
+    "The {guest}'s hands grip {name}'s hips possessively as he kisses her neck. | {name} grinds subtly against him, enflamed by his touch."
+   ],
+   "touch:neck:lean:2": [
+    "The {guest} sucks hard on {name}'s neck! | {name} arches in pleasure, moaning...",
+    "The {guest} bites {name}'s neck hungrily! | {name} gasps, skin prickling with lust!",
+    "The {guest} licks a slow stripe up {name}'s throat! | {name} shivers, craving more!",
+    "The {guest} marks {name}'s neck with rough kisses! | {name} throbs, surrendering fully!",
+    "{guest} suckles on {name}'s neck gently. | {name} arches in delight, skin tingling with pleasure.",
+    "The guest sucks hard on {name}'s neck, marking her skin. | {name} arches, craving his mouth, aching for him to claim every inch of her.",
+    "The guest laves his tongue along {name}'s neck in long, greedy licks. | A shameless moan escapes {name}, pulse pounding wildly under his lips.",
+    "The guest sucks hard on {name}'s neck. | {name} arches her back, craving his mouth.",
+    "The {guest} bites {name}'s neck gently. | {name} gasps and tilts her head, giving him better access...",
+    "The {guest} licks a stripe up {name}'s throat. | {name} shivers and grips his shoulders, urging him on..."
+   ],
+   "touch:neck:slap:0": [
+    "The {guest} kisses {name}'s neck passionately. | {name} slaps his hand hard against her skin. \"...Unhand me!\"",
+    "The {guest} kisses {name}'s neck passionately. | {name} slaps their hand away and blushes intensely... \"I'm not that kind of girl...\"",
+    "While {name}'s hands are full pouring ale, the {guest} plants a kiss on her neck. | {name} spills some beer in startlement, then swats the {guest}'s hand away, sputtering...",
+    "The {guest} plants kisses along {name}'s neck. | {name} slaps their hand away and blushes deeply, stammering, \"Not so bold...\"",
+    "The {guest} plants a kiss on {name}'s neck. | {name} recoils and slaps hand away. \"...t-too fast...\""
+   ],
+   "touch:neck:slap:1": [
+    "the {guest} plants kisses on {name}'s neck. | {name} slaps his wandering hand away.",
+    "the {guest} nibbles {name}'s neck while groping. | {name} bats his hand forcefully - \"No touching!\"",
+    "the {guest} licks up {name}'s neck to her ear. | {name} roughly shoves him back, glaring.",
+    "the {guest}, drunk, sloppily smooches her neck. | {name}, annoyed, smacks his grabby paws.",
+    "The {guest} plants sloppy kisses on {name}'s neck. | {name} roughly slaps his wandering hand away.",
+    "The {guest} licks a hot trail along {name}'s neck. | {name} sharply smacks his palm away, narrowing eyes.",
+    "The {guest} plants sensual kisses on {name}'s neck. | {name} roughly slaps his hand away, scowling. \"...This ain't that kinda tavern...\"",
+    "The {guest} pecks {name}'s neck softly. | {name} swats his lips away. \"No pawing!\"",
+    "The {guest} traces {name}'s neck with lips. | {name} swats hand firmly. \"Naughty boy...\""
+   ],
+   "touch:neck:slap:2": [
+    "The {guest} plants sloppy kisses on {name}'s neck. | {name} shoves them back, scowling... \"Keep your filthy lips to yourself!\"",
+    "the {guest} bites {name}'s neck roughly! | {name} gasps sharply, then shoves him away!",
+    "The guest runs tongue along {name}'s neck. | {name} jerks head and slaps wrist hard!",
+    "The {guest} mouths {name}'s neck hungrily! | {name} swats his lips away, panting!",
+    "The {guest} laves {name}'s throat with wet kisses! | {name} bat away his roaming mouth, flustered...",
+    "The {guest} tongue-fucks {name}'s neck crease! | {name} shoves him back, chest heaving!"
+   ],
+   "touch:neck:pull:0": [
+    "The {guest} plants hungry kisses on {name}'s slender neck. | {name} gasps and squirms away from the wet smooches.",
+    "The {guest} licks {name}'s neck sensually. | {name} flushes crimson, pulls away quickly. \"...Overwhelmed, innocent...\"",
+    "The {guest} presses his lips on {name}'s neck. | {name} jerks back blushing profusely...",
+    "The {guest} kisses {name}'s neck. | {name} yelps softly and pulls away. \"...too forward!\"",
+    "The {guest} plants a kiss on {name}'s neck. | {name} flushes, pushing him back gently. \"...not like that, I'm shy!\"",
+    "The {guest} presses his lips to {name}'s neck. | {name} gasps, heart pounding as she withdraws. \"...it's all happening too fast...\"",
+    "The {guest} mouths at {name}'s neck sensually. | {name}, flustered, turns her face away. \"...oh dear, this is moving rather quickly...\""
+   ],
+   "touch:neck:pull:1": [
+    "Teeth graze {name}'s throat as the {guest} nibbles. | {name} stiffens and wriggles free of the grasp. \"...uncomfortable...\"",
+    "The guest presses hungry lips to {name}'s neck. | {name} jerks back, heart pounding.",
+    "The guest's lips brush {name}'s neck... | {name} turns away coolly.",
+    "the {guest} plants sensual kisses on {name}'s neck. | {name} recoils and turns away sharply.",
+    "the {guest} nuzzles into {name}'s neck, kissing hungrily. | {name} jerks back firmly, flushed.",
+    "the {guest} trails lips along {name}'s throat, then kisses deeply. | {name} pulls away abruptly, catching breath.",
+    "The {guest} nuzzles {name}'s neck. | {name} turns away, flushed."
+   ],
+   "touch:neck:pull:2": [
+    "The guest suckles on {name}'s neck. | {name} shoves him away... \"Not here!\"",
+    "The {guest} runs tongue along {name}'s neck. | {name} jerks head back, scowling.",
+    "{guest} nibbles {name}'s earlobe while kissing neck. | {name} shivers but pulls away sharply.",
+    "The guest forces his tongue down {name}'s throat! | {name} chokes... she violently shoves him!",
+    "The {guest} licks {name}'s neck. | {name} jerks away.",
+    "The {guest} plants hot kisses on {name}'s neck. | {name} jerks away, heart pounding.",
+    "The {guest} licks and sucks at {name}'s throat. | {name} staggers back, skin tingling yet repelled.",
+    "The guest licks up {name}'s neck. | {name} jerks away and scowls, \"Keep your tongue in your mouth!\""
+   ],
+   "touch:thigh:allow:0": [
+    "The {guest} traces fingers along {name}'s inner thigh. | {name} trembles slightly but doesn't resist.",
+    "The {guest} strokes the soft flesh of {name}'s bare thigh as her skirt rides up. | {name} bites lip nervously, skin tingling from touch.",
+    "The {guest} gropes the flesh above the stockings encasing {name}'s legs. | {name} bites her lip, face flushed but unresisting."
+   ],
+   "touch:thigh:allow:1": [
+    "The {guest} traces fingers along inner thigh... | {name}'s breath hitches; legs part slightly.",
+    "The {guest} slowly caresses {name}'s inner thigh. | {name} uncrosses her legs, allowing access.",
+    "The {guest} slides a lewd hand high on {name}'s inner thigh under the table. | {name} shifts legs apart, pulse quickening, letting his touch roam freely now.",
+    "The {guest} traces fingertips along {name}'s inner thigh... | {name} parts legs slightly...",
+    "The {guest} slides a hand up {name}'s thigh under the table. | {name} shifts, letting his hand wander higher.",
+    "The {guest} strokes along the inseam of {name}'s leg, fingertips grazing her inner thigh. | {name} suppresses a shudder, thighs parting slightly.",
+    "The {guest} slides his rough hand along {name}'s inner thigh. | {name} parts her legs slightly, letting him explore further."
+   ],
+   "touch:thigh:allow:2": [
+    "The {guest} fondles {name}'s inner thigh. | {name} shivers and bites lip.",
+    "The {guest} fingers {name}'s inner thigh, moving upwards. | {name} bites her lip... spreading her legs slightly.",
+    "The {guest} traces fingers along {name}'s inner thigh under her skirt. | {name} shivers, thighs parting slightly..."
+   ],
+   "touch:thigh:lean:0": [
+    "The {guest} slides a hand up {name}'s thigh under the table. | {name} trembles, leaning slightly towards his touch, pulse quickening.",
+    "The {guest} runs his fingers along the inner curve of {name}'s leg. | {name} inhales sharply, shifting subtly to give him access.",
+    "The {guest} slides a brazen hand along {name}'s inner thigh! | {name} shivers, pressing closer, craving bolder touches!",
+    "The {guest} boldly caresses {name}'s quivering thigh higher! | {name} bites her lip, panties dampening as arousal builds!",
+    "The {guest} traces fingertips along {name}'s inner thigh. | {name}'s breath hitches as she subtly parts legs.",
+    "the {guest} slides a hand up {name}'s inner thigh... | {name} shivers, leaning into his touch as heat rushes through her.",
+    "the {guest} boldly strokes higher on {name}'s quivering thigh... | {name} bites her lip and arches subtly, desire building fast."
+   ],
+   "touch:thigh:lean:1": [
+    "the {guest} traces fingers along {name}'s inner thigh... | {name} shivers, spreading legs further apart.",
+    "the {guest}'s rough palm kneads her supple thigh muscle... | {name} arches subtly, silently begging for more intimate touch.",
+    "The {guest} slides a rough hand up {name}'s thigh under the table. | {name} parts her legs slightly, leaning into his touch.",
+    "The {guest} slides a rough hand up {name}'s thigh under the table. | {name} bites her lip and spreads her legs wider, craving his touch.",
+    "The {guest} boldly cups between {name}'s legs under her skirt. | {name} gasps softly and grinds against his hand, too far gone to care about propriety.",
+    "The {guest} traces fingers along {name}'s inner thigh under the table. | {name} trembles slightly, parting her legs just enough to invite more.",
+    "The {guest} slides his rough hand up {name}'s thigh under the table. | {name} slowly parts her legs, encouraging him. ...Her skin tingles, aching for more.",
+    "The {guest} boldly runs his palm along {name}'s inner thigh as she passes by. | {name} wobbles slightly and bites her lip... Desiring his touch again.",
+    "The {guest} sneakily slides fingers higher on {name}'s thigh while refilling her mug. | {name} shifts on her feet and meets his heated gaze... Wanting him to be bolder.",
+    "The {guest} firmly grips {name}'s thigh near her hip, leaning in close. | {name} arches subtly and whispers breathily, \"More...\" ...Burning up from his touch."
+   ],
+   "touch:thigh:lean:2": [
+    "The {guest} slides a hand up {name}'s thigh under the table. | {name} spreads her legs slightly, leaning in hungrily.",
+    "The {guest} strokes {name}'s inner thigh as she refills his mug. | {name} trembles, biting her lip, craving more contact.",
+    "The {guest} slips his fingers between {name}'s thighs, caressing lightly. | {name} inhales sharply, eyes fluttering closed in wanton need.",
+    "The {guest} slides a calloused palm along {name}'s inner thigh, pushing fabric aside! | {name} trembles and parts her legs further!",
+    "The {guest} slides his rough hand along {name}'s inner thigh. | {name} quivers and parts her legs further in wanton invitation.",
+    "Reaching the apex of her thighs, the {guest} applies pressure, rubbing firm circles. | Moaning unabashedly, {name} widens her stance, craving more intense stimulation.",
+    "The {guest} traces his fingers along {name}'s inner thigh. | {name} spreads her legs wider, shamelessly inviting further exploration.",
+    "The {guest} grips the soft flesh of {name}'s leg possessively. | {name} shivers and bites her lip, loving his aggressive touch."
+   ],
+   "touch:thigh:slap:0": [
+    "The guest's fingers slide along {name}'s inner thigh. | {name} swiftly smacks his wrist. \"...Too forward!\"",
+    "The {guest} slides a rough hand along {name}'s stocking-clad thigh under the table. | {name} firmly slaps the {guest}'s wandering hand and shoots them a stern glare.",
+    "The guest's rough hand slides along {name}'s inner thigh. | {name} slaps his wrist firmly, \"Uh-uh, none of that!\"",
+    "The guest squeezes {name}'s thigh as he leans in too close. | {name}, flustered, smacks his hand away. \"Back off!\"",
+    "The {guest} slides his calloused hand along her inner thigh, under her skirt. | {name}, startled, swiftly swats it away and clutches at her hem.",
+    "The {guest} runs a finger along {name}'s inner thigh. | {name} slaps his wrist sharply, cheeks flushed."
+   ],
+   "touch:thigh:slap:1": [
+    "the {guest} slides a greedy hand along {name}'s inner thigh. | {name} SLAPS his wandering hand, shoots him a stern glare. \"Not on offer tonight.\"",
+    "Brazen guest slides palm high on {name}'s quivering thigh. | {name} SLAPS his hand sharply, grits teeth... \"Keep 'em above my knees!\"",
+    "The {guest} boldly strokes {name}'s thigh as she leans over. | {name} SLAPS his hand away HARD. \"...Keep your paws above the bar!\"",
+    "The {guest} slides a calloused hand along {name}'s outer thigh. | {name} SLAPS his wandering hand forcefully. \"...Not on me, bucko.\"",
+    "The {guest}'s hand creeps along {name}'s stockinged thigh. | {name} knocks it away forcefully. \"...Keep your hands to yourself!\"",
+    "Brazenly, the {guest} strokes {name}'s inner thigh. | {name}, flustered, shoves his hand aside. \"I meant it, no groping allowed!\""
+   ],
+   "touch:thigh:slap:2": [
+    "The {guest} runs a bold finger along {name}'s inner thigh! | {name} SLAPS IT AWAY hard! \"Keep your filthy hands to yourself!\"",
+    "The {guest} traces fingers along {name}'s inner thigh. | {name} smacks his hand hard, scowling.",
+    "The {guest} squeezes the supple curve of {name}'s thigh. | {name} sharply slap his wrist. \"...Keep your hands to yourself!\"",
+    "The {guest} runs hand along inner thigh of {name}. | {name} swats hand away hard; eyes flash warning."
+   ],
+   "touch:thigh:pull:0": [
+    "The {guest} slides a calloused hand along {name}'s soft inner thigh. | {name} jerks away, cheeks flushing crimson."
+   ],
+   "touch:thigh:pull:1": [
+    "the {guest} runs fingers along {name}'s inner thigh. | {name} jerks leg away, glaring.",
+    "the {guest} strokes thigh slowly towards groin area. | {name} clenches legs, leans back, puts space between them."
+   ],
+   "touch:thigh:pull:2": [
+    "The {guest} strokes {name}'s inner thigh. | {name} snatches his wrist, yanks hand away.",
+    "The guest runs a bold hand along {name}'s inner thigh... | {name} abruptly stands up, pulling away."
+   ],
+   "touch:clothes:allow:0": [
+    "The {guest} yanks open {name}'s bodice!",
+    "The {guest} reaches under {name}'s skirt to grope!",
+    "The {guest} tears open {name}'s dress at the shoulder!",
+    "the {guest} yanks {name}'s bodice laces loose. | {name} blushes hotly but makes no move to stop him.",
+    "the {guest} tears off {name}'s apron, exposing her legs. | {name}, flushed, hesitates before letting it fall.",
+    "the {guest} reaches for the hem of {name}'s dress. | {name}, heart pounding, allows him to grasp the fabric.",
+    "the {guest} strips off {name}'s headscarf, freeing her hair. | {name}, shyly, doesn't resist as locks tumble down her back.",
+    "The {guest} fumbles with {name}'s bodice strings! | {name} blushes furiously as it loosens.",
+    "The {guest} yanks on {name}'s apron straps! | {name} hesitates then allows the garment to slip off.",
+    "The {guest} grips the hem of {name}'s dress! | {name} swallows nervously and permits it to ride up slightly."
+   ],
+   "touch:clothes:allow:1": [
+    "The guest tugs down {name}'s skirt, revealing her lacy panties already damp with arousal. | {name} gasps, kicking the fabric away and standing bare before the eager guest.",
+    "The {guest} rips open {name}'s blouse! | {name} shivers as her breasts bounce free...",
+    "The {guest} yanks down {name}'s skirt! | {name} stumbles slightly, letting it fall... now wearing only a thin slip.",
+    "The {guest} removes {name}'s garter belt! | {name} quivers, the last barriers removed...",
+    "The {guest} tears open {name}'s blouse! | {name} shivers as cool air hits her breasts.",
+    "The {guest} yanks down {name}'s skirt! | {name} gasps... exposing lacy panties.",
+    "The {guest} strips {name} bare! | {name}'s body tingles with lustful anticipation!",
+    "The {guest} fumbles with {name}'s bodice strings. | {name} assists him with shaking hands.",
+    "The {guest} tugs at {name}'s corset laces. | {name} takes deep breaths as it loosens.",
+    "the {guest} yanks {name}'s bodice open. | {name} shivers as cold air hits her exposed breasts."
+   ],
+   "touch:clothes:allow:2": [
+    "The guest rips open {name}'s shirt. | Buttons fly; {name} shivers, top exposed.",
+    "the {guest} rips open {name}'s bodice! | {name} shivers... her breasts spill free.",
+    "the {guest} yanks down {name}'s skirt! | {name} kicks it away naked... she moans needily.",
+    "The {guest} rips open {name}'s bodice! | {name} allows her breasts to spill out.",
+    "The {guest} tears off {name}'s apron! | {name} bares herself completely without shame.",
+    "The {guest} strips {name} naked in front of all! | {name} revels in the attention, untroubled.",
+    "The {guest} rips open {name}'s blouse exposing her bra. | {name} shivers in anticipation, letting him...",
+    "The {guest} bunches her skirt around her hips. | {name} spreads legs wantonly revealing glistening pussy, the musky scent filling the air.",
+    "The {guest} rips open {name}'s blouse! | {name} shrugs it off completely... eager for more touches.",
+    "The {guest} yanks down {name}'s skirt! | {name} kicks it away... now clad in just lace panties."
+   ],
+   "touch:clothes:lean:0": [
+    "The {guest} yanks on {name}'s bodice laces! | {name} arches her back, letting him tug...",
+    "The {guest} pulls up {name}'s skirt! | {name} shivers as cool air hits her thighs!",
+    "The {guest} fumbles with {name}'s blouse fastenings! | {name} assists him shyly, heart pounding!",
+    "The {guest} tries to remove {name}'s apron! | {name} helps him remove it, biting lip!",
+    "The {guest} fumbles with {name}'s bodice laces! | {name} arches her back, presenting more of herself.",
+    "The {guest} tugs {name}'s skirt hem upwards! | {name} trembles, allowing easier access to her legs.",
+    "The {guest} rips open {name}'s bodice laces! | {name} gasps, arching her back... craving his touch!",
+    "The {guest} tugs down {name}'s skirt straps! | {name} shivers, letting fabric pool... exposing creamy shoulders!",
+    "The {guest} grips {name}'s blouse hem, yanking upwards! | {name} flushes hotly, allowing access to bare midriff!",
+    "The {guest} kneads the flesh beneath {name}'s apron! | {name} bites lip, pressing hips forward eagerly!"
+   ],
+   "touch:clothes:lean:1": [
+    "The guest fumbles with {name}'s blouse laces! | {name} arches her back... buttons pop open!",
+    "The guest yanks on {name}'s apron strings! | {name} stumbles closer... let him pull her in!",
+    "The guest claws at {name}'s skirt hemline! | {name} trembles... hikes up the fabric herself!",
+    "The guest tears at {name}'s bodice ties! | {name} gasps... top slides down, revealing curves!",
+    "The {guest} rips open {name}'s blouse! | {name} arches her back... offering more.",
+    "The {guest} unzips {name}'s skirt slowly! | {name} bites her lip, eager!",
+    "The {guest} tugs down {name}'s bra straps! | {name} shivers, wanting to be touched!",
+    "The {guest} tugs at {name}'s blouse laces! | {name} arches her back... letting it loosens.",
+    "The {guest} rips open {name}'s bodice! | {name} gasps... full breasts spill out.",
+    "The {guest} yanks down {name}'s skirt zipper! | {name} shivers as cool air hits... she wiggles hips to help it along."
+   ],
+   "touch:clothes:lean:2": [
+    "The {guest} fumbles with {name}'s bodice laces! | {name} arches back, letting him struggle with it... she aches for him to just rip it open!",
+    "The {guest} grips {name}'s skirt hem! | {name} shivers, realizing he could easily yank it up high...",
+    "The {guest} fumbles with {name}'s blouse laces. | {name} arches her back, making access easier.",
+    "The {guest}'s hands roam up under {name}'s skirt hem. | {name} gasps, hips bucking slightly.",
+    "The {guest} tugs at {name}'s bodice, exposing cleavage. | {name} shivers, not resisting the exposure.",
+    "The {guest} unties {name}'s apron strings eagerly. | {name} presses close, assisting in its removal.",
+    "The {guest} rips open {name}'s blouse! | {name} arches her back, exposing herself...",
+    "The {guest} yanks down {name}'s skirt! | {name} kicks off the fabric eagerly.",
+    "The {guest} fumbles with {name}'s bodice laces! | {name} arches her back, giving easier access.",
+    "The {guest} tugs {name}'s skirt hem up her thighs! | {name} shimmies hips, helping the fabric ride up."
+   ],
+   "touch:clothes:slap:0": [
+    "The {guest} tugs at {name}'s apron strings. | {name} swiftly swats his hands away. \"...Patience, whippersnapper! Respect my boundaries.\"",
+    "the {guest} tugs at {name}'s apron strings. | {name} sharply slaps his wrist.",
+    "The {guest} grasps the collar of {name}'s blouse. | {name} swats his hand forcefully.",
+    "the {guest} fingers {name}'s waistband under her skirt. | {name} firmly smacks his knuckles.",
+    "the {guest} tries to unbutton {name}'s shirt. | {name} scolds \"Unhand me!\" as she shoves him back.",
+    "The {guest} reaches for the hem of {name}'s skirt. | {name} slaps his wrist and scolds \"...Don't be greedy!\"",
+    "The {guest} goes for the fastenings of {name}'s bodice. | {name} swats his fingers and huffs \"...Keep your paws to yourself!\"",
+    "the {guest} tugs at {name}'s apron string. | {name} swats his hand, blushing furiously.",
+    "the {guest} pulls at {name}'s skirt hemline. | {name} scolds under breath as she bats his hand, body tense.",
+    "The {guest} fumbles with {name}'s bodice strings! | {name} SLAPS HIM hard!"
+   ],
+   "touch:clothes:slap:1": [
+    "The guest pinches {name}'s skirt hem! | {name} slaps his fingers - \"Pawing like a tavern brat!\"",
+    "the {guest} tugs at {name}'s blouse laces! | {name} SLAPS! \"Keep yer hands off my tits!\"",
+    "The guest fumbles with {name}'s bodice laces! | {name} swats his hands, scowling!",
+    "The guest tugs at {name}'s skirt hem! | {name} slaps his wrist hard!",
+    "The guest grips {name}'s blouse collar! | {name} shoves him back roughly!",
+    "The guest yanks {name}'s apron strings! | {name} cuffs him upside the head!",
+    "The {guest} tugs at {name}'s bodice, trying to expose... | {name} cuffs the side of his head... \"Keep yer dirty mitts off me!\"",
+    "The {guest} fumbles with {name}'s shirt buttons! | {name} swiftly slaps hands away! \"...Keep your mitts to yourself!\"",
+    "The {guest} tugs at {name}'s blouse front. | {name} SLAPS his wrist. \"No touching!\"",
+    "The {guest} grabs for {name}'s skirt hem. | {name} SMACKS his fingers. \"Keep your hands to yourself!\""
+   ],
+   "touch:clothes:slap:2": [
+    "The {guest} yanks at {name}'s bodice laces! | {name} SLAP! Hand away, scowl. \"I'm running an inn, not a whorehouse!\"",
+    "The {guest} reaches for {name}'s skirt hem. | {name} SLAPS - Hand. Stops cold.",
+    "The {guest} rips open {name}'s blouse, exposing her breasts. | {name} slaps him hard, buttons flying. \"...You dare assault me?! Stop!\"",
+    "The {guest} rips open {name}'s blouse! | {name} SLAPS his hands HARD!",
+    "The {guest} reaches up under {name}'s skirt! | {name} GRITS her teeth & SLAPS his wrist!",
+    "the {guest} fumbles with {name}'s bodice! | {name} SLAPS his wrist!",
+    "the {guest} PINCHES {name}'s rear through clothes! | {name} SLAPS his cheek HARD! \"LEAVE OFF!\"",
+    "the {guest} roughly grabs {name}'s skirt hem and yanks upwards! | {name} SLAPS his wrist hard, eyes flashing angrily!",
+    "the {guest} reaches under {name}'s apron, grabbing her hip! | {name} HISSES like a cat, swats his hand away firmly!",
+    "the {guest} boldly lifts {name}'s blouse, exposing her waist! | {name} SLAPS his face red, shouting \"Keep your hands to yourself!\""
+   ],
+   "touch:clothes:pull:0": [
+    "the {guest} yanks {name}'s shirt hem up! | {name} swiftly pulls back, blushing profusely!",
+    "the {guest} fumbles with {name}'s apron strings! | {name} steps sideways, denying easy access!",
+    "the {guest} grabs {name}'s skirt and lifts it! | {name} gasps, firmly pushing his hand away!",
+    "The {guest} yanks at {name}'s apron strings! | {name} stumbles back - \"S-Steady on there...\"",
+    "The {guest} grabs {name}'s skirt hem and yanks upwards! | {name} gasps and tugs it back down, cheeks flushed!",
+    "The {guest} fumbles with {name}'s apron strings! | {name} blushes hotly and bats his hands away!",
+    "The {guest} pawing at {name}'s bodice laces! | {name} stumbles back, face scarlet, rejecting his advances!",
+    "The {guest} rips open {name}'s shirt buttons! | {name} gasps and crosses her arms, backing away.",
+    "The {guest} grabs at {name}'s apron strings! | {name} swiftly moves away... heart pounding!",
+    "the {guest} fumbles with {name}'s shirt laces! | {name} staggers back!"
+   ],
+   "touch:clothes:pull:1": [
+    "The guest yanks at {name}'s bodice laces! | {name} jerks back, clutching her top!",
+    "The {guest} fumbles with {name}'s bodice laces! | {name} jerks back sharply!",
+    "The {guest} yanks {name}'s skirt hem upwards! | {name} slaps hands away angrily!",
+    "The {guest} gropes under {name}'s apron strings! | {name} shoves him away hard!",
+    "The {guest} fumbles with {name}'s bodice laces! | {name} jerks backwards! \"No touching without asking!",
+    "The {guest} grips the hem of {name}'s skirt! | {name} yelps and wriggles free! \"Keep your hands to yourself!",
+    "The {guest} fumbles with {name}'s bodice laces. | {name} steps back sharply, clutching her chest.",
+    "The {guest} grips {name}'s skirt hem and tries to lift it. | {name} smacks his hands away and glare at him.",
+    "The {guest} grabs {name}'s shirt front to expose her cleavage. | {name} wrenches free of his grip and backs off.",
+    "The guest grabs {name}'s blouse collar. | {name} swiftly steps back, pulling her top tight."
+   ],
+   "touch:clothes:pull:2": [
+    "the {guest} rips at {name}'s blouse! | {name} staggers back, clutching the torn fabric!",
+    "The {guest} rips open {name}'s blouse buttons fly everywhere! | {name} gasps sharply - Pulls her blouse tight around herself!",
+    "the {guest} yanks at {name}'s bodice straps! | {name} jerks back... \"Unhand me, knave!\"",
+    "the {guest} grabs fistfuls of {name}'s skirt! | {name} wrenches away... \"I said, no!\"",
+    "the {guest} rips open {name}'s bodice strings! | {name} gasps, stumbles back.",
+    "The {guest} rips at {name}'s bodice straps! | {name} jerks back, face flushed!",
+    "The {guest} grabs {name}'s skirt hem and yanks up! | {name} slaps his hands away, cursing!",
+    "The {guest} gropes under {name}'s apron! | {name} snarls and shoves hard!"
+   ],
+   "touch:intimate:allow:0": [
+    "The {guest} cups {name}'s mound possessively. | {name}'s breath hitches, head lolling back.",
+    "The {guest} seeks out {name}'s slit with a fingertip. | {name} gasps, wetness growing as she yields.",
+    "The {guest} cups {name}'s mound possessively. | {name} bites her lip, thighs trembling slightly.",
+    "The {guest} slides his hand up {name}'s skirt! | {name} gasps... thighs quiver slightly as she allows it.",
+    "The {guest} runs his hand along {name}'s inner thigh under her skirt. | {name} shifts uncomfortably but makes no move to stop him, face flushed.",
+    "The {guest} slowly rubs two fingers along {name}'s slit over her panties. | {name} bites her lip hard, eyes widening but body stilling.",
+    "The {guest} slides a hand up {name}'s thigh under her skirt. | {name} inhales sharply but keeps her legs parted...",
+    "The {guest} cups {name}'s sex through her panties. | {name} bites her lip, feeling herself grow wet...",
+    "The {guest} slides hand up {name}'s skirt! | {name} quivers... her knees weaken."
+   ],
+   "touch:intimate:allow:1": [
+    "The guest slides hand up {name}'s skirt. | {name} parts her legs slightly, breath catching...",
+    "The {guest} cups {name}'s mound possessively... | {name} grinds against his palm, shameless in her arousal.",
+    "The {guest} cups {name}'s mound through her pants. | {name} arches slightly... not stopping him.",
+    "The {guest} traces {name}'s slit over fabric. | {name} bites lip as arousal builds...",
+    "The {guest} runs his fingers along {name}'s slit through her breeches. | {name} bites her lip and spreads her legs wider... allowing easy access.",
+    "The guest cups {name}'s mound through her pants! | {name} grinds subtly against his palm!",
+    "The guest rubs his fingers along {name}'s clothed slit! | {name}'s breath hitches as arousal builds!",
+    "The guest slides his hand up {name}'s skirt... | {name} parts her legs slightly...",
+    "The guest cups {name}'s mound possessively... | {name}'s hips twitch in response...",
+    "The guest strokes along her slit... | Moisture seeps through as {name} allows access..."
+   ],
+   "touch:intimate:allow:2": [
+    "The {guest} slides a hand up {name}'s skirt. | {name} spreads her legs wider.",
+    "The {guest} strokes {name}'s wet slit slowly. | {name} whimpers with wanton lust.",
+    "The {guest} slides his hand up {name}'s skirt. | {name} spreads her legs wider...",
+    "The {guest} fingers {name}'s clothed slit. | {name} grinds against his hand desperately.",
+    "The {guest} rubs {name}'s pussy roughly through drenched panties. | {name} throws her head back, moaning shamelessly.",
+    "The {guest} runs his fingers along {name}'s inner thigh under her skirt. | {name} parts her legs slightly, a shaky breath escaping her lips...",
+    "The {guest} cups {name}'s sex through her soaked panties. | {name} grinds against his palm discreetly, biting her lower lip.",
+    "The guest slides his hand up {name}'s skirt. | {name} spreads her legs wider, aching for his touch.",
+    "The {guest} runs a finger along {name}'s slit through her trousers. | {name} spreads legs wider... invites him deeper.",
+    "The {guest} cups {name}'s mound possessively. | {name} grinds against palm... aching for friction."
+   ],
+   "touch:intimate:lean:0": [
+    "the {guest} slides a rough hand up {name}'s skirt. | {name} trembles, instinctively spreading her legs slightly...",
+    "The {guest} cups {name}'s mound possessively. | {name}'s heart races as heat builds between her thighs.",
+    "The {guest} cups {name}'s sex possessively through her pants! | {name} arches into his hand, biting her lip to stifle a moan!",
+    "The {guest} rubs {name}'s clothed slit with a calloused thumb! | {name} whimpers, feeling herself grow wet as she grinds subtly against him!",
+    "The {guest} slides his hand up {name}'s skirt! | {name} gasps, legs parting slightly...",
+    "The {guest} cups {name}'s mound possessively! | {name} grinds against his palm... needing friction.",
+    "The {guest} rubs circles on {name}'s covered slit! | {name}'s eyes flutter shut... craving more pressure."
+   ],
+   "touch:intimate:lean:1": [
+    "The {guest} cups {name}'s mound possessively. | Moaning softly, {name} grinds into his palm, her arousal growing.",
+    "The guest cups {name}'s sex through her clothes. | {name} arches subtly, feeling herself grow damp with desire.",
+    "The guest strokes {name}'s clothed slit. | {name} bites her lip, suppressing a moan as she unconsciously grinds against his hand.",
+    "The guest delves under {name}'s skirt to her bare flesh. | {name} trembles and spreads wider, molten arousal dripping down her thighs.",
+    "The guest cups her mound possessively. | {name} lets out a soft moan, arching into his palm.",
+    "The {guest} cups {name}'s mound possessively! | {name} grinds subtly against his palm, aching for more!",
+    "The {guest} slides his hand up {name}'s skirt. | {name} spreads her legs slightly, craving touch.",
+    "The {guest} cups {name}'s mound through her panties. | {name} grinds subtly against his hand, dampening the fabric.",
+    "The {guest} slides his hand up {name}'s skirt. | {name} spreads her legs wider...",
+    "the {guest} slips his hand up {name}'s skirt. | {name} parts her thighs slightly..."
+   ],
+   "touch:intimate:lean:2": [
+    "The {guest} probes between {name}'s legs under the table!",
+    "The {guest} slides a hand up {name}'s skirt! | {name} spreads her legs wider...",
+    "The {guest} cups her mound boldly! | {name} mewls and humps his palm!",
+    "The {guest} runs his fingers along {name}'s slit through her pants! | {name} grinds against his hand, panting softly!",
+    "The {guest} rubs {name}'s clothed mound vigorously! | {name} bites her lip hard, pressing into the friction desperately!",
+    "The {guest} slides a hand up {name}'s skirt. | {name} spreads her legs, craving his touch.",
+    "The {guest} fingers {name}'s pussy through soaked panties. | {name} grinds against his hand, panting.",
+    "The {guest} slides his hand up {name}'s skirt. | {name} spreads her legs wider..."
+   ],
+   "touch:intimate:slap:0": [
+    "The {guest} slides a hand up {name}'s skirt! | {name} SLAPS it away! \"...not like that!\"",
+    "The {guest} slides a hand up {name}'s skirt! | {name} SLAPS his hand away!",
+    "The {guest} cups {name}'s sex over panties! | {name} SLAPS his wrist hard, scowling!"
+   ],
+   "touch:intimate:slap:1": [
+    "The {guest} cups {name}'s mound possessively! | {name} bats his hand away angrily!",
+    "the {guest} presses two fingers against {name}'s clothed slit! | {name} smacks his fingers away forcefully!",
+    "The {guest} slides his hand up {name}'s skirt. | {name} slaps his wrist hard!",
+    "The guest reaches under {name}'s skirt and cups her bare mound. | {name} roughly bat away the intrusive hand. \"...Tch. You've got nerve!\"",
+    "The guest slides his hand up {name}'s skirt. | {name} SLAPS his wrist hard. \"Not without asking first, arse.\"",
+    "The {guest} slides a hand up {name}'s skirt! | {name} slaps his wrist hard!",
+    "The {guest} fingers {name}'s pussy through her clothes. | {name} bats his hand away. \"Not so fast...\"",
+    "The {guest} palms {name}'s mound boldly. | {name} smacks his wrist, glaring but flushed.",
+    "The {guest} slides hand under skirt, brushing folds directly. | {name} swats invading fingers hard, warning \"Tsk tsk...\"."
    ]
   }
  },

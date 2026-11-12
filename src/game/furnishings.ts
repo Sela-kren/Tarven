@@ -52,6 +52,10 @@ export const DESK_SPOT = new Vector3(10.15, 0, 1.82);
 /** Your journal, lying on the chest at the foot of the bed: read it to see how you stand. */
 export const JOURNAL_NAME = "Journal";
 export const JOURNAL_SPOT = new Vector3(10.08, 0, 0.08);
+/** Her bath, in the bedroom's south-west corner by the door, kept whole so it can be outlined. */
+export const BATH_NAME = "Bath";
+/** The middle of the bath, which she stands beside to wash. */
+export const BATH_SPOT = new Vector3(8.3, 0, 1.98);
 
 const WALL_HEIGHT = 3.2;
 const WALL = 0.4;
@@ -266,6 +270,55 @@ export function addBedroom(root: Object3D): void {
   desk.add(roll(1.39), linen).add(roll(1.34), plans);
   desk.add(new CylinderGeometry(0.05, 0.06, 0.09, 6).translate(9.62, 0.85, 2.2), m("T_iron"));
   desk.into(root);
+
+  addBath(root, m, linen);
+}
+
+/**
+ * A wooden bathtub along the south sill, iron-hooped like the wash tub, full of hot water with steam over it, a
+ * towel over its east end, a bucket for filling it, and a cake of soap on the rim.
+ */
+function addBath(root: Object3D, m: (name: string) => Material, towel: Material): void {
+  const water = flat("T_bathwater", 0x9fb4b4);
+  const steam = new MeshStandardMaterial({ name: "T_steam", color: 0xf2efe8, roughness: 1, transparent: true, opacity: 0.35, depthWrite: false });
+  const soap = flat("T_soap", 0xe9dcae);
+  const { x, z } = BATH_SPOT;
+  const [halfX, halfZ, height, wall] = [0.62, 0.32, 0.5, 0.05];
+  const [x0, x1, z0, z1] = [x - halfX, x + halfX, z - halfZ, z + halfZ];
+  const staves = { tile: 1.2, swap: true };
+  const bath = new Piece(BATH_NAME, true)
+    .add(box([x0, 0, z0], [x1, 0.06, z1]), m("T_wood"))
+    .add(box([x0, 0, z0], [x1, height, z0 + wall], staves), m("T_wood"))
+    .add(box([x0, 0, z1 - wall], [x1, height, z1], staves), m("T_wood"))
+    .add(box([x0, 0, z0], [x0 + wall, height + 0.12, z1], staves), m("T_wood"))
+    .add(box([x1 - wall, 0, z0], [x1, height + 0.05, z1], staves), m("T_wood"))
+    .add(box([x0 + wall, height - 0.1, z0 + wall], [x1 - wall, height - 0.08, z1 - wall]), water);
+  // Two iron hoops round it.
+  for (const y of [0.1, height - 0.12]) {
+    bath
+      .add(box([x0 - 0.012, y, z0 - 0.012], [x1 + 0.012, y + 0.04, z0]), m("T_iron"))
+      .add(box([x0 - 0.012, y, z1], [x1 + 0.012, y + 0.04, z1 + 0.012]), m("T_iron"))
+      .add(box([x0 - 0.012, y, z0], [x0, y + 0.04, z1]), m("T_iron"))
+      .add(box([x1, y, z0], [x1 + 0.012, y + 0.04, z1]), m("T_iron"));
+  }
+  // A towel hung over the east end, down both sides.
+  bath
+    .add(box([x1 - 0.07, height + 0.05, z - 0.14], [x1 + 0.02, height + 0.07, z + 0.14]), towel)
+    .add(box([x1 + 0.005, height - 0.22, z - 0.14], [x1 + 0.025, height + 0.06, z + 0.14]), towel)
+    .add(box([x1 - 0.075, height - 0.2, z - 0.14], [x1 - 0.055, height + 0.06, z + 0.14]), towel)
+    .add(box([x0 + 0.08, height + 0.12, z0 + 0.02], [x0 + 0.16, height + 0.15, z0 + 0.07]), soap);
+  // Steam lifting off the water.
+  for (const [dx, dz, size, lift] of [[-0.2, 0.02, 0.16, 0.12], [0.12, -0.06, 0.13, 0.2], [0.3, 0.08, 0.1, 0.3]]) {
+    bath.add(new CylinderGeometry(size, size * 1.3, 0.05, 7).translate(x + dx, height + lift, z + dz), steam);
+  }
+  // The bucket she fills it from, west of the desk.
+  const [bx, bz] = [x1 + 0.3, z + 0.12];
+  bath
+    .add(new CylinderGeometry(0.15, 0.12, 0.3, 9, 1, true).translate(bx, 0.15, bz), m("T_wood"))
+    .add(new CylinderGeometry(0.12, 0.12, 0.02, 9).translate(bx, 0.01, bz), m("T_wood"))
+    .add(new CylinderGeometry(0.14, 0.14, 0.02, 9).translate(bx, 0.24, bz), water)
+    .add(new CylinderGeometry(0.155, 0.155, 0.03, 9, 1, true).translate(bx, 0.25, bz), m("T_iron"));
+  bath.into(root);
 }
 
 /** A blue sheet with a white grid and the outline of a floor plan on it. */

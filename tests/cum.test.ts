@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Duel, type DuelArea, type DuelistStats } from "../src/game/duel";
 import { coatStages, spotFor } from "../src/game/cum";
+import { Tavern } from "../src/game/tavern";
 import { emptyMeters, newRecords, readProgress } from "../src/game/passives";
 import { setFlavorSource } from "../src/game/flavor";
 
@@ -108,5 +109,29 @@ describe("what shows on her", () => {
     expect(hands.Body).toBe(1);
     expect(hands.Arms).toBe(1);
     expect(hands.Hands).toBe(1);
+  });
+});
+
+describe("her bath", () => {
+  /** A tavern with these loads on her tonight. */
+  const coatedWith = (cum: Record<string, number>) => {
+    const t = new Tavern(11);
+    (t as unknown as { coated: Record<string, number> }).coated = { ...cum };
+    return t;
+  };
+
+  it("has nothing to wash off while she's clean", () => {
+    expect(new Tavern(11).prompt(0, { kind: "bath" })).toEqual({ label: "You're clean", actionable: false });
+  });
+
+  it("washes everything off her, but keeps her records", () => {
+    const t = coatedWith({ face: 20, ass: 30 });
+    expect(t.coatStages.Face).toBe(2);
+    expect(t.prompt(0, { kind: "bath" })?.actionable).toBe(true);
+    const loads = t.records.loads;
+    t.interact(0, { kind: "bath" });
+    expect(Object.values(t.coatStages).every((stage) => stage === 0)).toBe(true);
+    expect(t.records.loads).toBe(loads);
+    expect(t.prompt(0, { kind: "bath" })?.actionable).toBe(false);
   });
 });
