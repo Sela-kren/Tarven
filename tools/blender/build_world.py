@@ -1325,17 +1325,17 @@ def fitted_cap(skull, front, side, back, gap, bands=5, square=1.0, hairline_at=N
     return rings
 
 
-# The female head as it really is low down, measured off the built model: wider than SKULL at ear height,
-# where the ears stand out, and deeper at the back, where the skull bulges over the nape. Above that it is
-# SKULL. Only the pixie cut comes down this far, so only it uses this.
-PIXIE_SKULL = [(0.04, 0.066, 0.07, 0.1), (0.05, 0.069, 0.073, 0.11), (0.06, 0.074, 0.078, 0.104),
-               (0.07, 0.088, 0.08, 0.097), (0.08, 0.09, 0.081, 0.097), (0.09, 0.092, 0.082, 0.098),
-               (0.1, 0.084, 0.083, 0.098), (0.11, 0.083, 0.084, 0.097)] + SKULL["Female"][3:]
-# Where the pixie cut stops, round from the forehead to the nape: high in the middle of the forehead under the
-# fringe, dipping at the temples to a short sideburn in front of the ear, over the top of the ear, and tapering
-# down the back of the head to the nape.
-PIXIE_HAIRLINE = [(0, 0.168), (22.5, 0.16), (45, 0.128), (67.5, 0.072), (90, 0.086), (112.5, 0.082),
-                  (135, 0.066), (157.5, 0.05), (180, 0.045)]
+# The female head as it really is low down, measured off the built model: wider than SKULL at ear height, to
+# clear the ears (they reach 0.095 out, from 0.045 up to 0.095), and deeper at the back, where the skull bulges
+# over the nape. Above that it is SKULL. For the styles whose hair comes down over the ears.
+OVER_EARS_SKULL = [(0.04, 0.068, 0.07, 0.1), (0.05, 0.087, 0.073, 0.11), (0.06, 0.092, 0.078, 0.104),
+               (0.07, 0.095, 0.08, 0.097), (0.08, 0.097, 0.081, 0.097), (0.09, 0.099, 0.082, 0.098),
+               (0.1, 0.089, 0.083, 0.098), (0.11, 0.083, 0.084, 0.097)] + SKULL["Female"][3:]
+# Where hair over the ears stops, round from the forehead to the nape: high in the middle of the forehead under
+# the fringe, dipping at the temples to a sideburn in front of the ear, down over the ears to the lobes, and
+# tapering down the back of the head to the nape.
+OVER_EARS_HAIRLINE = [(0, 0.168), (22.5, 0.16), (45, 0.124), (67.5, 0.048), (90, 0.04), (112.5, 0.042),
+                  (135, 0.055), (157.5, 0.048), (180, 0.045)]
 
 
 def hair_curtain(levels, points=6):
@@ -1375,17 +1375,21 @@ def hair_styles(spec):
         return {
             # Short and close, with her side-swept fringe: down over the tops of her ears, a sideburn in front
             # of each, and tapered into the nape.
-            "Pixie": [fitted_cap(PIXIE_SKULL, 0.168, 0.1, 0.07, 0.016, bands=6, square=square,
-                                 hairline_at=PIXIE_HAIRLINE, edge_gap=0.005), fringe],
-            # Long and straight down her back, with a lock either side of the face.
+            "Pixie": [fitted_cap(OVER_EARS_SKULL, 0.168, 0.1, 0.07, 0.016, bands=6, square=square,
+                                 hairline_at=OVER_EARS_HAIRLINE, edge_gap=0.005), fringe],
+            # Long and straight down her back, with a lock either side of the face. The hair comes down over
+            # her ears, the curtain wraps round the sides of her head, and each lock is wide enough to meet it,
+            # so no skin shows between them.
             "Long": [
-                hair_cap(skull, 0.168, 0.1, 0.05, 0.016), fringe,
-                hair_curtain([(0.16, 0.07, -0.085, 0.02, 0.02), (0.1, 0.092, -0.112, 0.035, 0.025),
-                              (0.04, 0.097, -0.116, 0.04, 0.025), (-0.03, 0.097, -0.104, 0.03, 0.022),
-                              (-0.1, 0.1, -0.098, 0.022, 0.02), (-0.2, 0.1, -0.092, 0.018, 0.018),
-                              (-0.3, 0.09, -0.088, 0.015, 0.014), (-0.36, 0.07, -0.085, 0.01, 0.008)]),
-                *[hair_lock([(sx * 0.086, 0.015, 0.15, 0.014, 0.008), (sx * 0.099, 0.025, 0.08, 0.02, 0.009),
-                             (sx * 0.098, 0.028, 0.0, 0.019, 0.008), (sx * 0.09, 0.022, -0.07, 0.012, 0.005)])
+                fitted_cap(OVER_EARS_SKULL, 0.168, 0.1, 0.05, 0.016, bands=6, square=square,
+                           hairline_at=OVER_EARS_HAIRLINE, edge_gap=0.005), fringe,
+                hair_curtain([(0.16, 0.07, -0.085, 0.03, 0.02), (0.1, 0.098, -0.112, 0.07, 0.025),
+                              (0.04, 0.104, -0.116, 0.09, 0.025), (-0.03, 0.104, -0.104, 0.08, 0.022),
+                              (-0.1, 0.104, -0.098, 0.045, 0.02), (-0.2, 0.1, -0.092, 0.03, 0.018),
+                              (-0.3, 0.09, -0.088, 0.02, 0.014), (-0.36, 0.07, -0.085, 0.01, 0.008)]),
+                *[hair_lock([(sx * 0.086, 0.02, 0.15, 0.014, 0.006), (sx * 0.098, 0.01, 0.07, 0.028, 0.008),
+                             (sx * 0.104, 0.005, 0.0, 0.032, 0.01), (sx * 0.098, 0.0, -0.07, 0.026, 0.008),
+                             (sx * 0.092, -0.005, -0.13, 0.014, 0.005)])
                   for sx in (-1, 1)],
             ],
             # Tied high at the back of the head, hanging to the nape.
