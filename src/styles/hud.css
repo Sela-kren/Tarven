@@ -9,7 +9,7 @@
   pointer-events: none;
 }
 
-/* The controls, small in the bottom-right; the bottom-left is her status window. */
+/* The controls, small in the bottom-right, above her status strip. */
 #hud {
   right: 16px;
   bottom: 12px;
@@ -25,183 +25,506 @@ body.staging #clock {
   display: none;
 }
 
-/* ---------- Her status window, bottom-left, Karryn's Prison style ---------- */
+/* ---------- Her status strip along the bottom, Karryn's Prison style (statuscard.ts) ----------
+   Left to right: her face, desire as a row of hearts over a long pleasure bar, then willpower and drink as big
+   slanted gauges with letter badges, and chips for how she stands. A chain runs along the bottom edge. */
 #status-card {
+  --strip-h: 124px;
+  --plum: rgba(30, 10, 28, 0.9);
+  --plum-deep: #160612;
+  --rose: #e0407e;
+  --rose-dim: #7a1c48;
+  --violet: #8a4ad0;
   position: fixed;
-  left: 16px;
-  bottom: 12px;
-  width: 248px;
-  padding: 8px 10px 9px;
-  background: rgba(27, 18, 11, 0.86);
-  border: 2px solid var(--wood-edge);
-  box-shadow: 3px 3px 0 #000;
-  font: 13px/1.2 var(--font);
-  color: var(--text);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--strip-h);
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 18px;
+  padding: 6px 20px 14px 14px;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0) 0, rgba(0, 0, 0, 0.35) 100%),
+    linear-gradient(90deg, var(--plum) 0, rgba(30, 10, 28, 0.82) 55%, rgba(30, 10, 28, 0.6) 100%);
+  border-top: 2px solid var(--rose-dim);
+  box-shadow: 0 -2px 0 #000;
+  font: 13px/1.1 var(--font);
+  color: var(--text-bright);
   text-shadow: var(--shadow);
   pointer-events: none;
+  box-sizing: border-box;
 }
 
 #status-card[hidden] {
   display: none;
 }
 
-/* Out of the way while a conversation, a story beat or a panel has the screen. */
+/* Out of the way while a conversation, a story beat, a panel or the house plans have the screen. */
 body:has(#talk.open) #status-card,
 body:has(#story.open) #status-card,
-body:has(#panel.open) #status-card {
+body:has(#panel.open) #status-card,
+body:has(#build.open) #status-card {
   display: none;
 }
 
-#status-card .head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 6px;
+/* The controls and the prompt sit above the strip while it's up. */
+body:has(#status-card:not([hidden])) #hud {
+  bottom: calc(124px + 8px);
+}
+
+body:has(#status-card:not([hidden])) #prompt {
+  bottom: calc(124px + 22px);
+}
+
+/* Her face, in a ring. */
+#status-card .who {
+  position: relative;
+  width: 76px;
+  height: 76px;
 }
 
 #status-card .face {
-  width: 56px;
-  height: 56px;
-  flex: none;
+  width: 76px;
+  height: 76px;
+  box-sizing: border-box;
+  border-radius: 50%;
   image-rendering: pixelated;
-  background: radial-gradient(circle at 50% 40%, #4a3220, #1b120b 75%);
-  border: 2px solid var(--gold-dim);
-  box-shadow: 2px 2px 0 #000;
+  background: radial-gradient(circle at 50% 40%, #5a2448, var(--plum-deep) 75%);
+  border: 3px solid var(--rose);
+  box-shadow:
+    0 0 0 2px #000,
+    0 0 0 4px var(--violet),
+    3px 3px 0 4px #000;
 }
 
-#status-card .who .name {
-  font-size: 17px;
+/* ---- Desire hearts and the pleasure bar ---- */
+#status-card .body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#status-card .hearts {
+  display: flex;
+  gap: 4px;
+}
+
+#status-card .heart {
+  position: relative;
+  width: 60px;
+  height: 52px;
+}
+
+/* Three stacked hearts: the empty one, the filled one cut off at the level, and the rim on top. */
+#status-card .heart .shape {
+  position: relative;
+  display: block;
+  width: 60px;
+  height: 55px;
+  filter: drop-shadow(2px 2px 0 #000);
+}
+
+#status-card .heart .shape svg,
+#status-card .heart .level {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+#status-card .heart .back path {
+  fill: #3a0f28;
+}
+
+#status-card .heart .level {
+  clip-path: inset(100% 0 0 0);
+  transition: clip-path 0.3s ease-out;
+}
+
+#status-card .heart .full path {
+  fill: #c02a66;
+}
+
+#status-card .heart.full .full path {
+  fill: #ff4a8a;
+}
+
+#status-card .heart .back .shine {
+  fill: none;
+  stroke: rgba(255, 210, 230, 0.55);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+#status-card .heart .rim path {
+  fill: none;
+  stroke: #ff6aa2;
+  stroke-width: 1.6;
+}
+
+#status-card .heart:not(.lit) .rim path {
+  stroke: #9a3a68;
+}
+
+#status-card .heart b {
+  position: absolute;
+  top: 9px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 15px;
+  color: #fff;
+}
+
+#status-card .heart:not(.lit) b {
+  color: #d8a8c0;
+}
+
+#status-card .heart .label {
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  bottom: -3px;
+  text-align: center;
+  font-size: 11px;
   font-weight: bold;
-  color: var(--text-bright);
+  font-style: italic;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #ffe0ec;
+  text-shadow:
+    1px 1px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
 }
 
-#status-card .feel {
-  font-size: 13px;
-}
-
-#status-card .feel.calm {
-  color: #a8c0a0;
-}
-
-#status-card .feel.aroused {
-  color: #f090b0;
-}
-
-#status-card .feel.edge {
-  color: #ff5a8a;
-}
-
-#status-card .bar {
+#status-card .pleasure {
   display: grid;
-  grid-template-columns: 62px 1fr 44px;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 6px;
-  margin: 3px 0;
+  gap: 8px;
+  padding-right: 4px;
 }
 
-#status-card .bar .track {
+#status-card .pleasure .label {
+  font-size: 14px;
+  font-weight: bold;
+  font-style: italic;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--rose);
+}
+
+/* How she feels, the first chip. */
+#status-card .tag.feel.calm {
+  --chip: #3a6a48;
+}
+
+#status-card .tag.feel.aroused {
+  --chip: #c0306e;
+}
+
+#status-card .tag.feel.edge {
+  --chip: #ff2a72;
+  animation: strip-throb 0.9s ease-in-out infinite;
+}
+
+#status-card .pleasure .track {
   position: relative;
   height: 10px;
-  background: #120c07;
+  background: var(--plum-deep);
   border: 1px solid #000;
-  box-shadow: inset 0 0 0 1px #3a2615;
+  box-shadow: inset 0 0 0 1px var(--rose-dim);
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
 }
 
-#status-card .bar .fill {
+#status-card .pleasure .fill {
   position: absolute;
-  top: 1px;
-  bottom: 1px;
-  left: 1px;
+  inset: 1px auto 1px 1px;
   max-width: calc(100% - 2px);
-  background: repeating-linear-gradient(90deg, var(--fill-color) 0 5px, var(--fill-shade) 5px 6px);
+  background: linear-gradient(180deg, #ff8ab4 0, #e0407e 50%, #a01e54 100%);
+  transition: width 0.3s ease-out;
 }
 
-#status-card .bar b {
+#status-card .pleasure .num {
+  min-width: 52px;
   text-align: right;
-  font-size: 12px;
-  color: var(--text-bright);
+  font-size: 22px;
+  color: #fff;
 }
 
-#status-card .bar.warn b {
+#status-card .pleasure.edge .num {
+  color: #ff6aa2;
+  animation: strip-throb 0.9s ease-in-out infinite;
+}
+
+@keyframes strip-throb {
+  50% {
+    text-shadow:
+      2px 2px 0 #000,
+      0 0 8px #ff3a80;
+  }
+}
+
+/* ---- The big gauges ---- */
+#status-card .gauges {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+/* Drink on top, willpower under it. */
+#status-card .gauges .row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+}
+
+/* A round letter badge on the left; the name and the big number over a slanted bar beside it. */
+#status-card .gauge {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto 12px;
+  align-items: end;
+  column-gap: 6px;
+  padding-left: 38px;
+}
+
+#status-card .gauge .badge {
+  position: absolute;
+  left: 0;
+  bottom: -5px;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  border-radius: 50%;
+  font: bold 22px/1 var(--font);
+  color: #fff;
+  background: radial-gradient(circle at 40% 35%, var(--g-light), var(--g-mid) 55%, var(--g-dark));
+  border: 3px solid var(--plum-deep);
+  box-shadow:
+    0 0 0 2px var(--g-light),
+    2px 2px 0 2px #000;
+  z-index: 1;
+}
+
+#status-card .gauge .label {
+  padding-left: 10px;
+  font-size: 13px;
+  font-weight: bold;
+  font-style: italic;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--g-light);
+}
+
+#status-card .gauge .num {
+  grid-row: 1;
+  grid-column: 2;
+  font: bold 28px/0.85 var(--font);
+  color: #fff;
+  text-shadow:
+    2px 2px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+}
+
+#status-card .gauge.warn .num {
   color: #ff6b4a;
 }
 
-#status-card .bar.will {
-  --fill-color: #5a8ad8;
-  --fill-shade: #36589a;
+#status-card .gauge .track {
+  grid-column: 1 / -1;
+  position: relative;
+  height: 12px;
+  background: var(--plum-deep);
+  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+  box-shadow: inset 0 0 0 2px var(--g-dark);
 }
 
-#status-card .bar.pleasure {
-  --fill-color: #e8607c;
-  --fill-shade: #a8304c;
+#status-card .gauge .fill {
+  position: absolute;
+  inset: 2px auto 2px 2px;
+  max-width: calc(100% - 4px);
+  background: linear-gradient(180deg, var(--g-light) 0, var(--g-mid) 55%, var(--g-dark) 100%);
+  transition: width 0.3s ease-out;
 }
 
-#status-card .bar.drink {
-  --fill-color: #e0a030;
-  --fill-shade: #a06a14;
+/* A bright tip where the bar ends. */
+#status-card .gauge .fill::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: rgba(255, 255, 255, 0.8);
 }
 
-#status-card .desire {
-  margin-top: 6px;
-  padding-top: 5px;
-  border-top: 1px solid var(--wood-edge);
+#status-card .gauge.will {
+  --g-light: #b89aff;
+  --g-mid: #7a52e0;
+  --g-dark: #3c2088;
 }
 
-#status-card .desire .title {
-  font-size: 12px;
-  color: var(--gold);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 2px;
+#status-card .gauge.drink {
+  --g-light: #ffd27a;
+  --g-mid: #e09030;
+  --g-dark: #8a4a10;
 }
 
-#status-card .desire .bar {
-  grid-template-columns: 62px 1fr 28px;
-  margin: 2px 0;
-  font-size: 12px;
-}
-
-#status-card .desire .track {
-  height: 7px;
-}
-
-#status-card .bar.meter {
-  --fill-color: #c86aa8;
-  --fill-shade: #8a3a70;
-}
-
+/* How she stands, as small coloured chips under the gauges. */
 #status-card .tags {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 7px;
+  padding-left: 38px;
 }
 
-#status-card .tags span {
-  padding: 0 5px;
-  border: 1px solid var(--gold-dim);
-  background: rgba(0, 0, 0, 0.35);
+#status-card .tag {
+  padding: 1px 6px;
   font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  color: #fff;
+  background: var(--chip, #5a2448);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 1px 1px 0 #000;
 }
 
-/* Phones: a compact card along the bottom, the clock above it, and no controls (there's no keyboard). */
+#status-card .tag.t0 {
+  --chip: #5a3aa8;
+}
+
+#status-card .tag.t1 {
+  --chip: #9a5a14;
+}
+
+#status-card .tag.t2 {
+  --chip: #2a7a78;
+}
+
+#status-card .tag.t3 {
+  --chip: #a8285e;
+}
+
+#status-card .tag.t4 {
+  --chip: #6a1a1a;
+}
+
+/* A chain of links along the bottom edge. */
+#status-card .chain {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 2px;
+  height: 8px;
+  background: radial-gradient(ellipse 5px 3px at 50% 50%, transparent 55%, #6a3a62 60%, #b07aa8 75%, #6a3a62 90%, transparent 100%)
+    0 0 / 11px 8px repeat-x;
+  opacity: 0.85;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #status-card .pleasure.edge .num {
+    animation: none;
+  }
+}
+
+/* Mid-width screens: the gauges drop under the hearts. */
+@media (max-width: 1100px) {
+  #status-card {
+    --strip-h: 166px;
+    height: var(--strip-h);
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    row-gap: 6px;
+  }
+
+  #status-card .gauges {
+    grid-column: 1 / -1;
+  }
+
+  /* Under the hearts there's room across, so the two gauges sit side by side again, drink first. */
+  #status-card .gauges .row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 22px;
+  }
+
+  body:has(#status-card:not([hidden])) #hud {
+    bottom: calc(166px + 8px);
+  }
+
+  body:has(#status-card:not([hidden])) #prompt {
+    bottom: calc(166px + 22px);
+  }
+}
+
+/* Phones: smaller hearts, no controls (there's no keyboard), and the clock above the strip. */
 @media (max-width: 720px) {
   #hud {
     display: none;
   }
 
   #status-card {
-    left: 8px;
-    right: 8px;
-    bottom: 8px;
-    width: auto;
+    --strip-h: 150px;
+    gap: 6px 10px;
+    padding: 6px 10px 12px;
+  }
+
+  #status-card .who,
+  #status-card .face {
+    width: 52px;
+    height: 52px;
+  }
+
+  #status-card .heart,
+  #status-card .heart .shape {
+    width: calc((100vw - 120px) / 5);
+    height: calc((100vw - 120px) / 5 * 0.9);
+  }
+
+  #status-card .hearts {
+    gap: 2px;
+  }
+
+  #status-card .heart b {
+    top: 6px;
     font-size: 12px;
   }
 
-  #status-card .desire {
+  #status-card .heart .label {
+    font-size: 9px;
+  }
+
+  #status-card .gauges .row {
+    gap: 14px;
+  }
+
+  #status-card .gauge .num {
+    font-size: 24px;
+  }
+
+  #status-card .gauge .label {
+    font-size: 11px;
+  }
+
+  #status-card .tags {
     display: none;
+  }
+
+  body:has(#status-card:not([hidden])) #prompt {
+    bottom: calc(150px + 16px);
   }
 
   body #clock {

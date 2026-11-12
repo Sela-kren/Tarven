@@ -1286,11 +1286,23 @@ def skull_at(skull, up):
     return skull[-1][1:]
 
 
-def fitted_cap(skull, front, side, back, gap, bands=5, square=1.0):
-    """A shell over the skull from the crown down to the hairline: high on the forehead, low at the nape."""
+def fitted_cap(skull, front, side, back, gap, bands=5, square=1.0, hairline_at=None, edge_gap=None):
+    """A shell over the skull from the crown down to the hairline: high on the forehead, low at the nape.
+
+    `hairline_at`, if given, sets the hairline instead of front, side and back: (degrees round from the middle
+    of the forehead, height) pairs from 0 (the forehead) to 180 (the nape), the same on both sides. `edge_gap`
+    lets the shell close in towards the head at the hairline, so its edge lies on the skin instead of standing
+    off it like the brim of a cap."""
     crown = skull[-1][0] + gap
 
     def hairline(a):
+        if hairline_at:
+            # Round from the forehead, whichever side of the head.
+            theta = math.degrees(math.atan2(abs(math.cos(a)), math.sin(a)))
+            for (t0, h0), (t1, h1) in zip(hairline_at, hairline_at[1:]):
+                if theta <= t1:
+                    return h0 + (h1 - h0) * (theta - t0) / (t1 - t0)
+            return hairline_at[-1][1]
         s = math.sin(a)
         forwards, backwards = max(0.0, s) ** 1.5, max(0.0, -s) ** 1.2
         return side + (front - side) * forwards + (back - side) * backwards
@@ -1299,17 +1311,31 @@ def fitted_cap(skull, front, side, back, gap, bands=5, square=1.0):
     # A small, nearly level ring right at the crown first: the cap's top face spans its first ring, and a ring
     # already sloping down to the nape would cut under the back of the skull.
     for t in [0.06] + [(k / bands) ** 0.85 for k in range(1, bands + 1)]:
+        lift = gap if edge_gap is None else gap + (edge_gap - gap) * t ** 2
         ring_points = []
         for i in range(CAP_SIDES):
             a = 2 * math.pi * i / CAP_SIDES
             up = crown - (crown - hairline(a)) * t
             w, f, b = skull_at(skull, up)
             c, s = math.cos(a), math.sin(a)
-            x = math.copysign(abs(c) ** square, c) * (w + gap)
-            y = math.copysign(abs(s) ** square, s) * ((f if s > 0 else b) + gap)
+            x = math.copysign(abs(c) ** square, c) * (w + lift)
+            y = math.copysign(abs(s) ** square, s) * ((f if s > 0 else b) + lift)
             ring_points.append((x, y, up))
         rings.append(ring_points)
     return rings
+
+
+# The female head as it really is low down, measured off the built model: wider than SKULL at ear height,
+# where the ears stand out, and deeper at the back, where the skull bulges over the nape. Above that it is
+# SKULL. Only the pixie cut comes down this far, so only it uses this.
+PIXIE_SKULL = [(0.04, 0.066, 0.07, 0.1), (0.05, 0.069, 0.073, 0.11), (0.06, 0.074, 0.078, 0.104),
+               (0.07, 0.088, 0.08, 0.097), (0.08, 0.09, 0.081, 0.097), (0.09, 0.092, 0.082, 0.098),
+               (0.1, 0.084, 0.083, 0.098), (0.11, 0.083, 0.084, 0.097)] + SKULL["Female"][3:]
+# Where the pixie cut stops, round from the forehead to the nape: high in the middle of the forehead under the
+# fringe, dipping at the temples to a short sideburn in front of the ear, over the top of the ear, and tapering
+# down the back of the head to the nape.
+PIXIE_HAIRLINE = [(0, 0.168), (22.5, 0.16), (45, 0.128), (67.5, 0.072), (90, 0.086), (112.5, 0.082),
+                  (135, 0.066), (157.5, 0.05), (180, 0.045)]
 
 
 def hair_curtain(levels, points=6):
@@ -1347,8 +1373,10 @@ def hair_styles(spec):
     if spec["name"] == "Female":
         fringe = [list(station) for station in BOB_FRINGE]
         return {
-            # Short and close, with her side-swept fringe.
-            "Pixie": [hair_cap(skull, 0.168, 0.1, 0.07, 0.016), fringe],
+            # Short and close, with her side-swept fringe: down over the tops of her ears, a sideburn in front
+            # of each, and tapered into the nape.
+            "Pixie": [fitted_cap(PIXIE_SKULL, 0.168, 0.1, 0.07, 0.016, bands=6, square=square,
+                                 hairline_at=PIXIE_HAIRLINE, edge_gap=0.005), fringe],
             # Long and straight down her back, with a lock either side of the face.
             "Long": [
                 hair_cap(skull, 0.168, 0.1, 0.05, 0.016), fringe,
