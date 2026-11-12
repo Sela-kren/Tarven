@@ -108,6 +108,8 @@ export interface SliderDef {
   stops?: SliderStops;
   /** How far either way a random look goes, out of 1. 0.8 unless given. */
   roll?: number;
+  /** Reshapes the body as built, before the other sliders, so their growth carries its change along with it. */
+  early?: boolean;
 }
 
 /** Where on the slider a named step sits. */
@@ -307,13 +309,38 @@ const FEMALE_SLIDERS: SliderDef[] = [
   },
   // Where the breasts sit on the chest, root and all: the move reaches past where their weight thins out towards
   // the chest, so the base slides with them instead of only the front tipping up as Lift does.
-  { id: "bustHeight", label: "Height", tab: "body", group: "Bust", terms: terms(["Bust"], [0, 0, 0], { shift: [0, 0.03, 0], reach: 0.5 }) },
-  { id: "bustLift", label: "Lift", tab: "body", group: "Bust", terms: terms(["Bust"], [0, 0, 0], { shift: [0, 0.025, -0.004] }) },
+  { id: "bustHeight", label: "Height", tab: "body", group: "Bust", terms: terms(["Bust"], [0, 0, 0], { shift: [0, 0.045, 0], shrinkShift: [0, -0.06, 0], reach: 0.5 }) },
+  { id: "bustLift", label: "Lift", tab: "body", group: "Bust", terms: terms(["Bust"], [0, 0, 0], { shift: [0, 0.05, -0.008] }) },
+  // The upper pole, the slope from the collarbone down to the nipple: fuller bows it out round, less hollows it
+  // into a straight or scooped slope. Only the middle of the slope moves, along a bump that is nothing at the
+  // nipple, full 3.5 cm above it and nothing again by the collarbone, so the nipple stays the front of the breast
+  // and nothing bulges past it. It shapes the bust as built, before the cup size, so it grows along with the cup.
+  {
+    id: "bustUpper", label: "Upper fullness", tab: "body", group: "Bust", early: true,
+    terms: [
+      ...terms(["Bust"], [0, 0, 0], { shift: [0, 0.002, -0.014], fade: [0.035, 0] }),
+      ...terms(["Bust"], [0, 0, 0], { shift: [0, -0.002, 0.014], fade: [0.075, 0.035] }),
+    ],
+  },
   { id: "bustSpacing", label: "Spacing", tab: "body", group: "Bust", terms: terms(["Bust"], [0.3, 0, 0], { shrink: [0.2, 0, 0] }) },
+  // Sits each breast closer to the chest without making it any smaller: it comes in to 0.7 of its depth and
+  // spreads wider and taller by as much (1 / sqrt 0.7), so it keeps its size, as a breast pressed to the body does.
+  // Below 0 it stands out further and narrows to match. Projection, by contrast, changes the size. It shapes the
+  // bust as built, before the cup size, so the change grows with the cup; the top fades out as the cup's does.
+  {
+    id: "bustCloser", label: "Closer to body", tab: "body", group: "Bust", early: true,
+    terms: terms(["Bust"], [0.195, 0.195, -0.3], {
+      shrink: [0.123, 0.123, -0.3], lobes: [0.072, -0.005, 0.025], fade: [0.01, 0.075],
+    }),
+  },
+  // Pushed together, as a push-up bra does: each breast slides whole towards the cleavage. Below 0 they part.
+  { id: "bustTogether", label: "Push together", tab: "body", group: "Bust", terms: terms(["Bust"], [0, 0, 0], { apart: -0.022 }) },
   {
     id: "bustProjection", label: "Projection", tab: "body", group: "Bust",
     terms: terms(["Bust"], [0, 0, 0.9], { shrink: [0, 0, 0.4] }),
   },
+  // How round the inner side of each breast fills towards the cleavage as the cup grows (see reshape).
+  { id: "bustInner", label: "Inner fullness", tab: "body", group: "Bust", terms: [] },
   // Her nipples change no bones: the dresser shapes their discs from these and the type (see nipples.ts).
   { id: "nippleSize", label: "Nipple size", tab: "body", group: "Nipples", terms: [] },
   { id: "areolaSize", label: "Areola size", tab: "body", group: "Nipples", terms: [] },
@@ -950,6 +977,8 @@ interface ActiveTerm {
   fade?: readonly [number, number];
   pivot?: number;
   lobes?: readonly [number, number, number];
+  /** How round the inner side of each breast fills, -1..1, from the inner fullness slider; only for `lobes` terms. */
+  inner?: number;
   reach?: number;
   apart?: number;
   turn?: number;
@@ -988,12 +1017,24 @@ export function reshape(active: readonly ActiveTerm[], d: Vector3, out: Vector3,
       out.y += gy * weight * along;
     }
     if (term.lobes) out.add(lobe);
+    // Inner fullness: between a breast's middle and the cleavage, points spread across along a curve that meets the
+    // outer side's growth at the middle, so the breast swells round on both sides instead of bending there. The
+    // cleavage itself never moves, so the two sides can close in on it but never pass through each other.
+    // Negative goes the other way: the inner side draws in towards the middle, opening the gap.
+    if (term.lobes && term.inner && Math.abs(d.x) < term.lobes[0]) {
+      const middle = term.lobes[0];
+      const across = Math.abs(d.x);
+      const p = Math.max(0.2, 1 + gx * weight);
+      const curve = middle * (across / middle) ** (term.inner > 0 ? p : 1 / p);
+      out.x += side * Math.abs(term.inner) * (curve - across);
+    }
     if (term.shift) {
       out.x += term.shift[0] * weight;
       out.y += term.shift[1] * weight;
       out.z += term.shift[2] * weight;
     }
-    if (term.apart) out.x += side * term.apart * weight;
+    // Towards the middle, the move fades out over the last 4 cm, so the two sides close in but never cross.
+    if (term.apart) out.x += side * term.apart * weight * (term.apart < 0 ? Math.min(1, Math.abs(d.x) / 0.04) : 1);
     // Turning outwards moves the front of a breast most: by how far forwards (-z) it is, up to 1.5 times at 9 cm.
     if (term.turn) out.x += side * term.turn * weight * Math.min(1.5, Math.max(0, -d.z / 0.06));
     if (reach !== 1) out.sub(before).multiplyScalar(reach).add(before);
@@ -1026,7 +1067,8 @@ export function activeTerms(body: BodyName, sliders: Record<string, number>, bus
     });
     byBone.set(term.bone, list);
   };
-  for (const def of LOOK_OPTIONS[body].sliders) {
+  const defs = LOOK_OPTIONS[body].sliders;
+  for (const def of [...defs.filter((d) => d.early), ...defs.filter((d) => !d.early)]) {
     const value = clampSlider(sliders[def.id]);
     if (value === 0) continue;
     for (const term of def.terms) add(term, value);
@@ -1036,6 +1078,9 @@ export function activeTerms(body: BodyName, sliders: Record<string, number>, bus
     const amount = shapeAmount(clampSlider(sliders.bust));
     for (const term of shape.terms) add(term, amount);
   }
+  // Inner fullness changes no bones of its own: it shapes how every breast term grows towards the cleavage.
+  const inner = clampSlider(sliders.bustInner);
+  if (inner !== 0) for (const list of byBone.values()) for (const term of list) if (term.lobes) term.inner = inner;
   return byBone;
 }
 

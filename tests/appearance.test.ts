@@ -350,6 +350,26 @@ describe("a fuller bust", () => {
     expect(reshape([term], new Vector3(0, 0, -0.04), out).x).toBe(0);
   });
 
+  it("rounds the inner side out towards the cleavage with inner fullness, never past the middle", () => {
+    const full = { grow: [1, 0, 0] as [number, number, number], lobes: [0.08, 0, 0] as const, inner: 1 };
+    const out = new Vector3();
+    // Grown twice as wide, the inner side follows the curve (x / 8 cm)^2: 4 cm in goes to 2 cm.
+    expect(reshape([full], new Vector3(0.04, 0, 0), out).x).toBeCloseTo(0.02);
+    expect(reshape([full], new Vector3(-0.04, 0, 0), out).x).toBeCloseTo(-0.02);
+    // The middle of the breast and the cleavage stay put.
+    expect(reshape([full], new Vector3(0.08, 0, 0), out).x).toBeCloseTo(0.08);
+    expect(reshape([full], new Vector3(0, 0, 0), out).x).toBe(0);
+    // Half of it goes half way; negative draws the inner side in towards the middle instead.
+    expect(reshape([{ ...full, inner: 0.5 }], new Vector3(0.04, 0, 0), out).x).toBeCloseTo(0.03);
+    expect(reshape([{ ...full, inner: -1 }], new Vector3(0.02, 0, 0), out).x).toBeCloseTo(0.04);
+  });
+
+  it("gives inner fullness to the breast terms only", () => {
+    const active = activeTerms("Female", { bust: 1, bustInner: 0.6 });
+    expect(active.get("Bust")!.every((term) => term.inner === 0.6)).toBe(true);
+    expect(activeTerms("Female", { bust: 1 }).get("Bust")!.some((term) => term.inner)).toBe(false);
+  });
+
   it("fades out smoothly, with no edge where it stops", () => {
     const fading = [{ grow: [1, 0, 0] as [number, number, number], fade: [0, 0.1] as const }];
     const out = new Vector3();
