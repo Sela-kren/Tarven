@@ -6,6 +6,7 @@ import {
   Material,
   Mesh,
   MeshLambertMaterial,
+  MeshPhongMaterial,
   MeshStandardMaterial,
   NearestFilter,
   Object3D,
@@ -64,8 +65,51 @@ export function solidRetroMaterial(name: string, color: number): MeshLambertMate
   return withPs1Rasterizer(new MeshLambertMaterial({ name, color }));
 }
 
+let coat: MeshPhongMaterial | null = null;
+
+/**
+ * How far the coat is drawn towards the camera, and further still the clothes that should cover it. Flat amounts
+ * only: one that grows with the slope would pull each layer of a skirt and apron by a different amount.
+ */
+const COAT_OFFSET = { factor: 0, units: -6 };
+const COVER_OFFSET = { factor: 0, units: -16 };
+
+/**
+ * Draws clothing in front of the coat beneath it. The coat is pulled forwards so the vertex snapping never sinks
+ * it into the skin; worn clothes are pulled further, so it never pokes through them either.
+ */
+export function coverCoat(material: Material): void {
+  material.polygonOffset = true;
+  material.polygonOffsetFactor = COVER_OFFSET.factor;
+  material.polygonOffsetUnits = COVER_OFFSET.units;
+}
+
+/**
+ * What men leave on her skin: off-white, a little see-through, with a wet shine where the light catches it.
+ * Drawn just in front of the skin it lies on, so the vertex snapping never sinks it in. One shared material.
+ */
+export function coatRetroMaterial(): MeshPhongMaterial {
+  coat ??= withPs1Rasterizer(
+    new MeshPhongMaterial({
+      name: "T_cum",
+      color: 0x8c8a84,
+      specular: 0xffffff,
+      shininess: 80,
+      // Most of its white is its own light, so it stays a creamy white in the tavern's warm lamplight and in
+      // shadow, instead of taking the lamp's colour like the skin under it.
+      emissive: 0xb4b2aa,
+      transparent: true,
+      opacity: 0.96,
+      polygonOffset: true,
+      polygonOffsetFactor: COAT_OFFSET.factor,
+      polygonOffsetUnits: COAT_OFFSET.units,
+    }),
+  );
+  return coat;
+}
+
 /** Adds the PS1's two rasterizer quirks: vertices snapped to a grid and affine (warping) textures. */
-function withPs1Rasterizer(material: MeshLambertMaterial): MeshLambertMaterial {
+function withPs1Rasterizer<T extends MeshLambertMaterial | MeshPhongMaterial>(material: T): T {
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uSnap = snapResolution;
     shader.vertexShader = `${AFFINE_VARYINGS}uniform vec2 uSnap;\n${shader.vertexShader}`.replace(

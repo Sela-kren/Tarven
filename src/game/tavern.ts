@@ -42,6 +42,18 @@ import {
 import { GUEST_TOO_DRUNK, PULLS, SLAPS, TOO_DRUNK_TO_ALLOW } from "./touchtalk";
 import { Fight, type FightMove, type FightOutcome } from "./fight";
 import { ROLE_PLAYS, type RolePlay } from "./duellines";
+import { coatStages, loadOf, type CoatSection, type CumSpot } from "./cum";
+
+/** Where the guest finishes after each thing she does upstairs; a kiss and a cuddle leaves none. */
+const UPSTAIRS_CUM: Record<UpstairsAct, CumSpot | null> = { kiss: null, hands: "body", mouth: "mouth", bed: "pussy", behind: "ass" };
+const CUM_WHERE: Record<CumSpot, string> = {
+  mouth: "in your mouth, and you swallow",
+  face: "on your face",
+  breasts: "on your tits",
+  pussy: "inside you",
+  ass: "deep in your ass",
+  body: "all over your belly",
+};
 import { Duel, DUEL_AREAS, type DuelArea, type DuelistStats, type DuelMove, type DuelOutcome, type DuelTest, type Partner } from "./duel";
 import {
   ACT_SKILL_OF,
@@ -902,6 +914,12 @@ export class Tavern {
   private readonly saidLines = new Set<string>();
   /** How far down the wardrobe's strip ladder guests have got you tonight: 0 is fully dressed. Back on by morning. */
   stripped = 0;
+  /** What men have left on her tonight, in ml by spot. She washes before the next night. */
+  private coated: Partial<Record<CumSpot, number>> = {};
+  /** How far she undressed herself in tonight's duel, kept until morning: 0, down to her shift, or bare. */
+  private undressedTonight = 0;
+  /** A test duel just over, still shown on her until its result is taken; it counts for nothing else. */
+  private endedTest: Duel | null = null;
   /** Favors guests have already asked. Each is asked once, so nobody keeps pressing the same letter on you. */
   private readonly askedFavors = new Set<string>();
   /** What a party was saying as you sat down with them. */
@@ -1442,6 +1460,19 @@ export class Tavern {
   }
 
   /**
+   * What's off her as she's seen: tonight's dares, and in a duel, what she's taken off herself (down to her
+   * shift, then everything). The dares are what count for anything else.
+   */
+  get shownPieces(): string[] {
+    const off = this.strippedPieces;
+    const undressed = Math.max(this.duel?.undressed ?? 0, this.endedTest?.undressed ?? 0, this.undressedTonight);
+    if (undressed === 0) return off;
+    const ladder = stripLadder(this.playerBody, this.playerOutfit);
+    const more = undressed >= 2 ? ladder : ladder.filter((g) => g.layer !== "under" && g.layer !== "smallclothes");
+    return [...new Set([...off, ...more.map((g) => g.id)])];
+  }
+
+  /**
    * Whether a guest drinking with you goes for your clothes, and if so, which piece. Rolls high rather than
    * low, so the commonest rolls still bring the usual talk.
    */
@@ -1552,8 +1583,33 @@ export class Tavern {
       else if (guest.status === "waiting" || guest.status === "arriving") guest.patience = Math.max(1, guest.patience - guest.maxPatience * UPSTAIRS_PATIENCE);
     }
     this.say(`+${gold} gold. The bar waited for you, not happily.`);
+    const where = UPSTAIRS_CUM[act];
+    if (where) {
+      const ml = loadOf(scene.guestKind, this.random);
+      this.addCum({ [where]: ml }, 1);
+      this.say(`The ${scene.guestKind} finishes ${CUM_WHERE[where]}. +${ml} ml.`);
+    }
     this.cue("tip");
     return def.line;
+  }
+
+  /** Loads into her records, by where they landed. */
+  private addCum(cum: Partial<Record<CumSpot, number>>, loads: number): void {
+    const r = this.records;
+    for (const [spot, ml] of Object.entries(cum)) {
+      r.cum[spot as CumSpot] = (r.cum[spot as CumSpot] ?? 0) + (ml ?? 0);
+      this.coated[spot as CumSpot] = (this.coated[spot as CumSpot] ?? 0) + (ml ?? 0);
+    }
+    r.loads += loads;
+  }
+
+  /** How much shows on each part of her tonight, by stage: 0 is clean. A duel going on shows as it happens. */
+  get coatStages(): Record<CoatSection, number> {
+    const duel = (this.duel ?? this.endedTest)?.cum;
+    if (!duel) return coatStages(this.coated);
+    const both: Partial<Record<CumSpot, number>> = { ...this.coated };
+    for (const [spot, ml] of Object.entries(duel)) both[spot as CumSpot] = (both[spot as CumSpot] ?? 0) + (ml ?? 0);
+    return coatStages(both);
   }
 
   /** She eases the ache herself before she sleeps. Her meters settle, and she sleeps easy. */
@@ -1617,6 +1673,15 @@ export class Tavern {
 
   private gainXp(id: StatId | SkillId, n: number): void {
     if (n > 0) this.xp[id] = (this.xp[id] ?? 0) + n;
+  }
+
+  /** A brawl with nobody in the room, from the B key in development, to try the fight screen. */
+  startTestFight(): void {
+    if (this.fight) return;
+    const kinds = Object.keys(GUEST_KINDS) as GuestKind[];
+    const kind = kinds[Math.floor(this.random() * kinds.length) % kinds.length];
+    const e = this.effects;
+    this.fight = new Fight(-1, kind, false, { levels: this.statLevels(), damage: e.fightDamage, dodge: e.fightDodge, talk: e.fightTalk, stare: e.fightStare }, this.random);
   }
 
   /** Starts a brawl with a guest. Whoever's playing deals with it. */
@@ -1783,6 +1848,7 @@ export class Tavern {
     if (this.testDuel) {
       this.testDuel = false;
       const how = duel.outcome === "won" ? "You won" : duel.outcome === "lost" ? "You lost" : "You called it off";
+      this.endedTest = duel;
       this.lastDuel = { outcome: duel.outcome!, text: `${how}. (Test fight: nothing counted.)`, line: "", gold: 0, test: true };
       this.duel = null;
       return;
@@ -1792,6 +1858,8 @@ export class Tavern {
     for (const [move, n] of Object.entries(duel.used)) r.duelMoves[move as DuelMove] = (r.duelMoves[move as DuelMove] ?? 0) + (n ?? 0);
     r.heldBack += duel.heldBack;
     r.undressed += duel.undressed;
+    this.undressedTonight = Math.max(this.undressedTonight, duel.undressed);
+    this.addCum(duel.cum, duel.loads);
     for (const [meter, n] of Object.entries(duel.meterGains)) this.raise(meter as Meter, n ?? 0);
     let text: string;
     let line: string;
@@ -1826,6 +1894,8 @@ export class Tavern {
       Object.assign(this.meters, emptyMeters());
       this.pleasure = 0;
     }
+    const ml = Object.values(duel.cum).reduce((n, v) => n + (v ?? 0), 0);
+    if (ml > 0) text += ` ${duel.loads === 1 ? "One load" : `${duel.loads} loads`}, ${ml} ml of cum.`;
     this.lastDuel = { outcome: duel.outcome!, text, line, gold: change };
     this.say(text);
     this.duel = null;
@@ -1835,6 +1905,7 @@ export class Tavern {
   takeDuelResult(): { outcome: DuelOutcome; text: string; line: string; gold: number; test?: boolean } | null {
     const result = this.lastDuel;
     this.lastDuel = null;
+    this.endedTest = null;
     return result;
   }
 
@@ -2724,6 +2795,8 @@ export class Tavern {
     this.napped = false;
     this.drunk = 0;
     this.stripped = 0;
+    this.undressedTonight = 0;
+    this.coated = {};
     this.talkingTo = null;
     this.talkReply = [];
     this.tipChat = null;

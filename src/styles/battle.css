@@ -1,0 +1,153 @@
+/*
+ * The big picture of her during a fight (battleview.ts), Karryn-style: her whole body on the left of the
+ * screen, framed like the comic panels, with a nameplate and her status board under it. The fight board moves
+ * over to the right, and each moment's close-up comic pops in over her legs.
+ */
+body:has(#battle-view.open) {
+  --battle-h: min(calc(100vh - 190px), 620px);
+  --battle-w: calc(var(--battle-h) * 0.6);
+}
+
+#battle-view {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  width: var(--battle-w);
+  display: none;
+  pointer-events: none;
+  z-index: 20;
+}
+
+#battle-view.open {
+  display: block;
+}
+
+#battle-view .frame {
+  position: relative;
+  height: var(--battle-h);
+  padding: 8px;
+  background: var(--wood-edge);
+  clip-path: polygon(8px 0, calc(100% - 8px) 0, 100% 8px, 100% calc(100% - 8px), calc(100% - 8px) 100%, 8px 100%, 0 calc(100% - 8px), 0 8px);
+  filter: drop-shadow(6px 6px 0 #000);
+}
+
+#battle-view .picture {
+  height: 100%;
+  background: var(--wood-darkest);
+}
+
+#battle-view canvas {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+#battle-view .nameplate {
+  position: absolute;
+  left: 16px;
+  top: 14px;
+  padding: 2px 10px;
+  font: bold 16px/1.4 var(--font);
+  color: var(--gold);
+  background: rgba(10, 6, 3, 0.75);
+  text-shadow: 2px 2px 0 #000;
+}
+
+/* A hit flashes red over her; a jolt after hours, pink. */
+#battle-view .flash {
+  position: absolute;
+  inset: 8px;
+  opacity: 0;
+}
+
+#battle-view .flash.on.hurt {
+  background: #c8202a;
+  animation: battle-flash 0.45s ease-out;
+}
+
+#battle-view .flash.on.hot {
+  background: #ff9ab8;
+  animation: battle-flash 0.6s ease-out;
+}
+
+@keyframes battle-flash {
+  0% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+#battle-view .status {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 14px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  font: 14px/1.35 var(--font);
+  color: var(--text);
+  background: rgba(16, 10, 5, 0.9);
+  box-shadow: inset 0 0 0 2px var(--gold-dim, #8a6a2a);
+  text-shadow: 1px 1px 0 #000;
+}
+
+#battle-view .status .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#battle-view .status .row span {
+  color: var(--text-muted, #b9a27a);
+}
+
+#battle-view .status .row.hot b {
+  color: #f08aa0;
+}
+
+#battle-view .status .row.hurt b {
+  color: #e0605a;
+}
+
+#battle-view .status .row.cum b {
+  color: #fff6e0;
+}
+
+/* The fight board moves over to make room for her. */
+#panel.battle-open.open {
+  padding-left: calc(var(--battle-w, 0px) + 40px);
+}
+
+/* The close-up comic pops in over her legs. */
+body:has(#battle-view.open) #touch-comic {
+  --comic-w: calc(var(--battle-w) * 0.7);
+  top: calc(16px + var(--battle-h) - var(--comic-w) * 0.75 - 4px);
+  left: calc(16px + var(--battle-w) * 0.38);
+  width: var(--comic-w);
+  margin: 0;
+  z-index: 30;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #battle-view .flash.on {
+    animation-duration: 0.01s;
+  }
+}
+
+/* Too narrow for her and the board side by side: the board alone, and the comic up top. */
+@media (max-width: 1000px) {
+  #battle-view.open {
+    display: none;
+  }
+
+  #panel.battle-open.open {
+    padding-left: 16px;
+  }
+
+  body:has(#battle-view.open) #touch-comic {
+    --comic-w: 220px;
+    top: 12px;
+    left: 16px;
+  }
+}

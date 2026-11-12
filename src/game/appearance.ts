@@ -1,5 +1,5 @@
 import { Color, Material, Matrix4, MeshLambertMaterial, Object3D, Quaternion, SkinnedMesh, Vector3 } from "three";
-import { solidRetroMaterial } from "./retro";
+import { coatRetroMaterial, coverCoat, solidRetroMaterial } from "./retro";
 import type { LegSize } from "./skirt";
 
 /**
@@ -9,7 +9,8 @@ import type { LegSize } from "./skirt";
 
 export type BodyName = "Male" | "Female";
 export const BODY_NAMES: readonly BodyName[] = ["Male", "Female"];
-export type MeshPart = "Body" | "Cloth" | "Hair" | "Shoes";
+/** "Cum" is what men leave on her: splats in stages, shown by the night's state, never part of the look. */
+export type MeshPart = "Body" | "Cloth" | "Hair" | "Shoes" | "Cum";
 export type LookTab = "body" | "face" | "hair" | "skin" | "clothes";
 
 export interface Look {
@@ -553,10 +554,20 @@ export function materialFor(
 
 /** The mesh part a mesh belongs to, from its own name or its parents'. */
 export function partOf(object: Object3D, body: BodyName): MeshPart | null {
-  const pattern = new RegExp(`^${body}_(Body|Cloth|Hair|Shoes)`);
+  const pattern = new RegExp(`^${body}_(Body|Cloth|Hair|Shoes|Cum)`);
   for (let node: Object3D | null = object; node; node = node.parent) {
     const match = pattern.exec(node.name);
     if (match) return match[1] as MeshPart;
+  }
+  return null;
+}
+
+/** The part of her a "<Body>_Cum<Section><Stage>" mesh lies on, and the stage it belongs to. */
+export function coatMeshOf(object: Object3D, body: BodyName): { section: string; stage: number } | null {
+  const pattern = new RegExp(`^${body}_Cum([A-Z][a-z]+)([0-9]+)`);
+  for (let node: Object3D | null = object; node; node = node.parent) {
+    const match = pattern.exec(node.name);
+    if (match) return { section: match[1], stage: Number(match[2]) };
   }
   return null;
 }
@@ -653,6 +664,7 @@ export function dressColors(model: Object3D, body: BodyName, colors: Record<stri
     if (slot.part === "Hair") slot.mesh.visible = hairMeshOf(slot.mesh, body) === "";
     // Only the outfit they wear shows; the others' meshes stay hidden.
     if (slot.part === "Cloth") slot.mesh.visible = outfitMeshOf(slot.mesh, body) === worn;
+    if (slot.part === "Cum") slot.mesh.visible = false;
   }
 }
 
@@ -757,7 +769,7 @@ const FOLLOW_POINTS = 4;
  */
 const FOLLOW_NEAR = 0.03;
 const FOLLOW_FAR = 0.09;
-const FOLLOWING_PARTS: readonly MeshPart[] = ["Cloth", "Shoes"];
+const FOLLOWING_PARTS: readonly MeshPart[] = ["Cloth", "Shoes", "Cum"];
 
 const point = new Vector3();
 const offset = new Vector3();
@@ -780,6 +792,8 @@ export class Dresser {
   private undressed = false;
   /** Clothes guests have got off this character tonight; a state of the night, never part of the look. */
   private stripped: [MeshPart, string][] = [];
+  /** How far along each part of her the night has got, by section; a state of the night, never part of the look. */
+  private coat: Record<string, number> = {};
   private look: Look = newLook();
 
   constructor(model: Object3D, readonly body: BodyName) {
@@ -800,6 +814,11 @@ export class Dresser {
         point.fromBufferAttribute(position, v).applyMatrix4(mesh.bindMatrix).toArray(bind, v * 3);
       }
       const part = partOf(mesh, body)!;
+      if (part === "Cum") {
+        mesh.material = coatRetroMaterial();
+        // Too close to the skin to shadow it cleanly.
+        mesh.castShadow = false;
+      }
       const material = mesh.material as Material;
       this.slots.push({ mesh, part, original: material, worn: material, bind, follow: null, bodyStart: bodyCount });
       if (part === "Body") bodyCount += position.count;
@@ -874,6 +893,12 @@ export class Dresser {
    * The shoes stay. Clothing comes off the clothing layer; the smallclothes are painted on the body, so taking
    * them off paints them over in the skin's colour instead.
    */
+  /** Shows each part of her up to its stage (0 hides it), by section: "Mouth", "Face", "Breasts", "Body", "Pussy", "Ass", "Back", "Arms", "Hands". */
+  setCoat(stages: Readonly<Record<string, number>>): void {
+    this.coat = { ...stages };
+    this.showPieces();
+  }
+
   setStripped(ids: readonly string[]): void {
     this.stripped = LOOK_OPTIONS[this.body].colors
       .filter((color) => color.tab === "clothes" && ids.includes(color.id))
@@ -1041,6 +1066,11 @@ export class Dresser {
       .flatMap((color) => color.parts)
       .filter(([part]) => part === "Body");
     for (const slot of this.slots) {
+      if (slot.part === "Cum") {
+        const at = coatMeshOf(slot.mesh, this.body);
+        slot.mesh.visible = at !== null && (this.coat[at.section] ?? 0) >= at.stage;
+        continue;
+      }
       const stripped = covers(this.stripped, slot.part, slot.original.name);
       if (slot.part === "Body") {
         const bare = stripped || (this.undressed && covers(painted, slot.part, slot.original.name));
@@ -1052,6 +1082,7 @@ export class Dresser {
         (slot.part === "Hair" && hairMeshOf(slot.mesh, this.body) !== hair) ||
         (slot.part === "Cloth" && outfitMeshOf(slot.mesh, this.body) !== outfit);
       slot.mesh.visible = !off && !otherStyle && !(this.undressed && slot.part === "Cloth");
+      if (slot.part === "Cloth" || slot.part === "Shoes") coverCoat(slot.mesh.material as Material);
     }
   }
 }

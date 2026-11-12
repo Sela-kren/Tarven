@@ -89,10 +89,19 @@ import { TouchComic } from "./touchcomic";
 import type { Reaction, SoftPart } from "./player";
 import { DialogueBox } from "./dialogue";
 import { MessageLog } from "./messagelog";
+import { AiNarrator } from "./ainarrator";
+import { setFlavorSource } from "./flavor";
 import { SpeechBubbles, type Speaker } from "./speech";
 import { formatHour, type WorldClock } from "./time";
 import { NavGrid } from "./path";
+import type { CumSpot } from "./cum";
+import type { DuelArea, DuelLogEntry, DuelState } from "./duel";
+import type { HerMove } from "./duelmoves";
+import type { TouchRegion } from "./touchtalk";
+import type { TouchShow } from "./touchcomic";
+import { BattleView, type BattleMode, type BattleStat } from "./battleview";
 import { Body, Sibling, WALK_STYLE_NAMES } from "./player";
+import { COAT_SECTIONS, COAT_STAGES, type CoatSection } from "./cum";
 import { applyRetroLook, solidRetroMaterial } from "./retro";
 import {
   BOTTLE_KINDS,
@@ -122,6 +131,7 @@ import {
   type TalkLine,
   type Target,
   type TavernSave,
+  type TouchMoment,
   type UpgradeId,
   type Ware,
 } from "./tavern";
@@ -240,6 +250,13 @@ const JOURNAL_ARROW_HEIGHT = 1.4;
 /** How far the camera pulls back to look at the plans. */
 const BUILD_ZOOM = 1.4;
 const SIBLING_RADIUS = 0.3;
+/** How she answered a touch, told to the AI narrator so its line never says otherwise. */
+const TOUCH_ANSWER_TEXT: Record<TouchMoment["answer"], string> = {
+  allow: "She lets them.",
+  lean: "She leans into it, wanting more.",
+  slap: "She slaps their hand away.",
+  pull: "She pulls away from them.",
+};
 /** How far past the room's walls the follow camera has to reach for the room to fill the screen. */
 const CAMERA_INSET_X = 6.5;
 const CAMERA_INSET_Z = 4;
@@ -267,6 +284,106 @@ const OUTFITS: Record<GuestKind | "visitor", { top: number; legs: number; hair: 
 
 /** Who the player can be, by sibling index: the male body, then the female one. */
 const PLAYER_LABELS = ["Male", "Female"];
+/**
+ * Which siblings the player may pick, by index. For now only the female: the male stays loaded but is kept
+ * off the select screen and out of play. Put 0 back in to offer him again.
+ */
+const PLAYABLE: readonly number[] = [1];
+const isPlayable = (index: number): boolean => PLAYABLE.includes(index);
+
+/** Seconds each moment of a brawl turn shows before the next. */
+const FIGHT_MOMENT_GAP = 1.8;
+/** Each brawl event as a comic shot (fight.ts events): what it looks like, and the words over it. */
+const FIGHT_SHOTS: Record<string, Omit<TouchShow, "kind">> = {
+  start: { id: "grab", region: "shoulder", answer: "allow", words: { hit: "GRAB!", voice: "hey!" } },
+  "strike:hit": { id: "chin", region: "face", answer: "slap", words: { hit: "POW!", voice: "take that!" } },
+  "strike:miss": { id: "gaze", region: "face", answer: "allow", noHand: true, words: { hit: "WHIFF", voice: "tch!" } },
+  "shove:hit": { id: "grab", region: "shoulder", answer: "slap", words: { hit: "SHOVE!", voice: "back off!" } },
+  "shove:miss": { id: "grab", region: "shoulder", answer: "allow", words: { hit: "...", voice: "ugh!" } },
+  dodge: { id: "gaze", region: "face", answer: "allow", noHand: true, words: { hit: "", voice: "come on!" } },
+  "talk:ok": { id: "gaze", region: "face", answer: "allow", noHand: true, words: { hit: "...", voice: "sit DOWN." } },
+  "talk:fail": { id: "gaze", region: "face", answer: "allow", noHand: true, words: { hit: "!!", voice: "fine, then." } },
+  "stare:ok": { id: "gaze", region: "face", answer: "allow", noHand: true, words: { hit: "...", voice: "well?" } },
+  "stare:win": { id: "gaze", region: "face", answer: "allow", noHand: true, words: { hit: "", voice: "out." } },
+  "stare:fail": { id: "gaze", region: "face", answer: "allow", noHand: true, words: { hit: "HA!", voice: "tch." } },
+  throw: { id: "grab", region: "shoulder", answer: "slap", words: { hit: "OUT!", voice: "and stay out!" } },
+  knockout: { id: "gaze", region: "face", answer: "allow", noHand: true, words: { hit: "K.O.!", voice: "hmph." } },
+  "their:hit": { id: "smack", region: "face", answer: "allow", fist: true, words: { hit: "WHAM!", voice: "ugh!" } },
+  "their:miss": { id: "smack", region: "face", answer: "pull", fist: true, words: { hit: "WHOOSH", voice: "missed!" } },
+  "their:dodged": { id: "smack", region: "face", answer: "pull", fist: true, words: { hit: "WHOOSH", voice: "too slow!" } },
+  lost: { id: "smack", region: "face", answer: "allow", fist: true, words: { hit: "WHAM!", voice: "ow..." } },
+};
+
+/** A duel moment's comic shot: which touch it looks like (for the framing and the hand), and on what part of her. */
+type DuelShot = { id: string; region: TouchRegion };
+/** His moves, by the part of her he has, first to boldest (dueltalk.ts THEIR_STAGES). */
+const DUEL_THEIR_SHOTS: Record<"kiss" | DuelArea, readonly DuelShot[]> = {
+  kiss: [{ id: "deepKiss", region: "lips" }],
+  hands: [
+    { id: "roam", region: "waist" },
+    { id: "fingers", region: "hand" },
+    { id: "fingers", region: "hand" },
+  ],
+  mouth: [
+    { id: "deepKiss", region: "lips" },
+    { id: "chin", region: "face" },
+    { id: "chin", region: "face" },
+  ],
+  breasts: [
+    { id: "bothHands", region: "chest" },
+    { id: "grab", region: "chest" },
+    { id: "bothHands", region: "chest" },
+  ],
+  butt: [
+    { id: "grab", region: "rear" },
+    { id: "smack", region: "rear" },
+    { id: "grab", region: "rear" },
+  ],
+  pussy: [
+    { id: "thighUp", region: "intimate" },
+    { id: "thighUp", region: "intimate" },
+    { id: "thighUp", region: "intimate" },
+  ],
+};
+/** Her own moves: the part of her that's doing it, with no hand in the shot. */
+const DUEL_HER_SHOTS: Record<HerMove, DuelShot> = {
+  kiss: { id: "kiss", region: "lips" },
+  caress: { id: "gaze", region: "face" },
+  tease: { id: "gaze", region: "face" },
+  undress: { id: "collar", region: "clothes" },
+  hands: { id: "fingers", region: "hand" },
+  mouth: { id: "kiss", region: "lips" },
+  tits: { id: "grab", region: "chest" },
+  ride: { id: "lap", region: "lap" },
+  anal: { id: "grab", region: "rear" },
+};
+/** Where a man finished on her. */
+const DUEL_CUM_SHOTS: Record<CumSpot, DuelShot> = {
+  mouth: { id: "kiss", region: "lips" },
+  face: { id: "gaze", region: "face" },
+  breasts: { id: "grab", region: "chest" },
+  pussy: { id: "thighUp", region: "intimate" },
+  ass: { id: "grab", region: "rear" },
+  body: { id: "hip", region: "waist" },
+};
+
+/**
+ * In development, shows her at set stages to look at without playing for it: "?coat=2" puts every part of her at
+ * stage 2, and "?coat=Face:1,Back:3" only those parts at those stages. Null without it.
+ */
+const DEV_COAT: Record<CoatSection, number> | null = (() => {
+  const asked = import.meta.env.DEV && typeof location !== "undefined" ? new URLSearchParams(location.search).get("coat") : null;
+  if (!asked) return null;
+  const clamp = (n: number) => Math.min(COAT_STAGES, Math.max(0, Math.round(n) || 0));
+  const all = Number(asked);
+  const stages = Object.fromEntries(COAT_SECTIONS.map((section) => [section, Number.isNaN(all) ? 0 : clamp(all)]));
+  for (const pair of asked.split(",")) {
+    const [section, stage] = pair.split(":");
+    const known = COAT_SECTIONS.find((s) => s.toLowerCase() === section?.trim().toLowerCase());
+    if (known && stage !== undefined) stages[known] = clamp(Number(stage));
+  }
+  return stages as Record<CoatSection, number>;
+})();
 
 /** Furniture pictures on the house plans, in game pixels; shown at twice this, hard-edged. */
 const FURNITURE_THUMB_SIZE = 32;
@@ -363,6 +480,12 @@ export class Game {
   private readonly drinkComic: DrinkComic;
   /** The comic panel that pops up when a guest reaches for you, playing out your answer. */
   private readonly touchComic: TouchComic;
+  /** The big picture of her during a fight, Karryn-style, and what it last showed of her. */
+  private readonly battleView: BattleView;
+  private battleShown = "";
+  /** A brawl turn's moments still to play in the comic panel, and how long until the next. */
+  private fightQueue: TouchShow[] = [];
+  private fightQueueWait = 0;
   /** What to return to when the pause menu closes. */
   private pausedFrom: "play" | "visitor" = "play";
   private afterFade: (() => void) | null = null;
@@ -450,6 +573,22 @@ export class Game {
   private readonly promptEl = element("prompt");
   /** The message log under the stats: news, what was said, and passives as she earns them. */
   private readonly log = new MessageLog(element("stats"));
+  /** Extra lines for the log from a local AI model (KoboldCpp), when it's running. N turns it on and off. */
+  private readonly narrator = new AiNarrator(
+    (text) => this.log.add(text, "ai"),
+    () => ({
+      name: this.tavern.name,
+      pronoun: this.active === 1 ? "she" : "he",
+      night: this.tavern.nightIndex,
+      serving: this.tavern.phase === "service" || this.tavern.phase === "lastcall",
+      guests: this.tavern.guests.length,
+      lewdness: this.tavern.lewdness,
+      corruption: this.tavern.corruption,
+      pleasure: this.tavern.pleasure,
+      drunk: drunkLabel(this.tavern.drunk),
+      stripped: this.tavern.strippedPieces,
+    }),
+  );
   readonly panelEl = element("panel");
   private readonly selectEl = element("select");
   private readonly furnitureImages = new Map<FurnitureKind, string>();
@@ -498,6 +637,10 @@ export class Game {
     private readonly clock: WorldClock,
     readonly audio: Soundscape,
   ) {
+    // The lines the AI wrote ahead of time; the narrator asks the live model only for what this doesn't cover.
+    void this.narrator.loadBank(`${import.meta.env.BASE_URL}ai-lines.json`);
+    // Brawls and duels take their colour lines from the same bank.
+    setFlavorSource((key, guest) => this.narrator.draw(key, guest));
     this.bell = makeBell();
     this.bell.position.copy(BELL_SPOT);
     assets.props.add(this.bell);
@@ -537,6 +680,7 @@ export class Game {
       this.itemTemplates[bottle] = cup;
     }
     this.drinkComic = new DrinkComic(renderer, element("comic"), () => this.makeItem("ale"), (effect) => this.audio.play(effect));
+    this.battleView = new BattleView(this.renderer);
     this.touchComic = new TouchComic(
       renderer,
       (effect) => this.audio.play(effect),
@@ -612,7 +756,10 @@ export class Game {
     });
 
     this.spawnPoints = [this.siblings[0].position.clone(), this.siblings[1].position.clone()];
-    const middle = this.spawnPoints[0].clone().lerp(this.spawnPoints[1], 0.5);
+    // The select shot centres on whoever can be picked.
+    const middle = new Vector3();
+    PLAYABLE.forEach((index) => middle.add(this.spawnPoints[index]));
+    middle.divideScalar(PLAYABLE.length);
     this.selectShot = {
       eye: middle.clone().add(SELECT_EYE),
       target: middle.clone().setY(SELECT_LOOK_HEIGHT),
@@ -622,6 +769,7 @@ export class Game {
     scene.add(this.stageLight);
     // The model faces -Z at rest; turn both round to face the select camera.
     this.siblings.forEach((sibling) => sibling.face(Math.PI));
+    this.siblings.forEach((sibling, index) => (sibling.root.visible = isPlayable(index)));
     document.body.classList.add("staging");
 
     window.addEventListener("pointermove", (event) => this.pointAt(event, false));
@@ -854,8 +1002,8 @@ export class Game {
     // Undressing is only for looking: everyone is dressed again on the way out.
     this.dressers.forEach((dresser) => dresser.setUndressed(false));
     this.dragX = null;
-    this.siblings.forEach((sibling) => {
-      sibling.root.visible = true;
+    this.siblings.forEach((sibling, index) => {
+      sibling.root.visible = isPlayable(index);
       sibling.face(Math.PI);
     });
     this.screen = "select";
@@ -1140,13 +1288,18 @@ export class Game {
   }
 
   private updateLog(dt: number): void {
-    for (const text of this.tavern.takeMessages()) this.log.add(text);
+    for (const text of this.tavern.takeMessages()) {
+      this.log.add(text);
+      this.narrator.note(text);
+    }
     for (const def of this.tavern.takeUnlocks()) {
       this.log.addPassive(def);
+      this.narrator.moment(`She has changed: she is now known for "${def.name}" (${def.benefit}).`, "passive");
       // A page turning: it's gone in her journal.
       this.audio.play("page");
     }
     this.log.update(dt);
+    this.narrator.update(dt);
   }
 
   /**
@@ -1290,16 +1443,20 @@ export class Game {
       this.plan = new HousePlan(cloneLayout(data.tavern.layout ?? this.defaultLayout));
       this.nav = this.applyPlan();
       this.tavern.setSeats(this.world.seats.map((seat) => seat.table));
-      this.active = data.active;
-      this.chosen = data.active;
+      // A save made as someone no longer playable opens as the first playable sibling.
+      this.active = isPlayable(data.active) ? data.active : PLAYABLE[0];
+      this.chosen = this.active;
       // Always the saved looks, never whatever was last on screen; saves from before customising load as built.
       this.looks = data.looks ?? { Male: newLook(), Female: newLook() };
       this.siblings.forEach((_, index) => this.applyLook(index));
       // Nothing the last character had on (or off) tonight carries over to the loaded one.
       this.strippedShown = "";
       this.syncStripped();
+      this.coatShown = "";
+      this.syncCoat();
       this.playerPortrait = null;
       this.log.clear();
+      this.narrator.clear();
       this.enterTavern();
     });
   }
@@ -1309,10 +1466,16 @@ export class Game {
     this.closePanel();
     this.screen = "select";
     this.selectEl.classList.add("open");
+    // With only one to pick from, she is picked already.
+    if (PLAYABLE.length === 1) {
+      this.choose(PLAYABLE[0]);
+      const hint = this.selectEl.querySelector(".hint");
+      if (hint) hint.textContent = "Press C to customize, or Enter to start";
+    }
   }
 
   private choose(index: number): void {
-    if (this.screen !== "select") return;
+    if (this.screen !== "select" || !isPlayable(index)) return;
     if (this.chosen !== index) this.audio.play("click");
     this.chosen = index;
     this.active = index;
@@ -1330,6 +1493,7 @@ export class Game {
     let best: number | null = null;
     let bestDistance = Infinity;
     this.siblings.forEach((sibling, index) => {
+      if (!isPlayable(index)) return;
       this.hitBox.setFromObject(sibling.root).expandByScalar(0.08);
       const hit = ray.intersectBox(this.hitBox, new Vector3());
       const distance = hit ? hit.distanceTo(ray.origin) : Infinity;
@@ -1532,7 +1696,10 @@ export class Game {
     this.clearTarget();
     this.screen = "talk";
     this.dialogue.start(lines, this.tavern.talkChoices, (index) => this.pickTalk(index));
-    for (const line of lines) this.log.addTalk(line);
+    for (const line of lines) {
+      this.log.addTalk(line);
+      this.narrator.note(line.speaker ? `${line.speaker} says: ${line.text}` : line.text);
+    }
   }
 
   /** What guests have got off the player tonight, as last put on the model: who, and which pieces. */
@@ -1540,7 +1707,7 @@ export class Game {
 
   /** Takes off the model whatever guests have got off the player, and puts it back on by morning. */
   private syncStripped(): void {
-    const off = this.tavern.strippedPieces;
+    const off = this.tavern.shownPieces;
     const key = `${this.active}:${off.join(",")}`;
     if (key === this.strippedShown) return;
     this.strippedShown = key;
@@ -1548,11 +1715,27 @@ export class Game {
     this.playerPortrait = null;
   }
 
+  /** What men have left on her tonight, stage by stage, as last shown; "" until it is first shown. */
+  private coatShown = "";
+
+  /** Shows on the player what men have left on her tonight, part by part; it's gone by the next night. */
+  private syncCoat(): void {
+    const stages = DEV_COAT ?? this.tavern.coatStages;
+    const key = `${this.active}:${Object.values(stages).join(",")}`;
+    if (key === this.coatShown) return;
+    this.coatShown = key;
+    this.dressers.forEach((dresser, index) => dresser.setCoat(index === this.active ? stages : {}));
+    this.playerPortrait = null;
+  }
+
   private pickTalk(index: number): void {
     const { tavern } = this;
     this.audio.play("click");
     const picked = tavern.talkChoices[index];
-    if (picked && !picked.disabled) this.log.addChoice(picked.label);
+    if (picked && !picked.disabled) {
+      this.log.addChoice(picked.label);
+      this.narrator.note(`The innkeeper chooses: ${picked.label}`);
+    }
     tavern.chooseTalk(index);
     this.syncStripped();
     this.showTouch();
@@ -1562,7 +1745,16 @@ export class Game {
       this.screen = "play";
       const scene = this.pendingAdult;
       this.pendingAdult = null;
-      if (scene) playAdultScene(this, scene);
+      if (scene) {
+        if (scene.kind === "upstairs") {
+          this.narrator.moment(
+            `She agrees to take a ${scene.guestKind} upstairs to her bed, and the room watches them go.`,
+            `upstairs:${scene.guestKind}`,
+            scene.guestKind,
+          );
+        } else this.narrator.moment("Her pleasure boils over and she is overwhelmed in front of the whole room.", "overwhelmed");
+        playAdultScene(this, scene);
+      }
       return;
     }
     // Only the answer to what you picked plays; the conversation before it has been seen.
@@ -1765,6 +1957,13 @@ export class Game {
       showDuelTest(this);
       return;
     }
+    // B starts a test brawl with a random kind of guest, in development only.
+    if (import.meta.env.DEV && input.pressed("KeyB") && !tavern.fight) {
+      tavern.startTestFight();
+      this.clearTarget();
+      showFight(this);
+      return;
+    }
 
     const found = this.findTarget();
     if (found && found.prompt.actionable && input.pressed("KeyE") && found.target.kind === "bed" && (tavern.restless || tavern.duelOffer())) {
@@ -1854,6 +2053,12 @@ export class Game {
   private showTouch(): void {
     const moment = this.tavern.takeTouchMoment();
     if (!moment) return;
+    this.narrator.moment(
+      `A ${moment.kind} reaches for her ${moment.region} (touch "${moment.id}", boldness ${moment.level}/10). ` +
+        TOUCH_ANSWER_TEXT[moment.answer],
+      `touch:${moment.region}:${moment.answer}:{tier}`,
+      moment.kind,
+    );
     const sibling = this.siblings[this.active];
     const took = moment.answer === "allow" || moment.answer === "lean";
     const soft: SoftPart | null = !took ? null : moment.region === "chest" ? "Bust" : moment.region === "rear" || moment.region === "lap" ? "Glute" : null;
@@ -1862,6 +2067,75 @@ export class Game {
     const name = BODY_NAMES[this.active];
     const body = sibling.root.getObjectByName(name);
     if (body) this.touchComic.play(body, name, { id: moment.id, region: moment.region, answer: moment.answer, kind: moment.kind });
+  }
+
+  /**
+   * One moment of an after-hours duel in the comic panel beside the log, like Karryn's battle picture: his move
+   * on the part of her he has (his hand coming in), her own move, or where he finished (her alone, no hand).
+   */
+  showDuelMoment(entry: DuelLogEntry, state: DuelState): void {
+    const shot = entry.spot
+      ? { ...DUEL_CUM_SHOTS[entry.spot], noHand: true }
+      : entry.part
+        ? (DUEL_THEIR_SHOTS[entry.part][Math.min(entry.stage ?? 0, DUEL_THEIR_SHOTS[entry.part].length - 1)] ?? DUEL_THEIR_SHOTS.kiss[0])
+        : entry.move
+          ? { ...DUEL_HER_SHOTS[entry.move], noHand: true }
+          : null;
+    if (!shot) return;
+    const name = BODY_NAMES[this.active];
+    const body = this.siblings[this.active].root.getObjectByName(name);
+    if (!body) return;
+    this.touchComic.play(body, name, { ...shot, answer: state === "calm" ? "allow" : "lean", kind: entry.kind ?? "farmer", hold: true });
+  }
+
+  /**
+   * A brawl turn in the comic panel beside the log: her move, then his answer, one after the other (his fist
+   * coming in, her knocking him back, a dodge). The last one stays up until the next turn.
+   */
+  showFightMoments(events: readonly string[], kind: GuestKind): void {
+    this.fightQueue = events.filter((event) => FIGHT_SHOTS[event]).map((event) => ({ ...FIGHT_SHOTS[event], kind, hold: true }));
+    this.fightQueueWait = 0;
+    this.nextFightMoment();
+  }
+
+  private nextFightMoment(): void {
+    const show = this.fightQueue.shift();
+    if (!show) return;
+    const name = BODY_NAMES[this.active];
+    const body = this.siblings[this.active].root.getObjectByName(name);
+    if (body) this.touchComic.play(body, name, show);
+    this.fightQueueWait = FIGHT_MOMENT_GAP;
+  }
+
+  /**
+   * The big picture of her beside a fight, showing her as she is now: shown again only when what's off her or
+   * on her has changed. `title` goes on its nameplate.
+   */
+  showBattle(mode: BattleMode, title: string, heat: number, edge: boolean, status: readonly BattleStat[]): void {
+    this.syncStripped();
+    this.syncCoat();
+    const key = `${mode}:${this.strippedShown}:${this.coatShown}`;
+    const name = BODY_NAMES[this.active];
+    const body = this.siblings[this.active].root.getObjectByName(name);
+    if (body && (key !== this.battleShown || !this.battleView.open)) {
+      this.battleShown = key;
+      this.battleView.show(body, name, mode, title);
+    }
+    this.battleView.setHeat(heat, edge);
+    this.battleView.setStatus(status);
+  }
+
+  /** She's hit, or jolted, in the big picture. */
+  battleHit(hard: boolean): void {
+    this.battleView.hit(hard);
+  }
+
+  /** Takes the duel's comic panel down, once the game is over. */
+  hideDuelMoment(): void {
+    this.battleView.hide();
+    this.battleShown = "";
+    this.fightQueue = [];
+    this.touchComic.clear();
   }
 
   /** Pops up the comic panel of the active sibling knocking back a drink. */
@@ -1901,6 +2175,10 @@ export class Game {
         this.log.add(muted ? "Sound off" : "Sound on");
       }
     }
+    if (this.input.pressed("KeyN") && !this.staging) {
+      const on = this.narrator.toggle();
+      this.log.add(on ? `AI narrator on (KoboldCpp at ${this.narrator.endpoint})` : "AI narrator off");
+    }
     // Paused: nothing moves, not even the guests.
     if (this.screen === "paused") {
       if (this.input.pressed("Escape")) (this.panelBack ?? (() => this.resume()))();
@@ -1922,6 +2200,7 @@ export class Game {
     // Time stands still while you're looking at the plans.
     if (this.screen !== "build") this.clock.update(dt);
     this.syncStripped();
+    this.syncCoat();
 
     if (this.screen === "story") {
       this.updateStory(dt);
@@ -1963,7 +2242,9 @@ export class Game {
     }
 
     this.drinkComic.update(dt);
+    if (this.fightQueue.length > 0 && (this.fightQueueWait -= dt) <= 0) this.nextFightMoment();
     this.touchComic.update(dt);
+    this.battleView.update(dt);
     this.syncGuests(dt);
     this.messLayer.sync(this.tavern.messes, dt);
     this.updateBell(dt);

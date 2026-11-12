@@ -8,6 +8,7 @@ import type { Persona } from "./banter";
 import type { TouchRegion } from "./touchtalk";
 import { COIN, FLAME, VILLAGERS } from "./hud";
 import { pixelSvg } from "./icons";
+import { CUM_NAMES, CUM_SPOTS } from "./cum";
 import {
   corruptWord,
   earned,
@@ -384,6 +385,12 @@ export function recordsBook(state: RecordsState): HTMLElement {
   }
   left.append(row("Overwhelmed", String(r.overwhelmed)));
   left.append(row("Eased it yourself", String(r.alone)));
+  // Every load, like Karryn's records: where, and how much.
+  left.append(el("h2", "", "Cum"));
+  const ml = CUM_SPOTS.reduce((n, spot) => n + (r.cum[spot] ?? 0), 0);
+  left.append(row("Loads taken", String(r.loads)));
+  for (const spot of CUM_SPOTS) left.append(row(CUM_NAMES[spot], `${r.cum[spot] ?? 0} ml`));
+  left.append(row("In all", `${ml} ml`));
 
   right.append(el("h2", "", "Upstairs"));
   right.append(row("Taken upstairs", String(r.invitations)));

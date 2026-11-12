@@ -241,6 +241,12 @@ body.staging #clock {
   color: var(--gold);
 }
 
+/* The AI narrator's lines (see ainarrator.ts): a warm rose, so they read as the log's commentary. */
+#stats .log .ai {
+  color: #f2a7b8;
+  font-style: italic;
+}
+
 /* A new passive stands out: a gold tag, its name, and what it does. */
 #stats .log .passive {
   padding: 3px 6px;

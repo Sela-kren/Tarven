@@ -9,11 +9,13 @@ load them as the source and pass them through retro_crush() the same way.
 """
 import math
 import os
+import random
 
 import bmesh
 import bpy
 import numpy as np
-from mathutils import Matrix
+from mathutils import Matrix, Vector
+from mathutils.bvhtree import BVHTree
 
 # TARVEN_ROOT sends the build somewhere else, such as a scratch folder to compare it with the game's models.
 ROOT = os.environ.get("TARVEN_ROOT") or r"C:\Game\Tarven"
@@ -2963,6 +2965,192 @@ def more_outfits(spec, m, skin, normals, fit):
     }
 
 
+# ---------------------------------------------------------------- what men leave on her
+
+# Splats and drips lying on her skin, one mesh per part of her and stage: "<Name>_Cum<Section><Stage>". Each stage
+# adds to the ones before it, so the game shows stages 1 to n together. The sections match the spots the game
+# counts loads in (cum.ts): Face, Breasts, Body (her belly), Pussy (and her inner thighs), Ass, and Back (her lower
+# back and spine, where a man behind her finishes when he pulls out), Arms and Hands.
+# Off the skin by less than the clothes are (CLOTH_GAP), so a garment still covers what is under it.
+COAT_LIFT = 0.0014
+COAT_BULGE = 0.0012
+# The body's splats come out this much bigger than written, so they still read from the game's camera at its low
+# resolution; the face's stay as written.
+COAT_BODY_SCALE = 1.4
+# Splats as (side, x, height, radius, drips, drip length), by section and stage. Side 1 is her front, -1 her back.
+# The face's are measured from the middle of her mouth; the arms' and hands' name a bone and how far down it, from 0
+# at its top to 1 at its bottom (her hands are the bottom of the forearms); the rest are heights on the body.
+COAT_SPLATS = {
+    # Cheeks, nose and brow; her lips and chin are the Mouth's.
+    "Face": [
+        [(1, 0.03, 0.022, 0.011, 1, 0.03)],
+        [(1, -0.032, 0.03, 0.01, 1, 0.03), (1, 0.002, 0.04, 0.006, 1, 0.025)],
+        [(1, -0.012, 0.085, 0.013, 2, 0.04), (1, 0.022, 0.06, 0.008, 1, 0.05), (1, 0.03, 0.002, 0.009, 1, 0.04)],
+    ],
+    "Breasts": [
+        [(1, 0.06, 1.17, 0.02, 1, 0.04)],
+        [(1, -0.065, 1.16, 0.022, 2, 0.045), (1, 0.0, 1.13, 0.014, 1, 0.05)],
+        [(1, 0.088, 1.13, 0.02, 1, 0.035), (1, -0.085, 1.12, 0.02, 1, 0.04), (1, 0.02, 1.22, 0.018, 2, 0.06),
+         (1, -0.03, 1.08, 0.016, 2, 0.06)],
+    ],
+    "Body": [
+        [(1, 0.01, 1.0, 0.022, 1, 0.04)],
+        [(1, -0.045, 1.04, 0.018, 1, 0.04), (1, 0.045, 0.96, 0.016, 1, 0.05)],
+        [(1, 0.0, 1.07, 0.02, 2, 0.05), (1, -0.025, 0.93, 0.02, 2, 0.07), (1, 0.05, 1.02, 0.016, 1, 0.06)],
+    ],
+    "Pussy": [
+        [(1, 0.012, 0.8, 0.012, 1, 0.04)],
+        [(1, 0.05, 0.74, 0.01, 1, 0.07), (1, -0.016, 0.79, 0.012, 1, 0.05)],
+        [(1, -0.05, 0.72, 0.012, 2, 0.1), (1, 0.055, 0.68, 0.01, 1, 0.1), (1, 0.0, 0.82, 0.01, 1, 0.03),
+         (1, 0.035, 0.76, 0.012, 1, 0.08)],
+    ],
+    "Ass": [
+        [(-1, 0.05, 0.84, 0.024, 1, 0.05)],
+        [(-1, -0.06, 0.82, 0.024, 2, 0.06), (-1, 0.0, 0.81, 0.016, 1, 0.06), (-1, 0.075, 0.79, 0.016, 1, 0.05)],
+        [(-1, 0.065, 0.74, 0.016, 2, 0.1), (-1, -0.06, 0.73, 0.016, 2, 0.1), (-1, 0.03, 0.8, 0.014, 1, 0.06),
+         (-1, -0.08, 0.86, 0.018, 1, 0.06), (-1, 0.02, 0.88, 0.018, 1, 0.05)],
+    ],
+    "Back": [
+        [(-1, 0.0, 0.95, 0.022, 1, 0.05)],
+        [(-1, -0.04, 1.0, 0.02, 1, 0.05), (-1, 0.02, 1.05, 0.016, 1, 0.06)],
+        [(-1, 0.045, 1.1, 0.02, 2, 0.06), (-1, -0.03, 1.18, 0.018, 1, 0.07), (-1, 0.0, 0.9, 0.012, 1, 0.06)],
+    ],
+    "Arms": [
+        [(1, "ForeArm_R", 0.45, 0.02, 1, 0.06)],
+        [(1, "ForeArm_L", 0.4, 0.02, 1, 0.06), (1, "UpperArm_R", 0.45, 0.02, 1, 0.06)],
+        [(1, "UpperArm_L", 0.5, 0.02, 2, 0.07), (1, "ForeArm_R", 0.15, 0.016, 1, 0.05), (-1, "ForeArm_L", 0.7, 0.016, 1, 0.05)],
+    ],
+    "Hands": [
+        [(1, "ForeArm_R", 0.9, 0.016, 1, 0.03)],
+        [(1, "ForeArm_L", 0.9, 0.016, 1, 0.03), (-1, "ForeArm_R", 0.92, 0.014, 1, 0.03)],
+        [(-1, "ForeArm_L", 0.92, 0.014, 1, 0.03), (1, "ForeArm_R", 0.97, 0.012, 1, 0.025),
+         (1, "ForeArm_L", 0.97, 0.012, 1, 0.025)],
+    ],
+    # What spills from her mouth: a drop on her lower lip, then her mouth's corners running, then down her chin.
+    # Like the Face, places are from the middle of her lips. Last, so the sections above keep their shapes.
+    "Mouth": [
+        [(1, 0.003, -0.004, 0.006, 1, 0.022)],
+        [(1, -0.014, -0.002, 0.0045, 1, 0.03), (1, 0.006, 0.004, 0.005, 0, 0.0)],
+        [(1, 0.015, -0.003, 0.0045, 2, 0.045), (1, -0.004, -0.028, 0.008, 1, 0.05), (1, -0.006, -0.003, 0.006, 0, 0.0)],
+    ],
+}
+COAT_ON_LIPS = ("Face", "Mouth")
+
+
+def build_coat(c, m, name, body_obj):
+    """Builds every section's stages on the finished body, weighted like the skin under them."""
+    bm_body = bmesh.new()
+    bm_body.from_mesh(body_obj.data)
+    bm_body.faces.ensure_lookup_table()
+    deform = bm_body.verts.layers.deform.active
+    tree = BVHTree.FromBMesh(bm_body)
+    groups = [g.name for g in body_obj.vertex_groups]
+    lips = {i for i, mat in enumerate(body_obj.data.materials) if mat and mat.name.startswith("T_lip")}
+    lip_faces = [f for f in bm_body.faces if f.material_index in lips]
+    mouth = sum((f.calc_center_median() for f in lip_faces), Vector()) / max(1, len(lip_faces))
+    # Its own random numbers, so the rest of the build comes out as it always has.
+    rand = random.Random(11)
+
+    def along_bone(label, share):
+        """A point down the middle of a limb, from the skin it carries most of."""
+        index = groups.index(f"{name}_{label}")
+        points = [v.co for v in bm_body.verts if v[deform].get(index, 0.0) > 0.6]
+        top, bottom = max(p.z for p in points), min(p.z for p in points)
+        z = top + (bottom - top) * share
+        near = [p for p in points if abs(p.z - z) < 0.02] or points
+        return sum(p.x for p in near) / len(near), z
+
+    def surface(point):
+        loc, normal, _, _ = tree.find_nearest(point)
+        return loc, normal
+
+    def landed(side, x, z):
+        loc, normal, _, _ = tree.ray_cast(Vector((x, side * 1.0, z)), Vector((0, -side, 0)))
+        return loc, normal
+
+    def weights_at(point):
+        _, _, index, _ = tree.find_nearest(point)
+        total, out = 0.0, {}
+        for vert in bm_body.faces[index].verts:
+            share = 1.0 / ((vert.co - point).length + 1e-4)
+            total += share
+            for group, weight in vert[deform].items():
+                out[group] = out.get(group, 0.0) + weight * share
+        return {group: weight / total for group, weight in out.items() if weight / total > 0.001}
+
+    def splat(bm, center, normal, radius, sides=12, bulge=COAT_BULGE, squash=1.0):
+        """An uneven puddle, domed a little in the middle, lying on the skin."""
+        across = normal.cross(Vector((0, 0, 1)))
+        across = across.normalized() if across.length > 1e-4 else Vector((1, 0, 0))
+        up = across.cross(normal).normalized()
+        middle = bm.verts.new(center + normal * (COAT_LIFT + bulge))
+        ring = []
+        for i in range(sides):
+            a = 2 * math.pi * i / sides
+            r = radius * rand.uniform(0.65, 1.2)
+            loc, n = surface(center + across * math.cos(a) * r + up * math.sin(a) * r * squash)
+            ring.append(bm.verts.new(loc + n * COAT_LIFT))
+        for i in range(sides):
+            bm.faces.new((middle, ring[i], ring[(i + 1) % sides]))
+
+    def drip(bm, start, length, width):
+        """A runnel down the skin, thinning as it goes, with a bead at its end."""
+        points, at = [], start.copy()
+        steps = max(3, int(length / 0.01))
+        for _ in range(steps):
+            loc, n = surface(at)
+            points.append((loc, n))
+            at = loc + n * 0.002 + Vector((rand.uniform(-0.0015, 0.0015), 0, -length / steps))
+        rows = []
+        for i, (loc, n) in enumerate(points):
+            down = (points[min(i + 1, steps - 1)][0] - points[max(i - 1, 0)][0]).normalized()
+            side = down.cross(n).normalized()
+            w = width * (1 - 0.4 * i / steps)
+            rows.append((bm.verts.new(loc + side * w + n * COAT_LIFT),
+                         bm.verts.new(loc + n * (COAT_LIFT + COAT_BULGE)),
+                         bm.verts.new(loc - side * w + n * COAT_LIFT)))
+        for a, b in zip(rows, rows[1:]):
+            bm.faces.new((a[0], b[0], b[1], a[1]))
+            bm.faces.new((a[1], b[1], b[2], a[2]))
+        splat(bm, points[-1][0], points[-1][1], width * 1.4, sides=8, bulge=COAT_BULGE * 0.8)
+
+    layers = []
+    for section, stages in COAT_SPLATS.items():
+        for stage, splats in enumerate(stages, 1):
+            bm = bmesh.new()
+            for side, x, z, radius, drips, length in splats:
+                if section in COAT_ON_LIPS:
+                    x, z = mouth.x + x, mouth.z + z
+                elif isinstance(x, str):
+                    x, z = along_bone(x, z)
+                if section not in COAT_ON_LIPS:
+                    radius *= COAT_BODY_SCALE
+                loc, normal = landed(side, x, z)
+                if loc is None:
+                    print(f"{name} {section}{stage}: nothing at x={x:.3f} z={z:.3f}")
+                    continue
+                splat(bm, loc, normal, radius, sides=14, squash=0.75 if section in COAT_ON_LIPS else 1.0)
+                for _ in range(drips):
+                    off = Vector((rand.uniform(-0.6, 0.6) * radius, 0, -radius * 0.45))
+                    drip(bm, loc + off, length * rand.uniform(0.8, 1.2), max(0.0025, radius * 0.25))
+            label = f"{name}_Cum{section}{stage}"
+            mesh = bpy.data.meshes.new(label)
+            bm.to_mesh(mesh)
+            bm.free()
+            for poly in mesh.polygons:
+                poly.use_smooth = True
+            mesh.materials.append(m["cum"])
+            obj = bpy.data.objects.new(label, mesh)
+            c.objects.link(obj)
+            for vertex in mesh.vertices:
+                for group, weight in weights_at(vertex.co).items():
+                    target = obj.vertex_groups.get(groups[group]) or obj.vertex_groups.new(name=groups[group])
+                    target.add([vertex.index], weight, "REPLACE")
+            layers.append(obj)
+    bm_body.free()
+    return layers
+
+
 def skin_character(c, m, spec, root):
     """Rebuilds a character as body, cloth, shoe and hair layers, all driven by one set of bones."""
     name = spec["name"]
@@ -3103,6 +3291,10 @@ def skin_character(c, m, spec, root):
         for layer in (body_obj, cloth_obj, *outfits):
             refine_soft_parts(layer, name)
         add_jiggle_weights(name, (body_obj, cloth_obj, *outfits))
+        # Built on the finished body, so it lies on the refined bust and takes the springs' weights too.
+        coat = build_coat(c, m, name, body_obj)
+    else:
+        coat = []
 
     armature = bpy.data.armatures.new(f"{name}_Bones")
     rig = bpy.data.objects.new(f"{name}_Armature", armature)
@@ -3121,7 +3313,7 @@ def skin_character(c, m, spec, root):
             armature.edit_bones[bone_name].parent = armature.edit_bones[parent]
     bpy.ops.object.mode_set(mode="OBJECT")
 
-    for layer in (body_obj, cloth_obj, *outfits, shoes, hair, *styles):
+    for layer in (body_obj, cloth_obj, *outfits, shoes, hair, *styles, *coat):
         layer.parent = rig
         layer.modifiers.new("Bones", "ARMATURE").object = rig
 
@@ -3228,6 +3420,10 @@ def main():
     random_state = rng.bit_generator.state
     for key, colour in PIRATE_COLOURS:
         mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
+    rng.bit_generator.state = random_state
+    # What men leave on her, likewise.
+    random_state = rng.bit_generator.state
+    mats["cum"] = material("T_cum", tex_flat("T_cum", (0.93, 0.92, 0.87)))
     rng.bit_generator.state = random_state
     for spec, blender_x in ((MALE, -0.6), (FEMALE, 0.6)):
         coll = bpy.data.collections.new(spec["name"] + "Rig")

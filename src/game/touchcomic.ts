@@ -52,6 +52,9 @@ const T = {
   end: 3.25,
 } as const;
 
+/** Where a held panel stops: the hand on her, before it lets go. */
+const HOLD_AT = T.release - 0.05;
+
 /** How she stands to the camera: facing it (angled toward the guest), side on, or with her back to it. */
 type View = "front" | "profile" | "behind";
 const TURN: Record<View, number> = { front: Math.PI - 0.5, profile: Math.PI - 1.15, behind: 0.3 };
@@ -294,6 +297,16 @@ export interface TouchShow {
   /** The touch, for the words lettered over it. */
   id: string;
   kind: GuestKind;
+  /** No hand comes in: the shot is of her alone (her own move in a duel, or where a man finished). */
+  noHand?: boolean;
+  /** Stays up on the moment, hand still on her, until the next one or clear(): a duel's battle picture. */
+  hold?: boolean;
+  /**
+   * A brawl, not a touch: these words lettered over it instead (the hit, then her voice; either may be empty),
+   * no blush and no heart, and with `fist` the guest's hand comes in as a closed fist.
+   */
+  words?: { hit: string; voice: string };
+  fist?: boolean;
 }
 
 export class TouchComic {
@@ -379,7 +392,7 @@ export class TouchComic {
     this.clear();
     const model = cloneSkinned(body);
     model.position.set(0, 0, 0);
-    const shot = shotFor(show.id, show.region);
+    const shot: Shot = { ...shotFor(show.id, show.region), ...(show.noHand ? { gesture: "none" as const } : {}) };
     this.shot = shot;
     // Facing the camera angled toward the guest on the panel's left, side on, or turned away so the hand coming
     // in from the left lands on the near side.
@@ -469,6 +482,8 @@ export class TouchComic {
   update(dt: number): void {
     if (!this.active || !this.show) return;
     this.time += dt;
+    // Held: the moment stays, hand still on her, and only her soft parts keep moving.
+    if (this.show.hold) this.time = Math.min(this.time, HOLD_AT);
     const t = this.time;
     const { answer, region } = this.show;
     if (t >= T.contact && !this.played.has("contact")) {
@@ -514,6 +529,15 @@ export class TouchComic {
       this.letters.push({ el, from, to });
     };
     const after = T.contact;
+    // A brawl's own words, timed like the touch they look like.
+    if (show.words) {
+      const { hit, voice } = show.words;
+      const [hitAt, voiceAt] =
+        show.answer === "slap" ? [T.swing + 0.15, T.swing + 0.6] : show.answer === "pull" ? [after + 0.2, T.swing] : [after, after + 0.35];
+      if (hit) letter(hit, "hit", hitAt, hitAt + 0.95);
+      if (voice) letter(voice, "voice", voiceAt, T.popOut);
+      return;
+    }
     switch (show.answer) {
       case "allow":
       case "lean": {
@@ -715,7 +739,7 @@ export class TouchComic {
     hand.quaternion.copy(reaching).slerp(lying, settle);
     if (spin) hand.quaternion.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), spin));
 
-    this.arm?.curl(Math.min(1, curl));
+    this.arm?.curl(this.show?.fist ? 1 : Math.min(1, curl));
     // The arm's origin is its elbow: put it so the palm lands where it should.
     hand.position.copy(position).sub(this.palm.clone().multiplyScalar(scale).applyQuaternion(hand.quaternion));
   }
@@ -760,7 +784,7 @@ export class TouchComic {
 
   /** How pink her cheeks are: none for a slap, a little for a pull, more for letting it, most for leaning in. */
   private blush(): number {
-    if (!this.show) return 0;
+    if (!this.show || this.show.words) return 0;
     const grow = ease(span(this.time, T.contact, T.contact + 0.6));
     const amount = { allow: 0.55, lean: 0.85, pull: 0.25, slap: 0 }[this.show.answer];
     return grow * amount;

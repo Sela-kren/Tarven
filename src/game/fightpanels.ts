@@ -3,6 +3,7 @@
  * to the end, and the 18+ cards (upstairs, alone, and how a duel ended). The duel's rules are in duel.ts and its
  * moves in duelmoves.ts; this file only draws them and passes her picks on.
  */
+import { CUM_NAMES, CUM_SPOTS } from "./cum";
 import { AREA_NAMES, DUEL_AREAS, MAX_PARTNERS, STATE_NAMES, type Duel, type DuelArea, type DuelLogEntry, type DuelTest, type Partner } from "./duel";
 import { ROLE_PLAYS, type RolePlay } from "./duellines";
 import { PARTNERS } from "./duelmoves";
@@ -102,6 +103,7 @@ export function showFight(game: Game): void {
   const { tavern } = game;
   const fight = tavern.fight;
   if (!fight) {
+    game.hideDuelMoment();
     const result = tavern.takeFightResult();
     const back = () => {
       game.closePanel();
@@ -116,13 +118,24 @@ export function showFight(game: Game): void {
     label: choice.chance === null ? choice.label : `${choice.label} · ${Math.round(choice.chance * 100)}%`,
     disabled: choice.disabled,
     onPick: () => {
+      const before = fight.events.length;
       tavern.fightMove(choice.move);
+      // The turn's moments play in the comic panel, and a blow that lands on her shows in the big picture.
+      const events = fight.events.slice(before);
+      game.showFightMoments(events, fight.kind);
+      if (events.some((e) => e === "their:hit" || e === "lost")) game.battleHit(true);
       game.audio.play(fight.outcome === "lost" ? "walkOut" : "cloth");
       showFight(game);
     },
   }));
   game.openPanel(`Brawl with a ${fight.kind}`, [], buttons);
-  game.panelEl.classList.add("fight-open");
+  game.panelEl.classList.add("fight-open", "battle-open");
+  const off = tavern.strippedPieces.length;
+  game.showBattle("brawl", "You · Brawl", 0, false, [
+    { label: "Stamina", value: `${fight.stamina}/${fight.maxStamina}`, tone: fight.stamina < fight.maxStamina / 2 ? "hurt" : undefined },
+    { label: `The ${fight.kind}`, value: `${fight.foeStamina}/${fight.foeMax}` },
+    { label: "Clothes", value: off === 0 ? "Dressed" : `${off} ${off === 1 ? "piece" : "pieces"} off` },
+  ]);
   const box = game.panelEl.querySelector(".box");
   if (!box) return;
   const bars = document.createElement("div");
@@ -280,7 +293,8 @@ function duelLog(entries: readonly DuelLogEntry[]): HTMLElement {
       for (const effect of entry.effects) {
         const chip = document.createElement("span");
         chip.className = `effect by-${effect.side} ${effect.stat} ${effect.amount < 0 ? "down" : "up"}`;
-        chip.textContent = `${effect.who} ${effect.amount > 0 ? "+" : ""}${effect.amount} ${effect.stat === "pleasure" ? "pleasure" : "stamina"}`;
+        chip.textContent =
+          effect.stat === "cum" ? `${effect.who} +${effect.amount} ml` : `${effect.who} ${effect.amount > 0 ? "+" : ""}${effect.amount} ${effect.stat}`;
         nums.append(chip);
       }
       el.append(nums);
@@ -294,6 +308,34 @@ function duelLog(entries: readonly DuelLogEntry[]): HTMLElement {
 
 /** The partner her moves go to, picked by clicking them; the first still in when none is picked. */
 let targetId: number | undefined;
+/** Loads already shown, so a new one splashes the screen once. */
+let shownLoads = 0;
+
+/** What's on her and in her so far this game, by where, for under her bars; empty with none yet. */
+function cumTally(duel: Duel): HTMLElement | null {
+  const parts = CUM_SPOTS.filter((spot) => (duel.cum[spot] ?? 0) > 0).map((spot) => `${CUM_NAMES[spot]} ${duel.cum[spot]} ml`);
+  if (parts.length === 0) return null;
+  const tally = document.createElement("p");
+  tally.className = "duel-cum";
+  tally.textContent = `Cum on you: ${parts.join(" · ")}`;
+  return tally;
+}
+
+/** A white splash over the fight screen when a man finishes; it fades by itself. */
+function splash(box: Element): void {
+  const el = document.createElement("div");
+  el.className = "cum-splash";
+  for (let i = 0; i < 7; i++) {
+    const drop = document.createElement("span");
+    drop.style.left = `${10 + Math.random() * 80}%`;
+    drop.style.top = `${5 + Math.random() * 70}%`;
+    drop.style.setProperty("--size", `${30 + Math.random() * 70}px`);
+    drop.style.animationDelay = `${i * 40}ms`;
+    el.append(drop);
+  }
+  box.append(el);
+  window.setTimeout(() => el.remove(), 1600);
+}
 
 /** A partner's row on the fight screen: who, which part of her they've taken, and their bars. Click to aim at them. */
 function partnerRow(duel: Duel, partner: Partner, aimed: boolean, onPick: () => void): HTMLElement {
@@ -322,6 +364,8 @@ export function showDuel(game: Game): void {
   const duel = tavern.duel;
   if (!duel) {
     targetId = undefined;
+    shownLoads = 0;
+    game.hideDuelMoment();
     const result = tavern.takeDuelResult();
     if (result?.test) {
       const back = () => {
@@ -362,15 +406,25 @@ export function showDuel(game: Game): void {
     label: choice.label,
     disabled: choice.disabled,
     onPick: () => {
+      const before = duel.entries.length;
       tavern.duelMove(choice.move, targetId);
+      // The turn's last moment plays in the comic panel beside the log, Karryn-style.
+      const turn = duel.entries.slice(before);
+      const shown = [...turn].reverse().find((e) => e.part || e.move || e.spot);
+      if (shown) game.showDuelMoment(shown, duel.state);
+      // His hands on her, or him finishing on her, jolts her in the big picture.
+      if (turn.some((e) => e.side === "partner" && (e.part || e.spot))) game.battleHit(turn.some((e) => e.spot));
       game.audio.play("cloth");
-      showDuel(game);
+      // Played to the end: the last of the log first (who gave in, and where they finished), then the result.
+      if (!tavern.duel && duel.outcome !== "stopped") showDuelEnd(game, duel);
+      else showDuel(game);
     },
   }));
   const many = duel.partners.length > 1;
   const title = many ? `After hours with ${duel.partners.length} of them` : `After hours with the ${duel.kind}`;
   game.openPanel(title, [], buttons);
-  game.panelEl.classList.add("fight-open", "duel-open");
+  game.panelEl.classList.add("fight-open", "duel-open", "battle-open");
+  showDuelBattle(game, duel);
   const box = game.panelEl.querySelector(".box");
   if (box) {
     const bars = document.createElement("div");
@@ -396,6 +450,10 @@ export function showDuel(game: Game): void {
     box.insertBefore(state, log);
     box.insertBefore(partners, state);
     box.insertBefore(bars, partners);
+    const tally = cumTally(duel);
+    if (tally) box.insertBefore(tally, partners);
+    if (duel.loads > shownLoads) splash(box);
+    shownLoads = duel.loads;
   }
   if (tavern.testing) {
     game.panelEl.classList.add("duel-test-open");
@@ -406,6 +464,45 @@ export function showDuel(game: Game): void {
     tavern.duelMove("stop");
     showDuel(game);
   };
+}
+
+/** What she's wearing in a duel, by how far she's undressed. */
+const UNDRESSED = ["Dressed", "In her shift", "Naked"];
+
+/** The big picture of her beside the duel, Karryn-style, with her status board: clothes, feeling, what's on her. */
+function showDuelBattle(game: Game, duel: Duel): void {
+  const cum = CUM_SPOTS.filter((spot) => (duel.cum[spot] ?? 0) > 0);
+  game.showBattle("duel", "You · After hours", duel.pleasure / 100, duel.state === "edge", [
+    { label: "Feeling", value: STATE_NAMES[duel.state], tone: duel.state === "calm" ? undefined : "hot" },
+    { label: "Pleasure", value: `${duel.pleasure}/100`, tone: "hot" },
+    { label: "Clothes", value: UNDRESSED[Math.min(2, duel.undressed)] },
+    ...(cum.length
+      ? cum.map((spot) => ({ label: CUM_NAMES[spot], value: `${duel.cum[spot]} ml`, tone: "cum" as const }))
+      : [{ label: "Cum", value: "None yet" }]),
+  ]);
+}
+
+/** The finished game's last moments: the bars, what's on her, and the end of the log, before the result. */
+function showDuelEnd(game: Game, duel: Duel): void {
+  const title = duel.outcome === "won" ? "They give in" : "You give in";
+  const next = () => showDuel(game);
+  game.openPanel(title, [], [{ label: "Continue", onPick: next }]);
+  game.panelEl.classList.add("fight-open", "duel-open", "battle-open");
+  showDuelBattle(game, duel);
+  game.panelBack = next;
+  const box = game.panelEl.querySelector(".box");
+  if (!box) return;
+  const bars = document.createElement("div");
+  bars.className = "fight-bars";
+  bars.append(statBar("Your pleasure", duel.pleasure, 100, "pleasure"), statBar("Your stamina", duel.stamina, duel.maxStamina, "you"));
+  const log = duelLog(duel.entries);
+  const menu = box.querySelector(".menu");
+  box.insertBefore(bars, menu);
+  const tally = cumTally(duel);
+  if (tally) box.insertBefore(tally, menu);
+  box.insertBefore(log, menu);
+  if (duel.loads > shownLoads) splash(box);
+  shownLoads = duel.loads;
 }
 
 /** A fresh test setup: everything in play, one fugitive, everyone fresh. */
@@ -430,6 +527,7 @@ let test = defaultTest();
  */
 export function showDuelTest(game: Game): void {
   targetId = undefined;
+  shownLoads = 0;
   game.tavern.startTestDuel(test);
   showDuel(game);
 }

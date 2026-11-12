@@ -964,3 +964,61 @@
 #panel .duel-log .effect.stamina.down {
   color: #e0905a;
 }
+
+#panel .duel-log .effect.cum {
+  color: #fff6e0;
+  font-weight: bold;
+}
+
+/* What's on her so far this game: under her bars. */
+#panel .duel-cum {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: #fff6e0;
+  text-shadow: 0 0 6px rgba(255, 255, 255, 0.35);
+}
+
+/* A man finishes: white splashes over the fight screen that drip and fade. */
+#panel .cum-splash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 5;
+}
+
+#panel .cum-splash span {
+  position: absolute;
+  width: var(--size);
+  height: calc(var(--size) * 0.8);
+  border-radius: 48% 52% 45% 55% / 55% 45% 60% 40%;
+  background: radial-gradient(circle at 35% 30%, #ffffff, rgba(248, 244, 232, 0.92) 45%, rgba(236, 230, 214, 0.75));
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  animation: cum-splash 1.5s ease-out forwards;
+}
+
+@keyframes cum-splash {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  12% {
+    opacity: 0.95;
+    transform: scale(1.1);
+  }
+  60% {
+    opacity: 0.85;
+    transform: scale(1) translateY(10px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1) translateY(40px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #panel .cum-splash span {
+    animation-duration: 0.01s;
+  }
+}

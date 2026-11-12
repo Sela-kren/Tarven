@@ -13,6 +13,7 @@
  * Every count here only rises when she says yes, or (for composure and sadism) when she says no. She can
  * always say no.
  */
+import { CUM_SPOTS, type CumSpot } from "./cum";
 import type { GuestKind } from "./tavern";
 import type { TouchRegion } from "./touchtalk";
 import type { SkillId, StatId } from "./skills";
@@ -136,6 +137,9 @@ export interface Records {
   heldBack: number;
   undressed: number;
   duelMoves: Partial<Record<DuelMove, number>>;
+  /** Every load a man has left on or in her, in ml by where it landed, and how many loads in all. */
+  cum: Partial<Record<CumSpot, number>>;
+  loads: number;
 }
 
 export function newRecords(): Records {
@@ -172,6 +176,8 @@ export function newRecords(): Records {
     heldBack: 0,
     undressed: 0,
     duelMoves: {},
+    cum: {},
+    loads: 0,
   };
 }
 
@@ -1884,6 +1890,7 @@ export function readProgress(raw: unknown): ProgressSave {
       "boldWins",
       "heldBack",
       "undressed",
+      "loads",
     ] as const) {
       rec[key] = Math.floor(num(src[key]));
     }
@@ -1903,6 +1910,12 @@ export function readProgress(raw: unknown): ProgressSave {
       for (const move of DUEL_MOVES) {
         const n = Math.floor(num((src.duelMoves as Record<string, unknown>)[move]));
         if (n > 0) rec.duelMoves[move] = n;
+      }
+    }
+    if (src.cum && typeof src.cum === "object") {
+      for (const spot of CUM_SPOTS) {
+        const n = Math.floor(num((src.cum as Record<string, unknown>)[spot]));
+        if (n > 0) rec.cum[spot] = n;
       }
     }
     if (src.acts && typeof src.acts === "object") {

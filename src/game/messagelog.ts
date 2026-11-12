@@ -5,12 +5,12 @@
 import type { PassiveDef } from "./passives";
 import type { TalkLine } from "./tavern";
 
-export type LogKind = "info" | "talk" | "choice" | "passive";
+export type LogKind = "info" | "talk" | "choice" | "passive" | "ai";
 
 /** Lines kept on screen at once; older ones drop off the top. */
-const MAX_LINES = 6;
+const MAX_LINES = 9;
 /** How long each kind of line stays, in seconds. */
-const LIFE: Record<LogKind, number> = { info: 6, talk: 8, choice: 8, passive: 14 };
+const LIFE: Record<LogKind, number> = { info: 6, talk: 8, choice: 8, passive: 14, ai: 12 };
 /** The last seconds of a line's life, spent fading out. */
 const FADE_SECONDS = 1.2;
 

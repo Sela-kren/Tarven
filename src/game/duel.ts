@@ -19,6 +19,9 @@ import type { Meter } from "./passives";
 import type { SkillId, StatId } from "./skills";
 import { HER_MOVES, HER_MOVES_ON_WOMEN, PARTNERS, PREFERS, THEIR_MOVES, THEIR_MOVES_WOMEN, type HerMove } from "./duelmoves";
 import { fill, SCENES, type RolePlay } from "./duellines";
+import { flavor } from "./flavor";
+import { CUM_LINES, loadOf, spotFor, type CumSpot } from "./cum";
+import { MOANS, TALK, THEIR_STAGES } from "./dueltalk";
 
 export type DuelArea = "hands" | "mouth" | "breasts" | "butt" | "pussy";
 export type DuelMove = "kiss" | "caress" | "tease" | "undress" | "hands" | "mouth" | "tits" | "ride" | "anal" | "hold" | "stop";
@@ -76,6 +79,14 @@ const WATCH_SHARE = 0.35;
 /** Chance a free partner takes a part of her rather than just kissing, and that it's the part they like best. */
 const TAKE_CHANCE = 0.75;
 const PREFER_CHANCE = 0.6;
+/** Turns a man keeps a part of her before he gets bolder with it, and how much harder each step lands. */
+const STAGE_TURNS = 2;
+const STAGE_POWER = [1, 1.15, 1.3];
+/** After a man's move: the chance he says something, and else the chance she does. */
+const TALK_CHANCE = 0.35;
+const MOAN_CHANCE = 0.25;
+/** When she goes first, the men this close finish too. */
+const FINISH_WITH_HER = 60;
 
 /** Her side of the duel: stat and skill levels, and what her passives add. */
 export interface DuelistStats {
@@ -109,6 +120,10 @@ export interface Partner {
   done: boolean;
   /** Teased this turn: their next move is weaker. */
   teased: boolean;
+  /** Turns they've kept the part of her they have: the longer, the bolder (see THEIR_STAGES). */
+  held: number;
+  /** The part of her they were last at, either way round: where they finish. */
+  last: DuelArea | null;
 }
 
 /** A test duel's setup, from the debug panel: what's in play, who, and where everyone starts. */
@@ -133,7 +148,8 @@ export interface DuelChoice {
 export interface DuelEffect {
   who: string;
   side: "her" | "partner";
-  stat: "pleasure" | "stamina";
+  /** "cum" is a load, in ml, and `who` is where it landed. */
+  stat: "pleasure" | "stamina" | "cum";
   amount: number;
 }
 
@@ -148,6 +164,12 @@ export interface DuelLogEntry {
   target?: string;
   text: string;
   effects: DuelEffect[];
+  /** For the comic panel: the part of her a partner's move was on (and how bold), her own move, or where a load landed. */
+  part?: "kiss" | DuelArea;
+  stage?: number;
+  move?: HerMove;
+  spot?: CumSpot;
+  kind?: GuestKind;
 }
 
 /** What a partner's move is called in the log, by the part of her they have (or a kiss). */
@@ -188,6 +210,9 @@ export class Duel {
   heldBack = 0;
   /** Whether she won on the edge. */
   wonOnEdge = false;
+  /** Every load, in ml, by where it landed; and how many there were. */
+  readonly cum: Partial<Record<CumSpot, number>> = {};
+  loads = 0;
   private nextId = 1;
 
   constructor(
@@ -229,6 +254,15 @@ export class Duel {
   }
 
   /** One of a set of lines, not the same as the last one shown if there's a choice; the fallback if there are none. */
+  /**
+   * An AI-written line for this moment in place of the written one, when there is one: only in a plain game and
+   * with a man, which is what the line bank is written for. Role-play scenes and women keep their own lines.
+   */
+  private flavorOr(key: string, partner: Partner, written: string): string {
+    if (this.scene !== "plain" || partner.female) return written;
+    return flavor(key, partner.kind) ?? written;
+  }
+
   private pick(lines: readonly string[] | undefined, fallback: string): string {
     if (!lines || lines.length === 0) return fill(fallback);
     const options = lines.length > 1 ? lines.filter((l) => l !== this.lastLine) : lines;
@@ -241,7 +275,7 @@ export class Duel {
   addPartner(setup: PartnerSetup): Partner | null {
     if (this.partners.length >= MAX_PARTNERS) return null;
     const max = PARTNERS[setup.kind].stamina;
-    const partner: Partner = { id: this.nextId++, ...setup, pleasure: 0, stamina: max, maxStamina: max, area: null, done: false, teased: false };
+    const partner: Partner = { id: this.nextId++, ...setup, pleasure: 0, stamina: max, maxStamina: max, area: null, done: false, teased: false, held: 0, last: null };
     this.partners.push(partner);
     this.fitStamina();
     return partner;
@@ -448,7 +482,8 @@ export class Duel {
         const lines = this.lines();
         text = this.pick(lines && !group ? (partner.female ? lines.herOnWoman : lines.her)[move] : lines?.her[move], group ? base.line : (this.moveFor(move, partner) ?? base).line);
       }
-      this.entries.push({ side: "her", actor: "You", action, target: group ? "Everyone" : this.nameOf(partner), text, effects: [...effects, ...mine] });
+      text = this.flavorOr(`duel:her:${move}:${this.state}`, partner, text);
+      this.entries.push({ side: "her", actor: "You", action, target: group ? "Everyone" : this.nameOf(partner), text, effects: [...effects, ...mine], move, kind: partner.kind });
       return true;
     }
 
@@ -457,7 +492,9 @@ export class Duel {
     if (def.area) {
       if (!this.areas.has(def.area) || !this.room(def.area, partner)) return false;
       // She takes them to that part of her; it's theirs until they give in.
+      if (partner.area !== def.area) partner.held = 0;
       partner.area = def.area;
+      partner.last = def.area;
     }
     const n = this.power(move, partner);
     partner.pleasure = Math.min(PLEASURE_MAX, partner.pleasure + n);
@@ -473,8 +510,10 @@ export class Duel {
       actor: "You",
       action: def.label,
       target: this.nameOf(partner),
-      text: this.pick(lines ? (partner.female ? lines.herOnWoman : lines.her)[move] : undefined, def.line),
+      text: this.flavorOr(`duel:her:${move}:${this.state}`, partner, this.pick(lines ? (partner.female ? lines.herOnWoman : lines.her)[move] : undefined, def.line)),
       effects: [...effects, ...mine],
+      move,
+      kind: partner.kind,
     });
     return true;
   }
@@ -484,15 +523,20 @@ export class Duel {
     for (const p of this.active) {
       if (p.pleasure < PLEASURE_MAX) continue;
       p.done = true;
-      p.area = null;
       const lines = this.lines();
       this.entries.push({
         side: "partner",
         actor: this.nameOf(p),
         action: "Gives in",
-        text: this.pick(lines ? (p.female ? lines.givesInWoman : lines.givesIn) : undefined, p.female ? "She gives in with a shudder." : "They give in, with a groan."),
+        text: this.flavorOr(
+          "duel:givesin",
+          p,
+          this.pick(lines ? (p.female ? lines.givesInWoman : lines.givesIn) : undefined, p.female ? "She gives in with a shudder." : "They give in, with a groan."),
+        ),
         effects: [],
       });
+      this.finish(p);
+      p.area = null;
       // With more of them still to go, seeing one give in is a second wind, like Karryn's energy coming back.
       if (this.active.length > 0) {
         const stamina = Math.round(this.maxStamina * SECOND_WIND_STAMINA);
@@ -512,6 +556,8 @@ export class Duel {
     }
     if (this.pleasure >= PLEASURE_MAX) {
       this.note(this.pick(this.lines()?.lose, "It's too much. You go first."));
+      // Feeling her come undone, the men who were close go over with her.
+      for (const p of this.active) if (p.pleasure >= FINISH_WITH_HER) this.finish(p);
       this.outcome = "lost";
       return true;
     }
@@ -539,16 +585,24 @@ export class Duel {
       const liked = PREFERS[partner.kind];
       if (free.length > 0) {
         partner.area = free.includes(liked) && this.random() < PREFER_CHANCE ? liked : free[Math.floor(this.random() * free.length) % free.length];
+        partner.held = 0;
       }
     }
     const pick = partner.area ?? "kiss";
     const def = (partner.female ? THEIR_MOVES_WOMEN : THEIR_MOVES)[pick];
+    // A man grows bolder with the part of her he's kept: from hands to fucking, a step every few turns.
+    const stage = partner.area && !partner.female ? Math.min(2, Math.floor(partner.held / STAGE_TURNS)) : 0;
+    const bolder = partner.area && !partner.female ? THEIR_STAGES[partner.area][stage] : null;
+    if (partner.area) {
+      partner.held++;
+      partner.last = partner.area;
+    }
     const slowed = partner.teased ? 1 - TEASE_SLOW : 1;
     partner.teased = false;
     const group = Math.pow(this.active.length, -GROUP_EXPONENT);
     const n = Math.max(
       1,
-      Math.round(def.power * PARTNERS[partner.kind].skill * (1 + this.stats.sens[def.meter]) * Math.max(0.2, 1 - this.stats.resist) * slowed * group),
+      Math.round(def.power * PARTNERS[partner.kind].skill * (1 + this.stats.sens[def.meter]) * Math.max(0.2, 1 - this.stats.resist) * slowed * group * STAGE_POWER[stage]),
     );
     this.pleasure = Math.min(PLEASURE_MAX, this.pleasure + n);
     partner.pleasure = Math.min(PLEASURE_MAX, partner.pleasure + 2);
@@ -558,14 +612,70 @@ export class Duel {
     this.entries.push({
       side: "partner",
       actor: this.nameOf(partner),
-      action: THEIR_ACTIONS[pick],
+      action: bolder?.action ?? THEIR_ACTIONS[pick],
       target: "You",
-      text: this.pick(lines ? (partner.female ? lines.her2 : lines.him)[pick] : undefined, def.line),
+      text: this.flavorOr(
+        partner.area ? `duel:their:${pick}:${stage}` : `duel:their:kiss:${this.state}`,
+        partner,
+        this.pick(lines ? (partner.female ? lines.her2 : lines.him)[pick] : undefined, bolder?.line ?? def.line),
+      ),
       effects: [
         { who: "You", side: "her", stat: "pleasure", amount: n },
         { who: this.nameOf(partner), side: "partner", stat: "pleasure", amount: 2 },
         { who: this.nameOf(partner), side: "partner", stat: "stamina", amount: -THEIR_COST },
       ],
+      part: pick,
+      stage,
+      kind: partner.kind,
+    });
+    this.talk(partner, pick);
+  }
+
+  /**
+   * Now and then, after a man's move, he says something filthy, or she can't help answering. Only in a plain
+   * game: a role-play has its own voice.
+   */
+  private talk(partner: Partner, pick: "kiss" | DuelArea): void {
+    if (this.scene !== "plain" || partner.female) return;
+    const roll = this.random();
+    if (roll < TALK_CHANCE) {
+      const said = flavor(`duel:talk:${pick}`, partner.kind) ?? this.pick(TALK[pick], "");
+      this.entries.push({ side: "partner", actor: this.nameOf(partner), action: "Says", text: said, effects: [] });
+    } else if (roll < TALK_CHANCE + MOAN_CHANCE) {
+      const said = flavor(`duel:moan:${this.state}`, partner.kind) ?? this.pick(MOANS[this.state], "");
+      this.entries.push({ side: "her", actor: "You", action: "Moan", text: said, effects: [] });
+    }
+  }
+
+  /** A man finishes: where it lands (only ever a part of her in play), how much, and the log line for it. */
+  private finish(partner: Partner): void {
+    if (partner.female) return;
+    const spot = spotFor(partner.last ?? partner.area, this.areas.has("mouth"), this.random);
+    const ml = loadOf(partner.kind, this.random);
+    this.cum[spot] = (this.cum[spot] ?? 0) + ml;
+    this.loads++;
+    const who = this.nameOf(partner);
+    const written = this.pick(CUM_LINES[spot], "{who} finishes on you.").replace("{who}", `The ${who.toLowerCase()}`);
+    const ai = this.scene === "plain" ? flavor(`duel:cum:${spot}`, partner.kind) : null;
+    this.entries.push({
+      side: "partner",
+      actor: who,
+      action: "Cums",
+      target: "You",
+      text: ai ?? written,
+      effects: [{ who: CUM_SPOT_LOG[spot], side: "her", stat: "cum", amount: ml }],
+      spot,
+      kind: partner.kind,
     });
   }
 }
+
+/** Where a load landed, as the log's number chip says it. */
+const CUM_SPOT_LOG: Record<CumSpot, string> = {
+  mouth: "In your mouth",
+  face: "On your face",
+  breasts: "On your tits",
+  pussy: "In your pussy",
+  ass: "In your ass",
+  body: "On your body",
+};
