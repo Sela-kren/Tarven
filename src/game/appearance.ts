@@ -1,4 +1,8 @@
 import { Color, Material, Matrix4, MeshLambertMaterial, Object3D, Quaternion, SkinnedMesh, Vector3 } from "three";
+import {
+  DISC_MATERIAL, NIPPLE_TYPES, nippleProfile, readDiscs, shapeDisc, skinUnder, tentHeight, type Disc, type NippleType,
+} from "./nipples";
+import { PUBIC_MATERIAL, PUBIC_STYLES, pubicStyle, pubicTexture, type PubicStyle } from "./pubes";
 import { coatRetroMaterial, coverCoat, solidRetroMaterial, stainRetroMaterial } from "./retro";
 import type { LegSize } from "./skirt";
 
@@ -24,6 +28,14 @@ export interface Look {
   hairstyle?: string;
   /** The outfit's id. Missing means the character's own, the first in their list. */
   outfit?: string;
+  /** The legwear style's id. Missing means the outfit's own. */
+  legwear?: string;
+  /** Her nipples' type's id. Missing means the first, neat. */
+  nipples?: string;
+  /** Her bust's shape's id. Missing means the first, teardrop. */
+  bustShape?: string;
+  /** Her pubic hair's style's id. Missing means the first, trimmed. */
+  pubes?: string;
 }
 
 export function newLook(): Look {
@@ -34,6 +46,10 @@ export function copyLook(look: Look): Look {
   const copy: Look = { sliders: { ...look.sliders }, colors: { ...look.colors }, hidden: [...look.hidden] };
   if (look.hairstyle) copy.hairstyle = look.hairstyle;
   if (look.outfit) copy.outfit = look.outfit;
+  if (look.legwear) copy.legwear = look.legwear;
+  if (look.nipples) copy.nipples = look.nipples;
+  if (look.bustShape) copy.bustShape = look.bustShape;
+  if (look.pubes) copy.pubes = look.pubes;
   return copy;
 }
 
@@ -50,12 +66,34 @@ interface BoneTerm {
   shrinkShift?: readonly [number, number, number];
   /** Only this stretch below or above the joint grows lengthwise; past it the mesh just moves along. */
   span?: readonly [number, number];
-  /** The growth is full at the first height and fades out by the second. */
+  /** The growth is full at the first height and fades out by the second, along a smooth curve. */
   fade?: readonly [number, number];
   /** Lengthwise growth is measured from this height above the joint instead of from the joint itself. */
   pivot?: number;
+  /**
+   * Grows about two centres instead of the joint: this offset from it, mirrored across the middle, so each breast
+   * swells round about its own middle instead of stretching into a cone. Inside a breast, between its middle and
+   * the cleavage, the centre slides in with the point: the inner side only comes forwards, never towards the
+   * middle, so the cleavage keeps its width and the bodice over it lies smooth.
+   */
+  lobes?: readonly [number, number, number];
+  /**
+   * The move reaches past where the bone's weight fades: it counts as the weight to this power instead of the weight
+   * itself, so a breast slides whole, root and all, where its weight thins out towards the chest.
+   */
+  reach?: number;
+  /** How far each side moves away from the middle, in metres at a value of 1: breasts set further apart. */
+  apart?: number;
+  /** How far each side turns outwards, in metres at the front of the breast at a value of 1: nipples that point out. */
+  turn?: number;
   /** Only these mesh parts change, as hair sliders leave the head under the hair alone. Joints never move for these. */
   parts?: readonly MeshPart[];
+}
+
+/** Named steps a slider snaps to, as cup sizes. `zero` is the step at 0; the rest share -1..0 and 0..1 evenly. */
+export interface SliderStops {
+  labels: readonly string[];
+  zero: number;
 }
 
 export interface SliderDef {
@@ -67,7 +105,28 @@ export interface SliderDef {
   terms: BoneTerm[];
   /** A heading the customise panel shows above the first slider of a group. */
   group?: string;
+  stops?: SliderStops;
+  /** How far either way a random look goes, out of 1. 0.8 unless given. */
+  roll?: number;
 }
+
+/** Where on the slider a named step sits. */
+export function stopValue(stops: SliderStops, index: number): number {
+  const above = stops.labels.length - 1 - stops.zero;
+  if (index < stops.zero) return (index - stops.zero) / stops.zero;
+  if (index > stops.zero) return (index - stops.zero) / above;
+  return 0;
+}
+
+/** The named step nearest a slider value. */
+export function nearestStop(stops: SliderStops, value: number): number {
+  const v = clampSlider(value);
+  const above = stops.labels.length - 1 - stops.zero;
+  return stops.zero + Math.round(v < 0 ? v * stops.zero : v * above);
+}
+
+/** Cup sizes, one letter for each inch the bust measures over the band: A at -1, C as built, Q at 1. */
+export const CUPS: SliderStops = { labels: "ABCDEFGHIJKLMNOPQ".split(""), zero: 2 };
 
 export interface ColorDef {
   id: string;
@@ -89,6 +148,17 @@ export interface PieceDef {
   id: string;
   label: string;
   parts: [MeshPart, string][];
+}
+
+/**
+ * A legwear style: which bands of the legs it covers, by their materials on the cloth, and whether the sock cuff
+ * at the top of the shoes shows. Without it, the cuff is painted over in skin.
+ */
+export interface LegwearDef {
+  id: string;
+  label: string;
+  bands: string[];
+  cuff: boolean;
 }
 
 /** A hairstyle: the mesh that shows for it, "<Body>_Hair<mesh>", or null for none at all. */
@@ -113,6 +183,8 @@ export interface OutfitDef {
   preset: Record<string, string>;
   /** Only guests wear it for now: the customise panel doesn't offer it, and a saved look can't have it on. */
   guestOnly?: boolean;
+  /** The legwear style it's put on with. Left out for an outfit whose legs are covered, which has no legwear. */
+  legwear?: string;
 }
 
 export interface LookOptions {
@@ -123,6 +195,21 @@ export interface LookOptions {
   hairstyles: HairstyleDef[];
   /** The first is the character's own outfit, which the look starts with. */
   outfits: OutfitDef[];
+  /** Lengths of stockings and socks, for the outfits that have legwear. */
+  legwear: LegwearDef[];
+  /** Types of nipple, for a body built with them; the first is the default. */
+  nipples: NippleType[];
+  /** Shapes of bust; the first is the default, the model as built. */
+  bustShapes: BustShape[];
+  /** Styles of pubic hair, for a body built with the patch they're drawn on; the first is the default. */
+  pubes: PubicStyle[];
+}
+
+/** A shape of bust: terms on top of the cup size, as strong as shapeAmount says for the cup. */
+export interface BustShape {
+  id: string;
+  label: string;
+  terms: BoneTerm[];
 }
 
 const both = (label: string) => [`${label}_L`, `${label}_R`];
@@ -135,6 +222,10 @@ const SKIN_TONES = ["#f6d5be", "#eab594", "#dba07f", "#c68a64", "#a86f4c", "#8a5
 const HAIR_COLORS = ["#130f0f", "#3b2416", "#6b4226", "#a0663a", "#8c2f1c", "#c9a066", "#e3cf9c", "#9a948a", "#e8e4dc"];
 const EYE_COLORS = ["#0a0807", "#192126", "#3a2416", "#5b8ead", "#3d6e3f", "#7a5a2c", "#6a6a78"];
 const LIP_COLORS = ["#cc706d", "#e59993", "#d88a7a", "#b04a52", "#8c3a3a", "#9e6554"];
+/** Areolae from pale pink to deep brown. */
+const NIPPLE_COLORS = ["#f0b8ad", "#e09a8c", "#c97d70", "#b46a5c", "#94544a", "#6e3d33", "#4c2a23"];
+/** Pubic hair: the hair's own colours, then dyes. */
+const PUBIC_COLORS = [...HAIR_COLORS, "#d0508a", "#8a3ab0", "#2f5fb0", "#2f8a6a", "#c02828"];
 const GEM_COLORS = ["#3aa6d6", "#3f9a5a", "#b0303a", "#7a3fa0", "#e0c040", "#e8e8f0"];
 const CLOTH_COLORS = [
   "#e8e0cc", "#b8ad96", "#2b2b2b", "#5b1417", "#8c2020", "#2b3d23", "#3d5a48",
@@ -203,22 +294,40 @@ const FEMALE_SLIDERS: SliderDef[] = [
   // The bust is weighted on each breast, with a crease under them that holds the fold. The bone's joint sits
   // about 4 cm behind the front of the breasts, so most of the growth is forwards. Here +z is backwards.
   {
-    // A fuller bust is heavier: it drops and comes forwards as it grows. Shrinking stops well short of flat.
-    id: "bust", label: "Size", tab: "body", group: "Bust",
-    terms: terms(["Bust"], [0.35, 0.55, 1.6], { shrink: [0.12, 0.15, 0.45], shift: [0, -0.03, -0.012], shrinkShift: [0, 0, 0] }),
+    // Measured on the model with a tape: A at -1, B at -0.5, C as built, then about a cup for each step up to Q.
+    // Each breast swells about its own middle, 7.2 cm out and on the chest wall, so it stays round; a fuller
+    // bust is heavy and hangs: it drops and lengthens as it grows. The top fades out by the collarbone instead
+    // of sliding forwards. The amounts are large because the weights rise slowly (JIGGLE_RISE in
+    // build_world.py): the front of the breasts takes about 0.4 of them. Shrinking stops well short of flat.
+    id: "bust", label: "Cup size", tab: "body", group: "Bust", stops: CUPS, roll: 0.45,
+    terms: terms(["Bust"], [2.52, 2.07, 3.55], {
+      shrink: [0.2, 0.25, 0.7], shift: [0, -0.075, -0.012], shrinkShift: [0, 0, 0],
+      lobes: [0.072, -0.005, 0.025], fade: [0.01, 0.075],
+    }),
   },
+  // Where the breasts sit on the chest, root and all: the move reaches past where their weight thins out towards
+  // the chest, so the base slides with them instead of only the front tipping up as Lift does.
+  { id: "bustHeight", label: "Height", tab: "body", group: "Bust", terms: terms(["Bust"], [0, 0, 0], { shift: [0, 0.03, 0], reach: 0.5 }) },
   { id: "bustLift", label: "Lift", tab: "body", group: "Bust", terms: terms(["Bust"], [0, 0, 0], { shift: [0, 0.025, -0.004] }) },
   { id: "bustSpacing", label: "Spacing", tab: "body", group: "Bust", terms: terms(["Bust"], [0.3, 0, 0], { shrink: [0.2, 0, 0] }) },
   {
     id: "bustProjection", label: "Projection", tab: "body", group: "Bust",
     terms: terms(["Bust"], [0, 0, 0.9], { shrink: [0, 0, 0.4] }),
   },
+  // Her nipples change no bones: the dresser shapes their discs from these and the type (see nipples.ts).
+  { id: "nippleSize", label: "Nipple size", tab: "body", group: "Nipples", terms: [] },
+  { id: "areolaSize", label: "Areola size", tab: "body", group: "Nipples", terms: [] },
+  // Her pubic hair changes no bones either: the style is drawn on its patch this much smaller or bigger (pubes.ts).
+  { id: "pubesSize", label: "Size", tab: "body", group: "Pubic hair", terms: [] },
   // Each glute has its own bone, about 3 cm inside the curve of the rear. The rear is fullest low down and
   // blends into the small of the back, so every change fades out above the joint instead of leaving a shelf.
   {
+    // Measured on the model: at 1 the rear stands 5 cm further out behind the small of the back and the hips
+    // measure 7 cm more, enough to go with the fullest bust. It grows out and back, hardly down, so the fold
+    // under it stays where it is instead of hanging over the thighs.
     id: "rear", label: "Size", tab: "body", group: "Rear",
-    terms: terms(both("Glute"), [0.25, 0.18, 0.32], {
-      shrink: [0.12, 0.1, 0.3], shift: [0, -0.012, 0.008], shrinkShift: [0, 0, 0], fade: REAR_FADE,
+    terms: terms(both("Glute"), [0.7, 0.15, 1.25], {
+      shrink: [0.15, 0.08, 0.4], shift: [0, -0.012, 0.025], shrinkShift: [0, 0, 0], fade: [-0.04, 0.12],
     }),
   },
   {
@@ -254,6 +363,46 @@ const FEMALE_SLIDERS: SliderDef[] = [
       ...terms(["Torso"], [0, 0.9, 0], { parts: ["Hair"], pivot: 0.51, span: [-1, 0] }),
     ],
   },
+];
+
+/** Each breast's own middle, from the bust's joint, as the cup size grows about it. */
+const BREASTS = [0.072, -0.005, 0.025] as const;
+/** Above the middle of the breasts (the upper pole), and below it (the lower pole). Here +y is up. */
+const UPPER = [0.03, -0.02] as const;
+const LOWER = [-0.03, 0.01] as const;
+
+/**
+ * Shapes of bust, on top of the cup size. Teardrop, the model as built, is the one most often drawn as ideal:
+ * a gently sloping top and a fuller, rounder bottom, the nipple a little above the fullest point.
+ */
+const BUST_SHAPES: BustShape[] = [
+  { id: "teardrop", label: "Teardrop", terms: [] },
+  // As full above as below, sitting high: the top fills out upwards, and it comes forwards a little less.
+  {
+    id: "round", label: "Round", terms: [
+      { bone: "Bust", grow: [0, 0, 0], shift: [0, 0.025, 0], reach: 0.5 },
+      { bone: "Bust", grow: [0.12, 0.3, 0.15], lobes: BREASTS, fade: UPPER },
+      { bone: "Bust", grow: [0, 0, -0.12], lobes: BREASTS },
+    ],
+  },
+  // Narrow at the top, full and heavy at the bottom.
+  {
+    id: "bell", label: "Bell", terms: [
+      { bone: "Bust", grow: [-0.15, 0, -0.3], lobes: BREASTS, fade: UPPER },
+      { bone: "Bust", grow: [0.3, 0.35, 0.2], lobes: BREASTS, fade: LOWER },
+      { bone: "Bust", grow: [0, 0, 0], shift: [0, -0.012, 0] },
+    ],
+  },
+  // The nipples point outwards, away from each other.
+  { id: "eastwest", label: "East-west", terms: [{ bone: "Bust", grow: [0, 0, 0], turn: 0.032, apart: 0.005 }] },
+  // Wide and shallow, on a broad chest.
+  { id: "athletic", label: "Athletic", terms: [{ bone: "Bust", grow: [0.45, 0, -0.35], lobes: BREASTS }] },
+  // Soft and low, longer and less forward.
+  { id: "relaxed", label: "Relaxed", terms: [{ bone: "Bust", grow: [0.1, 0.35, -0.15], shift: [0, -0.028, 0.006], lobes: BREASTS }] },
+  // Set wide apart, with a broad gap between them.
+  { id: "sideset", label: "Side-set", terms: [{ bone: "Bust", grow: [0, 0, 0], apart: 0.022 }] },
+  // Narrow and long.
+  { id: "slender", label: "Slender", terms: [{ bone: "Bust", grow: [-0.3, 0.3, 0.15], lobes: BREASTS }] },
 ];
 
 const MALE_SLIDERS: SliderDef[] = [
@@ -300,6 +449,34 @@ const MALE_SLIDERS: SliderDef[] = [
   },
 ];
 
+/**
+ * Her legwear is built as bands round the legs, each its own material on every dress, from the seat (hips and
+ * thigh tops) down to the ankle; and the leg warmers and garter belt as their own pieces. A style shows the bands it
+ * reaches. The knee is between "over" and "knee"; see LEGWEAR_BANDS in tools/blender/build_world.py.
+ */
+const HOSE_BANDS = ["T_hose", "T_hose_thigh", "T_hose_over", "T_hose_knee", "T_hose_calf", "T_hose_shin", "T_hose_low", "T_hose_ankle"];
+/** The bands from one down to the ankle, or down to and including `last`. */
+const hoseFrom = (first: string, last?: string) =>
+  HOSE_BANDS.slice(HOSE_BANDS.indexOf(first), last ? HOSE_BANDS.indexOf(last) + 1 : undefined);
+const LEGWEAR_PIECES = [...HOSE_BANDS, "T_warmer", "T_garter"];
+/** The sock cuff, which shows at the top of the shoes. */
+const CUFF: [MeshPart, string] = ["Shoes", "T_hose"];
+
+const FEMALE_LEGWEAR: LegwearDef[] = [
+  { id: "tights", label: "Tights", bands: HOSE_BANDS, cuff: true },
+  { id: "leggings", label: "Leggings", bands: HOSE_BANDS, cuff: false },
+  { id: "garter", label: "Garter", bands: [...hoseFrom("T_hose_thigh"), "T_garter"], cuff: true },
+  { id: "thighhigh", label: "Thigh-highs", bands: hoseFrom("T_hose_thigh"), cuff: true },
+  { id: "overknee", label: "Over-knee", bands: hoseFrom("T_hose_over"), cuff: true },
+  { id: "kneehigh", label: "Knee-highs", bands: hoseFrom("T_hose_calf"), cuff: true },
+  { id: "capri", label: "Capri", bands: hoseFrom("T_hose", "T_hose_calf"), cuff: false },
+  { id: "kneelength", label: "Knee-length", bands: hoseFrom("T_hose", "T_hose_knee"), cuff: false },
+  { id: "warmers", label: "Warmers", bands: ["T_warmer"], cuff: false },
+  { id: "crew", label: "Crew socks", bands: hoseFrom("T_hose_low"), cuff: true },
+  { id: "ankle", label: "Ankle socks", bands: ["T_hose_ankle"], cuff: true },
+  { id: "noshow", label: "No-show", bands: [], cuff: true },
+];
+
 const FEMALE_COLORS: ColorDef[] = [
   {
     id: "skin", label: "Skin tone", tab: "skin", mode: "tone", palette: SKIN_TONES,
@@ -309,14 +486,19 @@ const FEMALE_COLORS: ColorDef[] = [
     ],
   },
   { id: "lips", label: "Lips", tab: "face", mode: "dye", palette: LIP_COLORS, follows: "skin", parts: [["Body", "T_lip"], ["Body", "T_lip_lit"]] },
+  { id: "nipples", label: "Nipples", tab: "skin", mode: "dye", palette: NIPPLE_COLORS, follows: "skin", parts: [["Body", "T_areola"]] },
   { id: "eyes", label: "Eyes", tab: "face", mode: "dye", palette: EYE_COLORS, parts: [["Body", "T_soot"]] },
   { id: "hair", label: "Hair and brows", tab: "hair", mode: "dye", palette: HAIR_COLORS, parts: [["Hair", "T_hair_f"], ["Body", "T_hair_f"]] },
+  { id: "pubes", label: "Pubic hair", tab: "hair", mode: "dye", palette: PUBIC_COLORS, follows: "hair", parts: [["Body", PUBIC_MATERIAL]] },
   { id: "blouse", label: "Blouse", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_linen"]] },
   { id: "bodice", label: "Bodice", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_bodice"]] },
   { id: "skirt", label: "Skirt", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_skirt"]] },
   { id: "apron", label: "Apron", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_apron"]] },
   { id: "belt", label: "Belt", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_leather"]] },
-  { id: "stockings", label: "Stockings", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_hose"], ["Shoes", "T_hose"]] },
+  {
+    id: "stockings", label: "Legwear", tab: "clothes", mode: "dye", palette: CLOTH_COLORS,
+    parts: [...LEGWEAR_PIECES.map((name): [MeshPart, string] => ["Cloth", name]), CUFF],
+  },
   { id: "shoes", label: "Shoes", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Shoes", "T_leather"]] },
   { id: "smalls", label: "Smallclothes", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Body", "T_smalls"]] },
   // The dirndl's arm ribbons and laces, and the priestess's set. Gems are on both.
@@ -337,24 +519,27 @@ const FEMALE_OUTFITS: OutfitDef[] = [
     id: "tavern", label: "Tavern dress", mesh: "",
     colors: ["blouse", "bodice", "skirt", "apron", "belt", "stockings", "shoes", "smalls"],
     preset: {},
+    legwear: "tights",
   },
   {
     // Olive-gold bodice and skirt, a white chemise, a green apron and ribbons, and white socks.
     id: "dirndl", label: "Dirndl", mesh: "Dirndl",
-    colors: ["blouse", "ribbons", "bodice", "skirt", "apron", "gems", "shoes", "smalls"],
+    colors: ["blouse", "ribbons", "bodice", "skirt", "apron", "gems", "stockings", "shoes", "smalls"],
     preset: {
       blouse: "#f1ece0", ribbons: "#2e5e3e", bodice: "#6e6233", skirt: "#5c5530", apron: "#2f6040",
       gems: "#3f9a5a", stockings: "#f1ece0", shoes: "#3d2314",
     },
+    legwear: "noshow",
   },
   {
     // Gold and cream: a gold top and girdle, pale sleeves and drapes, gold jewellery with blue gems.
     id: "priestess", label: "Priestess", mesh: "Priestess",
-    colors: ["top", "sleeves", "girdle", "drapes", "jewels", "gems", "shoes", "smalls"],
+    colors: ["top", "sleeves", "girdle", "drapes", "jewels", "gems", "stockings", "shoes", "smalls"],
     preset: {
       top: "#b8892e", sleeves: "#efe4c4", girdle: "#b8892e", drapes: "#efe6cf", jewels: "#c99a3a",
       gems: "#3aa6d6", shoes: "#9a7430", stockings: "#9a7430", smalls: "#b8892e",
     },
+    legwear: "noshow",
   },
   {
     // A cream shirt, an oxblood corset under a red sash, brown breeches, black boots, and a cocked hat with a white feather.
@@ -403,6 +588,10 @@ export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
       { id: "tail", label: "High tail", mesh: "Tail" },
     ],
     outfits: FEMALE_OUTFITS,
+    legwear: FEMALE_LEGWEAR,
+    nipples: NIPPLE_TYPES,
+    bustShapes: BUST_SHAPES,
+    pubes: PUBIC_STYLES,
   },
   Male: {
     sliders: MALE_SLIDERS,
@@ -427,6 +616,10 @@ export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
         },
       },
     ],
+    legwear: [],
+    nipples: [],
+    bustShapes: [],
+    pubes: [],
   },
 };
 
@@ -513,6 +706,30 @@ function paint(original: Material, color: Color): MeshLambertMaterial {
     material = solidRetroMaterial(original.name, 0xffffff);
     material.color.setRGB(color.r, color.g, color.b);
     paints.set(key, material);
+  }
+  return material;
+}
+
+const pubicMaterials = new Map<string, MeshLambertMaterial>();
+
+/**
+ * Her pubic hair as she wears it: the colour its swatch gives the patch (`worn`), cut out in the style's shape at
+ * its size. Drawn a little in front of the skin, like the coat, so the vertex snapping never sinks it in.
+ */
+export function pubicMaterial(worn: Material, style: PubicStyle, size: number): MeshLambertMaterial {
+  const color = averageColor(worn);
+  const map = pubicTexture(style, size);
+  const key = `${style.id}|${map.uuid}|${color.r.toFixed(4)},${color.g.toFixed(4)},${color.b.toFixed(4)}`;
+  let material = pubicMaterials.get(key);
+  if (!material) {
+    material = solidRetroMaterial(PUBIC_MATERIAL, 0xffffff);
+    material.color.copy(color);
+    material.map = map;
+    material.alphaTest = 0.5;
+    material.polygonOffset = true;
+    material.polygonOffsetFactor = 0;
+    material.polygonOffsetUnits = -4;
+    pubicMaterials.set(key, material);
   }
   return material;
 }
@@ -623,12 +840,32 @@ export function wearOutfit(body: BodyName, look: Look, id: string): Look {
   Object.assign(next.colors, outfit.preset);
   if (outfit === options.outfits[0]) delete next.outfit;
   else next.outfit = outfit.id;
+  delete next.legwear;
   return next;
 }
 
 export function hairMeshFor(body: BodyName, look: Pick<Look, "hairstyle">): string | null {
   const styles = LOOK_OPTIONS[body].hairstyles;
   return (styles.find((style) => style.id === look.hairstyle) ?? styles[0]).mesh;
+}
+
+/** The legwear a look has on: its own style, or its outfit's. Null for an outfit with none, such as the pirate's. */
+export function legwearOf(body: BodyName, look: Pick<Look, "outfit" | "legwear">): LegwearDef | null {
+  const outfit = outfitOf(body, look);
+  if (!outfit.legwear) return null;
+  const styles = LOOK_OPTIONS[body].legwear;
+  return styles.find((style) => style.id === look.legwear) ?? styles.find((style) => style.id === outfit.legwear) ?? null;
+}
+
+/**
+ * What legwear does to one mesh slot: "hide" a band the style doesn't reach, paint the sock cuff over in "skin" when
+ * the style has none (or the stockings are off), or null to leave it alone.
+ */
+export function legwearSlot(legwear: LegwearDef | null, part: MeshPart, name: string, stockingsOff = false): "hide" | "skin" | null {
+  if (!legwear) return null;
+  if (part === "Cloth" && LEGWEAR_PIECES.includes(name)) return legwear.bands.includes(name) ? null : "hide";
+  if (part === CUFF[0] && name === CUFF[1]) return legwear.cuff && !stockingsOff ? null : "skin";
+  return null;
 }
 
 /** The outfits a player can choose: all but those only guests wear for now. */
@@ -666,8 +903,15 @@ export function pirateGuestColors(body: BodyName, variant: number): Record<strin
  * Recolours a model's materials for these colours, leaving its shape alone, and shows only its own hair.
  * For guests, which share their meshes. They wear the character's own outfit unless another is named.
  */
-export function dressColors(model: Object3D, body: BodyName, colors: Record<string, string>, outfit?: string): void {
+export function dressColors(
+  model: Object3D,
+  body: BodyName,
+  colors: Record<string, string>,
+  outfit?: string,
+  legwear?: string,
+): void {
   const worn = outfitOf(body, { outfit }).mesh;
+  const legs = legwearOf(body, { outfit, legwear });
   const slots: { mesh: SkinnedMesh; part: MeshPart; original: Material }[] = [];
   model.traverse((object) => {
     if (!(object instanceof SkinnedMesh) || Array.isArray(object.material)) return;
@@ -675,12 +919,25 @@ export function dressColors(model: Object3D, body: BodyName, colors: Record<stri
     if (part) slots.push({ mesh: object, part, original: object.material });
   });
   const originals = (part: MeshPart, name: string) => slots.find((s) => s.part === part && s.original.name === name)?.original;
+  const [skinPart, skinName] = LOOK_OPTIONS[body].colors.find((color) => color.id === "skin")?.parts[0] ?? ["Body", ""];
+  const skinSlot = slots.find((s) => s.part === skinPart && s.original.name === skinName);
+  const skin = skinSlot && materialFor(body, skinSlot.part, skinSlot.original, colors, originals);
+  const smallsSlot = slots.find((s) => s.part === "Body" && s.original.name === "T_smalls");
+  const smalls = smallsSlot && materialFor(body, smallsSlot.part, smallsSlot.original, colors, originals);
   for (const slot of slots) {
     slot.mesh.material = materialFor(body, slot.part, slot.original, colors, originals);
+    // Guests keep their smallclothes on: a nipple disc wears them, as it lies over them.
+    if (slot.part === "Body" && slot.original.name === DISC_MATERIAL && smalls) slot.mesh.material = smalls;
+    // ...and their pubic hair stays under them.
+    if (slot.part === "Body" && slot.original.name === PUBIC_MATERIAL) slot.mesh.visible = false;
     if (slot.part === "Hair") slot.mesh.visible = hairMeshOf(slot.mesh, body) === "";
     // Only the outfit they wear shows; the others' meshes stay hidden.
     if (slot.part === "Cloth") slot.mesh.visible = outfitMeshOf(slot.mesh, body) === worn;
     if (slot.part === "Cum") slot.mesh.visible = false;
+    // Only the legwear bands their style reaches show.
+    const covered = legwearSlot(legs, slot.part, slot.original.name);
+    if (covered === "hide") slot.mesh.visible = false;
+    if (covered === "skin" && skin) slot.mesh.material = skin;
   }
 }
 
@@ -692,19 +949,36 @@ interface ActiveTerm {
   span?: readonly [number, number];
   fade?: readonly [number, number];
   pivot?: number;
+  lobes?: readonly [number, number, number];
+  reach?: number;
+  apart?: number;
+  turn?: number;
   parts?: readonly MeshPart[];
 }
 
-/** Moves a point `d`, measured from a bone's joint, as that bone's active terms reshape it. */
-export function reshape(active: readonly ActiveTerm[], d: Vector3, out: Vector3): Vector3 {
+const lobe = new Vector3();
+const before = new Vector3();
+
+/**
+ * Moves a point `d`, measured from a bone's joint, as that bone's active terms reshape it. `skin` is how much of the
+ * point the bone holds, for terms that reach past it; the caller weights the whole move by it.
+ */
+export function reshape(active: readonly ActiveTerm[], d: Vector3, out: Vector3, skin = 1): Vector3 {
   out.copy(d);
   for (const term of active) {
     let weight = 1;
     if (term.fade) {
       const [full, none] = term.fade;
-      weight = Math.min(1, Math.max(0, (d.y - none) / (full - none)));
+      const t = Math.min(1, Math.max(0, (d.y - none) / (full - none)));
+      // Smooth at both ends, so a strong change leaves no shelf where it stops.
+      weight = t * t * (3 - 2 * t);
     }
     if (weight === 0) continue;
+    // A term that reaches past the bone's weight moves the point as if the bone held more of it.
+    const reach = term.reach !== undefined && skin > 0 ? skin ** (term.reach - 1) : 1;
+    before.copy(out);
+    const side = Math.sign(d.x);
+    if (term.lobes) out.sub(lobe.set(side * Math.min(Math.abs(d.x), term.lobes[0]), term.lobes[1], term.lobes[2]));
     const [gx, gy, gz] = term.grow;
     out.x *= 1 + gx * weight;
     out.z *= 1 + gz * weight;
@@ -713,38 +987,64 @@ export function reshape(active: readonly ActiveTerm[], d: Vector3, out: Vector3)
       const along = term.span ? Math.min(term.span[1], Math.max(term.span[0], from)) : from;
       out.y += gy * weight * along;
     }
+    if (term.lobes) out.add(lobe);
     if (term.shift) {
       out.x += term.shift[0] * weight;
       out.y += term.shift[1] * weight;
       out.z += term.shift[2] * weight;
     }
+    if (term.apart) out.x += side * term.apart * weight;
+    // Turning outwards moves the front of a breast most: by how far forwards (-z) it is, up to 1.5 times at 9 cm.
+    if (term.turn) out.x += side * term.turn * weight * Math.min(1.5, Math.max(0, -d.z / 0.06));
+    if (reach !== 1) out.sub(before).multiplyScalar(reach).add(before);
   }
   return out;
 }
 
-/** The terms each bone gets from these slider settings, by bone label (the name without the body prefix). */
-export function activeTerms(body: BodyName, sliders: Record<string, number>): Map<string, ActiveTerm[]> {
+/**
+ * The terms each bone gets from these slider settings, by bone label (the name without the body prefix), and from
+ * a bust shape's id if there is one.
+ */
+export function activeTerms(body: BodyName, sliders: Record<string, number>, bustShape?: string): Map<string, ActiveTerm[]> {
   const byBone = new Map<string, ActiveTerm[]>();
+  const add = (term: BoneTerm, value: number) => {
+    const list = byBone.get(term.bone) ?? [];
+    const amount = value < 0 && term.shrink ? term.shrink : term.grow;
+    // shrinkShift is the move at -1 itself, so it is scaled by how far below 0 the slider is.
+    const move = value < 0 && term.shrinkShift ? term.shrinkShift.map((v) => -v) : term.shift;
+    list.push({
+      grow: [amount[0] * value, amount[1] * value, amount[2] * value],
+      shift: move ? [move[0] * value, move[1] * value, move[2] * value] : undefined,
+      span: term.span,
+      fade: term.fade,
+      pivot: term.pivot,
+      lobes: term.lobes,
+      reach: term.reach,
+      apart: term.apart === undefined ? undefined : term.apart * value,
+      turn: term.turn === undefined ? undefined : term.turn * value,
+      parts: term.parts,
+    });
+    byBone.set(term.bone, list);
+  };
   for (const def of LOOK_OPTIONS[body].sliders) {
     const value = clampSlider(sliders[def.id]);
     if (value === 0) continue;
-    for (const term of def.terms) {
-      const list = byBone.get(term.bone) ?? [];
-      const amount = value < 0 && term.shrink ? term.shrink : term.grow;
-      // shrinkShift is the move at -1 itself, so it is scaled by how far below 0 the slider is.
-      const move = value < 0 && term.shrinkShift ? term.shrinkShift.map((v) => -v) : term.shift;
-      list.push({
-        grow: [amount[0] * value, amount[1] * value, amount[2] * value],
-        shift: move ? [move[0] * value, move[1] * value, move[2] * value] : undefined,
-        span: term.span,
-        fade: term.fade,
-        pivot: term.pivot,
-        parts: term.parts,
-      });
-      byBone.set(term.bone, list);
-    }
+    for (const term of def.terms) add(term, value);
+  }
+  const shape = LOOK_OPTIONS[body].bustShapes.find((s) => s.id === bustShape);
+  if (shape) {
+    const amount = shapeAmount(clampSlider(sliders.bust));
+    for (const term of shape.terms) add(term, amount);
   }
   return byBone;
+}
+
+/**
+ * How strongly a bust shape shows at this cup slider: a small bust has little to shape, a full one more. 0.8 as
+ * built (C), 1 at about an H, 1.4 at Q, and 0.35 at A.
+ */
+export function shapeAmount(cup: number): number {
+  return cup < 0 ? 0.8 + 0.45 * cup : 0.8 + 0.6 * cup;
 }
 
 const clampSlider = (value: unknown) =>
@@ -762,9 +1062,11 @@ interface MeshSlot {
    * Clothes and shoes ride on the body under them: each vertex takes the movement of the nearest body points,
    * so the body never pushes through where the cloth follows different bones. Null for the body and hair.
    */
-  follow: { points: Int32Array; weights: Float32Array; own: Float32Array } | null;
+  follow: FollowTable | null;
   /** Where this mesh's points start in the shared list of body points, for body meshes. */
   bodyStart: number;
+  /** Where the body's reshaping takes its points from, where that isn't `bind`: her nipple discs, from the skin. */
+  shapeFrom?: Float32Array;
 }
 
 interface BoneRest {
@@ -786,10 +1088,29 @@ const FOLLOW_POINTS = 4;
 const FOLLOW_NEAR = 0.03;
 const FOLLOW_FAR = 0.09;
 const FOLLOWING_PARTS: readonly MeshPart[] = ["Cloth", "Shoes", "Cum"];
+/** How far from a nipple's tip, as built, the clothes over it can tent out: past the widest areola there is. */
+const RIDE = 0.04;
+
+/** For each point of a mesh, the body points nearest it and how much each counts, and how much it keeps its own move. */
+interface FollowTable {
+  points: Int32Array;
+  weights: Float32Array;
+  own: Float32Array;
+}
+
+/** The clothing points over a nipple: by index into their mesh, which disc, and how far from its tip as built. */
+interface Riders {
+  verts: Int32Array;
+  disc: Uint8Array;
+  r: Float32Array;
+}
 
 const point = new Vector3();
 const offset = new Vector3();
 const moved = new Vector3();
+const unbind = new Matrix4();
+/** The colour her areolae flush towards as she's aroused. */
+const FLUSHED = new Color(0.55, 0.16, 0.18);
 
 /**
  * Dresses one character: owns copies of its meshes so their shape can change without touching anyone sharing
@@ -810,6 +1131,18 @@ export class Dresser {
   private stripped: [MeshPart, string][] = [];
   /** How far along each part of her the night has got, by section; a state of the night, never part of the look. */
   private coat: Record<string, number> = {};
+  /** How aroused she shows, from 0 to 1; a state of the night, never part of the look. */
+  private arousal = 0;
+  /**
+   * Her nipple discs, for a body built with them, and for each clothing mesh the points close over a nipple: which
+   * disc and how far from its tip. They tent out as it stands, and are all that change when only her arousal does.
+   */
+  private readonly nipples: { slot: MeshSlot; discs: Disc[]; riders: Map<MeshSlot, Riders> } | null = null;
+  /**
+   * What the last look left, for arousal to change the discs and their riders without redoing the whole body:
+   * every mesh's moves, where the discs lie on the skin, and the riders' moves before they tent.
+   */
+  private shaped: { totals: Float32Array[]; settled: Float32Array[]; onSkin: Float32Array; flat: Map<MeshSlot, Float32Array> } | null = null;
   private look: Look = newLook();
 
   constructor(model: Object3D, readonly body: BodyName) {
@@ -858,8 +1191,42 @@ export class Dresser {
 
     const bodyPoints = new Float32Array(bodyCount * 3);
     for (const slot of this.slots) if (slot.part === "Body") bodyPoints.set(slot.bind, slot.bodyStart * 3);
+    // The clothes ride on the skin, never on her nipple discs, which lie over it and lift off it as a breast grows:
+    // they are put out of reach. The nipples push the clothes out by themselves (see the riders below).
+    // Her pubic hair's patch lies over the skin as well.
+    const discSlot = this.slots.find((slot) => slot.part === "Body" && slot.original.name === DISC_MATERIAL);
+    if (discSlot) bodyPoints.fill(1e6, discSlot.bodyStart * 3, (discSlot.bodyStart + discSlot.bind.length / 3) * 3);
+    const pubicSlot = this.slots.find((slot) => slot.part === "Body" && slot.original.name === PUBIC_MATERIAL);
+    if (pubicSlot) {
+      bodyPoints.fill(1e6, pubicSlot.bodyStart * 3, (pubicSlot.bodyStart + pubicSlot.bind.length / 3) * 3);
+      // Too close to the skin to shadow it cleanly, like the coat.
+      pubicSlot.mesh.castShadow = false;
+    }
     for (const slot of this.slots) {
       if (FOLLOWING_PARTS.includes(slot.part) && bodyCount >= FOLLOW_POINTS) slot.follow = nearestBody(slot.bind, bodyPoints);
+    }
+
+    const discs = discSlot ? readDiscs(discSlot.mesh.geometry, discSlot.bind) : [];
+    if (discSlot && discs.length) {
+      const riders = new Map<MeshSlot, Riders>();
+      const tips = discs.map((disc) => discSlot.bind.subarray(disc.tip * 3, disc.tip * 3 + 3));
+      for (const slot of this.slots) {
+        if (!slot.follow) continue;
+        const verts: number[] = [], which: number[] = [], from: number[] = [];
+        for (let v = 0; v < slot.bind.length / 3; v++) {
+          tips.forEach((tip, d) => {
+            const r = Math.hypot(slot.bind[v * 3] - tip[0], slot.bind[v * 3 + 1] - tip[1], slot.bind[v * 3 + 2] - tip[2]);
+            if (r < RIDE) {
+              verts.push(v);
+              which.push(d);
+              from.push(r);
+            }
+          });
+        }
+        if (verts.length) riders.set(slot, { verts: Int32Array.from(verts), disc: Uint8Array.from(which), r: Float32Array.from(from) });
+      }
+      discSlot.shapeFrom = skinUnder(discs, discSlot.bind);
+      this.nipples = { slot: discSlot, discs, riders };
     }
 
     let floor = Infinity;
@@ -926,7 +1293,7 @@ export class Dresser {
   /** Puts a look on: reshapes the meshes, moves the joints to match, and recolours. Puts the bones at rest. */
   apply(look: Look): void {
     this.look = look;
-    const active = activeTerms(this.body, look.sliders);
+    const active = activeTerms(this.body, look.sliders, look.bustShape);
 
     // Where each joint goes: its parent's new place, plus its offset from the parent reshaped by the parent.
     const shift = new Map<BoneRest, Vector3>();
@@ -966,8 +1333,9 @@ export class Dresser {
       }
       const sum = new Vector3();
       const joints = new Vector3();
+      const from = slot.shapeFrom ?? bind;
       for (let v = 0; v < count; v++) {
-        point.fromArray(bind, v * 3);
+        point.fromArray(from, v * 3);
         sum.set(0, 0, 0);
         joints.set(0, 0, 0);
         for (let k = 0; k < 4; k++) {
@@ -979,7 +1347,7 @@ export class Dresser {
           const boneTerms = reaching.get(rest.label);
           if (!boneTerms) continue;
           offset.subVectors(point, rest.joint);
-          sum.addScaledVector(reshape(boneTerms, offset, moved).sub(offset), weight);
+          sum.addScaledVector(reshape(boneTerms, offset, moved, weight).sub(offset), weight);
         }
         sum.add(joints).toArray(total, v * 3);
         joints.toArray(settled, v * 3);
@@ -993,24 +1361,26 @@ export class Dresser {
       if (slot.part === "Body") bodyMoves.set(moves[i].total, slot.bodyStart * 3);
     });
     this.slots.forEach((slot, i) => {
-      const { follow } = slot;
-      if (!follow || active.size === 0) return;
-      const { total } = moves[i];
-      for (let v = 0; v < total.length / 3; v++) {
-        let x = 0, y = 0, z = 0;
-        for (let k = 0; k < FOLLOW_POINTS; k++) {
-          const at = follow.points[v * FOLLOW_POINTS + k] * 3;
-          const weight = follow.weights[v * FOLLOW_POINTS + k];
-          x += bodyMoves[at] * weight;
-          y += bodyMoves[at + 1] * weight;
-          z += bodyMoves[at + 2] * weight;
-        }
-        const own = follow.own[v];
-        total[v * 3] = x + (total[v * 3] - x) * own;
-        total[v * 3 + 1] = y + (total[v * 3 + 1] - y) * own;
-        total[v * 3 + 2] = z + (total[v * 3 + 2] - z) * own;
-      }
+      if (slot.follow && active.size > 0) this.follow(slot.follow, moves[i].total.slice(), moves[i].total, bodyMoves);
     });
+
+    // Her nipple discs, shaped on the skin where the reshaping left it, and the clothes tenting over them.
+    const nipples = this.nipples;
+    let onSkin = new Float32Array(0);
+    const flat = new Map<MeshSlot, Float32Array>();
+    if (nipples) {
+      const from = nipples.slot.shapeFrom!;
+      const { total } = moves[this.slots.indexOf(nipples.slot)];
+      onSkin = new Float32Array(from.length);
+      for (let i = 0; i < from.length; i++) onSkin[i] = from[i] + total[i];
+      for (const [slot, riders] of nipples.riders) {
+        const own = moves[this.slots.indexOf(slot)].total;
+        const before = new Float32Array(riders.verts.length * 3);
+        riders.verts.forEach((v, k) => before.set(own.subarray(v * 3, v * 3 + 3), k * 3));
+        flat.set(slot, before);
+      }
+      this.shapeNipples(onSkin, moves.map((m) => m.total), flat);
+    }
 
     // Longer or shorter legs would lift the feet off the floor or sink them into it: the whole body moves to match.
     let lowest = Infinity;
@@ -1020,25 +1390,14 @@ export class Dresser {
     const lift = active.size > 0 && Number.isFinite(lowest) ? this.floor - lowest : 0;
 
     // The mesh keeps everything but the joints' moves, which the bones now carry.
-    const inverse = new Matrix4();
     for (const [i, slot] of this.slots.entries()) {
-      const { mesh, bind } = slot;
-      const { total, settled } = moves[i];
-      const geometry = mesh.geometry;
-      const position = geometry.getAttribute("position");
-      inverse.copy(mesh.bindMatrix).invert();
-      for (let v = 0; v < position.count; v++) {
-        point.set(
-          bind[v * 3] + total[v * 3] - settled[v * 3],
-          bind[v * 3 + 1] + total[v * 3 + 1] - settled[v * 3 + 1],
-          bind[v * 3 + 2] + total[v * 3 + 2] - settled[v * 3 + 2],
-        ).applyMatrix4(inverse);
-        position.setXYZ(v, point.x, point.y, point.z);
-      }
-      position.needsUpdate = true;
-      geometry.boundingBox = null;
-      geometry.boundingSphere = null;
+      this.writePositions(slot, moves[i].total, moves[i].settled);
+      slot.mesh.geometry.boundingBox = null;
+      slot.mesh.geometry.boundingSphere = null;
     }
+    // The nipples stand off the disc, so its faces need their own light.
+    nipples?.slot.mesh.geometry.computeVertexNormals();
+    this.shaped = { totals: moves.map((m) => m.total), settled: moves.map((m) => m.settled), onSkin, flat };
 
     for (const rest of this.bones) {
       const delta = shift.get(rest)!;
@@ -1067,6 +1426,115 @@ export class Dresser {
   }
 
   /**
+   * How aroused she is, from 0 to 1: her nipples stand and her areolae draw in and flush. Only the discs and the
+   * clothing points riding on them change, so it can follow her from moment to moment.
+   */
+  setArousal(level: number): void {
+    const a = Math.min(1, Math.max(0, level));
+    const ends = (a === 0 || a === 1) && a !== this.arousal;
+    const { nipples } = this;
+    if (!nipples || (Math.abs(a - this.arousal) < 0.02 && !ends)) return;
+    this.arousal = a;
+    const { shaped } = this;
+    if (shaped) {
+      this.shapeNipples(shaped.onSkin, shaped.totals, shaped.flat);
+      const at = this.slots.indexOf(nipples.slot);
+      this.writePositions(nipples.slot, shaped.totals[at], shaped.settled[at]);
+      nipples.slot.mesh.geometry.computeVertexNormals();
+      for (const [slot, riders] of nipples.riders) {
+        const i = this.slots.indexOf(slot);
+        this.writePositions(slot, shaped.totals[i], shaped.settled[i], riders.verts);
+      }
+    }
+    this.showPieces();
+  }
+
+  /**
+   * Shapes her nipple discs from where they lie on the skin (`onSkin`, in the model's space) into `totals`, every
+   * mesh's moves, and tents the clothes over them: each rider goes from its move before tenting (`flat`) out along
+   * its disc's normal, as far as the nipple stands at its distance from the tip.
+   */
+  private shapeNipples(onSkin: Float32Array, totals: Float32Array[], flat: Map<MeshSlot, Float32Array>): void {
+    const { nipples } = this;
+    const types = LOOK_OPTIONS[this.body].nipples;
+    const type = types.find((t) => t.id === this.look.nipples) ?? types[0];
+    if (!nipples || !type) return;
+    const { sliders } = this.look;
+    const profile = nippleProfile(type, clampSlider(sliders.nippleSize), clampSlider(sliders.areolaSize), this.arousal);
+    const { bind } = nipples.slot;
+    const total = totals[this.slots.indexOf(nipples.slot)];
+    const shaped = onSkin.slice();
+    const frames = nipples.discs.map((disc) => shapeDisc(disc, onSkin, profile, shaped));
+    for (let i = 0; i < bind.length; i++) total[i] = shaped[i] - bind[i];
+    for (const [slot, riders] of nipples.riders) {
+      const own = totals[this.slots.indexOf(slot)];
+      const before = flat.get(slot)!;
+      riders.verts.forEach((v, k) => {
+        const { normal: [nx, ny, nz], lift } = frames[riders.disc[k]];
+        // The clothes clear the disc's own lift too, over the areola and fading out a little past it.
+        const t = Math.min(1, riders.r[k] / (profile[profile.length - 1].r * 1.3 + 0.004));
+        const h = tentHeight(profile, riders.r[k]) + lift * (1 - t * t * (3 - 2 * t));
+        own[v * 3] = before[k * 3] + nx * h;
+        own[v * 3 + 1] = before[k * 3 + 1] + ny * h;
+        own[v * 3 + 2] = before[k * 3 + 2] + nz * h;
+      });
+    }
+  }
+
+  /**
+   * Moves a mesh's points onto the body under them, by its table of the body points nearest each, from `own`, the
+   * moves their own bones gave them, into `total`. Close to the body they follow it fully; further out they keep
+   * more of their own.
+   */
+  private follow(follow: FollowTable, own: Float32Array, total: Float32Array, bodyMoves: Float32Array): void {
+    for (let v = 0; v < total.length / 3; v++) {
+      let x = 0, y = 0, z = 0;
+      for (let k = 0; k < FOLLOW_POINTS; k++) {
+        const at = follow.points[v * FOLLOW_POINTS + k] * 3;
+        const weight = follow.weights[v * FOLLOW_POINTS + k];
+        x += bodyMoves[at] * weight;
+        y += bodyMoves[at + 1] * weight;
+        z += bodyMoves[at + 2] * weight;
+      }
+      const keep = follow.own[v];
+      total[v * 3] = x + (own[v * 3] - x) * keep;
+      total[v * 3 + 1] = y + (own[v * 3 + 1] - y) * keep;
+      total[v * 3 + 2] = z + (own[v * 3 + 2] - z) * keep;
+    }
+  }
+
+  /** Puts a mesh's points where their moves take them, less the joints' part, which the bones carry. */
+  private writePositions(slot: MeshSlot, total: Float32Array, settled: Float32Array, only?: Int32Array): void {
+    const { bind } = slot;
+    const position = slot.mesh.geometry.getAttribute("position");
+    const inverse = unbind.copy(slot.mesh.bindMatrix).invert();
+    const one = (v: number) => {
+      point.set(
+        bind[v * 3] + total[v * 3] - settled[v * 3],
+        bind[v * 3 + 1] + total[v * 3 + 1] - settled[v * 3 + 1],
+        bind[v * 3 + 2] + total[v * 3 + 2] - settled[v * 3 + 2],
+      ).applyMatrix4(inverse);
+      position.setXYZ(v, point.x, point.y, point.z);
+    };
+    if (only) for (const v of only) one(v);
+    else for (let v = 0; v < position.count; v++) one(v);
+    position.needsUpdate = true;
+  }
+
+  /**
+   * What her nipple discs wear: her smallclothes while she has them on, so only their shape shows through, and
+   * otherwise their own colour, flushed darker as she's aroused.
+   */
+  private discMaterial(slot: MeshSlot): Material {
+    const smalls = this.slots.find((s) => s.part === "Body" && s.original.name === "T_smalls");
+    const smallsOff = this.undressed || covers(this.stripped, "Body", "T_smalls");
+    if (smalls && !smallsOff) return smalls.worn;
+    const flush = Math.round(this.arousal * 5) / 5;
+    if (flush === 0) return slot.worn;
+    return paint(slot.original, averageColor(slot.worn).clone().lerp(FLUSHED, 0.22 * flush));
+  }
+
+  /**
    * Shows each mesh unless its piece is taken off or stripped, it's clothing while undressed, or it's another
    * hairstyle or another outfit. Stripped parts of the body itself stay, in the skin's colour.
    */
@@ -1081,15 +1549,37 @@ export class Dresser {
       .filter((color) => color.tab === "clothes")
       .flatMap((color) => color.parts)
       .filter(([part]) => part === "Body");
+    const legwear = legwearOf(this.body, this.look);
+    const stockingsOff = covers(this.stripped, "Cloth", HOSE_BANDS[0]);
     for (const slot of this.slots) {
       if (slot.part === "Cum") continue;
+      // The legwear's bands show as far as its style reaches; a sock cuff it doesn't have is painted over in skin.
+      const legs = legwearSlot(legwear, slot.part, slot.original.name, stockingsOff);
+      if (legs === "skin") {
+        slot.mesh.material = skin ? skin.worn : slot.worn;
+        slot.mesh.visible = true;
+        continue;
+      }
+      if (slot.part === "Shoes") slot.mesh.material = slot.worn;
       const stripped = covers(this.stripped, slot.part, slot.original.name);
+      if (slot === this.nipples?.slot) {
+        slot.mesh.material = this.discMaterial(slot);
+        continue;
+      }
+      if (slot.part === "Body" && slot.original.name === PUBIC_MATERIAL) {
+        // Only bare: under her smallclothes, or with none to show, it stays hidden.
+        const style = pubicStyle(this.look.pubes);
+        const smallsOff = this.undressed || covers(this.stripped, "Body", "T_smalls");
+        slot.mesh.visible = smallsOff && style.shape !== null;
+        if (slot.mesh.visible) slot.mesh.material = pubicMaterial(slot.worn, style, clampSlider(this.look.sliders.pubesSize));
+        continue;
+      }
       if (slot.part === "Body") {
         const bare = stripped || (this.undressed && covers(painted, slot.part, slot.original.name));
         slot.mesh.material = bare && skin ? skin.worn : slot.worn;
         continue;
       }
-      const off = pieces.some((piece) => covers(piece.parts, slot.part, slot.original.name)) || stripped;
+      const off = pieces.some((piece) => covers(piece.parts, slot.part, slot.original.name)) || stripped || legs === "hide";
       const otherStyle =
         (slot.part === "Hair" && hairMeshOf(slot.mesh, this.body) !== hair) ||
         (slot.part === "Cloth" && outfitMeshOf(slot.mesh, this.body) !== outfit);
@@ -1112,7 +1602,7 @@ export class Dresser {
 }
 
 /** For each of `points`, the nearest body points, weighted by closeness, and how much it keeps its own move. */
-function nearestBody(points: Float32Array, body: Float32Array): { points: Int32Array; weights: Float32Array; own: Float32Array } {
+function nearestBody(points: Float32Array, body: Float32Array): FollowTable {
   const count = points.length / 3;
   const bodyCount = body.length / 3;
   const found = new Int32Array(count * FOLLOW_POINTS);
@@ -1160,7 +1650,8 @@ export function armSpreadFor(sliders: Record<string, number>): number {
   return ARM_SPREAD.reduce((sum, [id, amount]) => sum + more(id) * amount, 0);
 }
 const ARM_SPREAD: [string, number][] = [
-  ["hips", 0.06], ["build", 0.05], ["rear", 0.07], ["rearProjection", 0.05], ["rearWidth", 0.05], ["thighs", 0.03],
+  // The fullest bust comes 1.3 cm into the upper arms as they hang.
+  ["bust", 0.11], ["hips", 0.06], ["build", 0.05], ["rear", 0.07], ["rearProjection", 0.05], ["rearWidth", 0.05], ["thighs", 0.03],
 ];
 
 /** A random look: every slider somewhere in the middle of its range, colours from the swatches. */
@@ -1170,7 +1661,8 @@ export function randomLook(body: BodyName, random: () => number = Math.random): 
   const pick = <T>(list: readonly T[]) => list[Math.floor(random() * list.length) % list.length];
   for (const def of options.sliders) {
     // Two rolls averaged lean towards the middle, so most random people look ordinary and a few stand out.
-    const value = Math.round(((random() + random()) - 1) * 0.8 * 100) / 100;
+    let value = Math.round(((random() + random()) - 1) * (def.roll ?? 0.8) * 100) / 100;
+    if (def.stops) value = stopValue(def.stops, nearestStop(def.stops, value));
     if (value !== 0) look.sliders[def.id] = value;
   }
   for (const def of options.colors) {
@@ -1183,6 +1675,19 @@ export function randomLook(body: BodyName, random: () => number = Math.random): 
   if (style !== options.hairstyles[0]) look.hairstyle = style.id;
   const outfit = pick(playerOutfits(body));
   if (outfit !== options.outfits[0]) look.outfit = outfit.id;
+  if (outfit.legwear && options.legwear.length) look.legwear = pick(options.legwear).id;
+  if (options.nipples.length) {
+    const type = pick(options.nipples);
+    if (type !== options.nipples[0]) look.nipples = type.id;
+  }
+  if (options.bustShapes.length) {
+    const shape = pick(options.bustShapes);
+    if (shape !== options.bustShapes[0]) look.bustShape = shape.id;
+  }
+  if (options.pubes.length) {
+    const style = pick(options.pubes);
+    if (style !== options.pubes[0]) look.pubes = style.id;
+  }
   return look;
 }
 
@@ -1214,6 +1719,10 @@ export function readLook(raw: unknown, body: BodyName): Look | null {
   // The character's own style is the default, so it is left out rather than stored.
   if (options.hairstyles.slice(1).some((style) => style.id === data.hairstyle)) look.hairstyle = data.hairstyle;
   if (playerOutfits(body).slice(1).some((outfit) => outfit.id === data.outfit)) look.outfit = data.outfit;
+  if (options.legwear.some((style) => style.id === data.legwear)) look.legwear = data.legwear;
+  if (options.nipples.slice(1).some((type) => type.id === data.nipples)) look.nipples = data.nipples;
+  if (options.bustShapes.slice(1).some((shape) => shape.id === data.bustShape)) look.bustShape = data.bustShape;
+  if (options.pubes.slice(1).some((style) => style.id === data.pubes)) look.pubes = data.pubes;
   return look;
 }
 

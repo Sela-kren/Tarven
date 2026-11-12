@@ -12,7 +12,9 @@ export const FEMALE_JIGGLE = 1;
  * each step sets them going.
  */
 const SOFT_PARTS: Record<string, SpringSettings> = {
-  Bust: { frequency: 2.3, damping: 0.2, gain: 0.0025, axes: [0.35, 1, 0.3], limit: 0.022 },
+  // The bust's weights rise slowly from the crease (see JIGGLE_RISE in build_world.py), so the front of the
+  // breasts takes about 0.4 of the bone's move: the gain and limit make up for it.
+  Bust: { frequency: 2.3, damping: 0.2, gain: 0.0038, axes: [0.35, 1, 0.3], limit: 0.033 },
   Glute_L: { frequency: 2.1, damping: 0.22, gain: 0.0022, axes: [0.3, 1, 0.25], limit: 0.018 },
   Glute_R: { frequency: 2.1, damping: 0.22, gain: 0.0022, axes: [0.3, 1, 0.25], limit: 0.018 },
   Belly: { frequency: 2.8, damping: 0.3, gain: 0.0012, axes: [0.2, 1, 0.4], limit: 0.01 },

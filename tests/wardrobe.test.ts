@@ -67,6 +67,14 @@ describe("the wardrobe", () => {
     }
   });
 
+  it("rolls the stockings down only when the legwear shows on her legs", () => {
+    expect(stripLadder("Female", undefined, "noshow").map((g) => g.id)).not.toContain("stockings");
+    expect(stripLadder("Female", "dirndl", "thighhigh").map((g) => g.id)).toEqual(
+      ["apron", "ribbons", "bodice", "skirt", "stockings", "blouse", "smalls"],
+    );
+    expect(piecesOff("Female", 5, undefined, "garter")).toContain("stockings");
+  });
+
   it("lists what's off at each stage", () => {
     expect(piecesOff("Female", 0)).toEqual([]);
     expect(piecesOff("Female", 3)).toEqual(["apron", "belt", "bodice"]);

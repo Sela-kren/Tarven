@@ -13,12 +13,16 @@ import {
 } from "three";
 import {
   activeTerms,
+  armSpreadFor,
   copyLook,
+  CUPS,
   dressColors,
   Dresser,
   dyeColor,
   hairMeshFor,
+  legwearOf,
   LOOK_OPTIONS,
+  nearestStop,
   newLook,
   outfitOf,
   PIRATE_LOOKS,
@@ -28,6 +32,8 @@ import {
   readLook,
   readLooks,
   reshape,
+  shapeAmount,
+  stopValue,
   toneColor,
   wearOutfit,
   type Look,
@@ -112,9 +118,9 @@ describe("reshaping", () => {
     expect(activeTerms("Female", {}).size).toBe(0);
     const terms = activeTerms("Female", { bust: 1, nonsense: 1 });
     expect([...terms.keys()]).toEqual(["Bust"]);
-    expect(terms.get("Bust")![0].grow).toEqual([0.35, 0.55, 1.6]);
+    expect(terms.get("Bust")![0].grow).toEqual([2.52, 2.07, 3.55]);
     // Shrinking has its own, smaller amounts.
-    expect(activeTerms("Female", { bust: -1 }).get("Bust")![0].grow).toEqual([-0.12, -0.15, -0.45]);
+    expect(activeTerms("Female", { bust: -1 }).get("Bust")![0].grow).toEqual([-0.2, -0.25, -0.7]);
   });
 });
 
@@ -328,9 +334,117 @@ describe("a fuller bust", () => {
     expect(bigger.shift![2]).toBeLessThan(0);
     const smaller = activeTerms("Female", { bust: -1 }).get("Bust")![0];
     expect(smaller.shift).toEqual([0, 0, 0]);
-    // A point on the bone's joint still moves by the whole shift.
-    const out = reshape([bigger], new Vector3(), new Vector3());
-    expect(out.y).toBeCloseTo(-0.03);
+  });
+
+  it("swells each breast about its own middle, and only forwards towards the cleavage", () => {
+    const term = { grow: [1, 0, 1] as [number, number, number], lobes: [0.07, 0, 0] as const };
+    const out = new Vector3();
+    // The middle of a breast stays put; a point 2 cm out from it goes to 4 cm out, on either side.
+    expect(reshape([term], new Vector3(0.07, 0, 0), out).x).toBeCloseTo(0.07);
+    expect(reshape([term], new Vector3(0.09, 0, 0), out).x).toBeCloseTo(0.11);
+    expect(reshape([term], new Vector3(-0.09, 0, 0), out).x).toBeCloseTo(-0.11);
+    // Between a breast's middle and the cleavage, points keep their place across and only come forwards.
+    reshape([term], new Vector3(0.01, 0, -0.04), out);
+    expect(out.x).toBeCloseTo(0.01);
+    expect(out.z).toBeCloseTo(-0.08);
+    expect(reshape([term], new Vector3(0, 0, -0.04), out).x).toBe(0);
+  });
+
+  it("fades out smoothly, with no edge where it stops", () => {
+    const fading = [{ grow: [1, 0, 0] as [number, number, number], fade: [0, 0.1] as const }];
+    const out = new Vector3();
+    // A quarter of the way in, the smooth curve gives less than the straight line's quarter.
+    expect(reshape(fading, new Vector3(1, 0.075, 0), out).x).toBeCloseTo(1 + 0.15625);
+  });
+});
+
+describe("cup sizes", () => {
+  const bust = LOOK_OPTIONS.Female.sliders.find((def) => def.id === "bust")!;
+
+  it("runs from A to Q, with C as built", () => {
+    expect(bust.stops).toBe(CUPS);
+    expect(CUPS.labels[0]).toBe("A");
+    expect(CUPS.labels[CUPS.labels.length - 1]).toBe("Q");
+    expect(CUPS.labels[nearestStop(CUPS, 0)]).toBe("C");
+  });
+
+  it("puts A at -1, B halfway down, and D to Q evenly above", () => {
+    expect(stopValue(CUPS, 0)).toBe(-1);
+    expect(stopValue(CUPS, 1)).toBe(-0.5);
+    expect(stopValue(CUPS, 3)).toBeCloseTo(1 / 14);
+    expect(stopValue(CUPS, 16)).toBe(1);
+    for (let i = 0; i < CUPS.labels.length; i++) expect(nearestStop(CUPS, stopValue(CUPS, i))).toBe(i);
+  });
+
+  it("rolls random busts on a cup, and only up to about a J", () => {
+    let seed = 1;
+    const random = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+    for (let i = 0; i < 200; i++) {
+      const value = randomLook("Female", random).sliders.bust ?? 0;
+      const cup = nearestStop(CUPS, value);
+      expect(stopValue(CUPS, cup)).toBeCloseTo(value);
+      expect(CUPS.labels[cup] <= "J").toBe(true);
+    }
+  });
+
+  it("spreads the arms for a fuller bust", () => {
+    expect(armSpreadFor({ bust: 1 })).toBeGreaterThan(armSpreadFor({}));
+  });
+});
+
+describe("bust shape and height", () => {
+  it("moves a whole breast for Height, reaching past where its weight thins out", () => {
+    const term = { grow: [0, 0, 0] as [number, number, number], shift: [0, 0.03, 0] as [number, number, number], reach: 0.5 };
+    const out = new Vector3();
+    // Where the bone holds a quarter of the point, the move counts as half: after the caller's weighting, 0.5.
+    const quarter = reshape([term], new Vector3(), out, 0.25).y * 0.25;
+    expect(quarter).toBeCloseTo(0.015);
+    // Held fully, it moves fully; Lift, without reach, moves only as far as the weight.
+    expect(reshape([term], new Vector3(), out, 1).y).toBeCloseTo(0.03);
+    expect(reshape([{ grow: [0, 0, 0], shift: [0, 0.03, 0] }], new Vector3(), out, 0.25).y * 0.25).toBeCloseTo(0.0075);
+  });
+
+  it("sets breasts apart and turns them outwards, each to its own side", () => {
+    const out = new Vector3();
+    expect(reshape([{ grow: [0, 0, 0], apart: 0.01 }], new Vector3(0.05, 0, 0), out).x).toBeCloseTo(0.06);
+    expect(reshape([{ grow: [0, 0, 0], apart: 0.01 }], new Vector3(-0.05, 0, 0), out).x).toBeCloseTo(-0.06);
+    // Turning moves the front (-z) of a breast most, and the back of it not at all.
+    expect(reshape([{ grow: [0, 0, 0], turn: 0.02 }], new Vector3(0.05, 0, -0.06), out).x).toBeCloseTo(0.07);
+    expect(reshape([{ grow: [0, 0, 0], turn: 0.02 }], new Vector3(0.05, 0, 0.02), out).x).toBeCloseTo(0.05);
+  });
+
+  it("has teardrop first, as built, and gives shapes more to work with as the cup grows", () => {
+    const shapes = LOOK_OPTIONS.Female.bustShapes;
+    expect(shapes[0].id).toBe("teardrop");
+    expect(shapes[0].terms).toEqual([]);
+    expect(shapes.map((s) => s.id)).toEqual(["teardrop", "round", "bell", "eastwest", "athletic", "relaxed", "sideset", "slender"]);
+    expect(shapeAmount(-1)).toBeLessThan(shapeAmount(0));
+    expect(shapeAmount(1)).toBeGreaterThan(shapeAmount(0));
+    expect(activeTerms("Female", {}, "teardrop").size).toBe(0);
+    expect(activeTerms("Female", {}, "athletic").get("Bust")).toHaveLength(1);
+  });
+
+  it("keeps a known shape in the look, leaving the default out, and copies it", () => {
+    expect(readLook({ bustShape: "bell" }, "Female")!.bustShape).toBe("bell");
+    expect(readLook({ bustShape: "teardrop" }, "Female")!.bustShape).toBeUndefined();
+    expect(readLook({ bustShape: "cone" }, "Female")!.bustShape).toBeUndefined();
+    expect(copyLook({ ...newLook(), bustShape: "round" }).bustShape).toBe("round");
+  });
+});
+
+describe("nipples in the look", () => {
+  it("keeps a known type, leaving the default out, and copies it", () => {
+    expect(readLook({ nipples: "puffy" }, "Female")!.nipples).toBe("puffy");
+    expect(readLook({ nipples: "neat" }, "Female")!.nipples).toBeUndefined();
+    expect(readLook({ nipples: "pierced" }, "Female")!.nipples).toBeUndefined();
+    expect(readLook({ nipples: "puffy" }, "Male")!.nipples).toBeUndefined();
+    expect(copyLook({ ...newLook(), nipples: "wide" }).nipples).toBe("wide");
+  });
+
+  it("has sliders for their sizes and a colour that follows the skin", () => {
+    const ids = LOOK_OPTIONS.Female.sliders.filter((def) => def.group === "Nipples").map((def) => def.id);
+    expect(ids).toEqual(["nippleSize", "areolaSize"]);
+    expect(LOOK_OPTIONS.Female.colors.find((def) => def.id === "nipples")?.follows).toBe("skin");
   });
 });
 
@@ -412,5 +526,72 @@ describe("outfits", () => {
     expect(readLook({ outfit: "tavern" }, "Female")!.outfit).toBeUndefined();
     expect(readLook({ outfit: "ballgown" }, "Female")!.outfit).toBeUndefined();
     expect(copyLook({ ...newLook(), outfit: "dirndl" }).outfit).toBe("dirndl");
+  });
+});
+
+describe("legwear", () => {
+  /** The rig with her seat and thigh bands of stockings and the garter on the cloth, the sock cuff on the shoes and skin on the body. */
+  function legRig() {
+    const parts = rig();
+    const piece = (name: string, material: string) => {
+      const geometry = new BufferGeometry();
+      geometry.setAttribute("position", new Float32BufferAttribute([-0.1, 0.6, 0.05], 3));
+      geometry.setAttribute("skinIndex", new Uint16BufferAttribute([1, 0, 0, 0], 4));
+      geometry.setAttribute("skinWeight", new Float32BufferAttribute([1, 0, 0, 0], 4));
+      const mesh = new SkinnedMesh(geometry, new MeshLambertMaterial({ name: material }));
+      mesh.name = name;
+      parts.root.add(mesh);
+      mesh.bind(parts.mesh.skeleton);
+      return mesh;
+    };
+    const seat = piece("Female_Cloth_1", "T_hose");
+    const thigh = piece("Female_Cloth_2", "T_hose_thigh");
+    const garter = piece("Female_Cloth_3", "T_garter");
+    const cuff = piece("Female_Shoes", "T_hose");
+    const skin = piece("Female_Body", "T_skin_f");
+    return { ...parts, seat, thigh, garter, cuff, skin };
+  }
+
+  it("comes with each outfit, and the pirate's rig has none", () => {
+    expect(legwearOf("Female", {})!.id).toBe("tights");
+    expect(legwearOf("Female", { outfit: "dirndl" })!.id).toBe("noshow");
+    expect(legwearOf("Female", { outfit: "dirndl", legwear: "kneehigh" })!.id).toBe("kneehigh");
+    expect(legwearOf("Female", { outfit: "pirate", legwear: "tights" })).toBeNull();
+    expect(legwearOf("Male", {})).toBeNull();
+  });
+
+  it("shows the bands a style reaches, and paints a missing sock cuff in skin", () => {
+    const { model, seat, thigh, garter, cuff, skin } = legRig();
+    const dresser = new Dresser(model, "Female");
+    dresser.apply(newLook());
+    expect([seat.visible, thigh.visible, garter.visible]).toEqual([true, true, false]);
+    expect((cuff.material as MeshLambertMaterial).name).toBe("T_hose");
+    dresser.apply({ ...newLook(), legwear: "garter" });
+    expect([seat.visible, thigh.visible, garter.visible]).toEqual([false, true, true]);
+    dresser.apply({ ...newLook(), legwear: "leggings" });
+    expect(cuff.material).toBe(skin.material);
+    dresser.apply({ ...newLook(), legwear: "ankle" });
+    expect([seat.visible, thigh.visible]).toEqual([false, false]);
+    expect((cuff.material as MeshLambertMaterial).name).toBe("T_hose");
+    // Rolled down: every band comes off, and the cuff goes to skin.
+    dresser.apply({ ...newLook(), legwear: "garter" });
+    dresser.setStripped(["stockings"]);
+    expect([seat.visible, thigh.visible, garter.visible]).toEqual([false, false, false]);
+    expect(cuff.material).toBe(skin.material);
+  });
+
+  it("dresses guests in their outfit's legwear unless another is named", () => {
+    const { model, seat, garter } = legRig();
+    dressColors(model, "Female", {});
+    expect([seat.visible, garter.visible]).toEqual([true, false]);
+    dressColors(model, "Female", {}, undefined, "garter");
+    expect([seat.visible, garter.visible]).toEqual([false, true]);
+  });
+
+  it("goes back to the outfit's own when another outfit goes on, and keeps only known styles", () => {
+    expect(wearOutfit("Female", { ...newLook(), legwear: "crew" }, "dirndl").legwear).toBeUndefined();
+    expect(readLook({ legwear: "overknee" }, "Female")!.legwear).toBe("overknee");
+    expect(readLook({ legwear: "fishnets" }, "Female")!.legwear).toBeUndefined();
+    expect(copyLook({ ...newLook(), legwear: "capri" }).legwear).toBe("capri");
   });
 });

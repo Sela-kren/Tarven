@@ -627,6 +627,8 @@ FEMALE = {
     # "modern": the original white tee, red track pants and white sneakers, kept for later.
     "outfit": "medieval",
     "jiggle": True,  # spring bones for the bust, belly, glutes and skirt hem
+    "nipples": True,  # discs the game shapes into her areolae and nipples
+    "pubes": True,  # a patch over her mound the game draws her pubic hair's style on
     "name": "Female", "tunic": "tee_white", "hair": "hair_f", "skin": "skin_f", "pants": "pants_red",
     "belt": "waistband", "shoe": "shoe_w", "sole": "sole_w", "splay": 0.28, "leg_splay": 0.05,
     "arm_sides": 8, "cuff_bands": 0, "midriff_bands": 2, "bare_arm_bands": 2, "bare_forearm": True,
@@ -2185,6 +2187,10 @@ JIGGLE_REGIONS = {
 JIGGLE_LOBES = {
     "Bust": ([(-0.072, 0.085, 1.145), (0.072, 0.085, 1.145)], (0.09, 0.075, 0.075)),
 }
+# How quickly a region's weight rises from its edge: weight is the smooth curve times this, up to the most.
+# The breasts rise slowly, over the whole region: the game grows them to a Q cup, and a weight that drops
+# sharply at the crease would fold the skin there over itself and pull the bodice into a tent.
+JIGGLE_RISE = {"Bust": 1.0}
 
 
 # Where the soft parts get extra faces: (lobe centres, radii, side: 1 front, -1 back). A little larger
@@ -2193,21 +2199,24 @@ REFINE_REGIONS = [
     ([(-0.072, 0.085, 1.14), (0.072, 0.085, 1.14)], (0.11, 0.1, 0.1), 1),
     ([(-0.065, -0.08, 0.83), (0.065, -0.08, 0.83)], (0.1, 0.1, 0.12), -1),
 ]
+# The breasts are split once more: the game grows them up to a Q cup, four times the size they are built,
+# and they need the extra corners to stay round. A little inside the first region, so the crease keeps its edge.
+REFINE_AGAIN = [([(-0.072, 0.085, 1.14), (0.072, 0.085, 1.14)], (0.1, 0.09, 0.09), 1)]
 # How far the new corners move towards a smooth surface, from 0 (flat on the old faces) to 1.
 REFINE_SMOOTH = 0.6
 # Long hair blends from the head onto the back over this height below the neck.
 HAIR_ONTO_BACK = 0.08
 
 
-def refine_soft_parts(obj, name):
-    """Splits each face of the bust and glutes into four, leaving the arms alone. Weights follow the new corners."""
+def refine_soft_parts(obj, name, regions=REFINE_REGIONS):
+    """Splits each face in these regions into four, leaving the arms alone. Weights follow the new corners."""
     arms = {g.index for g in obj.vertex_groups if g.name.startswith((f"{name}_UpperArm", f"{name}_ForeArm"))}
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     deform = bm.verts.layers.deform.active
 
     def inside(co):
-        for centres, (rx, ry, rz), side in REFINE_REGIONS:
+        for centres, (rx, ry, rz), side in regions:
             if side * co.y <= 0.0:
                 continue
             for cx, cy, cz in centres:
@@ -2225,6 +2234,136 @@ def refine_soft_parts(obj, name):
     bm.to_mesh(obj.data)
     bm.free()
     obj.data.update()
+
+
+# ---------------------------------------------------------------- nipples
+
+# Each breast gets a flat disc of rings and spokes lying just over the skin, in its own material. The game shapes
+# it into the areola and nipple from her look and how aroused she is (nippleProfile in appearance.ts), on the skin
+# as the breast is at that moment, so it keeps its size whatever the cup. Each corner's ring and spoke ride in its
+# UVs, as the material is one flat colour: u is the ring, 0 at the tip to 1 at the edge, and v the spoke around.
+NIPPLE_RINGS = 5
+NIPPLE_SPOKES = 12
+# The disc as built: as wide as the widest areola the game makes (wide, at full size), so it always lays the
+# areola on skin the disc has measured. The game sets the areola's own size, and measures it against this.
+NIPPLE_RADIUS = 0.026
+# How far over the skin it lies, so the skin never shows through it; well inside the clothes' gap.
+NIPPLE_LIFT = 0.0008
+# Where each nipple is found: looking out from inside the breast, a little outwards and down.
+NIPPLE_AIM = [((side * 0.072, 0.03, 1.15), (side * 0.12, 1.0, -0.06)) for side in (-1, 1)]
+
+
+def add_nipples(m, name, body_obj):
+    """Lays the two discs on the finished body, weighted like the skin under them."""
+    mesh = body_obj.data
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    # The skin's faces as they are before the discs go on; the rays only ever meet these.
+    skin_faces = list(bm.faces)
+    tree = BVHTree.FromBMesh(bm)
+    deform = bm.verts.layers.deform.active
+    uv = bm.loops.layers.uv.active
+    if "T_areola" not in [mat.name for mat in mesh.materials]:
+        mesh.materials.append(m["areola"])
+    slot = [mat.name for mat in mesh.materials].index("T_areola")
+
+    def on_skin(origin, direction):
+        """The skin a ray meets, with the weights there, taken from the corners of the face it lands on."""
+        hit, normal, index, _ = tree.ray_cast(origin, direction)
+        face = skin_faces[index]
+        near = [(1 / max(1e-5, (v.co - hit).length), v) for v in face.verts]
+        total = sum(w for w, _ in near)
+        weights = {}
+        for w, v in near:
+            for group, share in v[deform].items():
+                weights[group] = weights.get(group, 0.0) + share * w / total
+        smooth = sum((v.normal for v in face.verts), Vector()).normalized()
+        return hit, smooth, weights
+
+    for start, aim in NIPPLE_AIM:
+        centre, normal, _ = on_skin(Vector(start), Vector(aim).normalized())
+        across = Vector((0, 0, 1)).cross(normal).normalized()
+        up = normal.cross(across)
+        rings = []
+        for ring in range(NIPPLE_RINGS + 1):
+            spokes = 1 if ring == 0 else NIPPLE_SPOKES
+            corners = []
+            for spoke in range(spokes):
+                angle = 2 * math.pi * spoke / NIPPLE_SPOKES
+                radius = NIPPLE_RADIUS * ring / NIPPLE_RINGS
+                over = centre + (across * math.cos(angle) + up * math.sin(angle)) * radius + normal * 0.02
+                point, under, weights = on_skin(over, -normal)
+                vert = bm.verts.new(point + under * NIPPLE_LIFT)
+                for group, share in weights.items():
+                    vert[deform][group] = share
+                corners.append((vert, ring, spoke))
+            rings.append(corners)
+
+        def face(corners):
+            f = bm.faces.new([c[0] for c in corners])
+            f.material_index = slot
+            f.smooth = False
+            for loop, (_, ring, spoke) in zip(f.loops, corners):
+                loop[uv].uv = (ring / NIPPLE_RINGS, spoke / NIPPLE_SPOKES)
+
+        for spoke in range(NIPPLE_SPOKES):
+            nxt = (spoke + 1) % NIPPLE_SPOKES
+            face([rings[0][0], rings[1][spoke], rings[1][nxt]])
+            for ring in range(1, NIPPLE_RINGS):
+                face([rings[ring][spoke], rings[ring + 1][spoke], rings[ring + 1][nxt], rings[ring][nxt]])
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.update()
+
+
+# ---------------------------------------------------------------- pubic hair
+
+# The skin over her mound, copied a hair's breadth out into its own material. The game draws the hair's style on it
+# as a cut-out (pubes.ts), so a heart or a strip keeps its shape whatever the mesh under it. Its UVs are a flat frame
+# seen from the front, which the game's drawing uses as well: u across her from -PUBES_HALF to PUBES_HALF, v up her
+# from PUBES_BOTTOM to PUBES_TOP. The faces are the skin's own, untouched, so the patch bends exactly as she does.
+PUBES_HALF = 0.11
+PUBES_BOTTOM = 0.68
+PUBES_TOP = 0.96
+# Over the skin by less than the coat (COAT_LIFT), and well inside the smallclothes, which hide it.
+PUBES_LIFT = 0.0009
+
+
+def add_pubes(m, name, body_obj):
+    """Lays the patch on the finished body: every front face in the frame, copied out along the skin's normals."""
+    mesh = body_obj.data
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    deform = bm.verts.layers.deform.active
+    uv = bm.loops.layers.uv.active
+    if "T_pubic" not in [mat.name for mat in mesh.materials]:
+        mesh.materials.append(m["pubic"])
+    slot = [mat.name for mat in mesh.materials].index("T_pubic")
+    faces = []
+    for f in bm.faces:
+        c = f.calc_center_median()
+        if (f.normal.y > 0.25 and c.y > 0.02 and abs(c.x) < PUBES_HALF - 0.01
+                and PUBES_BOTTOM + 0.01 < c.z < PUBES_TOP - 0.01):
+            faces.append(f)
+    copies = {}
+    for f in faces:
+        for v in f.verts:
+            if v in copies:
+                continue
+            out = bm.verts.new(v.co + v.normal * PUBES_LIFT)
+            for group, share in v[deform].items():
+                out[deform][group] = share
+            copies[v] = out
+    for f in faces:
+        new = bm.faces.new([copies[v] for v in f.verts])
+        new.material_index = slot
+        new.smooth = f.smooth
+        for loop in new.loops:
+            co = loop.vert.co
+            loop[uv].uv = (0.5 + co.x / (2 * PUBES_HALF), (co.z - PUBES_BOTTOM) / (PUBES_TOP - PUBES_BOTTOM))
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.update()
 
 
 def move_weight(obj, index, bone, share):
@@ -2256,7 +2395,8 @@ def add_jiggle_weights(name, layers):
                 if d2 < 1:
                     # Full weight through the middle of the mass, fading smoothly to nothing at its edge.
                     t = 1 - math.sqrt(d2)
-                    move_weight(obj, v.index, f"{name}_{label}", most * min(1.0, t * t * (3 - 2 * t) * 1.6))
+                    rise = JIGGLE_RISE.get(label, 1.6)
+                    move_weight(obj, v.index, f"{name}_{label}", most * min(1.0, t * t * (3 - 2 * t) * rise))
 
 
 # ---------------------------------------------------------------- the medieval outfit
@@ -2267,7 +2407,11 @@ MEDIEVAL_COLOURS = (("linen", (0.86, 0.8, 0.68)), ("bodice", (0.36, 0.08, 0.09))
                     # The dirndl's arm ribbons and laces, and the priestess's set. Gems are shared.
                     ("ribbon", (0.12, 0.3, 0.17)), ("top", (0.62, 0.45, 0.16)), ("sheer", (0.93, 0.88, 0.72)),
                     ("girdle", (0.66, 0.48, 0.17)), ("drape", (0.92, 0.87, 0.74)), ("jewel", (0.8, 0.62, 0.22)),
-                    ("gem", (0.15, 0.55, 0.75)))
+                    ("gem", (0.15, 0.55, 0.75)),
+                    # The rest of the legwear: the bands of the legs below the seat, the leg warmers and the garter belt.
+                    ("hose_thigh", (0.2, 0.15, 0.13)), ("hose_over", (0.2, 0.15, 0.13)), ("hose_knee", (0.2, 0.15, 0.13)),
+                    ("hose_calf", (0.2, 0.15, 0.13)), ("hose_shin", (0.2, 0.15, 0.13)), ("hose_low", (0.2, 0.15, 0.13)),
+                    ("hose_ankle", (0.2, 0.15, 0.13)), ("warmer", (0.2, 0.15, 0.13)), ("garter", (0.2, 0.15, 0.13)))
 BODICE = (0.955, 1.17)  # bottom and top of the laced bodice
 # A tavern wench's chemise: a wide neckline worn off the shoulders, sleeves pushed up to the elbow.
 NECKLINE = (1.21, 1.25)  # where the chemise stops at the front and at the back
@@ -2336,15 +2480,160 @@ def medieval_cloth(spec, m, skin):
             if cz > spec["elbow_z"] - SLEEVE_END:
                 faces.append((f, m["linen"]))
         elif bone.startswith(("Thigh", "Shin")):
-            faces.append((f, m["hose"]))
+            faces.append((f, legwear_band(m, bone, cz)))
         elif bone in ("Hips", "Torso"):
             if cz < BODICE[0]:
-                faces.append((f, m["hose"]))  # under the skirt
+                faces.append((f, legwear_band(m, bone, cz)))  # under the skirt
             elif cz < BODICE[1]:
                 faces.append((f, m["bodice"]))
             elif cz < (NECKLINE[0] if cy > 0 else NECKLINE[1]):
                 faces.append((f, m["linen"]))
     return faces
+
+
+# ---------------------------------------------------------------- her legwear
+# Her stockings come in lengths, from tights to no-show socks. Every dress has them on the legs as bands, each its
+# own material, and the game shows the bands the chosen style reaches (appearance.ts, LEGWEAR). From the top: the
+# seat (hips and the tops of the thighs, for tights and leggings), then down the leg. A face goes in the first band
+# whose cut its centre is above. The cuts fall between her leg's rings: the knee is at 0.47, the ankle at 0.1.
+LEGWEAR_BANDS = (("hose", 0.7), ("hose_thigh", 0.582), ("hose_over", 0.484), ("hose_knee", 0.412), ("hose_calf", 0.34),
+                 ("hose_shin", 0.264), ("hose_low", 0.189), ("hose_ankle", -1.0))
+# Leg warmers: a thick tube bunched round the shin, from the ankle up to here, thickest at the bottom.
+WARMER_TOP, WARMER_LIFT = 0.36, (0.011, 0.006)
+# A garter belt low on the hips, below the priestess's girdle, with straps down the front, side and back of each
+# thigh to the top of the stockings.
+GARTER_BELT, GARTER_STRAP_END = (0.816, 0.848), 0.668
+GARTER_STRAP_WIDTH, GARTER_LIFT, GARTER_THICKNESS = 0.016, 0.002, 0.0015  # lift: off the stockings
+
+
+def legwear_band(m, bone, cz):
+    """The legwear band a worn face of the hips or legs is in, by its height."""
+    if bone in ("Hips", "Torso"):
+        return m["hose"]
+    return next(m[key] for key, cut in LEGWEAR_BANDS if cz > cut)
+
+
+def is_legwear(bone, cz):
+    """True for a worn face the legwear covers: the legs, and the hips under the bodice."""
+    return bone.startswith(("Thigh", "Shin")) or (bone in ("Hips", "Torso") and cz < BODICE[0])
+
+
+def hose_surface(dress, name):
+    """
+    A BVH of a finished dress's legwear bands, to lay the garter on, and the bone weights at any point on it
+    (bone labels without the character's name, springs included).
+    """
+    bm = bmesh.new()
+    bm.from_mesh(dress.data)
+    hose = {i for i, mat in enumerate(dress.data.materials) if mat and mat.name.startswith("T_hose")}
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.material_index not in hose], context="FACES")
+    bm.faces.ensure_lookup_table()
+    deform = bm.verts.layers.deform.active
+    groups = [g.name[len(name) + 1:] for g in dress.vertex_groups]
+    tree = BVHTree.FromBMesh(bm)
+
+    def weights(point, index):
+        total, out = 0.0, {}
+        for vert in bm.faces[index].verts:
+            share = 1.0 / ((vert.co - point).length + 1e-4)
+            total += share
+            for group, w in vert[deform].items():
+                out[groups[group]] = out.get(groups[group], 0.0) + w * share
+        return {bone: w / total for bone, w in out.items() if w / total > 0.001}
+
+    return tree, weights, bm
+
+
+def lay_ribbon(extra, key, rows, mat, closed=False):
+    """
+    A thin closed ribbon lying on the skin: rows of (point, outwards, across, weights) along it, `across` its half
+    width. The back face sits GARTER_THICKNESS in. A closed ribbon runs on from its last row back to its first.
+    """
+    for r, (co, out, across, weights) in enumerate(rows):
+        for k, u in enumerate((-1, 1)):
+            outer = co + across * u
+            extra.add(f"{key}o{r}_{k}", 0, tuple(outer), weights)
+            extra.add(f"{key}i{r}_{k}", 0, tuple(outer - out * GARTER_THICKNESS), weights)
+    count = len(rows)
+    for r in range(count if closed else count - 1):
+        s = (r + 1) % count
+        extra.face((f"{key}o{r}_0", f"{key}o{s}_0", f"{key}o{s}_1", f"{key}o{r}_1"), 0, mat)
+        extra.face((f"{key}i{r}_1", f"{key}i{s}_1", f"{key}i{s}_0", f"{key}i{r}_0"), 0, mat)
+        for k in (0, 1):
+            extra.face((f"{key}o{r}_{k}", f"{key}i{r}_{k}", f"{key}i{s}_{k}", f"{key}o{s}_{k}")[:: 1 if k else -1], 0, mat)
+    if not closed:
+        for r in (0, count - 1):
+            extra.face((f"{key}o{r}_0", f"{key}o{r}_1", f"{key}i{r}_1", f"{key}i{r}_0")[:: 1 if r else -1], 0, mat)
+
+
+def build_garter(c, m, name, dress):
+    """
+    The garter belt round the hips and its six straps, laid just outside the dress's own stockings. Made on the
+    finished dress, after the soft parts are refined and sprung, so it lies on the rear as the game shows it.
+    """
+    extra = Skin()
+    tree, weights_at, bm = hose_surface(dress, name)
+
+    def land(origin, direction):
+        hit, normal, index, _ = tree.ray_cast(Vector(origin), Vector(direction).normalized())
+        if hit is None:
+            return None
+        if normal.dot(Vector(direction)) > 0:
+            normal = -normal
+        return hit + normal * GARTER_LIFT, normal, weights_at(hit, index)
+
+    # The belt: a closed ribbon round the hips, cast in from outside.
+    sides = 24
+    z = sum(GARTER_BELT) / 2
+    half = Vector((0, 0, (GARTER_BELT[1] - GARTER_BELT[0]) / 2))
+    rows = []
+    for k in range(sides):
+        a = 2 * math.pi * k / sides
+        co, out, weights = land((math.cos(a) * 0.6, math.sin(a) * 0.6, z), (-math.cos(a), -math.sin(a), 0))
+        rows.append((co, out, half, weights))
+    lay_ribbon(extra, "belt", rows, m["garter"], closed=True)
+
+    # The straps: from the belt down to just over the stocking tops, cast in from the front, the side and the back.
+    steps = 8
+    for sx in (-1, 1):
+        for side, origin, direction in (("front", lambda z: (sx * 0.1, 0.6, z), (0, -1, 0)),
+                                        ("side", lambda z: (sx * 0.6, -0.005, z), (-sx, 0, 0)),
+                                        ("back", lambda z: (sx * 0.1, -0.6, z), (0, 1, 0))):
+            rows = []
+            for i in range(steps + 1):
+                z = GARTER_BELT[0] + 0.004 - (GARTER_BELT[0] + 0.004 - GARTER_STRAP_END) * i / steps
+                landed = land(origin(z), direction)
+                if landed is None:
+                    continue
+                co, out, weights = landed
+                across = out.cross(Vector((0, 0, 1)))
+                across = across.normalized() * (GARTER_STRAP_WIDTH / 2) if across.length > 1e-4 else Vector((GARTER_STRAP_WIDTH / 2, 0, 0))
+                rows.append((co, out, across, weights))
+            if len(rows) > 1:
+                lay_ribbon(extra, f"strap{side}{sx}", rows, m["garter"])
+    bm.free()
+    mesh, kept = extra.mesh(f"{name}_Garter", extra.faces)
+    return extra.link(c, mesh, kept, name, f"{name}_Garter")
+
+
+def build_warmers(c, m, name, skin, normals):
+    """The leg warmers, as an object to join into a dress."""
+    def bunched(index):
+        normal = normals.get(index)
+        if not normal:
+            return skin.points[index]
+        z = skin.points[index][2]
+        t = min(1.0, max(0.0, (z - 0.1) / (WARMER_TOP - 0.1)))  # 0 at the ankle, 1 at the top
+        lift = CLOTH_GAP + WARMER_LIFT[0] + (WARMER_LIFT[1] - WARMER_LIFT[0]) * t
+        return tuple(a + b * lift for a, b in zip(skin.points[index], normal))
+
+    warm = []
+    for f, mat in skin.faces:
+        bone, (_, _, cz) = face_bone(skin, f)
+        if bone.startswith("Shin") and cz < WARMER_TOP and len(f) <= 4:
+            warm.append((f, m["warmer"]))
+    mesh, kept = skin.mesh(f"{name}_Warmers", warm, bunched)
+    return skin.link(c, mesh, kept, name, f"{name}_Warmers")
 
 
 def skirt_outline(spec, z):
@@ -2490,11 +2779,13 @@ def dirndl_cloth(spec, m, skin):
         elif bone.startswith("ForeArm"):
             if cz > spec["elbow_z"] - SLEEVE_END:
                 faces.append((f, m["linen"]))
-        elif bone in ("Hips", "Torso"):
-            if BODICE[0] <= cz < BODICE[1]:
+        elif bone in ("Hips", "Torso") and BODICE[0] <= cz:
+            if cz < BODICE[1]:
                 faces.append((f, m["bodice"]))
-            elif BODICE[1] <= cz < (NECKLINE[0] if cy > 0 else NECKLINE[1]):
+            elif cz < (NECKLINE[0] if cy > 0 else NECKLINE[1]):
                 faces.append((f, m["linen"]))
+        elif is_legwear(bone, cz):
+            faces.append((f, legwear_band(m, bone, cz)))
     return faces
 
 
@@ -2514,11 +2805,12 @@ def priestess_cloth(spec, m, skin):
             faces.append((f, m["sheer"]))
         elif bone == "Thigh_R" and PRIESTESS_THIGH[0] < cz < PRIESTESS_THIGH[1]:
             faces.append((f, m["jewel"]))
-        elif bone in ("Hips", "Torso"):
-            if PRIESTESS_TOP[0] <= cz < PRIESTESS_TOP[1]:
-                faces.append((f, m["top"]))
-            elif PRIESTESS_GIRDLE[0] <= cz < PRIESTESS_GIRDLE[1]:
-                faces.append((f, m["girdle"]))
+        elif bone in ("Hips", "Torso") and PRIESTESS_TOP[0] <= cz < PRIESTESS_TOP[1]:
+            faces.append((f, m["top"]))
+        elif bone in ("Hips", "Torso") and PRIESTESS_GIRDLE[0] <= cz < PRIESTESS_GIRDLE[1]:
+            faces.append((f, m["girdle"]))
+        elif is_legwear(bone, cz):
+            faces.append((f, legwear_band(m, bone, cz)))
     return faces
 
 
@@ -3335,6 +3627,10 @@ def skin_character(c, m, spec, root):
         obj = skin.link(c, mesh, kept, name, f"{name}_Cloth{outfit}")
         more, more_kept = pieces.mesh(f"{name}_Cloth{outfit}Pieces", pieces.faces)
         outfits.append(join(obj, [pieces.link(c, more, more_kept, name, f"{name}_Cloth{outfit}Pieces")]))
+    # Every dress she can wear has the leg warmers and garter belt too, for the legwear styles that show them.
+    dresses = [cloth_obj] + [obj for obj in outfits if obj.name != label("ClothPirate")] if medieval else []
+    for dress in dresses:
+        join(dress, [build_warmers(c, m, name, skin, normals)])
 
     shoes = parts[label("Shin_R")]
     shoes.name = shoes.data.name = f"{name}_Shoes"
@@ -3382,11 +3678,20 @@ def skin_character(c, m, spec, root):
         # The soft parts get more faces, so the game can grow and drop them and they stay round.
         for layer in (body_obj, cloth_obj, *outfits):
             refine_soft_parts(layer, name)
+            refine_soft_parts(layer, name, REFINE_AGAIN)
         add_jiggle_weights(name, (body_obj, cloth_obj, *outfits))
+    for dress in dresses:
+        join(dress, [build_garter(c, m, name, dress)])
+    if spec.get("jiggle"):
         # Built on the finished body, so it lies on the refined bust and takes the springs' weights too.
         coat = build_coat(c, m, name, body_obj, (cloth_obj, *outfits))
     else:
         coat = []
+    if spec.get("nipples"):
+        # After the coat, so what lands on her breasts lies over them instead of copying them.
+        add_nipples(m, name, body_obj)
+    if spec.get("pubes"):
+        add_pubes(m, name, body_obj)
 
     armature = bpy.data.armatures.new(f"{name}_Bones")
     rig = bpy.data.objects.new(f"{name}_Armature", armature)
@@ -3516,6 +3821,14 @@ def main():
     # What men leave on her, likewise.
     random_state = rng.bit_generator.state
     mats["cum"] = material("T_cum", tex_flat("T_cum", (0.93, 0.92, 0.87)))
+    rng.bit_generator.state = random_state
+    # Her areolae, likewise. One flat colour: the game tints it with her skin and flushes it as she's aroused.
+    random_state = rng.bit_generator.state
+    mats["areola"] = material("T_areola", tex_flat("T_areola", (0.74, 0.47, 0.42), variation=0.02))
+    rng.bit_generator.state = random_state
+    # Her pubic hair, likewise: one flat colour, her hair's own, so it follows her hair's dye. The game draws its style.
+    random_state = rng.bit_generator.state
+    mats["pubic"] = material("T_pubic", tex_flat("T_pubic", (0.075, 0.06, 0.06), variation=0.02))
     rng.bit_generator.state = random_state
     for spec, blender_x in ((MALE, -0.6), (FEMALE, 0.6)):
         coll = bpy.data.collections.new(spec["name"] + "Rig")

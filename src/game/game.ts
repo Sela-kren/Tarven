@@ -91,6 +91,8 @@ import { PASSIVE_ICONS } from "./passiveicons";
 import { saveBadges } from "./saveicons";
 import { SkyDial } from "./skydial";
 import { TouchComic } from "./touchcomic";
+import { arousalOf, easeArousal } from "./nipples";
+import { METER_MAX } from "./passives";
 import type { Reaction, SoftPart } from "./player";
 import { DialogueBox } from "./dialogue";
 import { MessageLog } from "./messagelog";
@@ -1696,6 +1698,7 @@ export class Game {
     this.staging = false;
     this.tavern.playerBody = this.active === 1 ? "Female" : "Male";
     this.tavern.playerOutfit = this.looks[this.tavern.playerBody].outfit;
+    this.tavern.playerLegwear = this.looks[this.tavern.playerBody].legwear;
     document.body.classList.remove("staging");
     // Only the character the player picked works the night; the other stays out of the game.
     this.siblings.forEach((sibling, index) => {
@@ -1876,6 +1879,18 @@ export class Game {
     this.strippedShown = key;
     this.dressers.forEach((dresser, index) => dresser.setStripped(index === this.active ? off : []));
     this.playerPortrait = null;
+  }
+
+  /** How aroused the player shows, easing towards what the night has done to her. */
+  private arousalShown = 0;
+
+  /** Her nipples stand and her areolae flush as her breasts' desire, or a duel's pleasure, rises. */
+  private syncArousal(dt: number): void {
+    const { tavern } = this;
+    const duel = tavern.duel ? { state: tavern.duel.state, pleasure: tavern.duel.pleasure / 100 } : null;
+    const target = arousalOf(tavern.meters.breasts / METER_MAX, duel);
+    this.arousalShown = easeArousal(this.arousalShown, target, dt);
+    this.dressers.forEach((dresser, index) => dresser.setArousal(index === this.active ? this.arousalShown : 0));
   }
 
   /** What men have left on her tonight, stage by stage, as last shown; "" until it is first shown. */
@@ -2369,6 +2384,7 @@ export class Game {
     if (this.screen !== "build") this.clock.update(dt);
     this.syncStripped();
     this.syncCoat();
+    this.syncArousal(dt);
 
     if (this.screen === "story") {
       this.updateStory(dt);

@@ -1,4 +1,7 @@
-import { copyLook, LOOK_OPTIONS, outfitOf, playerOutfits, wearOutfit, type BodyName, type Look, type LookTab } from "./appearance";
+import {
+  copyLook, legwearOf, LOOK_OPTIONS, nearestStop, outfitOf, playerOutfits, stopValue, wearOutfit,
+  type BodyName, type Look, type LookTab, type SliderStops,
+} from "./appearance";
 
 const TABS: { id: LookTab; label: string }[] = [
   { id: "body", label: "Body" },
@@ -105,8 +108,14 @@ export class Customizer {
     if (tab === null || tab === "clothes") {
       this.look.hidden = [];
       delete this.look.outfit;
+      delete this.look.legwear;
     }
     if (tab === null || tab === "hair") delete this.look.hairstyle;
+    if (tab === null || tab === "body") {
+      delete this.look.nipples;
+      delete this.look.bustShape;
+      delete this.look.pubes;
+    }
     this.changed();
     this.show(this.current);
   }
@@ -131,12 +140,27 @@ export class Customizer {
     const rows: HTMLElement[] = [];
     if (tab === "hair") rows.push(this.hairstyleRow());
     if (tab === "clothes" && playerOutfits(this.body).length > 1) rows.push(this.outfitRow());
+    if (tab === "clothes" && legwearOf(this.body, this.look)) rows.push(this.legwearRow());
     let group: string | undefined;
     for (const def of options.sliders) {
       if (def.tab !== tab) continue;
-      if (def.group && def.group !== group) rows.push(make("h3", "group", def.group));
+      if (def.group && def.group !== group) {
+        rows.push(make("h3", "group", def.group));
+        if (def.group === "Bust" && options.bustShapes.length) {
+          rows.push(this.choiceRow("Shape", options.bustShapes, () => this.look.bustShape, (id) => (this.look.bustShape = id)));
+        }
+        if (def.group === "Nipples" && options.nipples.length) {
+          rows.push(this.choiceRow("Type", options.nipples, () => this.look.nipples, (id) => (this.look.nipples = id)));
+        }
+        if (def.group === "Pubic hair" && options.pubes.length) {
+          rows.push(this.choiceRow("Style", options.pubes, () => this.look.pubes, (id) => (this.look.pubes = id)));
+        }
+      }
       group = def.group;
-      rows.push(this.sliderRow(def.id, def.label));
+      rows.push(def.stops ? this.stopsRow(def.id, def.label, def.stops) : this.sliderRow(def.id, def.label));
+      // Her pubic hair's colour sits with its style and size, as well as with her hair's on the hair tab.
+      const pubes = def.group === "Pubic hair" ? options.colors.find((color) => color.id === "pubes") : undefined;
+      if (pubes && tab !== pubes.tab) rows.push(this.colorRow(pubes.id, "Colour", pubes.palette));
     }
     // The clothes tab shows only what the chosen outfit has, in the outfit's own order.
     const outfit = outfitOf(this.body, this.look);
@@ -167,6 +191,71 @@ export class Customizer {
     });
     const mark = () => {
       const chosen = this.look.hairstyle ?? styles[0].id;
+      buttons.forEach((button, index) => {
+        button.classList.toggle("on", styles[index].id === chosen);
+        button.setAttribute("aria-pressed", String(styles[index].id === chosen));
+      });
+    };
+    mark();
+    grid.append(...buttons);
+    row.append(grid);
+    return row;
+  }
+
+  /**
+   * One of a set of named choices, as the bust's shape or the nipples' type. The first is the default, which the
+   * look leaves out: `set` gets undefined for it.
+   */
+  private choiceRow(
+    label: string,
+    choices: readonly { id: string; label: string }[],
+    get: () => string | undefined,
+    set: (id: string | undefined) => void,
+  ): HTMLElement {
+    const row = make("div", "row styles");
+    row.append(make("span", "name", label));
+    const grid = make("div", "style-grid");
+    const buttons = choices.map((choice, index) => {
+      const button = make("button", "", choice.label);
+      button.type = "button";
+      button.addEventListener("click", () => {
+        set(index === 0 ? undefined : choice.id);
+        mark();
+        this.changed();
+      });
+      return button;
+    });
+    const mark = () => {
+      const chosen = get() ?? choices[0].id;
+      buttons.forEach((button, index) => {
+        button.classList.toggle("on", choices[index].id === chosen);
+        button.setAttribute("aria-pressed", String(choices[index].id === chosen));
+      });
+    };
+    mark();
+    grid.append(...buttons);
+    row.append(grid);
+    return row;
+  }
+
+  /** The lengths of legwear to choose from, for an outfit that has legwear. Its colour is the "Legwear" swatch below. */
+  private legwearRow(): HTMLElement {
+    const row = make("div", "row styles");
+    row.append(make("span", "name", "Legwear"));
+    const grid = make("div", "style-grid");
+    const styles = LOOK_OPTIONS[this.body].legwear;
+    const buttons = styles.map((style) => {
+      const button = make("button", "", style.label);
+      button.type = "button";
+      button.addEventListener("click", () => {
+        this.look.legwear = style.id;
+        mark();
+        this.changed();
+      });
+      return button;
+    });
+    const mark = () => {
+      const chosen = legwearOf(this.body, this.look)?.id;
       buttons.forEach((button, index) => {
         button.classList.toggle("on", styles[index].id === chosen);
         button.setAttribute("aria-pressed", String(styles[index].id === chosen));
@@ -221,6 +310,37 @@ export class Customizer {
     });
     input.addEventListener("dblclick", () => {
       set(0);
+      this.changed();
+    });
+    const top = make("span", "top");
+    top.append(name, value);
+    row.append(top, input);
+    return row;
+  }
+
+  /** A slider that snaps to named steps, as cup sizes, and shows the step's name. */
+  private stopsRow(id: string, label: string, stops: SliderStops): HTMLElement {
+    const row = make("label", "row slider");
+    const name = make("span", "name", label);
+    const value = make("output");
+    const input = make("input");
+    input.type = "range";
+    input.min = "0";
+    input.max = String(stops.labels.length - 1);
+    input.step = "1";
+    const set = (index: number) => {
+      input.value = String(index);
+      value.textContent = stops.labels[index];
+      if (index === stops.zero) delete this.look.sliders[id];
+      else this.look.sliders[id] = stopValue(stops, index);
+    };
+    set(nearestStop(stops, this.look.sliders[id] ?? 0));
+    input.addEventListener("input", () => {
+      set(Number(input.value));
+      this.changed();
+    });
+    input.addEventListener("dblclick", () => {
+      set(stops.zero);
       this.changed();
     });
     const top = make("span", "top");

@@ -17,10 +17,11 @@
  * `banter` gives it its own.
  *
  * Each outfit in `appearance` lists the colours it has; its ladder is the garments among them, so the
- * dirndl and the priestess's set each come off in their own order.
+ * dirndl and the priestess's set each come off in their own order. Legwear with nothing on the legs, such as
+ * no-show socks, isn't a step: there's nothing to roll down.
  */
 
-import { outfitOf } from "./appearance";
+import { legwearOf, outfitOf } from "./appearance";
 
 /** Which body, as the models and saves call it. */
 export type WardrobeBody = "Female" | "Male";
@@ -93,9 +94,13 @@ export const WARDROBE: Record<WardrobeBody, readonly Garment[]> = {
   ],
 };
 
-/** The garments that can come off an outfit (the character's own when left out), in the order they come off. */
-export function stripLadder(body: WardrobeBody, outfit?: string): Garment[] {
-  const worn = outfitOf(body, { outfit }).colors;
+/**
+ * The garments that can come off an outfit (the character's own when left out), in the order they come off.
+ * `legwear` is the style of stockings she has on, the outfit's own when left out.
+ */
+export function stripLadder(body: WardrobeBody, outfit?: string, legwear?: string): Garment[] {
+  const legs = legwearOf(body, { outfit, legwear });
+  const worn = outfitOf(body, { outfit }).colors.filter((id) => id !== "stockings" || !legs || legs.bands.length > 0);
   const rank = (g: Garment) => LAYERS.indexOf(g.layer) * 100 + REGIONS.indexOf(g.region) * 10;
   return WARDROBE[body]
     .filter((g) => !g.keep && worn.includes(g.id))
@@ -105,13 +110,13 @@ export function stripLadder(body: WardrobeBody, outfit?: string): Garment[] {
 }
 
 /** How many looks a body goes through: fully dressed, then one more for each garment that comes off. */
-export function stripStages(body: WardrobeBody, outfit?: string): number {
-  return stripLadder(body, outfit).length + 1;
+export function stripStages(body: WardrobeBody, outfit?: string, legwear?: string): number {
+  return stripLadder(body, outfit, legwear).length + 1;
 }
 
 /** The ids of what's off at a stage: 0 is fully dressed. */
-export function piecesOff(body: WardrobeBody, stage: number, outfit?: string): string[] {
-  return stripLadder(body, outfit)
+export function piecesOff(body: WardrobeBody, stage: number, outfit?: string, legwear?: string): string[] {
+  return stripLadder(body, outfit, legwear)
     .slice(0, Math.max(0, stage))
     .map((g) => g.id);
 }
