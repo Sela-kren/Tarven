@@ -1370,19 +1370,22 @@ def hair_styles(spec):
     def hair_cap(skull, front, side, back, gap):
         return fitted_cap(skull, front, side, back, gap, square=square)
 
+    def over_ears_cap(gap):
+        """Her hair close over the head, down over the ears and tapered into the nape."""
+        return fitted_cap(OVER_EARS_SKULL, 0.168, 0.1, 0.05, gap, bands=6, square=square,
+                          hairline_at=OVER_EARS_HAIRLINE, edge_gap=0.005)
+
     if spec["name"] == "Female":
         fringe = [list(station) for station in BOB_FRINGE]
         return {
             # Short and close, with her side-swept fringe: down over the tops of her ears, a sideburn in front
             # of each, and tapered into the nape.
-            "Pixie": [fitted_cap(OVER_EARS_SKULL, 0.168, 0.1, 0.07, 0.016, bands=6, square=square,
-                                 hairline_at=OVER_EARS_HAIRLINE, edge_gap=0.005), fringe],
+            "Pixie": [over_ears_cap(0.016), fringe],
             # Long and straight down her back, with a lock either side of the face. The hair comes down over
             # her ears, the curtain wraps round the sides of her head, and each lock is wide enough to meet it,
             # so no skin shows between them.
             "Long": [
-                fitted_cap(OVER_EARS_SKULL, 0.168, 0.1, 0.05, 0.016, bands=6, square=square,
-                           hairline_at=OVER_EARS_HAIRLINE, edge_gap=0.005), fringe,
+                over_ears_cap(0.016), fringe,
                 hair_curtain([(0.16, 0.07, -0.085, 0.03, 0.02), (0.1, 0.098, -0.112, 0.07, 0.025),
                               (0.04, 0.104, -0.116, 0.09, 0.025), (-0.03, 0.104, -0.104, 0.08, 0.022),
                               (-0.1, 0.104, -0.098, 0.045, 0.02), (-0.2, 0.1, -0.092, 0.03, 0.018),
@@ -1392,15 +1395,16 @@ def hair_styles(spec):
                              (sx * 0.092, -0.005, -0.13, 0.014, 0.005)])
                   for sx in (-1, 1)],
             ],
-            # Tied high at the back of the head, hanging to the nape.
+            # Tied high at the back of the head, hanging to the nape, with the hair down over her ears.
             "Ponytail": [
-                hair_cap(skull, 0.168, 0.11, 0.05, 0.012), fringe,
+                over_ears_cap(0.012), fringe,
                 hair_tube([(0.0, -0.09, 0.155, 0.018), (0.0, -0.118, 0.14, 0.026), (0.0, -0.138, 0.08, 0.03),
                            (0.0, -0.136, 0.0, 0.027), (0.0, -0.126, -0.08, 0.02), (0.0, -0.116, -0.15, 0.007)]),
             ],
-            # Pulled up into a long tail tied high on the crown, with the fringe and a lock either side of the face.
+            # Pulled up into a long tail tied high on the crown, with the fringe and a lock either side of the face,
+            # and the hair down over her ears.
             "Tail": [
-                hair_cap(skull, 0.168, 0.11, 0.075, 0.012), fringe,
+                over_ears_cap(0.012), fringe,
                 hair_tube([(0.0, -0.05, 0.19, 0.02), (0.0, -0.08, 0.222, 0.024), (0.0, -0.105, 0.236, 0.02),
                            (0.0, -0.13, 0.238, 0.034), (0.0, -0.16, 0.215, 0.04), (0.0, -0.175, 0.15, 0.04),
                            (0.0, -0.175, 0.06, 0.037), (0.0, -0.165, -0.04, 0.031), (0.0, -0.152, -0.14, 0.024),
@@ -1409,9 +1413,9 @@ def hair_styles(spec):
                              (sx * 0.096, 0.036, 0.02, 0.012, 0.006), (sx * 0.088, 0.03, -0.035, 0.006, 0.003)])
                   for sx in (-1, 1)],
             ],
-            # Gathered into a round bun on the crown.
+            # Gathered into a round bun on the crown, with the hair down over her ears.
             "Bun": [
-                hair_cap(skull, 0.168, 0.11, 0.06, 0.012), fringe,
+                over_ears_cap(0.012), fringe,
                 hair_tube([(0.0, -0.065, 0.17, 0.028), (0.0, -0.068, 0.192, 0.05), (0.0, -0.07, 0.222, 0.056),
                            (0.0, -0.07, 0.252, 0.045), (0.0, -0.068, 0.268, 0.018)]),
             ],
