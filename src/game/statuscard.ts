@@ -1,5 +1,5 @@
 /**
- * Her status strip along the bottom of the screen, the way Karryn's Prison keeps Karryn's in view the whole time:
+ * Her status card in the bottom-left corner, the way Karryn's Prison keeps Karryn's in view the whole time:
  * her face, her desire part by part as a row of hearts, tonight's pleasure in a long bar under them, drink over
  * willpower as big slanted gauges, and a row of chips for how she stands. Updated every frame, but only touches the
  * page when something changed.
