@@ -1,7 +1,8 @@
 /*
- * The big picture of her during a fight (battleview.ts), Karryn-style: her whole body on the left of the
- * screen, framed like the comic panels, with a nameplate and her status board under it. The fight board moves
- * over to the right, and each moment's close-up comic pops in over her legs.
+ * The big picture of her during a fight (battleview.ts), Karryn-style: her whole body framed like the comic
+ * panels, with a nameplate and her status board under it, and each moment's close-up comic over her legs.
+ * After hours she's on the left with the board to her right; in a brawl she's on the right, facing her foes
+ * down the left, with the board between.
  */
 body:has(#battle-view.open) {
   --battle-h: min(calc(100vh - 190px), 620px);
@@ -22,7 +23,7 @@ body:has(#battle-view.open) {
   display: block;
 }
 
-#battle-view .frame {
+.battle-card .frame {
   position: relative;
   height: var(--battle-h);
   padding: 8px;
@@ -31,18 +32,18 @@ body:has(#battle-view.open) {
   filter: drop-shadow(6px 6px 0 #000);
 }
 
-#battle-view .picture {
+.battle-card .picture {
   height: 100%;
   background: var(--wood-darkest);
 }
 
-#battle-view canvas {
+.battle-card canvas {
   width: 100%;
   height: 100%;
   image-rendering: pixelated;
 }
 
-#battle-view .nameplate {
+.battle-card .nameplate {
   position: absolute;
   left: 16px;
   top: 14px;
@@ -54,18 +55,18 @@ body:has(#battle-view.open) {
 }
 
 /* A hit flashes red over her; a jolt after hours, pink. */
-#battle-view .flash {
+.battle-card .flash {
   position: absolute;
   inset: 8px;
   opacity: 0;
 }
 
-#battle-view .flash.on.hurt {
+.battle-card .flash.on.hurt {
   background: #c8202a;
   animation: battle-flash 0.45s ease-out;
 }
 
-#battle-view .flash.on.hot {
+.battle-card .flash.on.hot {
   background: #ff9ab8;
   animation: battle-flash 0.6s ease-out;
 }
@@ -79,7 +80,7 @@ body:has(#battle-view.open) {
   }
 }
 
-#battle-view .status {
+.battle-card .status {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 2px 14px;
@@ -92,31 +93,97 @@ body:has(#battle-view.open) {
   text-shadow: 1px 1px 0 #000;
 }
 
-#battle-view .status .row {
+.battle-card .status .row {
   display: flex;
   justify-content: space-between;
   gap: 8px;
 }
 
-#battle-view .status .row span {
+.battle-card .status .row span {
   color: var(--text-muted, #b9a27a);
 }
 
-#battle-view .status .row.hot b {
+.battle-card .status .row.hot b {
   color: #f08aa0;
 }
 
-#battle-view .status .row.hurt b {
+.battle-card .status .row.hurt b {
   color: #e0605a;
 }
 
-#battle-view .status .row.cum b {
+.battle-card .status .row.cum b {
   color: #fff6e0;
 }
 
 /* The fight board moves over to make room for her. */
 #panel.battle-open.open {
   padding-left: calc(var(--battle-w, 0px) + 40px);
+}
+
+/*
+ * In a brawl she stands on the right, turned toward whoever she's up against down the left. One foe gets a
+ * picture as big as hers; more share the column between them, each picture cropped to head and shoulders.
+ */
+#battle-view.right {
+  left: auto;
+  right: 16px;
+}
+
+#battle-foes {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  width: var(--battle-w);
+  height: calc(var(--battle-h) + 84px);
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+  z-index: 20;
+}
+
+#battle-foes.open {
+  display: flex;
+}
+
+#battle-foes .battle-card {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+#battle-foes .battle-card .frame {
+  height: 100%;
+}
+
+#battle-foes .battle-card canvas {
+  object-fit: cover;
+  object-position: 50% 12%;
+}
+
+#battle-foes .battle-card .nameplate {
+  color: #f0a090;
+}
+
+/* A foe's status sits inside the bottom of their picture, so the pictures can share the column evenly. */
+#battle-foes .battle-card .status {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  margin: 0;
+  grid-template-columns: 1fr;
+}
+
+body:has(#battle-foes.open) #panel.battle-open.open {
+  padding-left: calc(var(--battle-w, 0px) + 40px);
+  padding-right: calc(var(--battle-w, 0px) + 40px);
+}
+
+/* Her close-up comic pops in over her legs on her side. */
+body:has(#battle-view.open.right) #touch-comic {
+  left: auto;
+  right: calc(16px + var(--battle-w) * 0.38);
 }
 
 /* The close-up comic pops in over her legs. */
@@ -130,24 +197,142 @@ body:has(#battle-view.open) #touch-comic {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #battle-view .flash.on {
+  .battle-card .flash.on {
     animation-duration: 0.01s;
   }
 }
 
 /* Too narrow for her and the board side by side: the board alone, and the comic up top. */
 @media (max-width: 1000px) {
-  #battle-view.open {
+  #battle-view.open,
+  #battle-foes.open {
     display: none;
   }
 
-  #panel.battle-open.open {
+  #panel.battle-open.open,
+  body:has(#battle-foes.open) #panel.battle-open.open {
     padding-left: 16px;
+    padding-right: 16px;
   }
 
-  body:has(#battle-view.open) #touch-comic {
+  body:has(#battle-view.open) #touch-comic,
+  body:has(#battle-view.open.right) #touch-comic {
     --comic-w: 220px;
     top: 12px;
     left: 16px;
+    right: auto;
+  }
+}
+
+/*
+ * The "Brawl!" card before a fight (game.ts): the room flashes red at the edges and shakes, the word slams in
+ * big and settles, and who it's against slides in under it.
+ */
+#brawl-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 35%, rgba(150, 12, 8, 0.55) 100%);
+}
+
+#brawl-intro.on {
+  display: flex;
+  animation: brawl-vignette 1.5s ease-out both;
+}
+
+#brawl-intro .word {
+  font: 400 clamp(64px, 12vw, 150px) / 1 var(--font-title);
+  color: #f3c64a;
+  text-shadow:
+    5px 5px 0 #000,
+    -2px -2px 0 #7a1208,
+    0 0 24px rgba(220, 40, 20, 0.7);
+  animation: brawl-slam 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+
+#brawl-intro .who {
+  padding: 4px 18px;
+  font: bold 22px/1.4 var(--font);
+  color: var(--text, #f0e0c0);
+  background: rgba(10, 6, 3, 0.85);
+  box-shadow: inset 0 0 0 2px #8a1c10;
+  text-shadow: 2px 2px 0 #000;
+  animation: brawl-who 0.5s 0.3s ease-out both;
+}
+
+body:has(#brawl-intro.on) canvas {
+  animation: brawl-shake 0.5s steps(10) both;
+}
+
+@keyframes brawl-slam {
+  0% {
+    opacity: 0;
+    transform: scale(3.2) rotate(-8deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(0.9) rotate(2deg);
+  }
+  100% {
+    transform: scale(1) rotate(-3deg);
+  }
+}
+
+@keyframes brawl-who {
+  0% {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes brawl-vignette {
+  0% {
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.6;
+  }
+}
+
+@keyframes brawl-shake {
+  0%,
+  100% {
+    transform: none;
+  }
+  20% {
+    transform: translate(-6px, 3px);
+  }
+  40% {
+    transform: translate(5px, -4px);
+  }
+  60% {
+    transform: translate(-4px, -2px);
+  }
+  80% {
+    transform: translate(3px, 3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #brawl-intro .word,
+  #brawl-intro .who,
+  body:has(#brawl-intro.on) canvas {
+    animation: none;
   }
 }

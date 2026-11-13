@@ -18,6 +18,25 @@ When a guest is in the Horny state and their Nerve is high:
 All other touches still freeze and show the four choices.
 Pull away still works on every later reach.
 
+## Brawl grab / grope animations do not need a yes/no prompt.
+
+They are combat actions inside the turn-based brawl (same category as Strike or Shove).
+They are not the sexual touch system.
+The four-choice screen (Let / Lean / Slap / Pull away) is only for service touches.
+Losing a brawl still never leads to sexual content or sexual records.
+
+## Brawl loss (Karryn-style)
+
+When she loses a brawl:
+- The fight ends immediately.
+- A sexual content scene plays (18+ card or short scene).
+- The night ends after the scene.
+- She still has a final choice at the start of the scene (continue / stop), or the scene can be set to play automatically — pick one.
+- Desire meters and records can rise from the scene if she continues.
+- Gold and respect are still lost as normal.
+
+Winning or talking them down does not trigger this.
+
 # Tarven – Karryn-inspired guest types, preferences & systems
 *(Hard lines remain: all intimate acts require explicit player choice. Pull away always works. Too-drunk blocks yes. Force bar is intensity feedback only.)*
 

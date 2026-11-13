@@ -16,6 +16,33 @@ import { HIT_WILL, maxWillpower, STARE_WILL, STEEL_STAMINA, STEEL_WILL } from ".
 export type FightMove = "strike" | "shove" | "dodge" | "talk" | "stare" | "steel" | "throw";
 export type FightOutcome = "won" | "talked" | "lost";
 
+/**
+ * What a guest shouts at her as trouble boils up, before they come for her: an angry guest's spite, or a
+ * roaring drunk's slurring. Said out loud over their head, and written in the log.
+ */
+export const TROUBLE_SHOUTS: Record<"angry" | "drunk", readonly string[]> = {
+  angry: [
+    "Oi! Innkeeper! I've waited long enough!",
+    "You think you can ignore me? Think again.",
+    "This place is a pigsty, and you're the one running it.",
+    "Walk past me one more time. Go on. I dare you.",
+    "Somebody's going to pay for this, and it's you.",
+    "Think you own this pass? Let's see about that.",
+    "I've had it with you. Come here!",
+    "Sneer at me, will you? I'll wipe that look off.",
+  ],
+  drunk: [
+    "Wha' are YOU lookin' at?",
+    "Shtop the room spinning! ...It's you, innit? You're doin' it!",
+    "I could take you. I could take ALL of you!",
+    "Watered ale! You watered it! I'll show you watered!",
+    "C'mere. C'mere! Nobody cuts me off!",
+    "Another round! ...No? NO? Right!",
+    "Wanna dance? No? Then we'll FIGHT!",
+    "I'm not drunk! You're drunk! Come 'ere and say that!",
+  ],
+};
+
 const BASE_STAMINA = 20;
 /** Worn down to this share of their stamina, and they can be thrown out. */
 const THROW_AT = 0.3;

@@ -110,7 +110,7 @@ import type { DuelArea, DuelLogEntry, DuelState } from "./duel";
 import type { HerMove } from "./duelmoves";
 import type { TouchRegion } from "./touchtalk";
 import type { TouchShow } from "./touchcomic";
-import { BattleView, type BattleMode, type BattleStat } from "./battleview";
+import { BattleView, FoeColumn, type BattleMode, type BattleStat } from "./battleview";
 import { Body, Sibling, WALK_STYLE_NAMES } from "./player";
 import { COAT_SECTIONS, COAT_STAGES, type CoatSection } from "./cum";
 import { applyRetroLook, solidRetroMaterial } from "./retro";
@@ -134,6 +134,7 @@ import {
   UPGRADES,
   WARE_NAMES,
   type AdultScene,
+  type Trouble,
   type Bottle,
   type GuestKind,
   type Held,
@@ -324,6 +325,24 @@ const PLAYER_LABELS = ["Male", "Female"];
  */
 const PLAYABLE: readonly number[] = devFlag("male") ? [0, 1] : [1];
 const isPlayable = (index: number): boolean => PLAYABLE.includes(index);
+
+/** How long the "Brawl!" card holds the screen before the fight opens. */
+const BRAWL_INTRO_SECONDS = 1.5;
+
+/** The "Brawl!" card: a word that slams in, and who it's against under it. Hidden until a brawl starts. */
+function makeBrawlIntro(): HTMLElement {
+  const root = document.createElement("div");
+  root.id = "brawl-intro";
+  root.setAttribute("aria-live", "assertive");
+  const word = document.createElement("div");
+  word.className = "word";
+  word.textContent = "Brawl!";
+  const who = document.createElement("div");
+  who.className = "who";
+  root.append(word, who);
+  document.body.append(root);
+  return root;
+}
 
 /** Seconds each moment of a brawl turn shows before the next. */
 const FIGHT_MOMENT_GAP = 1.8;
@@ -545,6 +564,10 @@ export class Game {
   /** The big picture of her during a fight, Karryn-style, and what it last showed of her. */
   private readonly battleView: BattleView;
   private battleShown = "";
+  /** Whoever she's up against in a brawl, across from her picture. */
+  private readonly foeColumn: FoeColumn;
+  /** A body made for a test brawl's foe, who has no one in the room to show. */
+  private testFoe: { kind: GuestKind; body: Body } | null = null;
   /** A brawl turn's moments still to play in the comic panel, and how long until the next. */
   private fightQueue: TouchShow[] = [];
   private fightQueueWait = 0;
@@ -659,6 +682,11 @@ export class Game {
   private readonly selectStartEl = element("select-start") as HTMLButtonElement;
   private readonly selectCustomizeEl = element("select-customize") as HTMLButtonElement;
   private readonly fadeEl = element("fade");
+  /** The "Brawl!" card that slams onto the screen before a fight, and how long it has left. */
+  private readonly brawlIntroEl = makeBrawlIntro();
+  private brawlIntro = 0;
+  /** The trouble whose shout has been said out loud, so it's said once. */
+  private shoutedTrouble: Trouble | null = null;
   private readonly storyEl = element("story");
   private readonly story = new StoryBox(
     {
@@ -749,6 +777,7 @@ export class Game {
     }
     this.drinkComic = new DrinkComic(renderer, element("comic"), () => this.makeItem("ale"), (effect) => this.audio.play(effect));
     this.battleView = new BattleView(this.renderer);
+    this.foeColumn = new FoeColumn(this.renderer);
     this.touchComic = new TouchComic(
       renderer,
       (effect) => this.audio.play(effect),
@@ -1158,7 +1187,7 @@ export class Game {
         actors.set(guest.id, actor);
         this.guestLayer.add(actor.group);
       }
-      if (actor.update(dt, tavern)) {
+      if (actor.update(dt, tavern, this.focus)) {
         if (this.highlighted === targetKey({ kind: "guest", id: guest.id })) this.highlight(null);
         this.guestLayer.remove(actor.group);
         actors.delete(guest.id);
@@ -1253,7 +1282,10 @@ export class Game {
     for (const station of STATIONS) {
       consider({ kind: "station", station }, this.spots[station], STATION_ARROW_HEIGHT, STATION_RANGE);
     }
+    const trouble = this.tavern.trouble;
     for (const guest of this.tavern.guests) {
+      // Someone up out of their seat and coming for her isn't there to be served.
+      if (trouble?.guestId === guest.id && trouble.stage === "coming") continue;
       consider({ kind: "guest", id: guest.id }, this.world.seats[guest.seat].position, GUEST_ARROW_HEIGHT, GUEST_RANGE);
     }
     for (const mess of this.tavern.messes) {
@@ -2276,6 +2308,17 @@ export class Game {
   private updatePlay(dt: number): void {
     const { tavern, input } = this;
     const player = this.siblings[this.active];
+    // The "Brawl!" card is up: everyone holds still until it's done, then the fight screen opens.
+    if (this.brawlIntro > 0) {
+      this.siblings.forEach((sibling) => sibling.rest(dt));
+      this.brawlIntro -= dt;
+      if (this.brawlIntro <= 0 || !tavern.fight) {
+        this.brawlIntro = 0;
+        this.brawlIntroEl.classList.remove("on");
+        showFight(this);
+      }
+      return;
+    }
     const strideBefore = player.strideAngle;
     if (player.move(dt, input, this.world.colliders, tavern.drunk)) tavern.stumble(this.active);
     if (footfalls(strideBefore, player.strideAngle) > 0) this.audio.play("step", input.run ? RUNNING_STEP_LOUDNESS : 1);
@@ -2343,10 +2386,15 @@ export class Game {
     const { position } = player;
     const atTub = Math.hypot(position.x - this.spots.wash.x, position.z - this.spots.wash.z) <= STATION_RANGE;
     tavern.tick(dt, { listeningTo: listening, night: this.clock.isNight, scrubber: atTub ? this.active : null });
-    // A guest started a brawl: the night waits while it's settled.
+    // Trouble brewing: the guest shouts it out loud, once.
+    if (tavern.trouble && tavern.trouble !== this.shoutedTrouble) {
+      this.shoutedTrouble = tavern.trouble;
+      this.chatter.shout(tavern.trouble.guestId, tavern.trouble.shout);
+    }
+    // A guest started a brawl: the "Brawl!" card slams in, then the night waits while it's settled.
     if (tavern.fight) {
       this.clearTarget();
-      showFight(this);
+      this.startBrawlIntro(tavern.fight.name);
       return;
     }
 
@@ -2445,22 +2493,63 @@ export class Game {
     this.fightQueueWait = FIGHT_MOMENT_GAP;
   }
 
+  /** Slams the "Brawl!" card onto the screen, with who it's against, and shakes the room. */
+  private startBrawlIntro(name: string): void {
+    const who = this.brawlIntroEl.querySelector(".who");
+    if (who) who.textContent = `The ${name} wants a fight!`;
+    this.brawlIntroEl.classList.remove("on");
+    // Restart the animation.
+    void this.brawlIntroEl.offsetWidth;
+    this.brawlIntroEl.classList.add("on");
+    this.brawlIntro = BRAWL_INTRO_SECONDS;
+    this.audio.play("smashTray");
+  }
+
   /**
    * The big picture of her beside a fight, showing her as she is now: shown again only when what's off her or
    * on her has changed. `title` goes on its nameplate.
    */
-  showBattle(mode: BattleMode, title: string, heat: number, edge: boolean, status: readonly BattleStat[]): void {
+  showBattle(
+    mode: BattleMode,
+    title: string,
+    heat: number,
+    edge: boolean,
+    status: readonly BattleStat[],
+    foes: readonly { guestId: number; kind: GuestKind; title: string; status: readonly BattleStat[] }[] = [],
+  ): void {
     this.syncStripped();
     this.syncCoat();
-    const key = `${mode}:${this.strippedShown}:${this.coatShown}`;
+    // With foes across from her, she stands on the right and turns to face them on the left.
+    const facing = foes.length > 0 ? "left" : "right";
+    const key = `${mode}:${facing}:${this.strippedShown}:${this.coatShown}`;
     const name = BODY_NAMES[this.active];
     const body = this.siblings[this.active].root.getObjectByName(name);
     if (body && (key !== this.battleShown || !this.battleView.open)) {
       this.battleShown = key;
-      this.battleView.show(body, name, mode, title);
+      this.battleView.show(body, name, mode, title, facing);
     }
     this.battleView.setHeat(heat, edge);
     this.battleView.setStatus(status);
+    const shown = foes.flatMap((foe) => {
+      const found = this.foeBody(foe.guestId, foe.kind);
+      return found ? [{ key: `${foe.guestId}:${foe.kind}`, body: found.root, name: found.name, title: foe.title, status: foe.status }] : [];
+    });
+    if (shown.length > 0) this.foeColumn.show(shown, mode);
+    else this.foeColumn.hide();
+  }
+
+  /** A foe's body to picture: the guest as they stand in the room, or one made up for a test brawl. */
+  private foeBody(guestId: number, kind: GuestKind): { root: Object3D; name: string } | null {
+    const actor = this.actors.get(guestId);
+    const female = guestFemale(guestId);
+    if (actor) return { root: actor.bodyRoot, name: female ? "Female" : "Male" };
+    if (this.testFoe?.kind !== kind) this.testFoe = { kind, body: this.makeGuestBody(kind, false) };
+    return { root: this.testFoe.body.root, name: "Male" };
+  }
+
+  /** A foe across from her takes a hit. */
+  foeHit(index: number): void {
+    this.foeColumn.hit(index);
   }
 
   /** She's hit, or jolted, in the big picture. */
@@ -2471,6 +2560,7 @@ export class Game {
   /** Takes the duel's comic panel down, once the game is over. */
   hideDuelMoment(): void {
     this.battleView.hide();
+    this.foeColumn.hide();
     this.battleShown = "";
     this.fightQueue = [];
     this.touchComic.clear();
@@ -2584,6 +2674,7 @@ export class Game {
     if (this.fightQueue.length > 0 && (this.fightQueueWait -= dt) <= 0) this.nextFightMoment();
     this.touchComic.update(dt);
     this.battleView.update(dt);
+    this.foeColumn.update(dt);
     this.syncGuests(dt);
     this.messLayer.sync(this.tavern.messes, dt);
     this.updateBell(dt);

@@ -156,6 +156,8 @@ const IDLE_GAP = 2.5;
 const MAX_ROOM_TALKS = 2;
 /** The pause before another pair strikes up, and the random extra on top of it. */
 const ROOM_GAP = 1.5;
+/** How long a shout as trouble brews stays up, at the least. */
+const SHOUT_SECONDS = 4;
 const ROOM_GAP_SPREAD = 2.5;
 /** After sitting down, a guest waits this long (plus a little, so a party doesn't all shout at once) to call. */
 const CALL_DELAY = 0.6;
@@ -259,6 +261,16 @@ export class Chatter {
   /** What a guest is saying right now, or null. */
   saying(guestId: number): Said | null {
     return this.guests.get(guestId)?.said ?? null;
+  }
+
+  /**
+   * A guest shouts something at once, over whatever they were saying: the hateful line as trouble brews. It
+   * stays up a little longer than talk, so it can be read before they come for her.
+   */
+  shout(guestId: number, text: string): void {
+    const state = this.guests.get(guestId);
+    if (state) this.say(state, text, "angry");
+    if (state?.said) state.said.duration = Math.max(state.said.duration, SHOUT_SECONDS);
   }
 
   /** Whether anyone at the table is in the middle of a line. */

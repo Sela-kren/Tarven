@@ -2,7 +2,8 @@ import { CanvasTexture, NearestFilter, Sprite, SpriteMaterial, SRGBColorSpace, T
 import type { Held } from "./tavern";
 
 /** "suds1" and "suds2" are the two frames of scrubbing at the tub; "sparkle" is a dish coming out clean. */
-export type IconName = Held | "dots" | "alert" | "arrow" | "suds1" | "suds2" | "sparkle";
+/** "anger" is the mark over a guest working up to a brawl. */
+export type IconName = Held | "dots" | "alert" | "anger" | "arrow" | "suds1" | "suds2" | "sparkle";
 
 type Draw = (rect: (color: string, x: number, y: number, w: number, h: number) => void) => void;
 
@@ -133,6 +134,21 @@ const ART: Record<IconName, { bubble: boolean; draw: Draw }> = {
     draw: (r) => {
       r("#c8200f", 7, 3, 2, 7);
       r("#c8200f", 7, 11, 2, 2);
+    },
+  },
+  anger: {
+    bubble: true,
+    draw: (r) => {
+      // Four red corners bent in toward the middle: a throbbing vein.
+      const red = "#c8200f";
+      r(red, 3, 5, 4, 2);
+      r(red, 5, 3, 2, 4);
+      r(red, 9, 5, 4, 2);
+      r(red, 9, 3, 2, 4);
+      r(red, 3, 9, 4, 2);
+      r(red, 5, 9, 2, 4);
+      r(red, 9, 9, 4, 2);
+      r(red, 9, 9, 2, 4);
     },
   },
   arrow: {

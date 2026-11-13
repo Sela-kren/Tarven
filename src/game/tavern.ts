@@ -45,7 +45,7 @@ import {
 import { GUEST_TOO_DRUNK, PULLS, SLAPS, TOO_DRUNK_TO_ALLOW, WAVERED, WORN_THIN } from "./touchtalk";
 import { GIVE_IN_TEXTS, IMPULSE_LINES } from "./touchtalk-givein";
 import { autoTouchFits, defaultTouchSettings, impulsive, type TouchSettings } from "./touchsettings";
-import { Fight, type FighterStats, type FightMove, type FightOutcome } from "./fight";
+import { Fight, TROUBLE_SHOUTS, type FighterStats, type FightMove, type FightOutcome } from "./fight";
 import { ROLE_PLAYS, type RolePlay } from "./duellines";
 import { coatStages, loadOf, type CoatSection, type CumSpot } from "./cum";
 
@@ -294,6 +294,10 @@ const UPSTAIRS_XP = 5;
 /** How likely an angry or roaring drunk guest is to start a brawl, each second; at most this many a night. */
 const TROUBLE_PER_SECOND = 0.012;
 const MAX_FIGHTS = 2;
+/** How long trouble brews at their table (the icon over their head, the shouting) before they come for her. */
+const TROUBLE_BREWING = 4.5;
+/** How long they have to reach her once they're up; if they can't get to her by then, it starts anyway. */
+const TROUBLE_COMING = 10;
 /** What a guest who knocks her down takes from the till, plus a little more each night. */
 const LOST_FIGHT_GOLD = 6;
 /** Corruption for each point of greed, each secret sold, each time she informs, and each cold choice. */
@@ -714,6 +718,24 @@ export interface Guest {
   mood: Mood;
 }
 
+/**
+ * A guest working up to a brawl. First it brews at their table: an angry mark over their head, and something
+ * hateful said out loud (serve them now and they may settle). Then they get up and come for her, and the brawl
+ * starts once they reach her, or when they've been on their way too long.
+ */
+export interface Trouble {
+  guestId: number;
+  stage: "brewing" | "coming";
+  /** Seconds left in this stage. */
+  timer: number;
+  /** What they shout as it brews. */
+  shout: string;
+  /** Whether they've reached her (the game says so). */
+  arrived: boolean;
+  /** Whether they were still waiting for their order when it started: serving it then can settle them. */
+  waiting: boolean;
+}
+
 /** Something to clean up. */
 export interface Mess {
   id: number;
@@ -1002,6 +1024,8 @@ export class Tavern {
   private adultScene: AdultScene | null = null;
   /** Experience in every stat and skill. Lasts. */
   xp: Experience = {};
+  /** A guest working up to a brawl, before it starts: see `Trouble`. */
+  trouble: Trouble | null = null;
   /** A brawl in progress, or null. While set, the game shows the fight and the night waits. */
   fight: Fight | null = null;
   /** How the last brawl ended, for the game to show once. */
@@ -1431,6 +1455,8 @@ export class Tavern {
   private updateGuests(dt: number, listeningTo: number | null): void {
     for (const guest of this.guests) {
       const behaviour = MOOD_BEHAVIOUR[guest.mood];
+      // Someone spoiling for a fight has better things to do than wait or eat.
+      if (this.trouble?.guestId === guest.id) continue;
       if (guest.status === "waiting") {
         guest.patience -= dt * behaviour.patienceDrain;
         guest.mood = moodWhileWaiting(guest.mood, guest.patience / guest.maxPatience);
@@ -1463,11 +1489,12 @@ export class Tavern {
         rowdy &&
         this.phase === "service" &&
         !this.fight &&
+        !this.trouble &&
         !this.inConversation &&
         this.fightsTonight < MAX_FIGHTS &&
         this.random() < TROUBLE_PER_SECOND * dt * Math.max(0, 1 - this.effects.trouble)
       ) {
-        this.startFight(guest.id);
+        this.brewTrouble(guest);
       }
     }
   }
@@ -1549,6 +1576,7 @@ export class Tavern {
     this.updateTap(dt);
     this.updatePot(dt);
     this.updateGuests(dt, context.listeningTo);
+    this.updateTrouble(dt);
 
     if (this.nextArrival === this.plan.guests.length && this.guests.length === 0) {
       this.phase = "lastcall";
@@ -1951,13 +1979,65 @@ export class Tavern {
     this.fight = new Fight(-1, kind, false, this.fighterStats(), this.random, rollStats(roster[Math.floor(this.random() * roster.length) % roster.length], this.rollRandom));
   }
 
+  /** Trouble starts brewing at a guest's table: they shout something hateful, and the room hears it. */
+  private brewTrouble(guest: Guest): void {
+    const drunk = guest.mood === "drunk";
+    const shouts = TROUBLE_SHOUTS[drunk ? "drunk" : "angry"];
+    const shout = shouts[Math.floor(this.random() * shouts.length) % shouts.length];
+    this.trouble = { guestId: guest.id, stage: "brewing", timer: TROUBLE_BREWING, shout, arrived: false, waiting: guest.status === "waiting" };
+    const name = this.nameOf(guest).toLowerCase();
+    this.say(drunk ? `The ${name} knocks a cup flying and starts shouting at you.` : `The ${name} slams a fist on the table and glares at you.`);
+    this.say(`${this.nameOf(guest)}: "${shout}"`);
+    this.cue("smashOne");
+  }
+
+  /** The game says the guest coming for her has reached her. */
+  troubleArrived(guestId: number): void {
+    if (this.trouble?.guestId === guestId && this.trouble.stage === "coming") this.trouble.arrived = true;
+  }
+
+  /**
+   * Trouble boiling over: it brews, then they come for her, then the brawl. Serving them while it brews can
+   * settle them; it all blows over if they leave, or the night ends first. She's never pulled out of a
+   * conversation for it: they wait until she's done.
+   */
+  private updateTrouble(dt: number): void {
+    const trouble = this.trouble;
+    if (!trouble) return;
+    const guest = this.guests.find((g) => g.id === trouble.guestId);
+    if (!guest || guest.status === "leaving" || guest.status === "arriving" || this.phase !== "service" || this.fight) {
+      this.trouble = null;
+      return;
+    }
+    const name = this.nameOf(guest).toLowerCase();
+    if (trouble.stage === "brewing") {
+      if (trouble.waiting && guest.status === "eating") {
+        this.trouble = null;
+        guest.mood = "calm";
+        this.say(`The ${name} grumbles, but takes the ${guest.order} and stays put.`);
+        return;
+      }
+      trouble.timer -= dt;
+      if (trouble.timer <= 0) {
+        trouble.stage = "coming";
+        trouble.timer = TROUBLE_COMING;
+        this.say(`The ${name} kicks the chair back and comes for you!`);
+        this.cue("drop");
+      }
+      return;
+    }
+    trouble.timer -= dt;
+    if ((trouble.arrived || trouble.timer <= 0) && !this.inConversation) this.startFight(guest.id);
+  }
+
   /** Starts a brawl with a guest. Whoever's playing deals with it. */
   startFight(guestId: number): void {
     const guest = this.guests.find((g) => g.id === guestId);
     if (!guest || this.fight) return;
+    this.trouble = null;
     this.fight = new Fight(guest.id, guest.kind, guest.mood === "drunk", this.fighterStats(), this.random, guest.stats);
     this.fightsTonight++;
-    this.say(`A ${this.nameOf(guest).toLowerCase()} is starting trouble!`);
+    this.say(`Brawl! The ${this.nameOf(guest).toLowerCase()} is right in your face.`);
     this.cue("walkOut");
   }
 
@@ -3219,6 +3299,7 @@ export class Tavern {
     this.willSpent = 0;
     this.adultScene = null;
     this.fight = null;
+    this.trouble = null;
     this.fightsTonight = 0;
     this.drinksTonight = 0;
     this.duel = null;

@@ -138,3 +138,87 @@ describe("brawls in the tavern", () => {
     expect(t.records.invitations).toBe(0);
   });
 });
+
+describe("trouble brewing before a brawl", () => {
+  const NIGHT = { listeningTo: null, night: true };
+  /** An angry guest, and a tick: with every roll at 0, trouble starts brewing at once. */
+  function brewing(): { t: Tavern; id: number } {
+    const { t, id } = withGuest();
+    t.guests.find((g) => g.id === id)!.mood = "angry";
+    t.takeMessages();
+    t.tick(0.1, NIGHT);
+    return { t, id };
+  }
+
+  it("shouts something hateful first, in the log, before any fight", () => {
+    const { t, id } = brewing();
+    expect(t.trouble).toMatchObject({ guestId: id, stage: "brewing" });
+    expect(t.fight).toBeNull();
+    const log = t.takeMessages();
+    expect(log.some((line) => line.includes(`"${t.trouble!.shout}"`))).toBe(true);
+  });
+
+  it("then gets up and comes for her, and the brawl starts when they reach her", () => {
+    const { t, id } = brewing();
+    for (let i = 0; i < 50; i++) t.tick(0.1, NIGHT);
+    expect(t.trouble?.stage).toBe("coming");
+    expect(t.fight).toBeNull();
+    expect(t.takeMessages().some((line) => line.includes("comes for you"))).toBe(true);
+    t.troubleArrived(id);
+    t.tick(0.1, NIGHT);
+    expect(t.trouble).toBeNull();
+    expect(t.fight?.guestId).toBe(id);
+    expect(t.takeMessages().some((line) => line.startsWith("Brawl!"))).toBe(true);
+  });
+
+  it("starts anyway if they can't reach her in time", () => {
+    const { t, id } = brewing();
+    for (let i = 0; i < 160 && !t.fight; i++) t.tick(0.1, NIGHT);
+    expect(t.fight?.guestId).toBe(id);
+  });
+
+  it("waits for her to finish a conversation before it starts", () => {
+    const { t, id } = brewing();
+    for (let i = 0; i < 50; i++) t.tick(0.1, NIGHT);
+    (t as unknown as { talkingTo: number | null }).talkingTo = id;
+    t.troubleArrived(id);
+    t.tick(0.1, NIGHT);
+    expect(t.fight).toBeNull();
+    (t as unknown as { talkingTo: number | null }).talkingTo = null;
+    t.tick(0.1, NIGHT);
+    expect(t.fight?.guestId).toBe(id);
+  });
+
+  it("settles if she serves them while it brews", () => {
+    const { t, id } = brewing();
+    t.guests.find((g) => g.id === id)!.status = "eating";
+    t.tick(0.1, NIGHT);
+    expect(t.trouble).toBeNull();
+    expect(t.takeMessages().some((line) => line.includes("stays put"))).toBe(true);
+    expect(t.guests.find((g) => g.id === id)!.mood).toBe("calm");
+    for (let i = 0; i < 160; i++) t.tick(0.1, NIGHT);
+    expect(t.fight?.guestId).not.toBe(id);
+  });
+
+  it("still comes for her if it started while they were eating", () => {
+    const { t, id } = withGuest();
+    const guest = t.guests.find((g) => g.id === id)!;
+    guest.status = "eating";
+    guest.eatLeft = 60;
+    guest.mood = "drunk";
+    t.tick(0.1, NIGHT);
+    expect(t.trouble?.guestId).toBe(id);
+    for (let i = 0; i < 160 && !t.fight; i++) t.tick(0.1, NIGHT);
+    expect(t.fight?.guestId).toBe(id);
+    expect(t.fight?.drunk).toBe(true);
+  });
+
+  it("doesn't drain their patience or let them walk out while it brews", () => {
+    const { t, id } = brewing();
+    const guest = t.guests.find((g) => g.id === id)!;
+    const patience = guest.patience;
+    for (let i = 0; i < 30; i++) t.tick(0.1, NIGHT);
+    expect(guest.patience).toBe(patience);
+    expect(guest.status).toBe("waiting");
+  });
+});

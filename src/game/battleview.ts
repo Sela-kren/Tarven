@@ -1,5 +1,6 @@
 import {
   AmbientLight,
+  Box3,
   Color,
   DirectionalLight,
   HemisphereLight,
@@ -70,14 +71,25 @@ export class BattleView {
   private flinch = 0;
   private flinchHard = false;
 
-  constructor(private readonly renderer: WebGLRenderer) {
+  /** Which way the body is turned: toward a fight on the right of it, or on the left. */
+  private facing: "left" | "right" = "right";
+
+  /**
+   * `id` names her own picture; a foe's picture goes without one, into `parent` (the column of foes), and is
+   * styled by the shared `battle-card` class like hers.
+   */
+  constructor(
+    private readonly renderer: WebGLRenderer,
+    options: { id?: string; parent?: HTMLElement } = { id: "battle-view" },
+  ) {
     this.canvas.width = WIDTH;
     this.canvas.height = HEIGHT;
     this.ctx = this.canvas.getContext("2d")!;
     this.image = this.ctx.createImageData(WIDTH, HEIGHT);
 
     this.root = document.createElement("div");
-    this.root.id = "battle-view";
+    if (options.id) this.root.id = options.id;
+    this.root.className = "battle-card";
     this.root.setAttribute("aria-hidden", "true");
     const frame = document.createElement("div");
     frame.className = "frame";
@@ -92,7 +104,7 @@ export class BattleView {
     this.board.className = "status";
     frame.append(picture, flash, this.title);
     this.root.append(frame, this.board);
-    document.body.append(this.root);
+    (options.parent ?? document.body).append(this.root);
 
     this.scene.add(new AmbientLight(0x6a6480, 0.95));
     this.scene.add(new HemisphereLight(0xb8c4e0, 0x3a2414, 0.7));
@@ -111,12 +123,14 @@ export class BattleView {
    * Shows her, or shows her again as she is now: `body` is her own model as it stands in the room (dressed or
    * not, coated or not), and `name` its body name. Call it again whenever her clothes or what's on her change.
    */
-  show(body: Object3D, name: string, mode: BattleMode, title: string): void {
+  show(body: Object3D, name: string, mode: BattleMode, title: string, facing: "left" | "right" = "right"): void {
     if (this.model) this.scene.remove(this.model);
     const model = cloneSkinned(body);
     model.position.set(0, 0, 0);
-    // Turned a little toward the fight on the right, like Karryn facing her enemies.
-    model.rotation.set(0, Math.PI - 0.35, 0);
+    // Turned a little toward the fight beside the picture, like Karryn facing her enemies.
+    this.facing = facing;
+    const side = facing === "right" ? 1 : -1;
+    model.rotation.set(0, Math.PI - 0.35 * side, 0);
     model.visible = true;
     this.scene.add(model);
     model.updateMatrixWorld(true);
@@ -126,18 +140,23 @@ export class BattleView {
     this.scale = model.getWorldScale(new Vector3()).y;
 
     // Frame her whole body: from the top of her head to her feet, with a little room.
+    // The head bone sits differently on each body (and a guest's hair or hat can stand taller), so the top is
+    // whichever is higher: a little over the head bone, or the top of what's drawn.
     const head = this.bones.head?.getWorldPosition(new Vector3()) ?? new Vector3(0, 1.6 * this.scale, 0);
-    const top = head.y + 0.18 * this.scale;
+    const drawn = new Box3().setFromObject(model, true);
+    const top = Math.max(head.y + 0.18 * this.scale, Number.isFinite(drawn.max.y) ? drawn.max.y + 0.06 * this.scale : 0);
     const middle = top / 2;
     const fov = MathUtils.degToRad(this.camera.fov);
     const distance = ((top * 1.08) / 2 / Math.tan(fov / 2));
-    this.camera.position.set(0.25 * this.scale, middle + 0.05 * this.scale, distance);
+    this.camera.position.set(0.25 * side * this.scale, middle + 0.05 * this.scale, distance);
     this.camera.lookAt(0, middle, 0);
 
     if (!this.active || this.mode !== mode) this.time = 0;
     this.mode = mode;
     this.title.textContent = title;
     this.root.classList.toggle("brawl", mode === "brawl");
+    // Facing left means the picture stands on the right of the screen, with the foes across from it.
+    this.root.classList.toggle("right", facing === "left");
     this.active = true;
     this.root.classList.add("open");
     this.render();
@@ -208,7 +227,7 @@ export class BattleView {
       bones.head.rotation.set(-heat * 0.12 + f * 0.1, (this.flinchHard ? f * 0.45 : 0) + tremble * 2, heat * 0.08);
     }
     if (bones.hips) bones.hips.rotation.y = Math.sin(t * 0.7) * 0.03 * (0.5 + heat);
-    model.position.x = this.flinchHard ? -f * 0.05 * this.scale : 0;
+    model.position.x = this.flinchHard ? -f * 0.05 * this.scale * (this.facing === "right" ? 1 : -1) : 0;
     model.updateMatrixWorld(true);
     if (bones.head) {
       bones.head.localToWorld(this.cheeks[0].set(0.045, 0.1, -0.085));
@@ -295,5 +314,65 @@ export class BattleView {
     this.hide();
     this.target.dispose();
     this.root.remove();
+  }
+}
+
+/** One foe in the column across from her: their body as it stands, what the plate says, and how they stand. */
+export interface FoeShow {
+  /** Tells foes apart from one show to the next, so a picture is only made again when the foe changes. */
+  key: string;
+  body: Object3D;
+  name: string;
+  title: string;
+  status: readonly BattleStat[];
+}
+
+/**
+ * Whoever she's up against, down the left of the screen across from her: one big picture for one foe, and the
+ * column shared out between them when there are more.
+ */
+export class FoeColumn {
+  private readonly root = document.createElement("div");
+  private readonly views: BattleView[] = [];
+  private readonly keys: string[] = [];
+
+  constructor(private readonly renderer: WebGLRenderer) {
+    this.root.id = "battle-foes";
+    this.root.setAttribute("aria-hidden", "true");
+    document.body.append(this.root);
+  }
+
+  show(foes: readonly FoeShow[], mode: BattleMode): void {
+    while (this.views.length < foes.length) this.views.push(new BattleView(this.renderer, { parent: this.root }));
+    this.views.forEach((view, i) => {
+      const foe = foes[i];
+      if (!foe) {
+        view.hide();
+        this.keys[i] = "";
+        return;
+      }
+      if (this.keys[i] !== foe.key || !view.open) {
+        this.keys[i] = foe.key;
+        view.show(foe.body, foe.name, mode, foe.title, "right");
+      }
+      view.setStatus(foe.status);
+    });
+    this.root.dataset.count = String(foes.length);
+    this.root.classList.toggle("open", foes.length > 0);
+  }
+
+  /** A foe takes a hit: a flinch and a flash over their picture. */
+  hit(index: number): void {
+    this.views[index]?.hit(true);
+  }
+
+  hide(): void {
+    for (const view of this.views) view.hide();
+    this.keys.length = 0;
+    this.root.classList.remove("open");
+  }
+
+  update(dt: number): void {
+    for (const view of this.views) view.update(dt);
   }
 }

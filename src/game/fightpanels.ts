@@ -125,6 +125,7 @@ export function showFight(game: Game): void {
       const events = fight.events.slice(before);
       game.showFightMoments(events, fight.kind);
       if (events.some((e) => e === "their:hit" || e === "lost")) game.battleHit(true);
+      if (events.some((e) => e === "strike:hit" || e === "shove:hit" || e === "throw")) game.foeHit(0);
       game.audio.play(fight.outcome === "lost" ? "walkOut" : "cloth");
       showFight(game);
     },
@@ -135,8 +136,17 @@ export function showFight(game: Game): void {
   game.showBattle("brawl", "You · Brawl", 0, false, [
     { label: "Stamina", value: `${fight.stamina}/${fight.maxStamina}`, tone: fight.stamina < fight.maxStamina / 2 ? "hurt" : undefined },
     { label: "Willpower", value: `${fight.will}/${fight.maxWill} · ${willLabel(fight.will, fight.maxWill)}` },
-    { label: `The ${fight.name}`, value: `${fight.foeStamina}/${fight.foeMax}` },
     { label: "Clothes", value: off === 0 ? "Dressed" : `${off} ${off === 1 ? "piece" : "pieces"} off` },
+  ], [
+    {
+      guestId: fight.guestId,
+      kind: fight.kind,
+      title: `The ${fight.name}`,
+      status: [
+        { label: "Stamina", value: `${fight.foeStamina}/${fight.foeMax}`, tone: fight.foeStamina < fight.foeMax / 2 ? "hurt" : undefined },
+        { label: "State", value: fight.drunk ? "Roaring drunk" : "Angry" },
+      ],
+    },
   ]);
   const box = game.panelEl.querySelector(".box");
   if (!box) return;
