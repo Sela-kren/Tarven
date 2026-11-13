@@ -14,6 +14,7 @@ import {
 import {
   activeTerms,
   armSpreadFor,
+  bandWeight,
   copyLook,
   CUPS,
   dressColors,
@@ -364,10 +365,54 @@ describe("a fuller bust", () => {
     expect(reshape([{ ...full, inner: -1 }], new Vector3(0.02, 0, 0), out).x).toBeCloseTo(0.04);
   });
 
-  it("gives inner fullness to the breast terms only", () => {
-    const active = activeTerms("Female", { bust: 1, bustInner: 0.6 });
-    expect(active.get("Bust")!.every((term) => term.inner === 0.6)).toBe(true);
-    expect(activeTerms("Female", { bust: 1 }).get("Bust")!.some((term) => term.inner)).toBe(false);
+  it("gives inner fullness to the breast terms, 0.6 of the way round as built", () => {
+    const inner = (value?: number) => activeTerms("Female", { bust: 1, bustInner: value ?? 0 }).get("Bust")!.map((t) => t.inner);
+    expect(inner().every((v) => v === 0.6)).toBe(true);
+    expect(inner(1).every((v) => v === 1)).toBe(true);
+    expect(inner(-1).every((v) => v === -1)).toBe(true);
+    expect(inner(0.5)[0]).toBeCloseTo(0.8);
+    expect(inner(-0.375)[0]).toBeCloseTo(0);
+  });
+
+  it("swells a glute round into the cleft, never past the body's middle", () => {
+    // The joint is 6.5 cm from the middle; growing twice as wide, a point on the outer side goes twice as far out.
+    const term = { grow: [1, 0, 0] as [number, number, number], midline: 0.065 };
+    const out = new Vector3();
+    expect(reshape([term], new Vector3(-0.03, 0, 0), out).x).toBeCloseTo(-0.06);
+    // On the inner side it follows mid * (1 - (1 - t)^2): halfway to the middle it goes three quarters of the way.
+    expect(reshape([term], new Vector3(0.0325, 0, 0), out).x).toBeCloseTo(0.04875);
+    // Close to the middle it closes in on it but stays on its own side.
+    expect(reshape([term], new Vector3(0.06, 0, 0), out).x).toBeLessThan(0.065);
+    expect(reshape([term], new Vector3(0.06, 0, 0), out).x).toBeGreaterThan(0.06);
+    // The other glute mirrors it.
+    expect(reshape([{ ...term, midline: -0.065 }], new Vector3(-0.0325, 0, 0), out).x).toBeCloseTo(-0.04875);
+    // Shrinking draws it away from the middle as before.
+    expect(reshape([{ grow: [-0.5, 0, 0] as [number, number, number], midline: 0.065 }], new Vector3(0.04, 0, 0), out).x).toBeCloseTo(0.02);
+  });
+
+  it("stretches the neck by raising the head while the neck's base stays in the shoulders", () => {
+    const active = activeTerms("Female", { neckLength: 1 });
+    const out = new Vector3();
+    // The torso carries the head's joint, 39 cm above its own, up by 2.5 cm; its own skin stays put.
+    expect(reshape(active.get("Torso")!, new Vector3(0, 0.39, 0), out).y).toBeCloseTo(0.415);
+    expect(reshape(active.get("Torso")!, new Vector3(0, 0.37, 0), out).y).toBeCloseTo(0.37);
+    // On the head, the neck's base comes back down by the joint's 2.5 cm, so it stays where it was...
+    expect(reshape(active.get("Head")!, new Vector3(0, -0.035, 0), out).y).toBeCloseTo(-0.06);
+    // ...and from under the chin up, the head moves whole with its joint.
+    expect(reshape(active.get("Head")!, new Vector3(0, 0.08, 0), out).y).toBeCloseTo(0.08);
+  });
+
+  it("grows a band of heights fully in its middle and not at all past its ends", () => {
+    const band = [0, -0.06, -0.14, -0.27] as const;
+    expect(bandWeight(band, -0.1)).toBe(1);
+    expect(bandWeight(band, 0.05)).toBe(0);
+    expect(bandWeight(band, -0.3)).toBe(0);
+    // Halfway up the easing at the top, the smooth curve gives a half.
+    expect(bandWeight(band, -0.03)).toBeCloseTo(0.5);
+    const calf = { grow: [1, 0, 0] as [number, number, number], band };
+    const out = new Vector3();
+    expect(reshape([calf], new Vector3(0.05, -0.1, 0), out).x).toBeCloseTo(0.1);
+    expect(reshape([calf], new Vector3(0.05, -0.35, 0), out).x).toBeCloseTo(0.05);
   });
 
   it("fades out smoothly, with no edge where it stops", () => {

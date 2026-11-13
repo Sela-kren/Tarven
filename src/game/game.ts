@@ -424,6 +424,25 @@ export interface Button {
   save?: SaveData;
 }
 
+// Kept for the browser tab only, so a new visit asks again. Storage can be blocked; then it just asks each time.
+const AGE_KEY = "tarven.adult-confirmed";
+
+function ageConfirmed(): boolean {
+  try {
+    return sessionStorage.getItem(AGE_KEY) === "yes";
+  } catch {
+    return false;
+  }
+}
+
+function rememberAgeConfirmed(): void {
+  try {
+    sessionStorage.setItem(AGE_KEY, "yes");
+  } catch {
+    // Nowhere to keep it; the gate shows again next time.
+  }
+}
+
 function element(id: string): HTMLElement {
   const found = document.getElementById(id);
   if (!found) throw new Error(`Page is missing #${id}`);
@@ -839,7 +858,9 @@ export class Game {
 
     // The story and the first day start on a bright morning.
     clock.setTime(0, MORNING_HOUR);
-    this.showTitle();
+    // Asked once per visit: quitting to the title reloads the page, and that shouldn't ask again.
+    if (ageConfirmed()) this.showTitle();
+    else this.showAgeGate();
   }
 
   /** The point the camera should keep in view. */
@@ -1545,6 +1566,36 @@ export class Game {
     const story = box.querySelector(".story");
     if (story) story.after(list);
     else box.querySelector(".menu")?.before(list);
+  }
+
+  /** Shown on every launch, before the title menu: the game is for adults, and the player has to say they are one. */
+  private showAgeGate(): void {
+    this.openPanel(
+      "Adults only",
+      [
+        "Last Call at Tarven is an adult game. It contains nudity, sexual content and mature themes.",
+        "All characters are 18 or older.",
+        "By continuing you confirm that you are at least 18 (or the age of majority where you live) and that you want to see this content.",
+      ],
+      [
+        {
+          label: "I am 18 or older, continue",
+          onPick: () => {
+            rememberAgeConfirmed();
+            this.showTitle();
+          },
+        },
+        { label: "Leave", onPick: () => this.refuseAgeGate() },
+      ],
+    );
+  }
+
+  private refuseAgeGate(): void {
+    this.openPanel(
+      "Adults only",
+      ["This game is only for adults. You can close this tab now."],
+      [{ label: "Back", onPick: () => this.showAgeGate() }],
+    );
   }
 
   private showTitle(): void {

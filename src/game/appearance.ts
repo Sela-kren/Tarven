@@ -68,6 +68,11 @@ interface BoneTerm {
   span?: readonly [number, number];
   /** The growth is full at the first height and fades out by the second, along a smooth curve. */
   fade?: readonly [number, number];
+  /**
+   * The growth is full only between the middle two heights and fades out smoothly up to the first and down to the
+   * last, from the top down, so a calf or an ankle can swell with the knee and the foot left alone.
+   */
+  band?: readonly [number, number, number, number];
   /** Lengthwise growth is measured from this height above the joint instead of from the joint itself. */
   pivot?: number;
   /**
@@ -77,6 +82,12 @@ interface BoneTerm {
    * middle, so the cleavage keeps its width and the bodice over it lies smooth.
    */
   lobes?: readonly [number, number, number];
+  /**
+   * Where the body's middle is across from this bone's joint, for a bone on one side of it, as a glute is. Growing
+   * across, the side towards the middle swells along a curve that meets the middle flat instead of being pushed
+   * over it, so the cheek rounds into the cleft and the two sides never pass through each other.
+   */
+  midline?: number;
   /**
    * The move reaches past where the bone's weight fades: it counts as the weight to this power instead of the weight
    * itself, so a breast slides whole, root and all, where its weight thins out towards the chest.
@@ -217,6 +228,17 @@ export interface BustShape {
 const both = (label: string) => [`${label}_L`, `${label}_R`];
 /** Rear changes are full from 3 cm below the glute joint and gone 11 cm above it, at the small of the back. */
 const REAR_FADE = [-0.03, 0.11] as const;
+/** How round the inner side of each breast fills with the inner fullness slider at 0 (see activeTerms). */
+const INNER_AS_BUILT = 0.6;
+/** The neck sliders reshape her skin and what lies on it, never her hair, which keeps to the head. */
+const NECK_PARTS: readonly MeshPart[] = ["Body", "Cloth", "Cum"];
+/** Each glute's joint is 6.5 cm to its side of the body's middle. */
+const GLUTE_MIDDLE = 0.065;
+/** The same terms for both glutes, each knowing which way the body's middle lies (see `midline`). */
+const glutes = (grow: BoneTerm["grow"], extra: Omit<BoneTerm, "bone" | "grow"> = {}): BoneTerm[] => [
+  { bone: "Glute_L", grow, midline: GLUTE_MIDDLE, ...extra },
+  { bone: "Glute_R", grow, midline: -GLUTE_MIDDLE, ...extra },
+];
 const terms = (bones: string[], grow: BoneTerm["grow"], extra: Omit<BoneTerm, "bone" | "grow"> = {}): BoneTerm[] =>
   bones.map((bone) => ({ bone, grow, ...extra }));
 
@@ -262,7 +284,7 @@ const FEMALE_SLIDERS: SliderDef[] = [
       ...terms(both("UpperArm"), [0.15, 0, 0.15]),
       ...terms(both("ForeArm"), [0.12, 0, 0.12]),
       ...terms(["Belly"], [0.2, 0.1, 0.2]),
-      ...terms(both("Glute"), [0.1, 0.1, 0.1]),
+      ...glutes([0.1, 0.1, 0.1]),
     ],
   },
   { id: "shoulders", label: "Shoulders", tab: "body", terms: terms(["Torso"], [0.12, 0, 0], { fade: [0.3, 0.12] }) },
@@ -275,23 +297,55 @@ const FEMALE_SLIDERS: SliderDef[] = [
   {
     id: "hips", label: "Hips", tab: "body", terms: [
       ...terms(["Hips"], [0.14, 0, 0.1]),
-      ...terms(both("Glute"), [0.12, 0.08, 0.15], { fade: REAR_FADE }),
+      ...glutes([0.12, 0.08, 0.15], { fade: REAR_FADE }),
     ],
-  },
-  {
-    id: "legs", label: "Leg length", tab: "body", terms: [
-      ...terms(both("Thigh"), [0, 0.1, 0], { span: [-0.33, 0] }),
-      ...terms(both("Shin"), [0, 0.1, 0], { span: [-0.35, 0] }),
-    ],
-  },
-  {
-    id: "thighs", label: "Thighs", tab: "body", terms: terms(both("Thigh"), [0.18, 0, 0.18]),
   },
   {
     id: "arms", label: "Arms", tab: "body", terms: [
       ...terms(both("UpperArm"), [0.18, 0, 0.18]),
       ...terms(both("ForeArm"), [0.15, 0, 0.15]),
     ],
+  },
+  // Her neck is part of the head: it follows the head bone from its base in the shoulders, 3.5 cm below the head's
+  // joint, up to under the chin, 3 cm above it. The torso's skin stops 1.5 cm short of the joint.
+  {
+    // The head's joint, and with it the head, rises out of the torso; the neck's base is drawn back down by as much,
+    // so the neck alone stretches and its base stays seated in the shoulders. Her hair rides up with the head.
+    id: "neckLength", label: "Length", tab: "body", group: "Neck", terms: [
+      { bone: "Torso", grow: [0, 0, 0], shift: [0, 0.025, 0], shrinkShift: [0, -0.015, 0], fade: [0.388, 0.38] },
+      ...terms(["Head"], [0, 0.385, 0], { shrink: [0, 0.23, 0], pivot: 0.03, span: [-0.065, 0], parts: NECK_PARTS }),
+    ],
+  },
+  // Wider or slimmer between the base and the chin, easing out at both, so the shoulders and the jaw keep their shape.
+  {
+    id: "neckWidth", label: "Thickness", tab: "body", group: "Neck",
+    terms: terms(["Head"], [0.4, 0, 0.4], { shrink: [0.25, 0, 0.25], band: [0.05, 0.028, -0.022, -0.042], parts: NECK_PARTS }),
+  },
+  {
+    id: "legs", label: "Leg length", tab: "body", group: "Legs", terms: [
+      ...terms(both("Thigh"), [0, 0.1, 0], { span: [-0.33, 0] }),
+      ...terms(both("Shin"), [0, 0.1, 0], { span: [-0.35, 0] }),
+    ],
+  },
+  {
+    id: "thighs", label: "Thighs", tab: "body", group: "Legs", terms: terms(both("Thigh"), [0.18, 0, 0.18]),
+  },
+  // The shin bone holds the leg from the knee (its joint) down, and the foot inside the shoe: the calf is fullest
+  // 6-14 cm below the knee, the ankle 26-31 cm, the shoe's cuff starts at 35 cm and the sole is at 47.5 cm.
+  // The calf sits at the back of the leg (+z), so it swells backwards more than across.
+  {
+    id: "calves", label: "Calves", tab: "body", group: "Legs",
+    terms: terms(both("Shin"), [0.2, 0, 0.3], { shrink: [0.15, 0, 0.2], band: [0, -0.06, -0.14, -0.27] }),
+  },
+  // Stops short of the shoe's cuff, so the ankle never comes through it.
+  {
+    id: "ankles", label: "Ankles", tab: "body", group: "Legs",
+    terms: terms(both("Shin"), [0.25, 0, 0.25], { shrink: [0.15, 0, 0.15], band: [-0.18, -0.26, -0.31, -0.345] }),
+  },
+  // The foot in its shoe, below the cuff: longer forwards to the toes and wider, standing on the same sole.
+  {
+    id: "feet", label: "Foot size", tab: "body", group: "Legs", roll: 0.4,
+    terms: terms(both("Shin"), [0.2, 0.08, 0.3], { shrink: [0.12, 0.05, 0.2], pivot: -0.475, fade: [-0.4, -0.355] }),
   },
   // The bust is weighted on each breast, with a crease under them that holds the fold. The bone's joint sits
   // about 4 cm behind the front of the breasts, so most of the growth is forwards. Here +z is backwards.
@@ -351,25 +405,42 @@ const FEMALE_SLIDERS: SliderDef[] = [
   {
     // Measured on the model: at 1 the rear stands 5 cm further out behind the small of the back and the hips
     // measure 7 cm more, enough to go with the fullest bust. It grows out and back, hardly down, so the fold
-    // under it stays where it is instead of hanging over the thighs.
+    // under it stays where it is instead of hanging over the thighs. It grows by scaling the rear out from the joint,
+    // so what stands out most grows most and the curve keeps its shape, and the scaling reaches past where the
+    // weight thins out (reach): a push weighted by the skin alone follows the weight's own hill and comes to a point.
     id: "rear", label: "Size", tab: "body", group: "Rear",
-    terms: terms(both("Glute"), [0.7, 0.15, 1.25], {
-      shrink: [0.15, 0.08, 0.4], shift: [0, -0.012, 0.025], shrinkShift: [0, 0, 0], fade: [-0.04, 0.12],
-    }),
+    terms: [
+      ...glutes([0.6, 0.12, 2.0], { shrink: [0.15, 0.08, 0.4], shift: [0, -0.008, 0], shrinkShift: [0, 0, 0], reach: 0.35 }),
+      // The lower third, 4-5.5 cm below the joint, fills out on top of that and a little down, so the rear stays full
+      // low and then turns in sharply to the fold on the thigh, which stays put, as a round mass sitting on the leg.
+      ...glutes([0, 0, 0], { shift: [0, -0.006, 0.04], shrinkShift: [0, 0, 0], band: [-0.01, -0.04, -0.055, -0.085], reach: 0.5 }),
+    ],
   },
   {
     id: "rearLift", label: "Lift", tab: "body", group: "Rear",
-    terms: terms(both("Glute"), [0, 0, 0], { shift: [0, 0.02, 0.004], fade: REAR_FADE }),
+    terms: glutes([0, 0, 0], { shift: [0, 0.02, 0.004], fade: REAR_FADE }),
   },
   {
     id: "rearWidth", label: "Width", tab: "body", group: "Rear", terms: [
-      { bone: "Glute_L", grow: [0.25, 0, 0], shift: [-0.012, 0, 0], fade: REAR_FADE },
-      { bone: "Glute_R", grow: [0.25, 0, 0], shift: [0.012, 0, 0], fade: REAR_FADE },
+      { bone: "Glute_L", grow: [0.25, 0, 0], shift: [-0.012, 0, 0], fade: REAR_FADE, midline: GLUTE_MIDDLE },
+      { bone: "Glute_R", grow: [0.25, 0, 0], shift: [0.012, 0, 0], fade: REAR_FADE, midline: -GLUTE_MIDDLE },
     ],
   },
   {
     id: "rearProjection", label: "Projection", tab: "body", group: "Rear",
-    terms: terms(both("Glute"), [0, 0, 0.5], { shrink: [0, 0, 0.35], shift: [0, 0, 0.008], fade: REAR_FADE }),
+    terms: glutes([0, 0, 0.5], { shrink: [0, 0, 0.35], shift: [0, 0, 0.008], fade: REAR_FADE }),
+  },
+  // The top of the rear, 2-5 cm above the joint, where it rises from the small of the back: fuller stands out in a
+  // shelf, less slopes flat into the back. It eases out before the waist, so it leaves no step there.
+  {
+    id: "rearUpper", label: "Upper fullness", tab: "body", group: "Rear",
+    terms: glutes([0, 0, 0], { shift: [0, 0.004, 0.02], band: [0.11, 0.05, 0.02, -0.02] }),
+  },
+  // The underside, 3-5 cm below the joint, over the fold onto the thighs: fuller rounds it out and down a little,
+  // less tucks it in. It eases out before the fold, so the fold stays where it is.
+  {
+    id: "rearLower", label: "Lower fullness", tab: "body", group: "Rear",
+    terms: glutes([0, 0, 0], { shift: [0, -0.004, 0.018], band: [0.01, -0.03, -0.05, -0.1] }),
   },
   { id: "head", label: "Head size", tab: "face", terms: terms(["Head"], [0.12, 0.12, 0.12]) },
   { id: "faceWidth", label: "Face width", tab: "face", terms: terms(["Head"], [0.12, 0, 0.04]) },
@@ -975,10 +1046,12 @@ interface ActiveTerm {
   shift?: [number, number, number];
   span?: readonly [number, number];
   fade?: readonly [number, number];
+  band?: readonly [number, number, number, number];
   pivot?: number;
   lobes?: readonly [number, number, number];
   /** How round the inner side of each breast fills, -1..1, from the inner fullness slider; only for `lobes` terms. */
   inner?: number;
+  midline?: number;
   reach?: number;
   apart?: number;
   turn?: number;
@@ -986,6 +1059,16 @@ interface ActiveTerm {
 }
 
 const lobe = new Vector3();
+
+/** How much of a `band` a height gets: full between its middle two heights, easing out to nothing at its ends. */
+export function bandWeight(band: readonly [number, number, number, number], y: number): number {
+  const [top, fullTop, fullBottom, bottom] = band;
+  const ease = (t: number) => {
+    const c = Math.min(1, Math.max(0, t));
+    return c * c * (3 - 2 * c);
+  };
+  return ease((top - y) / (top - fullTop)) * ease((y - bottom) / (fullBottom - bottom));
+}
 const before = new Vector3();
 
 /**
@@ -1002,6 +1085,7 @@ export function reshape(active: readonly ActiveTerm[], d: Vector3, out: Vector3,
       // Smooth at both ends, so a strong change leaves no shelf where it stops.
       weight = t * t * (3 - 2 * t);
     }
+    if (term.band) weight *= bandWeight(term.band, d.y);
     if (weight === 0) continue;
     // A term that reaches past the bone's weight moves the point as if the bone held more of it.
     const reach = term.reach !== undefined && skin > 0 ? skin ** (term.reach - 1) : 1;
@@ -1017,6 +1101,15 @@ export function reshape(active: readonly ActiveTerm[], d: Vector3, out: Vector3,
       out.y += gy * weight * along;
     }
     if (term.lobes) out.add(lobe);
+    // Towards the body's middle, growth across follows mid * (1 - (1 - t)^(1 + g)): as steep as the outer side at the
+    // joint, flat at the middle, so the inner side rounds into the cleft and stops there.
+    if (term.midline && gx * weight > 0) {
+      const t = d.x / term.midline;
+      if (t > 0 && t < 1) {
+        const g = gx * weight;
+        out.x += term.midline * (1 - (1 - t) ** (1 + g)) - d.x * (1 + g);
+      }
+    }
     // Inner fullness: between a breast's middle and the cleavage, points spread across along a curve that meets the
     // outer side's growth at the middle, so the breast swells round on both sides instead of bending there. The
     // cleavage itself never moves, so the two sides can close in on it but never pass through each other.
@@ -1058,8 +1151,10 @@ export function activeTerms(body: BodyName, sliders: Record<string, number>, bus
       shift: move ? [move[0] * value, move[1] * value, move[2] * value] : undefined,
       span: term.span,
       fade: term.fade,
+      band: term.band,
       pivot: term.pivot,
       lobes: term.lobes,
+      midline: term.midline,
       reach: term.reach,
       apart: term.apart === undefined ? undefined : term.apart * value,
       turn: term.turn === undefined ? undefined : term.turn * value,
@@ -1078,8 +1173,12 @@ export function activeTerms(body: BodyName, sliders: Record<string, number>, bus
     const amount = shapeAmount(clampSlider(sliders.bust));
     for (const term of shape.terms) add(term, amount);
   }
-  // Inner fullness changes no bones of its own: it shapes how every breast term grows towards the cleavage.
-  const inner = clampSlider(sliders.bustInner);
+  // Inner fullness changes no bones of its own: it shapes how every breast term grows towards the cleavage. As
+  // built, a breast is 0.6 of the way round on its inner side, so a fuller bust closes the gap between them; the
+  // slider takes it from fully drawn in (-1) to fully round, pressed together (1). The fill grows with the cup,
+  // so a small bust looks the same whatever it is set to.
+  const slider = clampSlider(sliders.bustInner);
+  const inner = slider >= 0 ? INNER_AS_BUILT + (1 - INNER_AS_BUILT) * slider : INNER_AS_BUILT + (1 + INNER_AS_BUILT) * slider;
   if (inner !== 0) for (const list of byBone.values()) for (const term of list) if (term.lobes) term.inner = inner;
   return byBone;
 }

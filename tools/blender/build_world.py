@@ -2189,8 +2189,10 @@ JIGGLE_LOBES = {
 }
 # How quickly a region's weight rises from its edge: weight is the smooth curve times this, up to the most.
 # The breasts rise slowly, over the whole region: the game grows them to a Q cup, and a weight that drops
-# sharply at the crease would fold the skin there over itself and pull the bodice into a tent.
-JIGGLE_RISE = {"Bust": 1.0}
+# sharply at the crease would fold the skin there over itself and pull the bodice into a tent. The glutes too:
+# the game grows the rear a long way, and a weight flat through the middle and steep at the edge grows it into a
+# shelf at the top and a point at the bottom instead of a rounder curve.
+JIGGLE_RISE = {"Bust": 1.0, "Glute_L": 1.0, "Glute_R": 1.0}
 
 
 # Where the soft parts get extra faces: (lobe centres, radii, side: 1 front, -1 back). A little larger
@@ -2201,7 +2203,11 @@ REFINE_REGIONS = [
 ]
 # The breasts are split once more: the game grows them up to a Q cup, four times the size they are built,
 # and they need the extra corners to stay round. A little inside the first region, so the crease keeps its edge.
-REFINE_AGAIN = [([(-0.072, 0.085, 1.14), (0.072, 0.085, 1.14)], (0.1, 0.09, 0.09), 1)]
+# The glutes as well: grown, a rear with only four rows of corners top to bottom stands out as a polygon.
+REFINE_AGAIN = [
+    ([(-0.072, 0.085, 1.14), (0.072, 0.085, 1.14)], (0.1, 0.09, 0.09), 1),
+    ([(-0.065, -0.08, 0.83), (0.065, -0.08, 0.83)], (0.09, 0.09, 0.11), -1),
+]
 # How far the new corners move towards a smooth surface, from 0 (flat on the old faces) to 1.
 REFINE_SMOOTH = 0.6
 # Long hair blends from the head onto the back over this height below the neck.
