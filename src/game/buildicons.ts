@@ -162,6 +162,78 @@ export const BUILD_ICONS = {
   cup: CUP,
   dish: DISH,
   coin: COIN,
+  /** The Lantern (lantern.ts): a red lantern with a flame in it. */
+  lantern: pixelSvg(
+    [
+      "....KKKK....",
+      "...K....K...",
+      "..KKKKKKKK..",
+      "..KCCCCCCK..",
+      "..KCcYYcCK..",
+      "..KCYWWYCK..",
+      "..KCYWWYCK..",
+      "..KCcYYcCK..",
+      "..KCCCCCCK..",
+      "..KKKKKKKK..",
+      "....KffK....",
+      "............",
+    ],
+    PALETTE,
+  ),
+  /** The room upstairs: a bed with a red cover. */
+  bed: pixelSvg(
+    [
+      "............",
+      "K...........",
+      "KF..........",
+      "KF.KKKKKKKK.",
+      "KFKWWKCCCCCK",
+      "KFKWWKCCCCCK",
+      "KFKKKKKKKKKK",
+      "KFFFFFFFFFFK",
+      "KffffffffffK",
+      "KK........KK",
+      "K..........K",
+      "............",
+    ],
+    PALETTE,
+  ),
+  /** A house rule: a written scroll. */
+  rule: pixelSvg(
+    [
+      "............",
+      ".KKKKKKKKK..",
+      "KWWWWWWWWWK.",
+      ".KWKKKKKKWK.",
+      ".KWWWWWWWWK.",
+      ".KWKKKKKWWK.",
+      ".KWWWWWWWWK.",
+      ".KWKKKKKKWK.",
+      ".KWWWWWWWWK.",
+      "KWWWWWWWWWK.",
+      ".KKKKKKKKK..",
+      "............",
+    ],
+    PALETTE,
+  ),
+  /** One of the Lantern's girls: a heart. */
+  heart: pixelSvg(
+    [
+      "............",
+      "..KKK..KKK..",
+      ".KCcCKKCCCK.",
+      "KCcCCCCCCCCK",
+      "KCCCCCCCCCCK",
+      "KCCCCCCCCCCK",
+      ".KCCCCCCCCK.",
+      "..KCCCCCCK..",
+      "...KCCCCK...",
+      "....KCCK....",
+      ".....KK.....",
+      "............",
+    ],
+    PALETTE,
+  ),
 } as const;
 
 /** The HUD's keg drawing, as rows, so the tap upgrade can put a badge on it. */

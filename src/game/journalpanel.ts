@@ -3,7 +3,9 @@ import type { Game } from "./game";
 import { journalBook, passivesBook, privateBook, recordsBook, skillsBook, titlesBook } from "./journal";
 import { lewdWord } from "./passives";
 import { TWO_SLOTS_FAME } from "./titles";
-import { DEBT, HEAT_MAX, NIGHTS, TRUST_MAX, TRUST_TO_OVERTHROW } from "./tavern";
+import { DEBUFFS } from "./debuffs";
+import { HOUSES } from "./ledger";
+import { HEAT_MAX, TRUST_MAX, TRUST_TO_OVERTHROW } from "./tavern";
 
 /** The journal's spreads, in tab order. */
 export type JournalPage = "ledger" | "private" | "passives" | "titles" | "skills" | "records";
@@ -35,9 +37,17 @@ export function showJournal(game: Game, page: JournalPage = "ledger"): void {
       {
         name: tavern.name,
         night: tavern.nightIndex + 1,
-        nights: NIGHTS.length,
         gold: tavern.gold,
-        debt: DEBT,
+        debt: tavern.owed,
+        promised: tavern.bookPromised,
+        fans: tavern.fans,
+        rank: tavern.rank,
+        houses: HOUSES.map((h) => ({ name: h.name, boss: h.boss, fans: h.fans, fate: tavern.houses[h.id] })),
+        debuffs: tavern.debuffs.map((d) => {
+          const def = DEBUFFS[d.id];
+          const lasts = def.nights === 0 ? "Until it's put right." : d.nights === 1 ? "Tonight." : `${d.nights} more nights.`;
+          return { name: d.level > 1 ? `${def.name} ${d.level}` : def.name, detail: def.detail(d.level), lasts };
+        }),
         trust: tavern.trust,
         trustMax: TRUST_MAX,
         trustToRise: TRUST_TO_OVERTHROW,

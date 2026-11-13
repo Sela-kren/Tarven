@@ -45,6 +45,38 @@ import { GUEST_TOO_DRUNK, PULLS, SLAPS, TOO_DRUNK_TO_ALLOW, WAVERED, WORN_THIN }
 import { GIVE_IN_TEXTS, IMPULSE_LINES } from "./touchtalk-givein";
 import { KINK_TALK, kinkOf, type Kink } from "./kinktalk";
 import { speakerIndex } from "./chatter";
+import { DEBUFF_IDS, DEBUFFS, type Debuff, type DebuffId } from "./debuffs";
+import {
+  BEATS,
+  COLLECTION,
+  DOUBLED_DEBT,
+  FANS_DELIGHTED,
+  FANS_FILTHY,
+  FANS_HAPPY,
+  FANS_WALKOUT,
+  FILTHY_AT,
+  HOUSE_BY_ID,
+  HOUSES,
+  LATE_EVERY,
+  PARTNER_FANS,
+  PARTNER_GOLD,
+  POACHED,
+  rankOf,
+  RIVAL_MOVE_CHANCE,
+  rivalMoveLine,
+  RUIN_CORRUPTION,
+  RUIN_HEAT,
+  SIDE_INTROS,
+  SIDE_RUMORS,
+  type Beat,
+  type HouseDef,
+  type HouseFate,
+  type HouseId,
+  type RivalMove,
+  ordinal,
+  PELL_AT_DAWN,
+  WREN_FIRST_LETTER,
+} from "./ledger";
 import {
   partToSee,
   PART_WORDS,
@@ -90,6 +122,7 @@ import {
 } from "./grab";
 import { START_TITLE, TITLE_BY_ID, TITLES, titleEarned, TWO_SLOTS_FAME } from "./titles";
 import { FOLLOW_UP_BY_ID, followUpsAfter, type FollowUp } from "./favors";
+import { Lantern, LANTERN_COST, ROOM_COST, type HouseRule, type LanternHost, type LanternSave, type RuleChoice } from "./lantern";
 
 /** One line of a set, by a roll from 0 to 1. */
 function oneOf(lines: readonly string[], roll: number): string {
@@ -120,6 +153,20 @@ const CUM_WHERE: Record<CumSpot, string> = {
   ass: "deep in your ass",
   body: "all over your belly",
 };
+import { INVITE_ASKS, INVITE_CHOICE, INVITE_CHOICE_ROOM, INVITE_HUSH, INVITE_ROOM_YES, JOIN_ASKS, MORNING_AFTER, pickLine as storyLine, STAIRS, TAPROOM_END, TAPROOM_MORNING, TAPROOM_START, UPSTAIRS_ROOM_AGAIN, UPSTAIRS_ROOM_FIRST } from "./invitetalk";
+import {
+  isBaron,
+  isLocal,
+  roomReaction,
+  STIR_EVERY,
+  STIR_PER_GIVE_IN,
+  STIR_PER_MOVES,
+  TAPROOM_TIP,
+  taproomResult,
+  wantsToJoin,
+  willingJoiners,
+  type RoomGuest,
+} from "./taproom";
 import { Duel, DUEL_AREAS, type DuelArea, type DuelistStats, type DuelMove, type DuelOutcome, type DuelTest, type Partner } from "./duel";
 import {
   ACT_SKILL_OF,
@@ -193,7 +240,9 @@ export type Gain =
   /** Her Level or her Slut Level went up (with the word for how far she's come, for the Slut Level). */
   | { kind: "rank"; which: "level" | "slut"; level: number; word?: string }
   /** She earned a title. */
-  | { kind: "title"; id: string };
+  | { kind: "title"; id: string }
+  /** Something went badly, and she carries it for a while (debuffs.ts). */
+  | { kind: "debuff"; id: DebuffId; level: number };
 export type GuestStatus = "arriving" | "waiting" | "eating" | "leaving";
 export type PotState = "empty" | "cooking" | "ready" | "burnt";
 export type Target =
@@ -227,9 +276,13 @@ const TAKE_CUES: Record<Item, Cue> = {
  */
 export type MessKind = "dishes" | "spill" | "dust" | "cobweb";
 export type UpgradeId = "quicktap" | "bigpot" | "cushions";
-export type EndingId = "arrested" | "overthrow" | "kept" | "lost";
+/** The one way the story ends: the village rises, and the baron's hold on the pass is broken. */
+export type EndingId = "overthrow";
 
 export const DEBT = 150;
+/** Heat at the most brings a raid instead of an arrest: a fine, the heat let off, and soldiers at the door. */
+export const RAID_FINE = 20;
+const RAID_COOL = 4;
 export const TRUST_MAX = 15;
 export const TRUST_TO_OVERTHROW = 13;
 export const HEAT_MAX = 8;
@@ -314,6 +367,8 @@ const START_DISHES = 6;
 
 /** Where every new tavern's crowd is rolled from (Tavern.crowdRandom); the tests' setup sets it to null. */
 export const crowdDice: { roll: (() => number) | null } = { roll: Math.random };
+/** Whether the story runs on fans (Tavern.storyBeats). The tests' setup turns it off: their nights go by number. */
+export const storyRules = { beats: true };
 /**
  * Whether guests wait for her to take their order (Tavern.takeOrders). The tests' setup turns it off, so guests there
  * say what they want as they sit, the way the tests were written.
@@ -532,6 +587,8 @@ export interface Arrival {
   party?: number;
   /** Their type in the group; left out, the group's types take turns (a party gets one of each). */
   role?: GuestRole;
+  /** Paid by the house above her on the Ledger to start a fight (ledger.ts). */
+  hired?: boolean;
 }
 
 /** A group of guests who come in together and talk over a table. */
@@ -551,6 +608,34 @@ export interface NightPlan {
   guests: Arrival[];
   parties: PartyPlan[];
   lastCall: LastCall;
+}
+
+/** What Pell says at dawn, and the letter she finds after. */
+const PELL_LINES = PELL_AT_DAWN;
+const WREN_LETTER = WREN_FIRST_LETTER;
+const ordinalOf = ordinal;
+
+const sideNights = new Map<number, NightPlan>();
+
+/**
+ * A night between beats (STORY.md "What nights do"): the road brings the usual folk (the second and third written
+ * nights' crowds, in turn) and a small side rumour from the pool at last call, never one of the story's own. Who
+ * walks in alone is rolled as ever (rollArrivals).
+ */
+function sideNight(index: number): NightPlan {
+  const base = NIGHTS[1 + (index % (NIGHTS.length - 1))];
+  let night = sideNights.get(index);
+  if (!night) {
+    night = {
+      ...base,
+      intro: `Night ${index + 1}. ${SIDE_INTROS[index % SIDE_INTROS.length]}`,
+      lastCall: SIDE_RUMORS[index % SIDE_RUMORS.length],
+    };
+    sideNights.set(index, night);
+  }
+  // The written night's guests, as they are now (the tests swap them for their own).
+  night.guests = base.guests;
+  return night;
 }
 
 const arrive = (at: number, kind: GuestKind, order: Item, rumor = false, party?: number, role?: GuestRole): Arrival => ({
@@ -700,7 +785,7 @@ export const NIGHTS: NightPlan[] = [
     },
   },
   {
-    intro: "Night 3. The last night before the baron collects. The road is busy, so keep moving.",
+    intro: "Night 3. The road is busy, so keep moving.",
     guests: [
       // The busiest night, but still breathing room: thirteen guests over 105 seconds, a table every 15 or so.
       arrive(5, "soldier", "ale"),
@@ -813,21 +898,9 @@ export const NIGHTS: NightPlan[] = [
 ];
 
 export const ENDINGS: Record<EndingId, { title: string; text: string }> = {
-  arrested: {
-    title: "Arrested",
-    text: "The baron has heard enough about the tavern on the pass. Soldiers break down the door, and you are marched away in irons.",
-  },
   overthrow: {
     title: "The Village Rises",
     text: "When the baron comes to collect, the whole village is waiting at your door. He rides away with nothing, and the debt dies with his power on the pass.",
-  },
-  kept: {
-    title: "Paid in Full",
-    text: "You count the coins onto the bar and the baron takes them without a word. The tavern is yours. For now.",
-  },
-  lost: {
-    title: "Foreclosed",
-    text: "The money isn't there. The baron's men nail the door shut, and you walk down the mountain with what you can carry.",
   },
 };
 
@@ -861,6 +934,10 @@ export interface Guest {
   listened: number;
   /** The party this guest came in with, as an index into the night's parties, or null for someone alone. */
   party: number | null;
+  /** Paid by the house above her on the Ledger to start trouble: in angry, and up for a fight at the first chance. */
+  hired?: boolean;
+  /** Served before their patience was half gone: one of the things that delights them (fans). */
+  servedFast?: boolean;
   /** Hidden from the player for now: nothing shows these and nothing changes them yet. 0 to 10. */
   lust: number;
   desires: number;
@@ -966,6 +1043,26 @@ interface GrabChat {
   reply: TalkLine[];
 }
 
+/** Chapter 1's progress, as saved. */
+export interface StorySave {
+  fans: number;
+  beats: string[];
+  houses: Partial<Record<HouseId, HouseFate | "fallen">>;
+  owed: number;
+  arrears: number;
+  promised: boolean;
+  /** The written night tonight plays, or -1 for a night between beats. */
+  storyNight: number;
+  sideRumor: number;
+}
+
+/** How Pell's collection went: what was due, what he took, and what she still owes. */
+export interface BaronVisit {
+  due: number;
+  paid: number;
+  owed: number;
+}
+
 /** A guest who's offered coin for a look at her (show.ts), and her answer. */
 interface ShowChat {
   guestId: number;
@@ -993,6 +1090,10 @@ export interface TavernSave {
   stock?: Record<Ware, number>;
   /** Cups and dishes broken and not yet replaced. Older saves have none. */
   broken?: Record<Ware, number>;
+  /** Her debuffs, and what she owes the baron. Older saves have none. */
+  debuffs?: Debuff[];
+  /** Chapter 1 (ledger.ts): her fans, the beats played, the houses beaten, and the debt. Older saves start fresh. */
+  story?: StorySave;
   /** The bottled drinks bought for the shelf. */
   bottles?: Bottle[];
   /** The name written in the journal, or none yet. */
@@ -1005,10 +1106,30 @@ export interface TavernSave {
   progress?: ProgressSave;
   /** Favors asked already, and what's still to come of them. Older saves start with none. */
   favors?: { asked: string[]; due: { id: string; night: number }[] };
+  /** The Lantern (lantern.ts): the lamp, the room, the house rules and the girls. Older saves have none. */
+  lantern?: LanternSave;
 }
 
 /** A moment that wants an 18+ card: a guest she's agreed to take upstairs, or being overwhelmed. */
 export type AdultScene = { kind: "upstairs"; guestId: number; guestKind: GuestKind; guestStats?: RoleStats } | { kind: "overwhelmed" };
+/** An invitation she's said yes to: up the stairs, or (her choice) right here in the taproom. */
+export type InviteScene = Extract<AdultScene, { kind: "upstairs" }>;
+
+/** An invitation she's answering in the taproom while the game's on: who's in it, and how the rest of the room took it. */
+interface TaproomGame {
+  hostId: number;
+  /** Everyone in the game, the one who asked first; more join the line as it goes if she left the room open. */
+  partnerIds: number[];
+  /** She left the room open: watchers who get worked up enough join the line as it goes. */
+  open: boolean;
+  /** Her moves so far, and how many had given in at the last count: what stirs the watchers. */
+  moves: number;
+  givenIn: number;
+  /** Who stayed to watch, and who got up and left (and how many of those were the village's own). */
+  cheered: number;
+  left: number;
+  localsLeft: number;
+}
 
 /** The last Consent-off check: who reached, for what, both sides' numbers, and what came of it. */
 export interface ImpulseRecord {
@@ -1161,6 +1282,39 @@ export class Tavern {
   readonly messes: Mess[] = [];
   /** How many cups and dishes the tavern owns, clean or not. */
   readonly stock: Record<Ware, number> = { cup: START_CUPS, dish: START_DISHES };
+  /** What she carries for things gone badly (debuffs.ts): a brawl lost, the baron unpaid, a raid. */
+  debuffs: Debuff[] = [];
+  /**
+   * Chapter 1 (ledger.ts). Whether the story runs on fans: beats fire as she reaches them, and the nights between
+   * are side nights. The tests' setup turns it off, so their nights go by night number as they were written.
+   */
+  storyBeats = storyRules.beats;
+  /** Her fans, and the ones she's won or lost tonight (counted at dawn). */
+  fans = 0;
+  fansTonight = 0;
+  /** The beats played so far, by id. The first night is the salt. */
+  readonly beatsDone = new Set<string>(["salt"]);
+  /** The written night tonight plays (a beat night), or -1 for a night between beats. */
+  storyNight = 0;
+  /** The houses she's passed, and what she did with each (partner or ruin; "fallen" until its boss has come). */
+  houses: Partial<Record<HouseId, HouseFate | "fallen">> = {};
+  /** A beat waiting on her answer this morning: a house's boss at the door, or Pell. */
+  pendingBeat: Beat | null = null;
+  /** First in Tarven: the chapter's end, shown once. */
+  private firstInTarven = false;
+  /**
+   * What she owes the Baron (Grandma's debt; doubled at Pell's dawn unless she promises the book), what's left
+   * unpaid from his last collection, and whether she promised.
+   */
+  owed = DEBT;
+  arrears = 0;
+  bookPromised = false;
+  /** What the house above is up to tonight, if anything. */
+  rivalMove: RivalMove | null = null;
+  /** Pell's last collection, once, for the game to show the morning after. */
+  private baronVisit: BaronVisit | null = null;
+  /** What happened overnight (a raid, the baron), for the morning report; cleared as the day begins. */
+  readonly news: string[] = [];
   /** Cups and dishes she's broken (dropped them, drunk), still to be replaced from the house plans. */
   readonly broken: Record<Ware, number> = { cup: 0, dish: 0 };
   /** The bottled drinks on the shelf, bought once and kept for good. */
@@ -1239,6 +1393,8 @@ export class Tavern {
     unlocked: new Set(["tavern"]),
     brothel: 0,
   };
+  /** The Lantern, once she hangs it: lit or dark nights, the room upstairs, the girls (lantern.ts). Lasts. */
+  readonly lantern = new Lantern();
   /** Everything counted about her, for passives. Lasts. */
   records: Records = newRecords();
   /** The passives she holds, by id. */
@@ -1254,6 +1410,10 @@ export class Tavern {
   eased = false;
   /** A moment waiting for its 18+ card, until the game takes it. */
   private adultScene: AdultScene | null = null;
+  /** An invitation she's answering in the taproom, while the game's on (taproom.ts); see `startTaproom`. */
+  private taproom: TaproomGame | null = null;
+  /** What she'll find in the morning after tonight's invitations: said as she goes to bed. */
+  private morningAfter: string[] = [];
   /** Experience in every stat and skill. Lasts. */
   xp: Experience = {};
   /** A guest working up to a brawl, before it starts: see `Trouble`. */
@@ -1266,7 +1426,7 @@ export class Tavern {
   brawlOffer: BrawlOffer | null = null;
   /** An after-hours game in progress, or null; and how the last one ended, for the game to show once. */
   duel: Duel | null = null;
-  lastDuel: { outcome: DuelOutcome; text: string; line: string; gold: number; test?: boolean; brawl?: boolean } | null = null;
+  lastDuel: { outcome: DuelOutcome; text: string; line: string; gold: number; test?: boolean; brawl?: boolean; taproom?: boolean } | null = null;
   /** Whether the duel going on is a test one, which counts for nothing. */
   private testDuel = false;
   /** Whether the duel going on is the one she agreed to after losing a brawl: the night ends after it. */
@@ -1431,6 +1591,8 @@ export class Tavern {
     this.phase = "dawn";
     this.drunk = 0;
     this.endOfNight();
+    // The morning after tonight's invitations (invitetalk.ts).
+    for (const line of this.morningAfter.splice(0)) this.say(line);
   }
 
   /**
@@ -1453,10 +1615,109 @@ export class Tavern {
     if (this.persona.respect >= HIGH_RESPECT_NIGHT) r.respectNights++;
     // A night without a drink keeps her head clear.
     if (this.drinksTonight === 0) this.gainXp("mind", 3);
+    // Anyone still upstairs comes down and pays, and the night has its say on the girls (lantern.ts).
+    this.lantern.endNight(this.lanternHost);
     const nightly = this.effects.perNight;
     this.adjust(0, nightly.trust, nightly.heat);
     if (nightly.respect) this.shift({ respect: nightly.respect });
     this.awardPassives();
+    this.countFans();
+    // A night gone off every debuff that lasts for nights.
+    this.debuffs = this.debuffs.filter((d) => d.nights === 0 || --d.nights > 0);
+    this.refreshEffects();
+    // The baron's heard enough: the garrison comes in the night. Not the end of her, but it costs.
+    if (this.heat >= HEAT_MAX) this.raid();
+  }
+
+  /** The night's fans, counted at dawn: the guests', a filthy room against her, and her partner houses'. */
+  private countFans(): void {
+    let won = this.fansTonight;
+    if (this.messes.length >= FILTHY_AT) won += FANS_FILTHY;
+    const partners = HOUSES.filter((h) => this.houses[h.id] === "partner");
+    if (partners.length > 0) {
+      won += PARTNER_FANS * partners.length;
+      const gold = PARTNER_GOLD * partners.length;
+      this.adjust(gold, 0, 0);
+      this.news.push(`Your partner ${partners.length === 1 ? "house sends" : "houses send"} ${gold} gold and their regulars.`);
+    }
+    const before = this.fans;
+    this.fans = Math.max(0, this.fans + won);
+    this.fansTonight = 0;
+    if (won !== 0) this.news.push(`${won > 0 ? "+" : ""}${this.fans - before} fans (${this.fans} in all).`);
+  }
+
+  /** The house just above her on the Village Ledger: the next one to beat, or none once she's first. */
+  get houseAbove(): HouseDef | null {
+    return HOUSES.find((h) => !this.houses[h.id]) ?? null;
+  }
+
+  /** Her place in Tarven: 6th of 6 with no house beaten, 1st with all five. */
+  get rank(): number {
+    return rankOf(HOUSES.filter((h) => this.houses[h.id]).length);
+  }
+
+  /** The next beat, and the fans it needs. */
+  get nextBeat(): Beat | null {
+    return BEATS.find((b) => !this.beatsDone.has(b.id)) ?? null;
+  }
+
+  /**
+   * The house above her fights back, some nights, as the night begins: it poaches some of her walk-ins, talks about
+   * her in the square, or pays someone to start a fight. Rolled on the crowd's dice (none in the tests unless they roll).
+   */
+  private rivalNight(arrivals: Arrival[]): void {
+    this.rivalMove = null;
+    const dice = this.crowdRandom;
+    const house = this.houseAbove;
+    if (!this.storyBeats || !house || !dice || dice() >= RIVAL_MOVE_CHANCE) return;
+    const moves: RivalMove[] = ["poach", "rumor", "thug"];
+    const move = moves[Math.floor(dice() * moves.length) % moves.length];
+    this.rivalMove = move;
+    if (move === "poach") {
+      for (let i = 0; i < POACHED; i++) {
+        const at = arrivals.findIndex((a) => a.party === undefined && !a.rumor && !a.hired);
+        if (at >= 0) arrivals.splice(at, 1);
+      }
+    } else if (move === "rumor") {
+      if (dice() < 0.5) this.adjust(0, -1, 0);
+      else this.adjust(0, 0, 1);
+    } else {
+      const last = Math.max(0, ...arrivals.map((a) => a.at));
+      arrivals.push({ at: Math.max(EXTRA_FIRST, last / 2), kind: "bandit", order: "ale", hired: true });
+      arrivals.sort((a, b) => a.at - b.at);
+    }
+    this.say(rivalMoveLine(move, house));
+  }
+
+  /** Soldiers turn the place over in the night: a fine, the heat let off a little, and they'll be watching. */
+  private raid(): void {
+    const fine = Math.min(this.gold, RAID_FINE);
+    this.gold -= fine;
+    this.heat = HEAT_MAX - RAID_COOL;
+    this.records.raids++;
+    this.addDebuff("watched");
+    this.news.push(`The garrison raided the tavern in the night. They fined you ${fine} gold, and they'll be watching.`);
+    this.say(`Soldiers raid the tavern! -${fine} gold.`);
+  }
+
+  /** She takes on a debuff, or a worse one if she has it already, for its full time again. */
+  addDebuff(id: DebuffId): void {
+    const def = DEBUFFS[id];
+    const had = this.debuffs.find((d) => d.id === id);
+    if (had) {
+      had.level = Math.min(def.maxLevel, had.level + 1);
+      had.nights = def.nights;
+    } else this.debuffs.push({ id, level: 1, nights: def.nights });
+    const level = (had ?? this.debuffs[this.debuffs.length - 1]).level;
+    this.gains.push({ kind: "debuff", id, level });
+    this.refreshEffects();
+  }
+
+  /** Puts something right: the debuff goes. */
+  clearDebuff(id: DebuffId): void {
+    const before = this.debuffs.length;
+    this.debuffs = this.debuffs.filter((d) => d.id !== id);
+    if (this.debuffs.length !== before) this.refreshEffects();
   }
 
   /**
@@ -1505,11 +1766,107 @@ export class Tavern {
   }
 
   get plan(): NightPlan {
-    return NIGHTS[this.nightIndex];
+    if (!this.storyBeats) return NIGHTS[this.nightIndex] ?? sideNight(this.nightIndex);
+    return NIGHTS[this.storyNight] ?? sideNight(this.nightIndex);
   }
 
-  get isLastNight(): boolean {
-    return this.nightIndex === NIGHTS.length - 1;
+  /** First in Tarven, the morning she passes the Copper Bell: once. */
+  takeFirstInTarven(): boolean {
+    const first = this.firstInTarven;
+    this.firstInTarven = false;
+    return first;
+  }
+
+  /**
+   * The morning's beat, if she's reached the next one's fans: a written night tonight, a house's boss at her door,
+   * or Pell. At most one a morning, in order. With none, tonight is a side night; and once the chapter's collections
+   * are done, anything still owed is collected every few nights.
+   */
+  private fireBeat(): void {
+    this.storyNight = -1;
+    const beat = this.nextBeat;
+    if (beat && this.fans >= beat.fans) {
+      this.beatsDone.add(beat.id);
+      if (beat.kind === "night") {
+        this.storyNight = beat.night;
+        return;
+      }
+      if (beat.kind === "house") {
+        this.houses[beat.house] = "fallen";
+        if (beat.collect) this.collect();
+      }
+      this.pendingBeat = beat;
+      return;
+    }
+    const chapterDone = this.beatsDone.has("copperBell");
+    if (chapterDone && this.owed > 0 && this.nightIndex % LATE_EVERY === 0) this.collect();
+  }
+
+  /** The words for a beat waiting on her answer this morning: who's at the door, and what they say. */
+  get beatCard(): { title: string; lines: string[]; house?: HouseDef } | null {
+    const beat = this.pendingBeat;
+    if (!beat) return null;
+    if (beat.kind === "pell") {
+      return { title: "Pell at dawn", lines: [...PELL_LINES] };
+    }
+    if (beat.kind === "house") {
+      const house = HOUSE_BY_ID.get(beat.house)!;
+      return {
+        title: `${house.name} falls`,
+        lines: [`Your fans have passed ${house.name}'s. You're ${ordinalOf(this.rank)} in Tarven now.`, house.arrives],
+        house,
+      };
+    }
+    return null;
+  }
+
+  /**
+   * Her answer to Pell at dawn: promise him the book (the debt's "forgotten", for now: he'll ask after it instead of
+   * collecting), or refuse, and the debt doubles, collected in three parts.
+   */
+  answerPell(promise: boolean): void {
+    if (this.pendingBeat?.kind !== "pell") return;
+    this.pendingBeat = null;
+    if (promise) {
+      this.bookPromised = true;
+      this.news.push("You promised Pell the book. The debt is forgotten, for now. He'll be back to ask where it is.");
+    } else {
+      this.owed = DOUBLED_DEBT;
+      this.news.push(`You told Pell there's no book. The debt is ${DOUBLED_DEBT} now, and he'll collect it in three parts.`);
+    }
+    this.news.push(WREN_LETTER);
+  }
+
+  /**
+   * Her answer to a fallen house's boss: partner (they send her a little gold and their regulars every night) or
+   * ruin (the house closes, half its fans come to her, and it costs her corruption and heat). Either way, its boss
+   * gives up what they know.
+   */
+  answerHouse(fate: HouseFate): void {
+    const beat = this.pendingBeat;
+    if (beat?.kind !== "house") return;
+    this.pendingBeat = null;
+    const house = HOUSE_BY_ID.get(beat.house)!;
+    this.houses[house.id] = fate;
+    if (fate === "partner") {
+      this.adjust(0, 1, 0);
+      this.news.push(`${house.boss} shakes on it. ${house.name} will send you its regulars, and a little gold, every night.`);
+    } else {
+      this.corruption += RUIN_CORRUPTION;
+      this.adjust(0, 0, RUIN_HEAT);
+      const gained = Math.floor(house.fans / 2);
+      this.fans += gained;
+      this.news.push(`${house.name} closes its doors. +${gained} fans walk up the hill to you.`);
+    }
+    this.news.push(house.clue);
+    if (house.id === "copperBell") this.firstInTarven = true;
+  }
+
+  /** The baron's last visit, once. */
+  takeBaronVisit(): BaronVisit | null {
+    const visit = this.baronVisit;
+    this.baronVisit = null;
+    return visit;
   }
 
   get lastCallChoices(): Choice[] {
@@ -1675,7 +2032,8 @@ export class Tavern {
         party: party ?? null,
         lust,
         desires,
-        mood: arrivalMood(context, filth, this.random, lust),
+        mood: next.hired ? "angry" : arrivalMood(context, filth, this.random, lust),
+        ...(next.hired ? { hired: true } : {}),
       });
       this.cue("guestIn");
     }
@@ -1796,6 +2154,7 @@ export class Tavern {
       } else if (guest.status === "eating") {
         guest.eatLeft -= dt;
         if (guest.eatLeft <= 0 && this.tableFinished(guest)) {
+          this.fansTonight += this.fansFrom(guest);
           guest.status = "leaving";
           this.leaveDirty(guest);
           if (behaviour.spills) this.spiltAt.add(guest.seat);
@@ -1824,7 +2183,7 @@ export class Tavern {
         !this.trouble &&
         !this.inConversation &&
         this.fightsTonight < MAX_FIGHTS &&
-        this.random() < TROUBLE_PER_SECOND * dt * Math.max(0, 1 - this.effects.trouble)
+        (guest.hired || this.random() < TROUBLE_PER_SECOND * dt * Math.max(0, 1 - this.effects.trouble))
       ) {
         this.brewTrouble(guest);
       }
@@ -1859,9 +2218,20 @@ export class Tavern {
     }
   }
 
+  /**
+   * Fans from a guest leaving fed (STORY.md "How fans are earned"): delighted if they were served fast, in a good
+   * mood, in a clean room; happy if they're not leaving cross; nothing otherwise.
+   */
+  private fansFrom(guest: Guest): number {
+    if (guest.mood === "angry" || guest.mood === "gloomy" || guest.mood === "scared") return 0;
+    const glad = guest.mood === "happy" || guest.mood === "idolize" || guest.mood === "lust";
+    return glad && guest.servedFast && this.messes.length < FILTHY_AT ? FANS_DELIGHTED : FANS_HAPPY;
+  }
+
   private walkOut(guest: Guest): void {
     guest.status = "leaving";
     this.walkouts++;
+    this.fansTonight += FANS_WALKOUT;
     this.shift({ fame: FAME_WALKOUT });
     // They knock their cup over on the way out.
     this.spiltAt.add(guest.seat);
@@ -1885,7 +2255,9 @@ export class Tavern {
         this.phase = "service";
         this.say(this.plan.intro);
         const { arrivals, extra } = this.rollArrivals();
-        this.arrivals = arrivals;
+        this.rivalNight(arrivals);
+        // A lit lantern changes who walks in, and what the night costs her (lantern.ts).
+        this.arrivals = this.lantern.openNight(arrivals, this.lanternHost);
         if (extra > 0) {
           const why = this.crowdDraw > 0 ? " Word of what you've done with the place is getting round." : "";
           this.say(`The road's busy tonight: ${extra} more than usual are on their way.${why}`);
@@ -1902,8 +2274,10 @@ export class Tavern {
     this.updatePot(dt);
     this.updateGuests(dt, context.listeningTo);
     this.updateTrouble(dt);
+    this.lantern.update(dt, this.lanternHost);
 
-    if (this.nextArrival === this.arrivals.length && this.guests.length === 0) {
+    // Last call waits for anyone still upstairs to come down and pay.
+    if (this.nextArrival === this.arrivals.length && this.guests.length === 0 && !this.lantern.busy) {
       this.phase = "lastcall";
     }
   }
@@ -1926,7 +2300,8 @@ export class Tavern {
     guest.ordered = true;
     this.say(`The ${this.nameOf(guest).toLowerCase()} at table ${this.tableOf(guest.seat)} wants ${ORDER_WORDS[guest.order]}.`);
     this.cue("order");
-    this.maybeGrab(guest, "order");
+    // Leaning in to listen: they may grab her, or ask for a look.
+    if (!this.maybeGrab(guest, "order")) this.maybeAskToSee(guest);
   }
 
   guestLeft(id: number): void {
@@ -1954,6 +2329,7 @@ export class Tavern {
     if (tipped) this.gainXp("charm", 1);
     if (this.stripped > 0 && e.strippedFame > 0) this.shift({ fame: e.strippedFame });
     const idolized = guest.mood === "idolize";
+    guest.servedFast = tipped;
     guest.mood = moodWhenServed(guest.mood, left);
     if (bottle === "mead") guest.lust = Math.min(10, guest.lust + MEAD_LUST);
     if (bottle === "vodka" && this.random() < VODKA_DRUNK_CHANCE * rules.lightweight) guest.mood = "drunk";
@@ -1968,7 +2344,10 @@ export class Tavern {
     // A promise come due, or a favor returned, before anything else they'd say.
     if (!this.startFollowUp(guest) && tipped && this.random() < TIP_CHAT_CHANCE) this.startTipChat(guest);
     // Nothing else to say: they may grab her as she sets it down, or reach for her.
-    if (!this.tipChat && !this.maybeGrab(guest) && !this.maybeAskToSee(guest)) this.maybeReach(guest);
+    // On a lit night, a lustful guest may ask for company upstairs instead (lantern.ts): one of the girls, never her.
+    if (!this.tipChat && !this.maybeGrab(guest) && !this.maybeAskToSee(guest) && !this.lantern.maybeAsk(guest, this.lanternHost)) {
+      this.maybeReach(guest);
+    }
     const [least, most] = guest.party === null ? EAT_ALONE : EAT_IN_PARTY;
     guest.eatLeft = (least + this.random() * (most - least)) * behaviour.stay * rules.stay + (guest.rumor ? RUMOR_EXTRA_EAT : 0);
   }
@@ -2129,7 +2508,14 @@ export class Tavern {
 
   /** Whether a conversation is open: with a party at their table, or with a guest who tipped you a drink. */
   get inConversation(): boolean {
-    return this.talkingTo !== null || this.tipChat !== null || this.touchChat !== null || this.grabChat !== null || this.showChat !== null;
+    return (
+      this.talkingTo !== null ||
+      this.tipChat !== null ||
+      this.touchChat !== null ||
+      this.grabChat !== null ||
+      this.showChat !== null ||
+      this.lantern.chat !== null
+    );
   }
 
   /** Her lewdness: worked out from her passives and records, never raised directly. */
@@ -2379,6 +2765,7 @@ export class Tavern {
   private refreshEffects(): void {
     const e = effectsOf(this.passives);
     for (const id of this.worn) TITLE_BY_ID.get(id)?.wear(e);
+    for (const d of this.debuffs) DEBUFFS[d.id].effect(e, d.level);
     this.effects = e;
   }
 
@@ -2613,7 +3000,9 @@ export class Tavern {
       this.adjust(-taken, 0, 0);
       if (guest) this.sendOff(guest);
       this.shift({ respect: -2 });
-      text = `Knocked down. They grab ${taken} gold from the till.`;
+      text = `Knocked down. They grab ${taken} gold from the till. You'll be feeling it tomorrow.`;
+      // She'll carry it into tomorrow night: bruised (a debuff).
+      this.addDebuff("bruised");
       // The one who won asks her. Hers to answer; the night ends either way (see BrawlOffer).
       if (guest && this.playerBody === "Female") this.brawlOffer = { kind: guest.kind, stats: guest.stats, drunk: fight.drunk };
     }
@@ -2627,6 +3016,190 @@ export class Tavern {
     const result = this.lastFight;
     this.lastFight = null;
     return result;
+  }
+
+  // ---------- Invitations: upstairs, or the taproom ----------
+
+  /**
+   * A roll from 0 to 1 for picking a line of the invitation's story, fixed by who and which night, so the words
+   * vary from guest to guest without drawing on `random` (which decides everything else about the night).
+   */
+  private storyRoll(guestId: number, salt: number): number {
+    const x = Math.sin(guestId * 12.9898 + salt * 78.233 + this.nightIndex * 37.719) * 43758.5453;
+    return x - Math.floor(x);
+  }
+
+  /**
+   * An invitation is told as a story (invitetalk.ts): first what they say to ask her, in their own kind's words,
+   * then their reach, then the room going quiet to hear her answer, then her thought.
+   */
+  private tellInvitation(guest: Guest, lines: TalkLine[]): void {
+    lines.unshift(this.guestSays(guest, storyLine(INVITE_ASKS[guest.kind], this.storyRoll(guest.id, 0))));
+    lines.splice(2, 0, narrate(storyLine(INVITE_HUSH, this.storyRoll(guest.id, 1))));
+  }
+
+  /** Someone in the room, as the taproom rules see them. */
+  private roomGuest(g: Guest): RoomGuest {
+    return { id: g.id, kind: g.kind, label: g.stats.label ?? g.kind, status: g.status, lust: g.lust, mood: g.mood, female: g.female };
+  }
+
+  /** Guests in the room who want to join, keenest first, all of them; she picks among them. */
+  taproomJoiners(scene: InviteScene): RoomGuest[] {
+    return willingJoiners(this.guests.map((g) => this.roomGuest(g)), scene.guestId);
+  }
+
+  /** What a guest who wants in says to ask: every one asks, and she chooses. */
+  joinAsk(guestId: number): string {
+    const guest = this.guests.find((g) => g.id === guestId);
+    return guest ? `"${storyLine(JOIN_ASKS[guest.kind], this.storyRoll(guestId, 3))}"` : "";
+  }
+
+  /**
+   * Whether staying down in the taproom is an answer she can give to this invitation. `shown` is false when it
+   * isn't there at all: too much to drink on either side (GAME_PATH.MD: too drunk blocks every yes), or not her.
+   * `blocked` says why it's there but not open: nobody else wants in, or it's her first time (that one's behind a
+   * closed door, the way she'd want it).
+   */
+  taproomOption(scene: InviteScene): { shown: boolean; blocked: string | null; joiners: RoomGuest[] } {
+    const host = this.guests.find((g) => g.id === scene.guestId);
+    const hidden = { shown: false, blocked: null, joiners: [] };
+    if (this.playerBody !== "Female" || this.drunk >= SLOPPY_DRUNK) return hidden;
+    if (!host || host.mood === "drunk" || host.status === "leaving" || isBaron(this.roomGuest(host))) return hidden;
+    const joiners = this.taproomJoiners(scene);
+    let blocked: string | null = null;
+    if (this.records.invitations === 0) blocked = "your first time should be behind a closed door";
+    else if (joiners.length === 0) blocked = "nobody else here is up for it";
+    else if (this.duel || this.fight) blocked = "not now";
+    return { shown: true, blocked, joiners };
+  }
+
+  /** The invitation card's line: them waiting on her answer, and the room calling out if others want in. */
+  inviteChoiceLine(scene: InviteScene): string {
+    const option = this.taproomOption(scene);
+    const lines = option.shown && !option.blocked ? INVITE_CHOICE_ROOM : INVITE_CHOICE;
+    return storyLine(lines, this.storyRoll(scene.guestId, 4));
+  }
+
+  /** The walk up the stairs, in their kind's way, and the room at the top: new the first time, familiar after. */
+  upstairsLine(scene: InviteScene): string {
+    const stairs = storyLine(STAIRS[scene.guestKind], this.storyRoll(scene.guestId, 5));
+    const room = this.records.invitations === 0 ? UPSTAIRS_ROOM_FIRST : storyLine(UPSTAIRS_ROOM_AGAIN, this.storyRoll(scene.guestId, 6));
+    return `${stairs} ${room}`;
+  }
+
+  /** Upstairs, as before (`goUpstairs`), and what she'll find in the morning. */
+  takeUpstairs(scene: InviteScene, act: UpstairsAct): string {
+    const line = this.goUpstairs(scene, act);
+    this.morningAfter.push(storyLine(MORNING_AFTER[scene.guestKind], this.storyRoll(scene.guestId, 7)));
+    return line;
+  }
+
+  /**
+   * She answers the invitation by staying down in the taproom: the one who asked, and the guests she's picked
+   * from those who want in, in an After Hours game (duel.ts) on her rules, with Stop always there. No stake: they
+   * pay in tips if it's played to the end. As it starts, the rest of the room takes it how they will: most stay
+   * and cheer, the cold and the respectable get up and go. Returns whether it started.
+   */
+  startTaproom(scene: InviteScene, joinIds: readonly number[], areas: readonly DuelArea[], play: RolePlay = "plain", open = false): boolean {
+    const option = this.taproomOption(scene);
+    if (!option.shown || option.blocked) return false;
+    // Every one of them wants in, and she's picked every one: nobody is pulled in.
+    const willing = new Set(option.joiners.map((g) => g.id));
+    const picked = [...new Set(joinIds)];
+    if (picked.length === 0 || picked.some((id) => !willing.has(id))) return false;
+    const ready = new Set(this.duelAreas().filter((a) => a.ready).map((a) => a.id));
+    if (areas.some((a) => !ready.has(a))) return false;
+    if (!this.rolePlays().some((p) => p.id === play && p.ready)) return false;
+    const partners = [scene.guestId, ...picked].map((id) => this.guests.find((g) => g.id === id)!);
+    const inGame = new Set(partners.map((g) => g.id));
+    let cheered = 0;
+    const left: Guest[] = [];
+    for (const g of this.guests) {
+      if (inGame.has(g.id) || (g.status !== "waiting" && g.status !== "eating")) continue;
+      if (roomReaction(this.roomGuest(g)) === "leave") {
+        this.sendOff(g);
+        left.push(g);
+      } else cheered++;
+    }
+    this.taproom = { hostId: scene.guestId, partnerIds: [...inGame], open, moves: 0, givenIn: 0, cheered, left: left.length, localsLeft: left.filter((g) => isLocal(g.kind)).length };
+    const r = this.records;
+    r.taproomScenes++;
+    r.taproomPartners += partners.length;
+    // It counts as tonight's game: nobody lingers at bedtime to ask for another.
+    this.duelTonight = true;
+    this.gainXp("exhibition", 5);
+    this.gainXp("charm", 3);
+    const setups = partners.map((g) => ({ kind: g.kind, female: g.female, stats: g.stats }));
+    const duel = new Duel(partners[0].kind, new Set(areas), 0, this.duelistStats(), this.random, setups, play);
+    duel.note(storyLine(TAPROOM_START, this.storyRoll(scene.guestId, 8)));
+    this.duel = duel;
+    const room = [cheered > 0 ? `${cheered} stay to watch` : "", left.length > 0 ? `${left.length} get up and leave` : ""].filter(Boolean).join("; ");
+    if (open) duel.note("You leave the room open: anyone watching who wants in can join the line.");
+    this.say(`You stay down in the taproom with ${partners.length} of them.${room ? ` ${room[0].toUpperCase()}${room.slice(1)}.` : ""}`);
+    return true;
+  }
+
+  /**
+   * A move in the taproom game: the room watches. Every few of her moves, and each time one of them gives in, the
+   * watchers get more worked up; if she left the room open, those who want in now join the end of the line. Nobody
+   * drunk, angry or scared joins (wantsToJoin), and her Stop still ends it for everyone.
+   */
+  private taproomTurn(duel: Duel): void {
+    const game = this.taproom;
+    if (!game) return;
+    game.moves++;
+    const givenIn = duel.partners.filter((p) => p.done).length;
+    const stir = (game.moves % STIR_EVERY === 0 ? STIR_PER_MOVES : 0) + (givenIn - game.givenIn) * STIR_PER_GIVE_IN;
+    game.givenIn = givenIn;
+    if (stir <= 0) return;
+    for (const g of this.guests) {
+      if (game.partnerIds.includes(g.id) || (g.status !== "waiting" && g.status !== "eating")) continue;
+      g.lust = Math.min(10, g.lust + stir);
+      if (!game.open || !wantsToJoin(this.roomGuest(g))) continue;
+      game.partnerIds.push(g.id);
+      this.records.taproomPartners++;
+      duel.join({ kind: g.kind, female: g.female, stats: g.stats });
+      duel.note(`The ${(g.stats.label ?? g.kind).toLowerCase()} can't just watch any more: ${this.joinAsk(g.id)} They join the line.`);
+    }
+  }
+
+  /**
+   * The taproom game is over (called from `finishDuel`, which has done the game's own bookkeeping). Played to
+   * the end, the pass talks about it: fame, a hit to respect, a heat for the Baron's ears, village trust if the
+   * village's own walked out, and lust stirred in everyone who watched. Those who were in it are spent and
+   * besotted, and tip her. Stopped, they step back at once and go back to their seats, no hard feelings.
+   * Either way, the night goes on.
+   */
+  private finishTaproom(duel: Duel): { text: string; line: string; gold: number } {
+    const game = this.taproom!;
+    this.taproom = null;
+    this.records.taproomMost = Math.max(this.records.taproomMost, game.partnerIds.length);
+    const outcome = duel.outcome!;
+    const played = outcome !== "stopped";
+    const result = taproomResult(outcome, game.partnerIds.length, game.localsLeft);
+    this.shift({ fame: result.fame, respect: result.respect, flirt: result.flirt });
+    this.adjust(0, result.trust, result.heat);
+    let gold = 0;
+    for (const g of this.guests) {
+      if (g.status === "leaving") continue;
+      if (game.partnerIds.includes(g.id)) {
+        if (played) {
+          g.mood = "idolize";
+          g.lust = 0;
+          gold += Math.round((TAPROOM_TIP + g.stats.tip) * (1 + this.effects.upstairsGold));
+        } else g.mood = "calm";
+      } else g.lust = Math.min(10, g.lust + result.watcherLust);
+    }
+    this.adjust(gold, 0, 0);
+    this.earned += gold;
+    const line = storyLine(TAPROOM_END[outcome], this.storyRoll(game.hostId, 9));
+    if (played) this.morningAfter.push(storyLine(TAPROOM_MORNING, this.storyRoll(game.hostId, 10)));
+    const heat = result.heat ? ` +${result.heat} heat: the keep will hear of it.` : "";
+    const trust = result.trust ? ` ${result.trust} trust: the village heard who walked out.` : "";
+    const text = played
+      ? `The taproom's yours again. +${gold} gold from them, fame +${result.fame}, respect ${result.respect}.${heat}${trust}`
+      : "You called it off, and they stepped back at once. The room goes back to its drink.";
+    return { text, line, gold };
   }
 
   // ---------- After hours ----------
@@ -2773,6 +3346,7 @@ export class Tavern {
     const duel = this.duel;
     if (!duel) return;
     duel.act(move, target);
+    if (this.taproom && !duel.outcome) this.taproomTurn(duel);
     if (duel.outcome) this.finishDuel(duel);
   }
 
@@ -2791,6 +3365,9 @@ export class Tavern {
     for (const [move, n] of Object.entries(duel.used)) r.duelMoves[move as DuelMove] = (r.duelMoves[move as DuelMove] ?? 0) + (n ?? 0);
     r.heldBack += duel.heldBack;
     r.undressed += duel.undressed;
+    r.climaxes += duel.climaxes;
+    // Her willpower gave out: lost, whether it played out or she stopped it after. She carries it a night or two.
+    if (duel.defeated) this.addDebuff("overwhelmed");
     this.undressedTonight = Math.max(this.undressedTonight, duel.undressed);
     this.addCum(duel.cum, duel.loads);
     for (const [meter, n] of Object.entries(duel.meterGains)) this.raise(meter as Meter, n ?? 0);
@@ -2829,10 +3406,19 @@ export class Tavern {
     }
     const ml = Object.values(duel.cum).reduce((n, v) => n + (v ?? 0), 0);
     if (ml > 0) text += ` ${duel.loads === 1 ? "One load" : `${duel.loads} loads`}, ${ml} ml of cum.`;
+    // An invitation answered in the taproom: its own words, and what the room makes of it (taproom.ts).
+    const taproom = this.taproom ? this.finishTaproom(duel) : null;
+    if (taproom) ({ text, line, gold: change } = taproom);
     const brawl = this.brawlDuel;
+    // Played out, every partner goes home satisfied and talks the place up (fans at dawn): delighted if they gave
+    // in first, happy if she did. Called off, nobody's anything. Whoever robbed the till after a brawl isn't a fan.
+    if (!brawl && duel.outcome !== "stopped") {
+      this.fansTonight += duel.partners.length * (duel.outcome === "won" ? FANS_DELIGHTED : FANS_HAPPY);
+    }
     this.lastDuel = { outcome: duel.outcome!, text, line, gold: change, brawl };
     this.say(text);
     this.duel = null;
+    if (taproom) this.lastDuel.taproom = true;
     // The game after a lost brawl: played out or called off, the night ends with it.
     if (brawl) {
       this.brawlDuel = false;
@@ -2841,7 +3427,7 @@ export class Tavern {
   }
 
   /** How the last after-hours game ended, once. */
-  takeDuelResult(): { outcome: DuelOutcome; text: string; line: string; gold: number; test?: boolean; brawl?: boolean } | null {
+  takeDuelResult(): { outcome: DuelOutcome; text: string; line: string; gold: number; test?: boolean; brawl?: boolean; taproom?: boolean } | null {
     const result = this.lastDuel;
     this.lastDuel = null;
     this.endedTest = null;
@@ -2908,6 +3494,7 @@ export class Tavern {
     const tier = sloppy || guestSloppy ? 0 : tempted;
     const lines: TalkLine[] = [{ ...narrate(fill(touch.reach)), guestId: guest.id }, you(thought)];
     if (tier > 0 && this.willpower < this.refuseWill(tier, touch.level)) lines.push(narrate(WORN_THIN));
+    if (touch.region === "invite") this.tellInvitation(guest, lines);
     const answers = touchAnswers(touch, { desire, sloppy, guestSloppy, leanMargin });
     // An impulsive guest, on a touch she could say yes to anyway: covered by the player's setting, or asked about.
     const s = this.touchSettings;
@@ -3319,6 +3906,7 @@ export class Tavern {
       }
       else this.cue("tip");
       if (touch.region === "invite" && guest) {
+        chat.reply.push(narrate(storyLine(INVITE_ROOM_YES, this.storyRoll(guest.id, 2))));
         this.adultScene = { kind: "upstairs", guestId: guest.id, guestKind: guest.kind, guestStats: guest.stats };
       } else if (this.pleasure >= PLEASURE_MAX && !chat.brawl) {
         this.pleasure = 0;
@@ -3796,6 +4384,7 @@ export class Tavern {
     if (this.touchChat) return [...this.touchChat.lines, ...this.touchChat.reply];
     if (this.grabChat) return [...this.grabChat.lines, ...this.grabChat.reply];
     if (this.showChat) return [...this.showChat.lines, ...this.showChat.reply];
+    if (this.lantern.chat) return [...this.lantern.chat.lines, ...this.lantern.chat.reply];
     if (this.tipChat) return [...this.tipChat.lines, ...this.tipChat.reply];
     if (this.talkingTo === null) return [];
     return [...this.talkOpening, ...this.talkReply];
@@ -3807,8 +4396,8 @@ export class Tavern {
       const id = this.touchChat.guestId;
       return this.guests.filter((g) => g.id === id);
     }
-    if (this.tipChat || this.grabChat || this.showChat) {
-      const id = (this.tipChat ?? this.grabChat ?? this.showChat)!.guestId;
+    if (this.tipChat || this.grabChat || this.showChat || this.lantern.chat) {
+      const id = (this.tipChat ?? this.grabChat ?? this.showChat ?? this.lantern.chat)!.guestId;
       return this.guests.filter((g) => g.id === id);
     }
     return this.talkingTo === null ? [] : this.partyGuests(this.talkingTo);
@@ -3820,6 +4409,7 @@ export class Tavern {
     if (this.touchChat) return this.touchChat.answered || this.touchChat.reply.length > 0 ? this.touchChat.reply : this.touchChat.lines;
     if (this.grabChat) return this.grabChat.reply;
     if (this.showChat) return this.showChat.reply;
+    if (this.lantern.chat) return this.lantern.chat.reply;
     if (this.tipChat) return this.tipChat.reply;
     return this.talkReply;
   }
@@ -3828,6 +4418,7 @@ export class Tavern {
     if (this.touchChat) return this.touchOptions(this.touchChat).map(({ label, disabled }) => ({ label, disabled }));
     if (this.grabChat) return this.grabOptions(this.grabChat).map(({ label, disabled }) => ({ label, disabled }));
     if (this.showChat) return this.showOptions(this.showChat).map(({ label, disabled }) => ({ label, disabled }));
+    if (this.lantern.chat) return this.lantern.options(this.lanternHost).map(({ label, disabled }) => ({ label, disabled }));
     if (this.tipChat) return this.tipOptions(this.tipChat).map(({ label, disabled }) => ({ label, disabled }));
     if (this.talkingTo === null) return [];
     const state = this.stateOf(this.talkingTo);
@@ -3870,6 +4461,11 @@ export class Tavern {
     }
     if (this.showChat) {
       const option = this.showOptions(this.showChat)[index];
+      if (option && !option.disabled) option.run();
+      return;
+    }
+    if (this.lantern.chat) {
+      const option = this.lantern.options(this.lanternHost)[index];
       if (option && !option.disabled) option.run();
       return;
     }
@@ -4018,6 +4614,73 @@ export class Tavern {
   }
 
   /** Cups and dishes can be bought again and again, until the shelves are full. */
+  /** The lantern, once the brothel is open to her (lantern.ts). Bought and set from the house plans, by day. */
+  canHangLantern(): boolean {
+    return this.phase === "day" && this.lantern.canHang(this.houseMode.unlocked.has("brothel"), this.gold);
+  }
+
+  hangLantern(): void {
+    if (!this.canHangLantern()) return;
+    this.gold -= LANTERN_COST;
+    this.lantern.hang(this.lanternHost);
+    this.cue("buy");
+  }
+
+  /** The plain room upstairs, once the lantern is hung: one booking at a time. */
+  canFurnishRoom(): boolean {
+    return this.phase === "day" && this.lantern.canFurnish(this.gold);
+  }
+
+  furnishRoom(): void {
+    if (!this.canFurnishRoom()) return;
+    this.gold -= ROOM_COST;
+    this.lantern.furnish();
+    this.cue("buy");
+  }
+
+  /** Whether tonight is a Lantern night, decided by day; and the house rules, also set by day. */
+  setLanternLit(lit: boolean): void {
+    if (this.phase === "day" && this.lantern.hung) this.lantern.lit = lit;
+  }
+
+  setHouseRule(rule: HouseRule, choice: RuleChoice): void {
+    if (this.phase === "day" && this.lantern.hung) this.lantern.rules[rule] = choice;
+  }
+
+  /**
+   * What the Lantern may touch in the tavern: the till, her standing and heat, the log, and the guests at their
+   * tables. Nothing here reaches the heroine herself: being the madam obliges her to nothing.
+   */
+  private get lanternHost(): LanternHost {
+    const corruption = () => this.corruption;
+    return {
+      guests: this.guests,
+      get madamCorruption() {
+        return corruption();
+      },
+      say: (text) => this.say(text),
+      earn: (gold) => {
+        this.adjust(gold, 0, 0);
+        this.earned += gold;
+      },
+      shift: (change) => this.shift(change),
+      addHeat: (n) => this.adjust(0, 0, n),
+      addCorruption: (n) => {
+        this.corruption = Math.min(1000, this.corruption + n);
+        this.unlockBrothel();
+      },
+      addFans: (n) => {
+        this.fansTonight += n;
+      },
+      guestSays: (guest, text) => this.guestSays(guest, text),
+      nameOf: (guest) => this.nameOf(guest),
+      tableOf: (seat) => this.tableOf(seat),
+      leaveTable: (guest) => this.sendOff(guest),
+      cue: (sound) => this.cue(sound),
+    };
+  }
+
+
   /** A broken cup or dish can be replaced, one at a time, during the day. */
   canReplace(ware: Ware): boolean {
     return this.phase === "day" && this.broken[ware] > 0 && this.gold >= REPLACE_COST;
@@ -4058,22 +4721,39 @@ export class Tavern {
     this.cue("buy");
   }
 
-  private decideEnding(): EndingId {
-    if (this.heat >= HEAT_MAX) return "arrested";
-    if (this.trust >= TRUST_TO_OVERTHROW) return "overthrow";
-    return this.gold >= DEBT ? "kept" : "lost";
+  /**
+   * Pell collects a part of the debt: a hundred, plus whatever she was short last time. Short again, and he takes
+   * what she has, and she's in the Baron's debt (a debuff) until she's caught up. If she promised the book, he asks
+   * after it instead, and the garrison hears he's impatient.
+   */
+  private collect(): void {
+    if (this.bookPromised) {
+      this.adjust(0, 0, 1);
+      this.news.push("Pell came by at dawn, not for gold: \"The book, innkeeper. The Baron is a patient man. I am not.\"");
+      return;
+    }
+    if (this.owed === 0) return;
+    const due = Math.min(this.owed, COLLECTION + this.arrears);
+    const paid = Math.min(this.gold, due);
+    this.gold -= paid;
+    this.owed -= paid;
+    this.arrears = due - paid;
+    this.baronVisit = { due, paid, owed: this.owed };
+    if (this.arrears === 0) {
+      this.clearDebuff("inDebt");
+      this.news.push(`Pell collected ${due} gold for the Baron. ${this.owed > 0 ? `${this.owed} still to go.` : "The debt is paid."}`);
+    } else {
+      this.addDebuff("inDebt");
+      this.news.push(`Pell wanted ${due} gold. He took the ${paid} you had, and you're ${this.arrears} behind.`);
+    }
   }
 
   nextNight(): void {
     if (this.phase !== "dawn") return;
-    if (this.isLastNight) {
-      this.ending = this.decideEnding();
-      this.phase = "ended";
-      return;
-    }
     const messes = this.leftovers();
     this.nightIndex++;
     this.openDay(messes);
+    if (this.storyBeats) this.fireBeat();
   }
 
   /** How long guests will wait, as a share of usual, given how dirty the room is. */
@@ -4147,6 +4827,17 @@ export class Tavern {
       persona: { ...this.persona },
       stock: { ...this.stock },
       broken: { ...this.broken },
+      debuffs: this.debuffs.map((d) => ({ ...d })),
+      story: {
+        fans: this.fans,
+        beats: [...this.beatsDone],
+        houses: { ...this.houses },
+        owed: this.owed,
+        arrears: this.arrears,
+        promised: this.bookPromised,
+        storyNight: this.storyNight,
+        sideRumor: 0,
+      },
       bottles: [...this.bottles],
       name: this.name,
       tub: [...this.tub],
@@ -4162,6 +4853,7 @@ export class Tavern {
       },
       favors: { asked: [...this.askedFavors], due: this.favorsDue.map((d) => ({ ...d })) },
       ...(this.layout ? { layout: cloneLayout(this.layout) } : {}),
+      ...(this.lantern.hung ? { lantern: this.lantern.save() } : {}),
     };
   }
 
@@ -4188,6 +4880,8 @@ export class Tavern {
     // The brothel isn't saved: it opens again from what she's become.
     this.houseMode = { current: "tavern", unlocked: new Set(["tavern"]), brothel: 0 };
     this.unlockBrothel(true);
+    // The Lantern is saved, though: what she's built, her rules, and her girls. No save of it, no lantern.
+    this.lantern.restore(save.lantern);
     this.eased = progress.eased ?? false;
     this.xp = readExperience(progress.xp);
     // Favors: only ones that exist; what's still to come keeps its night.
@@ -4214,6 +4908,31 @@ export class Tavern {
     this.stock.cup = save.stock?.cup ?? START_CUPS;
     this.broken.cup = Math.max(0, Math.floor(save.broken?.cup ?? 0));
     this.broken.dish = Math.max(0, Math.floor(save.broken?.dish ?? 0));
+    this.debuffs = (save.debuffs ?? [])
+      .filter((d) => d && DEBUFF_IDS.includes(d.id) && typeof d.level === "number" && typeof d.nights === "number")
+      .map((d) => ({ id: d.id, level: Math.min(DEBUFFS[d.id].maxLevel, Math.max(1, Math.floor(d.level))), nights: Math.max(0, Math.floor(d.nights)) }));
+    // Her debuffs are part of her effects, worked out again now they're back.
+    this.refreshEffects();
+    const story = save.story;
+    const count = (n: unknown, fallback: number) => (typeof n === "number" && Number.isFinite(n) ? Math.max(0, Math.floor(n)) : fallback);
+    this.fans = count(story?.fans, 0);
+    this.beatsDone.clear();
+    for (const id of story?.beats ?? ["salt"]) if (BEATS.some((b) => b.id === id)) this.beatsDone.add(id);
+    this.houses = {};
+    for (const h of HOUSES) {
+      const fate = story?.houses?.[h.id];
+      if (fate === "partner" || fate === "ruin" || fate === "fallen") this.houses[h.id] = fate;
+    }
+    this.owed = count(story?.owed, DEBT);
+    this.arrears = count(story?.arrears, 0);
+    this.bookPromised = Boolean(story?.promised);
+    // An older save, from when nights went by number: carry on from the night it was on.
+    this.storyNight = story ? (typeof story.storyNight === "number" ? story.storyNight : -1) : save.nightIndex;
+    this.pendingBeat = null;
+    this.firstInTarven = false;
+    this.fansTonight = 0;
+    this.rivalMove = null;
+    this.baronVisit = null;
     this.stock.dish = save.stock?.dish ?? START_DISHES;
     this.bottles.clear();
     for (const bottle of save.bottles ?? []) this.bottles.add(bottle);
@@ -4233,6 +4952,8 @@ export class Tavern {
   /** Starts a new day with the tavern closed, clearing everything that only lasts one night. */
   private openDay(messes: Mess[] = []): void {
     this.phase = "day";
+    this.news.length = 0;
+    this.pendingBeat = null;
     // The bedtime summary has shown last night's passives; tonight's start fresh.
     this.newPassives = [];
     this.messes.splice(0, this.messes.length, ...messes);
@@ -4268,6 +4989,7 @@ export class Tavern {
     this.touchChat = null;
     this.grabChat = null;
     this.showChat = null;
+    this.lantern.newDay();
     this.touchMoment = null;
     this.touchSeen.clear();
     this.touchHistory.clear();
@@ -4291,6 +5013,8 @@ export class Tavern {
     this.brawlOffer = null;
     this.brawlDuel = false;
     this.duelTonight = false;
+    this.taproom = null;
+    this.morningAfter = [];
     this.partyState.clear();
     this.say(
       messes.length > 0

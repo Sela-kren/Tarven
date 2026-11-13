@@ -117,7 +117,7 @@ describe("save slots", () => {
     const t = new Tavern(SEATS);
     writeSave(3, 0, t.snapshot());
     const tampered = JSON.parse(localStorage.getItem("tarven.save.3")!);
-    tampered.tavern.nightIndex = 42;
+    tampered.tavern.nightIndex = -1;
     localStorage.setItem("tarven.save.3", JSON.stringify(tampered));
 
     expect(readSave(1)).toBeNull();

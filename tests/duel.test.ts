@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { Duel, type DuelArea, type DuelistStats } from "../src/game/duel";
+import { AFTER_CLIMAX, CLIMAX_WILL, Duel, type DuelArea, type DuelistStats } from "../src/game/duel";
 import { effectsOf, emptyMeters, readProgress } from "../src/game/passives";
+import { FANS_DELIGHTED, FANS_HAPPY } from "../src/game/ledger";
 import { Tavern } from "../src/game/tavern";
 
 const SEATS = 11;
@@ -29,11 +30,39 @@ describe("an after-hours game", () => {
     expect(d.xp.upHands).toBeGreaterThan(0);
   });
 
-  it("is lost when she gives in first", () => {
-    // She only kisses; they go for the boldest she allowed every time.
+  it("doesn't end when she comes: it costs her willpower, and she comes down and goes on", () => {
     const d = duel(["pussy"], () => 0);
-    for (let i = 0; i < 60 && !d.outcome; i++) d.act("kiss");
+    const will = d.will;
+    while (!d.outcome && d.climaxes === 0) d.act("kiss");
+    expect(d.climaxes).toBe(1);
+    expect(d.will).toBeLessThanOrEqual(will - CLIMAX_WILL);
+    expect(d.pleasure).toBeGreaterThanOrEqual(AFTER_CLIMAX);
+  });
+
+  it("is lost when her willpower gives out, and plays on to the end, every climax counted", () => {
+    // She only kisses; they go for the boldest she allowed every time. Little willpower to start.
+    const d = duel(["pussy"], () => 0);
+    d.will = 5;
+    for (let i = 0; i < 40 && !d.defeated; i++) d.act("kiss");
+    expect(d.defeated).toBe(true);
+    // Lost, but not over: they're not done, and she can let them, or Stop.
+    expect(d.outcome).toBeNull();
+    const moves = d.choices().map((c) => c.move);
+    expect(moves).toContain("endure");
+    expect(d.choices().find((c) => c.move === "stop")?.disabled).toBe(false);
+    for (let i = 0; i < 400 && !d.outcome; i++) d.act("endure");
     expect(d.outcome).toBe("lost");
+    expect(d.active).toHaveLength(0);
+    expect(d.climaxes).toBeGreaterThanOrEqual(1);
+  });
+
+  it("lost, Stop still ends it at once", () => {
+    const d = duel(["pussy"], () => 0);
+    d.will = 0;
+    d.act("endure");
+    expect(d.defeated).toBe(true);
+    d.act("stop");
+    expect(d.outcome).toBe("stopped");
   });
 
   it("only lets them do what she put in play, and a kiss", () => {
@@ -116,6 +145,26 @@ describe("after hours in the tavern", () => {
     expect(t.duelOffer()).toBeNull();
   });
 
+  it("sends them home satisfied: fans at dawn, delighted if they gave in first, happy if she did", () => {
+    const won = atBedtime();
+    won.meters.body = 30;
+    won.startDuel(["hands"], 0);
+    for (let i = 0; i < 40 && won.duel; i++) won.duelMove(won.duel.stamina >= 4 ? "hands" : "hold");
+    expect(won.fansTonight).toBe(FANS_DELIGHTED);
+    const lost = atBedtime();
+    lost.random = () => 0;
+    lost.meters.pussy = 60;
+    lost.startDuel(["pussy"], 0);
+    lost.duel!.will = 5;
+    for (let i = 0; i < 400 && lost.duel; i++) lost.duelMove(lost.duel.defeated ? "endure" : "kiss");
+    expect(lost.records.duelsLost).toBe(1);
+    expect(lost.fansTonight).toBe(FANS_HAPPY);
+    const stopped = atBedtime();
+    stopped.startDuel([], 0);
+    stopped.duelMove("stop");
+    expect(stopped.fansTonight).toBe(0);
+  });
+
   it("costs nothing to call off", () => {
     const t = atBedtime();
     t.startDuel([], 20);
@@ -132,9 +181,34 @@ describe("after hours in the tavern", () => {
     t.random = () => 0;
     t.meters.pussy = 60;
     t.startDuel(["pussy"], 20);
-    for (let i = 0; i < 60 && t.duel; i++) t.duelMove("kiss");
+    t.duel!.will = 5;
+    for (let i = 0; i < 400 && t.duel; i++) t.duelMove(t.duel.defeated ? "endure" : "kiss");
     expect(t.records.duelsLost).toBe(1);
     expect(t.gold).toBe(30);
+  });
+
+  it("lost: she carries it (Overwhelmed), and every climax counts toward her lewdness", () => {
+    const t = atBedtime();
+    t.random = () => 0;
+    t.meters.pussy = 60;
+    const lewd = t.lewdness;
+    t.startDuel(["pussy"], 0);
+    t.duel!.will = 5;
+    for (let i = 0; i < 400 && t.duel; i++) t.duelMove(t.duel.defeated ? "endure" : "kiss");
+    expect(t.debuffs.some((d) => d.id === "overwhelmed")).toBe(true);
+    expect(t.records.climaxes).toBeGreaterThanOrEqual(1);
+    // Played after hours (+2), lost (+2 more from the duel records), and a point a climax.
+    expect(t.lewdness).toBeGreaterThanOrEqual(lewd + 2 + t.records.climaxes);
+  });
+
+  it("lost, then stopped: still lost, and she still carries it", () => {
+    const t = atBedtime();
+    t.startDuel([], 0);
+    t.duel!.will = 0;
+    t.duelMove("endure");
+    t.duelMove("stop");
+    expect(t.duel).toBeNull();
+    expect(t.debuffs.some((d) => d.id === "overwhelmed")).toBe(true);
   });
 
   it("earns its own passives", () => {

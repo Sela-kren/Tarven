@@ -26,7 +26,7 @@ import { MOANS, TALK, THEIR_STAGES } from "./dueltalk";
 import { HOLD_WILL, maxWillpower, SECOND_WIND_WILL, SPENT_EDGE } from "./willpower";
 
 export type DuelArea = "hands" | "mouth" | "breasts" | "butt" | "pussy";
-export type DuelMove = "kiss" | "caress" | "tease" | "undress" | "hands" | "mouth" | "tits" | "ride" | "anal" | "hold" | "stop";
+export type DuelMove = "kiss" | "caress" | "tease" | "undress" | "hands" | "mouth" | "tits" | "ride" | "anal" | "hold" | "endure" | "stop";
 export type DuelOutcome = "won" | "lost" | "stopped";
 export type DuelState = "calm" | "aroused" | "edge";
 
@@ -43,9 +43,24 @@ export const AREA_NAMES: Record<DuelArea, string> = Object.fromEntries(DUEL_AREA
 
 export const STATE_NAMES: Record<DuelState, string> = { calm: "Calm", aroused: "Aroused", edge: "On the Edge" };
 
-/** The most partners at once. */
-export const MAX_PARTNERS = 4;
+/**
+ * The most partners on her at once: six, as many as her body holds (two hands, mouth, breasts, butt, pussy). More
+ * can be in the game: they wait in line and step in as one gives in (the line piles up, like Karryn's Prison), so
+ * it isn't over until the last of them has.
+ */
+export const MAX_PARTNERS = 6;
 const PLEASURE_MAX = 100;
+/**
+ * A climax, Karryn's way: it doesn't end the game. She comes, it costs her willpower, and she comes down to here.
+ * When her willpower runs out she's lost (`defeated`, a debuff for the nights after), but it plays on to the end,
+ * every one of them in line, and every climax counts toward her lewdness. Stop always ends it.
+ */
+export const CLIMAX_WILL = 10;
+export const AFTER_CLIMAX = 50;
+/** Lost, she lets them have her way: a turn with no move of hers, a little stamina back. */
+export const ENDURE_STAMINA = 4;
+/** Once she's lost, they take what they want, and it gets them there faster. */
+export const DEFEATED_THEIRS = 5;
 const BASE_STAMINA = 24;
 const AROUSED_AT = 50;
 const EDGE_AT = 80;
@@ -203,6 +218,8 @@ export class Duel {
   will: number;
   readonly maxWill: number;
   readonly partners: Partner[] = [];
+  /** In the game but waiting their turn: they step in, in order, as those on her give in. */
+  readonly waiting: PartnerSetup[] = [];
   /** What's in play; the test panel can change it mid-game. */
   readonly areas: Set<DuelArea>;
   outcome: DuelOutcome | null = null;
@@ -219,6 +236,10 @@ export class Duel {
   readonly meterGains: Partial<Record<Meter, number>> = {};
   undressed = 0;
   heldBack = 0;
+  /** Her willpower gave out: she's lost, and it plays on to the end anyway (Stop still ends it). */
+  defeated = false;
+  /** Times she came in this game. */
+  climaxes = 0;
   /** Whether she won on the edge. */
   wonOnEdge = false;
   /** Every load, in ml, by where it landed; and how many there were. */
@@ -240,9 +261,11 @@ export class Duel {
     this.soloStamina = this.maxStamina = this.stamina = BASE_STAMINA + (stats.level("endurance") - 1) * 3 + stats.stamina;
     this.maxWill = stats.maxWill ?? maxWillpower(stats.level("mind"));
     this.will = Math.max(0, Math.min(this.maxWill, stats.will ?? this.maxWill));
-    for (const setup of partners.slice(0, MAX_PARTNERS)) this.addPartner(setup);
-    const who = this.partners.length === 1 ? `The ${this.partners[0].kind} grins.` : `${this.partners.length} of them gather round.`;
-    this.note(`${who} "Loser pays ${stake} gold. Say stop whenever you like."`);
+    for (const setup of partners) this.join(setup);
+    const all = this.everyone;
+    const who = all === 1 ? `The ${this.partners[0].kind} grins.` : `${all} of them gather round.${this.waiting.length > 0 ? ` ${this.waiting.length} wait their turn.` : ""}`;
+    // No stake (the taproom game): nobody pays, so nobody says so.
+    this.note(`${who} "${stake > 0 ? `Loser pays ${stake} gold. ` : ""}Say stop whenever you like."`);
     const lines = this.lines();
     if (lines) this.note(this.pick(lines.opening, ""));
   }
@@ -284,9 +307,21 @@ export class Duel {
     return fill(line);
   }
 
+  /** Someone joins the game: on her at once if there's room, or else at the end of the line. */
+  join(setup: PartnerSetup): Partner | null {
+    if (this.active.length < MAX_PARTNERS) return this.addPartner(setup);
+    this.waiting.push(setup);
+    return null;
+  }
+
+  /** Everyone in it: done, on her, or waiting. */
+  get everyone(): number {
+    return this.partners.length + this.waiting.length;
+  }
+
   /** Someone else joins the game (the test panel adds them mid-game). */
   addPartner(setup: PartnerSetup): Partner | null {
-    if (this.partners.length >= MAX_PARTNERS) return null;
+    if (this.active.length >= MAX_PARTNERS) return null;
     const max = (setup.stats ?? statsOf(setup.kind)).partner.stamina;
     const partner: Partner = { id: this.nextId++, ...setup, pleasure: 0, stamina: max, maxStamina: max, area: null, done: false, teased: false, held: 0, last: null };
     this.partners.push(partner);
@@ -413,6 +448,10 @@ export class Duel {
       const why = tired ? " (too tired)" : busy ? " (taken)" : "";
       out.push({ move, label: `${def.label} · +${this.power(move, partner)}${everyone} · ${cost} stamina${why}`, disabled: tired || busy });
     }
+    // Lost, or too tired for anything else: she can let them, and get a little breath back.
+    if (this.defeated || out.every((c) => c.disabled)) {
+      out.push({ move: "endure", label: `Let them · +${ENDURE_STAMINA} stamina`, disabled: false });
+    }
     const cost = this.holdCost();
     const spent = this.will < cost;
     out.push({
@@ -463,6 +502,17 @@ export class Duel {
           { who: "You", side: "her", stat: "stamina", amount: HOLD_STAMINA },
           { who: "You", side: "her", stat: "will", amount: -cost },
         ],
+      });
+    } else if (move === "endure") {
+      this.used.endure = (this.used.endure ?? 0) + 1;
+      this.stamina = Math.min(this.maxStamina, this.stamina + ENDURE_STAMINA);
+      this.gain("endurance", 1);
+      this.entries.push({
+        side: "her",
+        actor: "You",
+        action: "Let them",
+        text: this.defeated ? "You've nothing left to fight it with. You let them." : "You lie back and let them, catching your breath.",
+        effects: [{ who: "You", side: "her", stat: "stamina", amount: ENDURE_STAMINA }],
       });
     } else if (!this.herMove(move, target)) return;
     if (this.settle()) return;
@@ -567,7 +617,7 @@ export class Duel {
       this.finish(p);
       p.area = null;
       // With more of them still to go, seeing one give in is a second wind, like Karryn's energy coming back.
-      if (this.active.length > 0) {
+      if (this.active.length > 0 || this.waiting.length > 0) {
         const stamina = Math.round(this.maxStamina * SECOND_WIND_STAMINA);
         this.stamina = Math.min(this.maxStamina, this.stamina + stamina);
         this.pleasure = Math.max(0, this.pleasure - SECOND_WIND_CALM);
@@ -580,20 +630,47 @@ export class Duel {
         ]);
       }
     }
+    // The next in line steps into the space they left.
+    while (this.waiting.length > 0 && this.active.length < MAX_PARTNERS) {
+      const next = this.addPartner(this.waiting.shift()!);
+      if (next) this.note(`The ${this.nameOf(next).toLowerCase()} steps in to take a turn.${this.waiting.length > 0 ? ` ${this.waiting.length} still waiting.` : ""}`);
+    }
     if (this.active.length === 0) {
+      if (this.defeated) {
+        this.note(this.partners.length > 1 ? "The last of them is done with you. It's over." : "They're done with you. It's over.");
+        this.outcome = "lost";
+        return true;
+      }
       this.wonOnEdge = this.state === "edge";
       this.note(this.pick(this.lines()?.win, this.partners.length > 1 ? "The last of them gives in. You win." : "They give in first. You win."));
       this.outcome = "won";
       return true;
     }
-    if (this.pleasure >= PLEASURE_MAX) {
-      this.note(this.pick(this.lines()?.lose, "It's too much. You go first."));
-      // Feeling her come undone, the men who were close go over with her.
-      for (const p of this.active) if (p.pleasure >= FINISH_WITH_HER) this.finish(p);
-      this.outcome = "lost";
-      return true;
+    if (this.pleasure >= PLEASURE_MAX) this.climax();
+    // Her willpower's gone: she's lost. It plays on to the end all the same.
+    if (!this.defeated && this.will <= 0) {
+      this.defeated = true;
+      this.note(this.pick(this.lines()?.lose, "Your willpower gives out. You've lost, and they know it. They aren't done yet. (Stop still ends it.)"));
     }
     return false;
+  }
+
+  /**
+   * She comes. The game goes on: it costs her willpower, she comes down to AFTER_CLIMAX, and the ones who were
+   * close go over with her.
+   */
+  private climax(): void {
+    this.climaxes++;
+    const will = Math.min(this.will, CLIMAX_WILL);
+    this.will -= will;
+    const drop = this.pleasure - AFTER_CLIMAX;
+    this.pleasure = AFTER_CLIMAX;
+    this.note(this.climaxes === 1 ? "It's too much. You come, hard." : "You come again.", [
+      { who: "You", side: "her", stat: "pleasure", amount: -drop },
+      ...(will > 0 ? [{ who: "You", side: "her" as const, stat: "will" as const, amount: -will }] : []),
+    ]);
+    // Feeling her come undone, the men who were close go over with her.
+    for (const p of this.active) if (p.pleasure >= FINISH_WITH_HER) p.pleasure = PLEASURE_MAX;
   }
 
   /** A partner's turn: work the part of her they've taken, or take one (the part they like, if it's free), or kiss her. */
@@ -641,7 +718,8 @@ export class Duel {
       ),
     );
     this.pleasure = Math.min(PLEASURE_MAX, this.pleasure + n);
-    partner.pleasure = Math.min(PLEASURE_MAX, partner.pleasure + 2);
+    const theirs = this.defeated ? DEFEATED_THEIRS : 2;
+    partner.pleasure = Math.min(PLEASURE_MAX, partner.pleasure + theirs);
     this.meterGains[def.meter] = (this.meterGains[def.meter] ?? 0) + THEIR_METER;
     this.gain("endurance", 1);
     const lines = this.lines();
@@ -657,7 +735,7 @@ export class Duel {
       ),
       effects: [
         { who: "You", side: "her", stat: "pleasure", amount: n },
-        { who: this.nameOf(partner), side: "partner", stat: "pleasure", amount: 2 },
+        { who: this.nameOf(partner), side: "partner", stat: "pleasure", amount: theirs },
         { who: this.nameOf(partner), side: "partner", stat: "stamina", amount: -THEIR_COST },
       ],
       part: pick,

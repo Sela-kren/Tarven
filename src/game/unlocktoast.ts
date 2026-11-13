@@ -4,7 +4,7 @@
  * again on their own. The same news also goes in the log and on the morning report.
  */
 
-export type ToastTone = "passive" | "level" | "kink";
+export type ToastTone = "passive" | "level" | "kink" | "debuff";
 
 export interface Toast {
   tone: ToastTone;

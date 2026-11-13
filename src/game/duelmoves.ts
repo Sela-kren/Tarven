@@ -8,7 +8,7 @@ import type { Meter } from "./passives";
 import type { SkillId, StatId } from "./skills";
 
 /** The moves of hers that come from this table (Hold back and Stop are handled in duel.ts). */
-export type HerMove = Exclude<DuelMove, "hold" | "stop">;
+export type HerMove = Exclude<DuelMove, "hold" | "endure" | "stop">;
 
 /**
  * Her moves: stamina cost, how much pleasure it gives them, how much it gives her,

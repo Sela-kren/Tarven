@@ -215,7 +215,16 @@ Nights between beats are free service nights. They keep the tavern alive without
 | **Seasons and weather** | Snow on the pass thins the farmers and brings more fugitives. Flavour and guest mix only |
 | **Letters, building, the Lantern** | Letters unlock by milestones (section 10), and House Plans and Lantern nights run every night |
 
-**No night count can end the run.** The only fail states are heat maxed (Arrested), missed payments at beats (Foreclosed), and the story endings themselves.
+**Nothing ends the run in failure.** No night count, no maxed heat, no missed payment. Going badly brings **debuffs** instead, Karryn's Prison style (`src/game/debuffs.ts`, built):
+
+| What went badly | Debuff | What it does | Lasts |
+|---|---|---|---|
+| Pell's collection paid short | **In the Baron's Debt** (worse each time, up to 3) | Pay −10% and patience −5% a level | Until she's caught up |
+| Heat maxed: the garrison raids in the night (a 20 gold fine, heat back to 4) | **Under Watch** | Patience −15%, pay −5% | 2 nights |
+| Willpower gone in an after-hours game (it plays on to the end) | **Overwhelmed** (up to 3) | Saying no costs 20% more willpower, guests reach 10% more, per level | 2 nights |
+| A brawl lost (the night still ends) | **Bruised** (up to 2) | Saying no costs 25% more willpower, hold −1, guests reach 15% more | Through the next night |
+
+The only endings are the story's own.
 
 ### Replay
 
@@ -237,6 +246,10 @@ A guest who leaves happy may become a fan. Each one is tagged with what pleased 
 | A guest leaves delighted (served fast, clean room, a good mood or better) | +10 |
 | A guest walks out | −5 |
 | The room was filthy at closing | −15 |
+| A Lantern guest comes down grinning / satisfied / sour | +10 / +5 / 0 |
+| Her own night upstairs, played out: they gave in first / she did (each partner; called off gives nothing; never a brawl winner) | +10 / +5 |
+
+Sex satisfies like a good meal does: a guest who went upstairs happy brings their friends the same way.
 
 A quiet early night gives about 25 fans, and a good busy night 40 to 75. The deserter beat (50 fans) can come as early as night 2.
 
@@ -306,7 +319,9 @@ Every beat fires on fans, at most one a night, in this order:
 
 If she promised Pell the book, he doesn't collect. He asks where it is instead, and his patience gets shorter each time.
 
-**How Chapter 1 ends (the current build):** at 501 fans, a **"First in Tarven"** card is read at dawn. It changes with her biggest fan group (Keeper or Network) and her Act 1 flags (Mara free, Ash hidden, Oden's chapel open). Then comes a "To be continued: the pass" teaser. **Arrested** (heat maxed) and **Foreclosed** (two of Pell's collections missed in a row) can still end the run early.
+**How Chapter 1 ends (the current build):** at 501 fans, a **"First in Tarven"** card is read at dawn. It changes with her biggest fan group (Keeper or Network) and her Act 1 flags (Mara free, Ash hidden, Oden's chapel open). Then comes a "To be continued: the pass" teaser, and the nights go on. Nothing ends the run early: missed collections and maxed heat bring debuffs (section 7, "What nights do").
+
+**Built (Chapter 1 core, `src/game/ledger.ts`):** fans counted at dawn (+5 happy, +10 delighted, −5 walkout, −15 filthy room); the Village Ledger with the five houses; beats by fans, one a morning, in order (the three written nights as beats, side nights between them with a pool of side rumours); a fallen house's boss at the door in the morning with Partner (+1 trust; +3 gold and +5 fans a night) or Ruin (+10 corruption, +1 heat, half its fans), and their clue either way; the house above her fighting back on some nights (poaching two walk-ins, talk in the square, a hired troublemaker); Pell at dawn at 250 (promise the book, or the debt doubles to 300) and his collections of 100 at 301, 401 and 501 (shortfalls carried over), then every 7 nights while anything's owed; the First in Tarven card at 501. The journal's Ledger page shows it all. **Not yet:** fan tags and the biggest-group variants of the card, Act 1's story flags, Wren's letters beyond the first, the innkeepers' models (they're cards for now), and bosses walking in at night rather than at the morning card.
 
 ### The pass rivals (later, after Tarven)
 
@@ -461,7 +476,7 @@ Then she finds **Wren's first letter**, hidden in the hollow leg of the bar stoo
 
 > *"If Pell is asking you about my book, then I'm already dead, and it wasn't my heart. Don't drink anything he pours."*
 
-**In the current build:** Arrested stays a real game over. Until Act 2 exists, the Act 1 finale ends the run: the old ending plays (Paid in Full, Foreclosed or The Village Rises), then this scene plays as a "To be continued" teaser.
+**In the current build:** Pell comes at dawn at 250 fans with this choice, and she finds Wren's first letter after. Nothing ends the run: the debt is collected at the chapter's later beats, and short payments bring the debt debuff (section 7).
 
 ---
 
@@ -501,7 +516,7 @@ Letters are the story's reward for playing the systems. Each one unlocks at a mi
 
 > **Later.** Not part of the current scope. Act 2 starts after Chapter 1 ends at 501 fans. The fan numbers below are from before the Tarven chapter and will be redone when we get there. Some of its beats may move into Tarven (Sabine's visit, Oden and the poison).
 
-The debt is 300, paid in three instalments of 100 that Pell collects in Chapter 1 (at the Watch Canteen, the Toll-Gate Inn and the Copper Bell), or "forgotten" if she promises Pell the book. Missing one raises heat and the next instalment. Missing two in a row is Foreclosed. The rivals open their doors. Each beat carries a rumour about one piece of the book, won one of the four ways (section 6). Upstairs rooms open in House Plans. Nights between beats are free service nights, with the usual rumours and table talk.
+The debt is 300, paid in three instalments of 100 that Pell collects in Chapter 1 (at the Watch Canteen, the Toll-Gate Inn and the Copper Bell), or "forgotten" if she promises Pell the book. Missing one carries the shortfall into the next instalment and puts her in the Baron's debt (a debuff); it never ends the run. The rivals open their doors. Each beat carries a rumour about one piece of the book, won one of the four ways (section 6). Upstairs rooms open in House Plans. Nights between beats are free service nights, with the usual rumours and table talk.
 
 | Fans | Beat | What happens |
 |---|---|---|
@@ -522,7 +537,7 @@ At **1,500 fans**, Act 2 ends with the second Ledger card.
 
 ## 12. The Lantern arc (the brothel path)
 
-> **Later**, apart from the unlock, which is already built (lewdness 50 or corruption 50).
+> **Stage I is built** (the unlock, the lantern, lit or dark nights, one room, Tamsin, the booking card, house rules, corruption drift and the dawn line). Stages II to IV and beats L1, L2, L4 and L5 are **later**. See "What's built now" below.
 
 **The gate changes** from "corruption 100" to **lewdness 50 or corruption 50**, whichever comes first. Lust or greed can open the path, and corruption decides what kind of madam she is. (Done in `tavern.ts` `unlockBrothel()`. Finding the lantern is still to add as the story moment that hangs it.)
 
@@ -538,7 +553,17 @@ One line that doesn't move: **the Baron is leverage, never a client.** She doesn
 
 ### How the Lantern runs (the brothel setup)
 
-**What's built now:** only the unlock flag (`houseMode` in `tavern.ts`) and a "[Brothel]" label on the HUD. Everything below is new.
+**What's built now (Stage I, "A lamp in the window"):** the unlock flag (`houseMode` in `tavern.ts`), the "[Brothel]" label on the HUD, and Stage I of the Lantern in `src/game/lantern.ts` (rules) and `src/game/lanternplans.ts` (House Plans rows):
+- **Builds:** the lantern (30 gold, once the brothel is open) and the plain upstairs room (15 gold). Tamsin asks for work as the lantern is hung (beat L3, Stage I part). Finding the lantern as a story moment is still to add.
+- **Lit or dark:** a switch on House Plans, set by day, which stays as she left it. A lit night costs 1 respect and adds 1 heat (no licence yet), and about half the farmers walking in alone stay away, with soldiers, smugglers and adventurers coming in their place (parties and the rumour carrier come as planned). Fame comes from happy bookings. Farmers' trust and chapel standing aren't touched yet, and there's no fans count to tag.
+- **Tamsin (26):** appeal 6, charm 6, stamina 4, loyalty 55, knack soldiers, corruption 45 (shady), resolve 5. Her lewdness is 1 per 3 bookings plus 2 per booking she enjoyed (8+ satisfaction with a soldier), with the heroine's mind-stage thresholds. No girl passives yet.
+- **A Lantern night:** a lustful guest she's just served may ask for company. The booking card shows the girl (knack, stamina left), the room and the price (10 + half her appeal: 13 gold). The madam sends them up or turns them away; **then Tamsin decides**, and her no ends it (no option to press her). The booking runs off screen for 25 seconds with the room busy; the guest comes down and pays, with a tip above 6 satisfaction (charm + room + 2 for her knack, less tiredness, rough or drunk). Last call waits for the room. The heroine is never part of a booking, and her own invitations are unchanged. The Baron is excluded as a client (`NEVER_CLIENTS`).
+- **House rules:** the cut (half or a quarter to her), rough guests (angry guests and brutes shown the door, or kept: she's likelier to refuse, loyalty -4), rest (a night off once her stamina's spent, or worked tired: -2 satisfaction, -2 loyalty, a 25% chance she's ill the next night), drunk guests (turned away from the stairs, or let up: they ask sooner, and may draw 1 heat). Greedy rules also cost loyalty each lit night and add 1 to the madam's corruption each. At loyalty 0 she quits for the Velvet House.
+- **Corruption drift:** each lit night, a tenth of the gap to the madam's, times (1 − resolve × 0.05), half speed falling, plus 3 per greedy rule in force.
+- **Dawn line:** bookings, room takings, the girls' cut, each girl's mood (happy, steady, worn out, resentful, ill, gone) with loyalty and tier, and any trouble.
+- **Saves:** `TavernSave.lantern` (optional; older saves load with no lantern).
+
+**Not built yet:** the doorman (a rough guest is seen out by the madam herself, with no brawl), the licence, Lantern trouble events beyond a drunk's noise, girl tier behaviours (purse-lifting, secrets, skimming), girl passives, more rooms and girls, and the Lantern's own fans tags.
 
 #### Lit or dark
 
@@ -658,7 +683,7 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 
 | Stage | Rooms | Girls | Opens |
 |---|---|---|---|
-| **I. A lamp in the window** | 1 | 1 | Lantern nights, the booking card |
+| **I. A lamp in the window** **[built]** | 1 | 1 | Lantern nights, the booking card |
 | **II. The parlour** | 3 | 3 | Parlour, good rooms, the licence offer (L2) |
 | **III. The Red Lantern** | 4 + the Red Room | 5 | Nobles, the bathhouse, the Velvet war (L4) |
 | **IV. Two lanterns** | — | — | Owning the Velvet House as a second Lantern (section 7) |
@@ -701,8 +726,8 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 | **Lovers' endings** (one per route) | A lover's route finished | Their faction stands with her at the climax |
 | **Paid in Full** | Gold ≥ debt, no book | The tavern is hers, and the Baron is still watching |
 | **Lost to the Night** | Mind stage 3, low respect, gold and fans, no lantern | A cautionary epilogue: the room owns her name, not her |
-| **Foreclosed** | Two of Pell's collections missed in a row, no book promised | She walks down the mountain |
-| **Arrested** | Heat maxed | Irons |
+| ~~Foreclosed~~ | Removed (2.12): missed collections bring the In the Baron's Debt debuff instead | |
+| ~~Arrested~~ | Removed (2.12): maxed heat brings a raid and the Under Watch debuff instead | |
 
 ---
 
@@ -732,7 +757,7 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 13. **Owned houses:** a list of houses she owns, each with a manager (bought) or a partner boss (with loyalty), whose fans add to hers.
 14. **The Baron partnership:** a last-call choice on The last offer, plus the Master of the Pass and Baron's Partner endings.
 15. **Expand mode (later):** play continues after Last Call with new houses to win.
-16. **The Lantern (brothel setup):** extend `houseMode` with a lit/dark choice each evening, and add Lantern builds to House Plans (rooms, parlour, Red Room, bathhouse, doorman). Also: a staff list in `save.ts` (appeal, charm, stamina, loyalty, knack, corruption, resolve, records), each girl's lewdness worked out from her own records (reuse `lewdnessOf` and `mindStage` from `passives.ts` and `lewd.ts`), a small set of girl passives, the nightly corruption drift toward the madam's (managers and partner bosses too), tier behaviours for the girls (purse-lifting, selling secrets, skimming, walking out), house rules, a booking card, a door-lamp timer per room, Lantern trouble events, and a Lantern line on the dawn report.
+16. **The Lantern (brothel setup):** Stage I is done (`lantern.ts`, `lanternplans.ts`; see section 12, "What's built now"). For the later stages: extend `houseMode` with a lit/dark choice each evening, and add Lantern builds to House Plans (rooms, parlour, Red Room, bathhouse, doorman). Also: a staff list in `save.ts` (appeal, charm, stamina, loyalty, knack, corruption, resolve, records), each girl's lewdness worked out from her own records (reuse `lewdnessOf` and `mindStage` from `passives.ts` and `lewd.ts`), a small set of girl passives, the nightly corruption drift toward the madam's (managers and partner bosses too), tier behaviours for the girls (purse-lifting, selling secrets, skimming, walking out), house rules, a booking card, a door-lamp timer per room, Lantern trouble events, and a Lantern line on the dawn report.
 17. **New guest factions:** add `adventurer`, `bandit` and `noble` to the guest kinds, each with its own looks (see the character-variety rule), moods, orders and table talk. They unlock by fans or by Ledger rank (section 5).
 
 ---
@@ -756,6 +781,9 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 
 | Date | Draft | Changes |
 |---|---|---|
+| 13 Nov 2026 | 2.14 | Satisfaction through sex: Lantern bookings and her own played-out nights upstairs earn fans like a happy or delighted guest |
+| 13 Nov 2026 | 2.13 | Lantern Stage I built: the lantern and plain room on House Plans, lit or dark nights, Tamsin, the booking card (she can refuse any guest), the four house rules, corruption drift and the Lantern dawn line |
+| 13 Nov 2026 | 2.12 | No fail endings: Arrested and Foreclosed become debuffs (Under Watch after a raid, In the Baron's Debt, Bruised after a lost brawl). Chapter 1's core built: fans, the Village Ledger, beats by fans, partner or ruin, Pell's dawn and collections, side nights, First in Tarven |
 | 13 Nov 2026 | 2.11 | Each Tarven innkeeper gets a model: preset looks on the existing bodies, one signature outfit each, and shared new pieces (beards, moustache, goatee, spectacles, kerchief, stoop) |
 | 13 Nov 2026 | 2.10 | Village counted in hundreds: Tarven houses at 100 / 200 / 300 / 400 / 500, Chapter 1 ends at 501. Act 1 beats at 0 / 50 / 150 / 250. Fans earned ×5 (+5 happy, +10 delighted, −5 walkout, −15 filthy). Later stages scaled to match: pass rivals 1,200 / 1,000 / 800, Act 2 to 1,500, Act 3 to about 2,000 |
 | 13 Nov 2026 | 2.9 | Fan targets raised about 5×. Tarven houses at 20 / 40 / 60 / 90 / 125, so Chapter 1 ends at 126. Act 1 beats at 0 / 10 / 30 / 50. Pass rivals at 275 / 225 / 175, Act 2 to 300, Act 3 to about 400. Added "How fans are earned" (+1 happy, +2 delighted, −1 walkout, −3 filthy room) |

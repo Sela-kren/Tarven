@@ -8,7 +8,7 @@ import { AREA_NAMES, DUEL_AREAS, MAX_PARTNERS, STATE_NAMES, type Duel, type Duel
 import { ROLE_PLAYS, type RolePlay } from "./duellines";
 import { GUEST_KIND_LIST, statsOf } from "./guestroles";
 import type { Button, Game } from "./game";
-import type { AdultScene } from "./tavern";
+import type { AdultScene, InviteScene } from "./tavern";
 import { willLabel } from "./willpower";
 import { DESIRE_STRONG } from "./desire";
 import { METER_NAMES, METERS } from "./passives";
@@ -81,7 +81,6 @@ export function showAdultCard(game: Game, title: string, line: string, scene: "d
 
 /** Shows whatever 18+ moment the last answer led to, then gets back to work. */
 export function playAdultScene(game: Game, scene: AdultScene): void {
-  const { tavern } = game;
   const back = () => {
     game.panelEl.classList.remove("adult-open");
     game.closePanel();
@@ -94,19 +93,131 @@ export function playAdultScene(game: Game, scene: AdultScene): void {
     game.panelBack = back;
     return;
   }
-  // She's said yes to going up; what happens there is still hers to choose, and she can still change her mind.
+  showInvitation(game, scene);
+}
+
+/** Back to work from an 18+ card. */
+function backToWork(game: Game): void {
+  game.panelEl.classList.remove("adult-open");
+  game.closePanel();
+  game.screen = "play";
+}
+
+/**
+ * She's said yes to an invitation (invitetalk.ts tells it). Where is hers to choose: up the stairs with them, or
+ * right here in the taproom, with them and whoever else in the room wants in (taproom.ts). The taproom isn't on
+ * offer at all when either side has had too much; it's there but shut, with the reason, when nobody else wants
+ * in or it's her first time. She can still change her mind.
+ */
+export function showInvitation(game: Game, scene: InviteScene): void {
+  const { tavern } = game;
+  const back = () => backToWork(game);
+  const taproom = tavern.taproomOption(scene);
+  const buttons: Button[] = [{ label: "Take them upstairs", onPick: () => showUpstairs(game, scene) }];
+  if (taproom.shown) {
+    const n = taproom.joiners.length;
+    buttons.push({
+      label: taproom.blocked
+        ? `Stay down here, in the taproom (18+) (${taproom.blocked})`
+        : `Stay down here, in the taproom (18+): ${n} more ${n === 1 ? "wants" : "want"} to join`,
+      disabled: Boolean(taproom.blocked),
+      onPick: () => showTaproomRules(game, scene, new Set(taproom.joiners.map((g) => g.id)), new Set(), "plain"),
+    });
+  }
+  buttons.push({ label: "Change your mind, gently", onPick: back });
+  showAdultCard(game, "The invitation", tavern.inviteChoiceLine(scene), "door", buttons);
+  game.panelBack = back;
+}
+
+/** Up the stairs: the walk up and the room at the top, then what happens there, still hers to choose. */
+function showUpstairs(game: Game, scene: InviteScene): void {
+  const { tavern } = game;
+  const back = () => backToWork(game);
   const choices: Button[] = tavern.upstairsChoices().map(({ act, label, ready }) => ({
     label: ready ? label : `${label} (not warm enough yet)`,
     disabled: !ready,
     onPick: () => {
-      const line = tavern.goUpstairs(scene, act);
+      const line = tavern.takeUpstairs(scene, act);
       showAdultCard(game, "Upstairs", line, act === "kiss" ? "candle" : "bed", [{ label: "Go back down to the bar", onPick: back }]);
       game.panelBack = back;
     },
   }));
   choices.push({ label: "Change your mind, gently", onPick: back });
-  showAdultCard(game, "Upstairs", "You lead them up the creaking stairs, and shut the door on the noise below.", "door", choices);
+  showAdultCard(game, "Upstairs", tavern.upstairsLine(scene), "door", choices);
   game.panelBack = back;
+}
+
+/**
+ * Her rules for the taproom, before it starts: who joins (each of them asked, and she picks), which parts of her
+ * are in play (only ones she's warm enough for), and the role-play. No stake: they tip if it's played out. It
+ * plays as the After Hours game, so Stop (and Esc) ends it at once.
+ */
+function showTaproomRules(game: Game, scene: InviteScene, picked: Set<number>, areas: Set<DuelArea>, play: RolePlay, open = true): void {
+  const { tavern } = game;
+  const redraw = () => showTaproomRules(game, scene, picked, areas, play, open);
+  const joiners = tavern.taproomJoiners(scene);
+  const buttons: Button[] = joiners.map((g) => ({
+    label: `${picked.has(g.id) ? "[x]" : "[ ]"} The ${g.label.toLowerCase()}: ${tavern.joinAsk(g.id)}`,
+    onPick: () => {
+      if (picked.has(g.id)) picked.delete(g.id);
+      else picked.add(g.id);
+      redraw();
+    },
+  }));
+  for (const area of tavern.duelAreas()) {
+    buttons.push({
+      label: area.ready ? `${areas.has(area.id) ? "[x]" : "[ ]"} ${area.name}` : `[ ] ${area.name} (needs ${area.need} ${area.meter} desire; you're at ${area.have})`,
+      disabled: !area.ready,
+      onPick: () => {
+        if (areas.has(area.id)) areas.delete(area.id);
+        else areas.add(area.id);
+        redraw();
+      },
+    });
+  }
+  const plays = tavern.rolePlays();
+  const ready = plays.filter((p) => p.ready);
+  const current = plays.find((p) => p.id === play) ?? plays[0];
+  buttons.push({
+    label: `Role-play: ${current.name} (change)`,
+    disabled: ready.length < 2,
+    onPick: () => showTaproomRules(game, scene, picked, areas, ready[(ready.findIndex((p) => p.id === play) + 1) % ready.length].id, open),
+  });
+  buttons.push({
+    label: `${open ? "[x]" : "[ ]"} Leave the room open: anyone watching who gets worked up joins the line as it goes`,
+    onPick: () => showTaproomRules(game, scene, picked, areas, play, !open),
+  });
+  if (joiners.length > 1) {
+    const all = joiners.every((g) => picked.has(g.id));
+    buttons.push({
+      label: all ? "Clear the picks" : `Everyone who asked (${joiners.length})`,
+      onPick: () => {
+        if (all) picked.clear();
+        else for (const g of joiners) picked.add(g.id);
+        redraw();
+      },
+    });
+  }
+  const chosen = joiners.filter((g) => picked.has(g.id)).map((g) => g.id);
+  const total = chosen.length + 1;
+  const line = total > MAX_PARTNERS ? ` (${MAX_PARTNERS} at once, ${total - MAX_PARTNERS} in line)` : "";
+  buttons.push({
+    label: chosen.length === 0 ? "Begin (18+) (pick at least one to join)" : `Begin (18+) with ${total} of them${line}`,
+    disabled: chosen.length === 0,
+    onPick: () => {
+      if (tavern.startTaproom(scene, chosen, [...areas], play, open)) showDuel(game);
+    },
+  });
+  buttons.push({ label: "Back", onPick: () => showInvitation(game, scene) });
+  game.openPanel(
+    "In the taproom",
+    [
+      `The ${(scene.guestStats?.label ?? scene.guestKind).toLowerCase()} who asked is in. Pick who else joins: each of them asked, and none of them will mind a no. Up to ${MAX_PARTNERS} at once; past that, they wait in line and step in as each one's done. A kiss is always in play. They'll keep to your rules, and you can stop at any time, for all of them.`,
+      `${current.name}: ${current.about}`,
+    ],
+    buttons,
+  );
+  game.panelBack = () => showInvitation(game, scene);
 }
 
 /** Brawl events where a blow lands on her, and where one of hers lands on them (fight.ts). */
@@ -469,6 +580,15 @@ export function showDuel(game: Game): void {
       game.panelBack = back;
       return;
     }
+    // The taproom game, played out: its card, then back to the bar; the night goes on. (Called off, it's the
+    // usual "Called off" note below, which goes back to the bar too.)
+    if (result?.taproom && result.outcome !== "stopped") {
+      const back = () => backToWork(game);
+      const title = result.outcome === "won" ? `The taproom · +${result.gold} gold` : `The taproom · you give in · +${result.gold} gold`;
+      showAdultCard(game, title, result.line, "candle", [{ label: "Back to work", onPick: back }]);
+      game.panelBack = back;
+      return;
+    }
     // After a lost brawl the night is over, however the game went.
     if (result?.brawl && result.outcome === "stopped") {
       const toBed = () => closeTheNight(game);
@@ -520,7 +640,7 @@ export function showDuel(game: Game): void {
     },
   }));
   const many = duel.partners.length > 1;
-  const title = many ? `After hours with ${duel.partners.length} of them` : `After hours with the ${duel.kind}`;
+  const title = duel.everyone > 1 ? `After hours with ${duel.everyone} of them` : `After hours with the ${duel.kind}`;
   game.openPanel(title, [], buttons);
   game.panelEl.classList.add("fight-open", "duel-open", "battle-open");
   showDuelBattle(game, duel);
@@ -547,7 +667,10 @@ export function showDuel(game: Game): void {
     state.className = `duel-state ${duel.state}`;
     const inPlay = ["Kiss", ...DUEL_AREAS.filter((a) => duel.areas.has(a.id)).map((a) => a.name)].join(", ");
     const aim = many && target ? ` · Your moves go to: ${duel.nameOf(target)}` : "";
-    state.textContent = `You feel: ${STATE_NAMES[duel.state]} · In play: ${inPlay} · Stake: ${duel.stake} gold${aim}`;
+    const line = duel.waiting.length > 0 ? ` · ${duel.waiting.length} waiting their turn` : "";
+    const stake = duel.stake > 0 ? ` · Stake: ${duel.stake} gold` : "";
+    const lost = duel.defeated ? " · Lost: they're not done yet (Stop still ends it)" : "";
+    state.textContent = `You feel: ${STATE_NAMES[duel.state]}${lost} · In play: ${inPlay}${stake}${aim}${line}`;
     const log = duelLog(duel.entries);
     box.insertBefore(log, box.querySelector(".menu"));
     box.insertBefore(state, log);

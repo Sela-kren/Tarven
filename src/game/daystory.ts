@@ -75,10 +75,14 @@ export function dayIcon(day: number): string {
 export interface DayState {
   /** Which day, counted from 0. */
   day: number;
-  /** How many days the run has. */
-  days: number;
   gold: number;
+  /** What she owes the Baron (0 once it's paid), and whether she promised Pell the book instead. */
   debt: number;
+  promised?: boolean;
+  /** Her fans, her place in Tarven (6th to 1st), and the house above her, if any (STORY.md, Chapter 1). */
+  fans?: number;
+  rank?: number;
+  above?: { name: string; fans: number } | null;
   trust: number;
   trustMax: number;
   /** Trust at which the village would stand up to the baron. */
@@ -94,24 +98,32 @@ export interface DayState {
 const OPENINGS = [
   "Your first morning in Grandma's tavern. The baron's letter is still lying on the bar.",
   "The second morning. Word of the new keeper is going down the road, and tonight there is stew to sell.",
-  "The last morning. After tonight, the baron's riders come up the road to collect.",
+  "The third morning. The road's getting busier, and so is the talk about the new keeper.",
 ];
 
-/** The lines on a day's card, in order: the morning, the money, the village, the baron's men, the mess. */
-export function dayStory(s: DayState): string[] {
-  const last = s.day >= s.days - 1;
-  const lines = [OPENINGS[s.day] ?? (last ? OPENINGS[OPENINGS.length - 1] : "Another morning on the mountain road.")];
+/** "1st", "2nd", ... for her place in Tarven. */
+function ordinal(n: number): string {
+  return ["", "1st", "2nd", "3rd", "4th", "5th", "6th"][n] ?? `${n}th`;
+}
 
-  // The money: how much is left to find, and how much a night that comes to.
-  const owed = s.debt - s.gold;
-  const nightsLeft = s.days - s.day;
-  if (owed <= 0) {
-    lines.push(`The baron's ${s.debt} gold is already counted out. Whatever you make tonight is yours to keep.`);
-  } else if (last) {
-    lines.push(`You are ${owed} gold short of the ${s.debt} you owe. It all comes down to tonight.`);
-  } else {
-    const perNight = Math.ceil(owed / nightsLeft);
-    lines.push(`You have ${s.gold} of the ${s.debt} gold you owe: about ${perNight} a night over the next ${nightsLeft} nights.`);
+/** The lines on a day's card, in order: the morning, the Ledger, the money, the village, the baron's men, the mess. */
+export function dayStory(s: DayState): string[] {
+  const lines = [OPENINGS[s.day] ?? "Another morning on the mountain road."];
+
+  // Where she stands in Tarven: her fans against the house above her.
+  if (s.fans !== undefined && s.rank !== undefined) {
+    lines.push(
+      s.above
+        ? `You're ${ordinal(s.rank)} of 6 in Tarven, with ${s.fans} fans. ${s.above.name} has ${s.above.fans}: pass it and it falls.`
+        : `You're first in Tarven, with ${s.fans} fans.`,
+    );
+  }
+
+  // The money: what's still owed. Pell collects at the story's turns, never on a set day.
+  if (s.promised) {
+    lines.push("You promised Pell the book. He hasn't forgotten.");
+  } else if (s.debt > 0) {
+    lines.push(`You have ${s.gold} gold, and Grandma's debt to the Baron stands at ${s.debt}. Pell will come for it when he comes.`);
   }
 
   // The village. On the first morning nobody knows her yet, so there's nothing to say.
@@ -125,7 +137,7 @@ export function dayStory(s: DayState): string[] {
 
   // The baron's men.
   if (s.heat >= s.heatMax - 2) {
-    lines.push("The baron's men have been asking about you by name. One more slip and they come for you.");
+    lines.push("The baron's men have been asking about you by name. One more slip and they'll turn the place over.");
   } else if (s.heat >= s.heatMax / 2) {
     lines.push("A soldier watched the door half the night. Someone is keeping an eye on the tavern.");
   } else if (s.heat > 0) {
@@ -316,7 +328,7 @@ export function statusLines(now: Standing, before: Standing | null, limits: Stat
     return { label, icon, value, change, tone };
   };
   return [
-    line("Gold", icons.gold, "gold", `${now.gold}/${limits.debt}`, "good"),
+    line("Gold", icons.gold, "gold", limits.debt > 0 ? `${now.gold}/${limits.debt}` : String(now.gold), "good"),
     line("Trust", icons.trust, "trust", `${now.trust}/${limits.trustMax}`, "good"),
     line("Heat", icons.heat, "heat", `${now.heat}/${limits.heatMax}`, "bad"),
     line("Respect", SHIELD, "respect", signed(now.respect), "good"),

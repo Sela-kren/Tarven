@@ -136,6 +136,8 @@ export interface Records {
   peeks: number;
   flashes: number;
   showsRefused: number;
+  /** Times the garrison raided the tavern in the night (heat at its most). */
+  raids: number;
   /** Bar work: pots of stew cooked through, messes cleaned up, nights with nobody walking out, busy nights. */
   stewsCooked: number;
   messesCleaned: number;
@@ -150,8 +152,17 @@ export interface Records {
   bareNights: number;
   invitations: number;
   upstairsKinds: GuestKind[];
+  /**
+   * Invitations she answered by staying down in the taproom (taproom.ts): how many times, how many partners in
+   * all (the one who asked counts), and the most at once.
+   */
+  taproomScenes: number;
+  taproomPartners: number;
+  taproomMost: number;
   acts: Partial<Record<UpstairsAct, number>>;
   overwhelmed: number;
+  /** Times she came in an after-hours game (each one counts toward her lewdness). */
+  climaxes: number;
   /** Nights she eased the ache herself before sleep. */
   alone: number;
   served: number;
@@ -202,6 +213,7 @@ export function newRecords(): Records {
     peeks: 0,
     flashes: 0,
     showsRefused: 0,
+    raids: 0,
     stewsCooked: 0,
     messesCleaned: 0,
     smoothNights: 0,
@@ -212,8 +224,12 @@ export function newRecords(): Records {
     bareNights: 0,
     invitations: 0,
     upstairsKinds: [],
+    taproomScenes: 0,
+    taproomPartners: 0,
+    taproomMost: 0,
     acts: {},
     overwhelmed: 0,
+    climaxes: 0,
     alone: 0,
     served: 0,
     poured: 0,
@@ -1109,6 +1125,38 @@ export const PASSIVES: readonly PassiveDef[] = [
     },
     lewd: 10,
     thought: "(The whole pass knows what the innkeeper looks like. Good.)",
+  },
+  // Answering an invitation in the taproom instead of upstairs (taproom.ts): the room as her audience.
+  {
+    id: "openHouse",
+    name: "Open House",
+    group: "exhibition",
+    need: "Answer an invitation by staying down in the taproom",
+    progress: (f) => count(f.records.taproomScenes, 1),
+    benefit: "+20% gold from invitations, upstairs or down; guests ask for a look 25% more often",
+    effect: (e) => {
+      e.upstairsGold += 0.2;
+      e.showAsk += 0.25;
+    },
+    lewd: 8,
+    thought: "(I didn't go upstairs. I didn't want a door between us and the room.)",
+  },
+  {
+    id: "wholeRoom",
+    name: "The Whole Room",
+    group: "exhibition",
+    need: "Stay down in the taproom 3 times, once with 4 at once",
+    progress: (f) => count(f.records.taproomScenes, 3),
+    also: (f) => f.records.taproomMost >= 4,
+    benefit: "Body desire starts each night at +10; +1 fame a serve while undressed",
+    cost: "-1 respect every night: the room remembers",
+    effect: (e) => {
+      e.start.body += 10;
+      e.strippedFame += 1;
+      e.perNight.respect -= 1;
+    },
+    lewd: 14,
+    thought: "(Half the room was in it and the other half watched. I'd do it again.)",
   },
 
   // ---- Invitations ----
@@ -2400,7 +2448,7 @@ export function effectsOf(owned: ReadonlySet<string>): Effects {
 export function lewdnessOf(owned: ReadonlySet<string>, letsTotal: number, records: Records): number {
   let points = 0;
   for (const id of owned) points += PASSIVE_BY_ID.get(id)?.lewd ?? 0;
-  return points + Math.floor(letsTotal / 5) + (records.invitations + records.duelsWon + records.duelsLost) * 2 + records.overwhelmed * 2;
+  return points + Math.floor(letsTotal / 5) + (records.invitations + records.duelsWon + records.duelsLost) * 2 + records.overwhelmed * 2 + records.climaxes;
 }
 
 /** A word for how far she's come, by lewdness, after Karryn's slut levels. */
@@ -2478,6 +2526,7 @@ export function readProgress(raw: unknown): ProgressSave {
       "peeks",
       "flashes",
       "showsRefused",
+      "raids",
       "stewsCooked",
       "messesCleaned",
       "smoothNights",
@@ -2486,7 +2535,11 @@ export function readProgress(raw: unknown): ProgressSave {
       "clothesLost",
       "bareNights",
       "invitations",
+      "taproomScenes",
+      "taproomPartners",
+      "taproomMost",
       "overwhelmed",
+      "climaxes",
       "alone",
       "served",
       "poured",

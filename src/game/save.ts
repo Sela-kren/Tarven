@@ -1,6 +1,6 @@
 import { readLooks, type Looks } from "./appearance";
 import { isHouseLayout } from "./house";
-import { BOTTLE_KINDS, NIGHTS, UPGRADES, type Mess, type MessKind, type TavernSave, type UpgradeId, type Ware } from "./tavern";
+import { BOTTLE_KINDS, UPGRADES, type Mess, type MessKind, type TavernSave, type UpgradeId, type Ware } from "./tavern";
 
 /** Bump when the saved shape changes; older saves are then ignored rather than misread. */
 const SAVE_VERSION = 1;
@@ -48,7 +48,8 @@ function validate(raw: unknown): SaveData | null {
   const data = raw as Partial<SaveData>;
   const tavern = data.tavern as Partial<TavernSave> | undefined;
   if (data.version !== SAVE_VERSION || typeof data.savedAt !== "number" || !isInt(data.active, 0, 1)) return null;
-  if (!tavern || !isInt(tavern.nightIndex, 0, NIGHTS.length - 1)) return null;
+  // The nights go on for as long as she plays (STORY.md: no night count ends the run).
+  if (!tavern || !isInt(tavern.nightIndex, 0, 1e5)) return null;
   if (!isInt(tavern.gold, 0, 1e6) || !isInt(tavern.trust, -1e3, 1e3) || !isInt(tavern.heat, -1e3, 1e3)) return null;
   if (!isInt(tavern.tapLeft, 0, 1e3) || !Array.isArray(tavern.upgrades)) return null;
   if (!tavern.upgrades.every((id) => typeof id === "string" && id in UPGRADES)) return null;

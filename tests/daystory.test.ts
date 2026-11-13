@@ -3,7 +3,6 @@ import { dayIcon, dayStory, statusLines, townTalk, type DayState, type Standing 
 
 const morning = (over: Partial<DayState> = {}): DayState => ({
   day: 0,
-  days: 3,
   gold: 0,
   debt: 150,
   trust: 3,
@@ -43,14 +42,17 @@ describe("the day's card", () => {
     expect(drawn.every((svg) => svg.startsWith("<svg"))).toBe(true);
   });
 
-  it("works out what has to be made each night until the baron comes", () => {
+  it("says what's still owed the Baron, with no day it falls due", () => {
     const lines = dayStory(morning({ day: 1, gold: 50 }));
-    expect(lines.some((l) => l.includes("50 of the 150") && l.includes("50 a night over the next 2 nights"))).toBe(true);
+    expect(lines.some((l) => l.includes("You have 50 gold") && l.includes("stands at 150"))).toBe(true);
+    expect(dayStory(morning({ debt: 0 })).some((l) => l.includes("debt"))).toBe(false);
+    expect(dayStory(morning({ promised: true })).some((l) => l.includes("promised Pell the book"))).toBe(true);
   });
 
-  it("puts it all on the last night, or says the debt is covered", () => {
-    expect(dayStory(morning({ day: 2, gold: 120 })).some((l) => l.includes("30 gold short"))).toBe(true);
-    expect(dayStory(morning({ day: 2, gold: 160 })).some((l) => l.includes("already counted out"))).toBe(true);
+  it("says where she stands in Tarven, and which house is next", () => {
+    const lines = dayStory(morning({ fans: 120, rank: 5, above: { name: "The Bakehouse", fans: 200 } }));
+    expect(lines.some((l) => l.includes("5th of 6") && l.includes("The Bakehouse has 200"))).toBe(true);
+    expect(dayStory(morning({ fans: 600, rank: 1, above: null })).some((l) => l.includes("first in Tarven"))).toBe(true);
   });
 
   it("speaks of the village, the baron's men and the mess when there is something to say", () => {

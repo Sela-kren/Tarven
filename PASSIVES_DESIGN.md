@@ -338,10 +338,15 @@ Rules bought at the plans table. Some raise Corruption or Lewdness:
 
 ## 7. Invitations and 18+ scenes
 
-When she accepts an invitation, she takes the guest upstairs:
-1. An 18+ card shows: a wallpaper image, the 18+ badge, and one short non-graphic line.
-2. Service time skips forward, and every waiting guest loses patience. That's the trade-off.
-3. She gets gold (with Invitations passives), the "nights shared" record, and the guest's affection.
+An invitation is told as a story (built; `invitetalk.ts`): what the guest says to ask her, in their kind's words; the room going quiet; her answer and the room's reaction; then where, which is **her choice**:
+
+**Upstairs** (as before):
+1. The walk up the stairs, in their kind's way, and her room at the top (new the first time, familiar after).
+2. What happens there, hers to choose. Each choice gets an 18+ card: a wallpaper image, the 18+ badge, and one short non-graphic line.
+3. Service time skips forward, and every waiting guest loses patience. That's the trade-off.
+4. She gets gold (with Invitations passives), the "nights shared" record, and the guest's affection. In the morning, a line by kind.
+
+**Right here, in the taproom** (built; `taproom.ts`): a group scene, played as the After Hours game with several partners: the one who asked, and the guests she picks from those who want in (lust 6+, never drunk, never the Baron; no cap: six on her at once and the rest in line, each one asks; left open, watchers who get worked up join the line). Her rules, no stake, Stop any time. Not on offer when either side has had too much, and shut on her first invitation (her first time is behind a closed door). As it starts, most of the room stays to cheer and the cold and respectable leave. Played out: fame up, respect down, heat +1, trust −1 if the village's own walked out, the watchers stirred, tips from each partner; the night goes on. Records: taproom scenes, partners all told, most at once. Passives (Exhibition): *Open House* and *The Whole Room*. Full rules in GAME_PATH.MD, section 7f.
 
 Other 18+ cards:
 - the Overwhelmed card, if Pleasure is in

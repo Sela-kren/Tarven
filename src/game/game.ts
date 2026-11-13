@@ -64,6 +64,7 @@ import {
   WASH_TUB_SPOT,
 } from "./furnishings";
 import { BuildMode, type Supply } from "./buildmode";
+import { lanternSupplies } from "./lanternplans";
 import { GuestActor, Walker } from "./guests";
 import { statsOf, type GuestRole } from "./guestroles";
 import { cloneLayout, emptyLayout, footprint, HousePlan, seatSpecs, type FurnitureKind, type HouseLayout, type Placed } from "./house";
@@ -73,6 +74,8 @@ import { changeLabel, dayIcon, dayStory, statusLines, townTalk, type Standing } 
 import { StatusCard } from "./statuscard";
 import { DRINK_COLORS, Icon, type IconName } from "./icons";
 import type { Input } from "./input";
+import { DEBUFFS } from "./debuffs";
+import { FIRST_IN_TARVEN, ordinal, PELL_PROMISE, PELL_REFUSE } from "./ledger";
 import { findCobwebSpots, findDustSpots, MessLayer } from "./mess";
 import { Outline, outlineMaterial } from "./outline";
 import { renderPortrait, renderThumbnail } from "./portraits";
@@ -130,7 +133,6 @@ import {
   ENDINGS,
   HEAT_MAX,
   MAX_WARE,
-  NIGHTS,
   STOCK_COST,
   REPLACE_COST,
   STOCK_PACK,
@@ -1442,7 +1444,7 @@ export class Game {
     const { tavern } = this;
     this.stats.update({
       gold: tavern.gold,
-      debt: DEBT,
+      debt: tavern.owed,
       trust: tavern.trust,
       trustMax: TRUST_MAX,
       heat: tavern.heat,
@@ -1479,7 +1481,7 @@ export class Game {
     const { hour } = this.clock;
     const time = formatHour(hour);
     if (this.clockTimeEl.textContent !== time) this.clockTimeEl.textContent = time;
-    const day = `Day ${this.tavern.nightIndex + 1} of ${NIGHTS.length} · ${PHASE_LABELS[this.tavern.phase]}`;
+    const day = `Day ${this.tavern.nightIndex + 1} · ${PHASE_LABELS[this.tavern.phase]}`;
     if (this.clockDayEl.textContent !== day) this.clockDayEl.textContent = day;
     this.skyDial.draw(hour);
   }
@@ -1536,6 +1538,17 @@ export class Game {
           icon: PASSIVE_ICONS.fame,
         });
         this.audio.play("page");
+      } else if (gain.kind === "debuff") {
+        // Something gone badly, Karryn-style: not the end, but she carries it for a while.
+        const def = DEBUFFS[gain.id];
+        const lasts = def.nights === 0 ? "Until it's put right." : `For ${def.nights === 1 ? "tonight" : `${def.nights} nights`}.`;
+        this.log.add(`${def.name}${gain.level > 1 ? ` (${gain.level})` : ""}: ${def.cause.toLowerCase()}.`);
+        this.toasts.show({
+          tone: "debuff",
+          tag: gain.level > 1 ? "Debuff worse" : "Debuff",
+          title: gain.level > 1 ? `${def.name} ${gain.level}` : def.name,
+          lines: [...def.detail(gain.level).split(" · ").map((line) => `- ${line}`), lasts],
+        });
       } else {
         this.log.add(`Her kink is now ${KINK_NAMES[gain.to]}.`);
         this.toasts.show({
@@ -1689,12 +1702,15 @@ export class Game {
     const { tavern } = this;
     const day = tavern.nightIndex;
     this.openPanel(
-      `Day ${day + 1} of ${NIGHTS.length}`,
+      `Day ${day + 1}`,
       dayStory({
         day,
-        days: NIGHTS.length,
         gold: tavern.gold,
-        debt: DEBT,
+        debt: tavern.owed,
+        promised: tavern.bookPromised,
+        fans: tavern.fans,
+        rank: tavern.rank,
+        above: tavern.houseAbove,
         trust: tavern.trust,
         trustMax: TRUST_MAX,
         trustToRise: TRUST_TO_OVERTHROW,
@@ -1726,7 +1742,7 @@ export class Game {
     if (!box) return;
     const list = document.createElement("div");
     list.className = "day-status";
-    const rows = statusLines(now, before, { debt: DEBT, trustMax: TRUST_MAX, heatMax: HEAT_MAX }, { gold: COIN, trust: VILLAGERS, heat: FLAME });
+    const rows = statusLines(now, before, { debt: this.tavern.owed, trustMax: TRUST_MAX, heatMax: HEAT_MAX }, { gold: COIN, trust: VILLAGERS, heat: FLAME });
     for (const row of rows) {
       const item = document.createElement("div");
       item.className = "day-stat";
@@ -2379,7 +2395,8 @@ export class Game {
         buy: () => tavern.buyBottle(bottle),
       }),
     );
-    return [...upgrades, ...repairs, ...wares, ...drinks];
+    // The Lantern's builds, switches and girls, once the brothel is open to her (lanternplans.ts).
+    return [...upgrades, ...repairs, ...wares, ...drinks, ...lanternSupplies(tavern)];
   }
 
   /** The night's report. Spending happens at the house plans, during the day. */
@@ -2391,16 +2408,21 @@ export class Game {
       [
         tavern.lastResult,
         `Served ${tavern.served}, ${tavern.walkouts} walked out, earned ${tavern.earned} gold.`,
+        // The Lantern's night: bookings, room takings, the girls' cut and mood, any trouble (lantern.ts).
+        ...tavern.lantern.dawnLines(),
         // What the town is saying about her this morning, from what she did since the day began.
         ...(this.dayStart ? townTalk(this.dayStart, now) : []),
-        ...(tavern.isLastNight ? [] : ["Upgrades and more cups and dishes are on the house plans in your room."]),
-        ...(!tavern.isLastNight && tavern.broken.cup + tavern.broken.dish > 0
+        ...tavern.news,
+        ledgerLine(tavern),
+        debtLine(tavern),
+        "Upgrades and more cups and dishes are on the house plans in your room.",
+        ...(tavern.broken.cup + tavern.broken.dish > 0
           ? [`You've broken ${brokenWords(tavern.broken)}. Buy them back on the house plans.`]
           : []),
       ].filter((line) => line !== ""),
       [
         {
-          label: tavern.isLastNight ? "Face the baron" : "Start the next day",
+          label: "Start the next day",
           // Already faded through the night on the way to bed.
           onPick: () => this.advanceNight(),
         },
@@ -2446,15 +2468,68 @@ export class Game {
       const ending = ENDINGS[tavern.ending];
       this.openPanel(
         ending.title,
-        [ending.text, `Final gold ${tavern.gold}/${DEBT}, Trust ${tavern.trust}, Heat ${tavern.heat}.`],
+        [ending.text, `Night ${tavern.nightIndex + 1}. Gold ${tavern.gold}, Trust ${tavern.trust}, Heat ${tavern.heat}.`],
         [
           { label: "Play again", onPick: () => location.reload() },
           { label: "Load game", disabled: !latestSave(), onPick: () => showLoadMenu(this, () => this.advanceNight()) },
         ],
       );
     } else {
-      this.showDayCard();
+      this.showMorning();
     }
+  }
+
+  /**
+   * The morning, before the day card (STORY.md, Chapter 1): Pell's collection if he came, a beat waiting on her
+   * answer (a fallen house's boss, or Pell at dawn), what her answer brought, and First in Tarven when she passes
+   * the Copper Bell. Each card leads to the next, and the day card comes last.
+   */
+  private showMorning(): void {
+    const { tavern } = this;
+    const again = () => this.showMorning();
+    const visit = tavern.takeBaronVisit();
+    if (visit) {
+      const caughtUp = tavern.arrears === 0;
+      this.openPanel(
+        caughtUp ? "Pell collects" : "Short of the Baron's due",
+        caughtUp
+          ? [`Pell counts ${visit.due} gold into his purse for the Baron.`, visit.owed > 0 ? `${visit.owed} still owed.` : "The debt is paid. Grandma's tavern is yours, free and clear."]
+          : [
+              `Pell wanted ${visit.due} gold. He took the ${visit.paid} you had. You're ${tavern.arrears} behind, and it'll be on top of the next.`,
+              "The tavern stays open. But you're in the Baron's debt now, and it shows.",
+            ],
+        [{ label: "Go on", onPick: again }],
+      );
+      this.panelBack = again;
+      return;
+    }
+    const card = tavern.beatCard;
+    if (card) {
+      // Her answer, then what it brought (the clue, Wren's letter), before the rest of the morning.
+      const answer = (pick: () => void) => {
+        const before = tavern.news.length;
+        pick();
+        this.openPanel(card.title, tavern.news.slice(before), [{ label: "Go on", onPick: again }]);
+        this.panelBack = again;
+      };
+      const buttons = card.house
+        ? [
+            { label: `Partner with ${card.house.boss}`, onPick: () => answer(() => tavern.answerHouse("partner")) },
+            { label: `Ruin ${card.house.name} (corruption, heat)`, onPick: () => answer(() => tavern.answerHouse("ruin")) },
+          ]
+        : [
+            { label: PELL_PROMISE, onPick: () => answer(() => tavern.answerPell(true)) },
+            { label: PELL_REFUSE, onPick: () => answer(() => tavern.answerPell(false)) },
+          ];
+      this.openPanel(card.title, card.lines, buttons);
+      return;
+    }
+    if (tavern.takeFirstInTarven()) {
+      this.openPanel("First in Tarven", [...FIRST_IN_TARVEN], [{ label: "Start the day", onPick: again }]);
+      this.panelBack = again;
+      return;
+    }
+    this.showDayCard();
   }
 
   private updatePlay(dt: number): void {
@@ -2885,4 +2960,18 @@ function brokenWords(broken: Record<Ware, number>): string {
   const word = (n: number, one: string, many: string) => (n === 1 ? `a ${one}` : `${n} ${many}`);
   const parts = [broken.cup > 0 ? word(broken.cup, "cup", "cups") : "", broken.dish > 0 ? word(broken.dish, "dish", "dishes") : ""];
   return parts.filter(Boolean).join(" and ");
+}
+
+/** Where she stands on the Village Ledger, for the morning report. */
+function ledgerLine(tavern: Tavern): string {
+  const above = tavern.houseAbove;
+  const where = `You're ${ordinal(tavern.rank)} of 6 in Tarven, with ${tavern.fans} fans.`;
+  return above ? `${where} Next: ${above.name}, at ${above.fans}.` : where;
+}
+
+/** What she owes the Baron, for the morning report. */
+function debtLine(tavern: Tavern): string {
+  if (tavern.bookPromised) return "Pell wants the book you promised him.";
+  if (tavern.owed === 0) return "";
+  return tavern.arrears > 0 ? `You owe the Baron ${tavern.owed} gold, and you're ${tavern.arrears} behind.` : `You owe the Baron ${tavern.owed} gold.`;
 }

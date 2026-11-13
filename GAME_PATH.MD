@@ -39,6 +39,7 @@ When she loses a brawl:
 - If she continues, desire meters and records can rise, then the night ends.
 - If she stops, the night still ends and she only loses the normal gold and respect.
 - Gold and respect are lost either way.
+- **She's Bruised** (a debuff, `src/game/debuffs.ts`) through the next night: saying no costs 25% more willpower, her hold is 1 weaker (Consent off), and guests reach for her 15% more. Losing again before it wears off makes it worse (level 2).
 - Winning or talking them down does not trigger this.
 
 ---
@@ -124,6 +125,9 @@ These are each type's own numbers, before the random roll. The code is in `src/g
 | Servant | 12 | 2 | 50% | |
 
 ### Upstairs and after hours
+
+**Winning and losing (Karryn's way).** She **wins** when every partner (the line included) has given in. A climax doesn't end it: she comes, it costs **10 willpower**, and her pleasure drops to 50. She **loses** when her **willpower hits 0**: she takes the **Overwhelmed** debuff (up to 3, for the next 2 nights: saying no costs 20% more willpower and guests reach 10% more, per level), but **it plays on to the end**, until the last of them is done. Lost, she can **Let them** (a turn with no move, +4 stamina), and they get there faster (+5 to their pleasure a move instead of +2). Every climax counts toward her lewdness (+1 each), and a lost game still pays the stake. **Stop always works**, lost or not: stopping after she's lost ends it, and she keeps the debuff.
+
 | Type | Goes for first | Lasts (stamina) | Hard to push over | Skill | Load (ml) |
 |---|---|---|---|---|---|
 | Farmer | Hands | 22 | 1.15 | 0.85 | 9 |
@@ -307,7 +311,7 @@ As she leans in to take a guest's order, or sets down what they ordered, they ma
 ## 7e. "Give us a look" [built]
 A bold guest may offer coin for a look at her as she serves them (`src/game/show.ts`, `maybeAskToSee` in `tavern.ts`). **Always asked, always her doing**: nothing here happens unless she picks it, and no is always there.
 
-- **What they ask to see:** the part their type likes (breasts, behind, pussy), if they've the nerve for it (pussy needs nerve 6); her breasts otherwise. Chance: 6% + 2% per nerve past 3, by kind, ×1.5 lusting or drunk, at most 30%.
+- **What they ask to see:** the part their type likes (breasts, behind, pussy), if they've the nerve for it (breasts need nerve 2, her behind 3, her pussy 5); her breasts otherwise. Asked as she takes their order or serves them. Chance: 12% + 3% per nerve past 2, by kind, ×1.5 lusting or drunk, at most 40%.
 - **Her answers:**
   - *Let them peek inside your clothes*: a look at what's under there (her breast band, her smallclothes). 2 gold (4 for her pussy).
   - *Show them properly*: that part of her bare, for a moment. 5 gold (8 for her pussy), +2 fame, −1 respect. The whole room gets an eyeful: every other guest +1 lust.
@@ -318,6 +322,25 @@ A bold guest may offer coin for a look at her as she serves them (`src/game/show
 - **Grabs and gropes stir them up too:** each touch she lets happen is +1 lust for that guest (and, as before, bolder); letting a guest who grabbed her hold her is +1 lust and +1 bold.
 - **Records and passives:** peeks, proper looks, times she said no (records). *Peep Show* (5 peeks: +1 gold a look, asked 25% more). *Flasher* (5 proper looks: +2 gold a look, asked 50% more).
 - Tests: `tests/show.test.ts`; elsewhere the tests' setup turns asks off (`showDice.roll = null`).
+
+## 7f. Invitations: upstairs, or the taproom [built]
+A bold guest's invitation (`region: "invite"`, boldness 10, once she's Lewdness 25 or Upstairs Curious) is told as a story, and when she says yes she chooses **where**: up the stairs with them, or right here in the taproom with them and whoever else in the room wants in. The words are in `src/game/invitetalk.ts`, the taproom rules in `src/game/taproom.ts`, the tavern's side in the "Invitations" section of `tavern.ts`, and the cards in `fightpanels.ts` (`showInvitation`).
+
+- **The ask:** what they say, in their own kind's words (farmer, soldier, smuggler, fugitive, adventurer, bandit, noble), then their reach, then the room going quiet to hear her answer, then her thought. **Always asked** (Consent off never covers an invitation), every usual answer there, and too drunk on either side blocks the yes.
+- **Her yes:** her words, and the room's reaction (a cheer, the room pretending not to watch). Then the **invitation card**: *Take them upstairs*, *Stay down here, in the taproom (18+)*, or *Change your mind, gently*.
+- **Upstairs:** the walk up in their kind's way, and her room under the eaves (new the first time, familiar after). Then what happens there, hers to choose as before (`goUpstairs`). When she goes to bed: a **morning-after** line, by kind (wildflowers on the pillow, a folded scarf, a twist of salt...).
+- **The taproom (a group scene):** played as the After Hours game (`duel.ts`) with several partners: the one who asked, and the guests she picks from those who want in.
+  - **Who wants in:** guests sat in the room whose lust shows (6+), never drunk, angry, scared or gloomy, never the Baron; keenest first, and **no cap**: everyone willing can be in it. **Six are on her at once** (as many as her body holds: two hands, mouth, breasts, butt, pussy); the rest **wait in line** and step in as each one gives in, so it piles up until the last of them is done (like Karryn's Prison). **Every one asks** (their kind's line by their name), and she ticks who joins. Nobody is pulled in.
+  - **The room left open** (her choice before it starts, on by default): watching stirs the room (+1 lust every 3 of her moves, +2 each time one gives in), and anyone who then wants in (the same rules: lust 6+, never drunk, angry, scared or gloomy) joins the end of the line. Kept closed, they only watch. Stop ends it for everyone, line and all.
+  - **Her rules:** what's in play (only parts she's warm enough for; a kiss always), and the role-play. **No stake**: they tip if it's played to the end. **Stop** (and Esc) ends it at once, as in every After Hours game.
+  - **Not on offer at all** when she's too drunk, or the one who asked is. **There but shut** (with the reason) on her first invitation ("your first time should be behind a closed door": the writing has her a sheltered woman, and her first time is private), or when nobody else wants in.
+  - **The room, as it starts:** most stay to watch and cheer; the cold (lust under 3), the scared, gloomy or angry, and nobles not warmed up themselves (lust under 6) get up and leave.
+  - **Played to the end** (won or lost): fame +2 + 1 per partner, respect −2 − 1 per two partners, flirt +2, **heat +1** (the keep hears), **trust −1** if any farmer or stranger walked out on it, everyone who stayed to watch +3 lust. Each partner leaves spent and idolizing, and tips 4 + their own tip (×1 + her invitation gold bonus). The game's own After Hours bookkeeping applies too (duels won/lost, moves, cum, her desire spent), and it settles through `finishDuel`, so main's per-partner fans count it. A morning-after line at bedtime. **The night goes on**: back to the bar.
+  - **Stopped:** they step back at once and go back to their seats, calm. Fame +1, respect −1, watchers +1 lust, no gold, no heat.
+  - It counts as tonight's After Hours game: nobody lingers at bedtime to ask for another.
+- **Records** (journal, Records, under Upstairs): stayed down in the taproom, joined in all told (the one who asked counts), most at once. Saved with the rest of her records.
+- **Passives** (Exhibition): *Open House* (stay down once: +20% gold from invitations, upstairs or down; asked for a look 25% more often; lewd 8). *The Whole Room* (stay down 3 times, once with 4 at once: Body desire starts +10; +1 fame a serve while undressed; costs −1 respect every night; lewd 14).
+- Tests: `tests/invite.test.ts`.
 
 ## 7c. Desire, Karryn-style [built]
 Six desires, 0–100, reset each night to what her passives start them at: **Body, Mouth, Breasts, Butt, Pussy, Cock**. Cock desire is her wanting to be intimate with someone. The rules are in `src/game/desire.ts`; the tests are in `tests/desire.test.ts`.
@@ -372,6 +395,7 @@ Six desires, 0–100, reset each night to what her passives start them at: **Bod
 | Nerve and touches | `src/game/touch.ts`, `src/game/touchtalk.ts` |
 | Brawls | `src/game/fight.ts` |
 | After hours | `src/game/duel.ts` |
+| Invitations: the story, upstairs or the taproom | `src/game/invitetalk.ts`, `src/game/taproom.ts` |
 | What each group says | `src/game/chatter.ts`, `src/game/moodtalk.ts`, `src/game/gossip.ts`, `src/game/banter.ts` |
 | Outfits on the 3D guests | `src/game/game.ts`, `src/game/appearance.ts` |
 

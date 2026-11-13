@@ -325,26 +325,25 @@ describe("dawn and endings", () => {
     expect(t.heardRumor).toBe(false);
   });
 
-  const ending = (gold: number, trust: number, heat: number) => {
-    const t = atDawn(NIGHTS.length);
-    t.gold = gold;
-    t.trust = trust;
-    t.heat = heat;
-    t.nextNight();
-    expect(t.phase).toBe("ended");
-    return t.ending;
-  };
-
-  it("picks the right ending", () => {
-    expect(ending(DEBT, 5, 2)).toBe("kept");
-    expect(ending(DEBT - 1, 5, 2)).toBe("lost");
-    expect(ending(0, 13, 2)).toBe("overthrow");
-    expect(ending(DEBT, 15, 8)).toBe("arrested");
+  it("never ends after the written nights: the next day comes, however things stand", () => {
+    for (const [gold, trust, heat] of [[DEBT, 5, 2], [0, 5, 2], [0, 13, 2], [DEBT, 15, 7]]) {
+      const t = atDawn(NIGHTS.length);
+      t.gold = gold;
+      t.trust = trust;
+      t.heat = heat;
+      t.nextNight();
+      expect(t.phase).toBe("day");
+      expect(t.ending).toBeNull();
+      expect(t.nightIndex).toBe(NIGHTS.length);
+      // A night past the written ones still has a crowd and a last call.
+      expect(t.plan.guests.length).toBeGreaterThan(0);
+      expect(t.plan.lastCall.heard.length).toBe(3);
+    }
   });
 });
 
 /** Plays like a person working alone: every trip across the room costs time, and the pot needs starting. */
-function playWholeGame(pickChoice: number, tripTime: number): Tavern {
+function playWholeGame(pickChoice: number, tripTime: number, nights = NIGHTS.length): Tavern {
   const t = opened();
   // How long each guest takes is random; a fixed sequence keeps the result the same every run.
   let roll = 12345;
@@ -362,7 +361,7 @@ function playWholeGame(pickChoice: number, tripTime: number): Tavern {
   const hasWareFor = (order: Item) =>
     order === "ale" ? t.aleReady > 0 || t.pourLeft !== null || t.cleanWare.cup > 0 : t.cleanWare.dish > 0;
 
-  while (t.phase !== "ended") {
+  for (let night = 0; night < nights; night++) {
     if (t.phase === "day") {
       // Whatever was left from last night gets washed before opening.
       for (const mess of t.messes.filter((m) => m.kind === "dishes")) {
@@ -428,32 +427,33 @@ function playWholeGame(pickChoice: number, tripTime: number): Tavern {
     expect(t.phase).toBe("lastcall");
     t.chooseLastCall(pickChoice);
     t.sleep();
-    t.nextNight();
+    if (night < nights - 1) t.nextNight();
   }
   return t;
 }
 
 describe("whole game", () => {
-  it("can be paid off by a player who is reasonably quick", () => {
+  it("earns the debt in the written nights, for a player who is reasonably quick, and wins fans", () => {
     const t = playWholeGame(2, 3);
     expect(t.gold).toBeGreaterThanOrEqual(DEBT);
-    expect(t.ending).toBe("kept");
+    expect(t.fans).toBeGreaterThan(0);
   });
 
-  it("reaches the village ending by protecting people at last call", () => {
-    expect(playWholeGame(1, 3).ending).toBe("overthrow");
+  it("wins the village's trust by protecting people at last call", () => {
+    expect(playWholeGame(1, 3).trust).toBeGreaterThanOrEqual(13);
   });
 
-  it("loses if nobody serves anyone", () => {
+  it("goes on even if nobody serves anyone: poorer, never over", () => {
     const t = opened();
-    while (t.phase !== "ended") {
+    for (let night = 0; night < NIGHTS.length; night++) {
       clearNight(t);
       t.chooseLastCall(0);
       t.sleep();
       t.nextNight();
     }
     expect(t.gold).toBeLessThan(DEBT);
-    expect(["lost", "arrested"]).toContain(t.ending);
+    expect(t.phase).toBe("day");
+    expect(t.ending).toBeNull();
   });
 });
 

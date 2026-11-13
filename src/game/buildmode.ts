@@ -70,7 +70,8 @@ const STARTING_FOCUS = new Vector3(0, 0.8, 2.5);
 export interface Supply {
   name: string;
   icon: BuildIcon;
-  price: number;
+  /** Left out for a switch, such as lighting the lantern, which costs nothing to flip. */
+  price?: number;
   /** What it does, shown when the pointer is on it. */
   detail: string;
   /** Already bought, for upgrades that can only be had once. */

@@ -114,9 +114,10 @@ describe("a guest asking for a look", () => {
   it("asks for the part their type likes, if they've the nerve for it", () => {
     expect(partToSee("butt", 5)).toBe("butt");
     expect(partToSee("pussy", 4)).toBe("breasts");
-    expect(partToSee("pussy", 7)).toBe("pussy");
+    expect(partToSee("pussy", 5)).toBe("pussy");
     expect(partToSee("hands", 9)).toBe("breasts");
-    expect(showChance("farmer", 2, true)).toBe(0);
+    expect(showChance("farmer", 1, true)).toBe(0);
+    expect(showChance("farmer", 2, false)).toBeGreaterThan(0.08);
     expect(showChance("bandit", 6, true)).toBeGreaterThan(showChance("farmer", 6, false));
   });
 

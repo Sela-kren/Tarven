@@ -41,11 +41,18 @@ import {
 
 export interface JournalState {
   name: string;
-  /** Which night it is, from 1, and how many there are. */
+  /** Which night it is, from 1. */
   night: number;
-  nights: number;
   gold: number;
+  /** What she owes the Baron (0 once paid), and whether she promised Pell the book instead. */
   debt: number;
+  promised?: boolean;
+  /** The Village Ledger (STORY.md, Chapter 1): her fans and place, and each house with what became of it. */
+  fans?: number;
+  rank?: number;
+  houses?: readonly { name: string; boss: string; fans: number; fate?: "partner" | "ruin" | "fallen" }[];
+  /** What she carries for things gone badly (debuffs.ts): name, what it does, how long it lasts. */
+  debuffs?: readonly { name: string; detail: string; lasts: string }[];
   trust: number;
   trustMax: number;
   /** Trust at which the village rises against the baron. */
@@ -141,13 +148,36 @@ export function journalBook(state: JournalState, onName: (name: string) => void)
     });
   }
   name.addEventListener("input", () => onName(name.value.trim()));
-  left.append(name, el("p", "role", `Innkeeper of Tarven · Night ${state.night} of ${state.nights}`));
+  left.append(name, el("p", "role", `Innkeeper of Tarven · Night ${state.night}`));
 
   left.append(el("h2", "", "Ledger"));
   left.append(row("Gold", String(state.gold), { icon: COIN }));
-  left.append(row("Owed to the baron", String(state.debt), { icon: SCROLL }));
-  const short = state.debt - state.gold;
-  left.append(el("p", short > 0 ? "note" : "note good", short > 0 ? `${short} gold short.` : "Enough to pay him."));
+  if (state.promised) {
+    left.append(el("p", "note danger", "You promised Pell the book. He'll keep asking."));
+  } else if (state.debt > 0) {
+    left.append(row("Owed to the Baron", String(state.debt), { icon: SCROLL }));
+    left.append(el("p", "note", "Pell collects at the story's turns, a hundred at a time once the debt's doubled."));
+  } else {
+    left.append(el("p", "note good", "The Baron's debt is paid."));
+  }
+
+  // The Village Ledger: where she stands among Tarven's houses, and what became of the ones she passed.
+  if (state.fans !== undefined && state.houses) {
+    left.append(el("h2", "", "The Village Ledger"));
+    left.append(row("Your fans", String(state.fans), { bar: meter(state.fans, 0, 500, "green") }));
+    left.append(el("p", "note", `You're ${["", "1st", "2nd", "3rd", "4th", "5th", "6th"][state.rank ?? 6]} of 6 in Tarven.`));
+    for (const house of state.houses) {
+      const fate = house.fate === "partner" ? "partnered" : house.fate === "ruin" ? "ruined" : house.fate === "fallen" ? "passed" : `${house.fans} fans`;
+      left.append(row(house.name, fate));
+    }
+  }
+
+  // Debuffs: what went badly, and what it's costing her (Karryn-style).
+  const debuffs = state.debuffs ?? [];
+  if (debuffs.length > 0) {
+    left.append(el("h2", "", "What you carry"));
+    for (const d of debuffs) left.append(el("p", "note danger", `${d.name}: ${d.detail}. ${d.lasts}`));
+  }
 
   left.append(el("h2", "", "The village"));
   left.append(
@@ -160,7 +190,7 @@ export function journalBook(state: JournalState, onName: (name: string) => void)
   left.append(
     row("Heat", `${state.heat}/${state.heatMax}`, { icon: FLAME, bar: meter(state.heat, 0, state.heatMax, "red") }),
   );
-  left.append(el("p", state.heat >= state.heatMax - 2 ? "note danger" : "note", `At ${state.heatMax} the baron's men come for you.`));
+  left.append(el("p", state.heat >= state.heatMax - 2 ? "note danger" : "note", `At ${state.heatMax} the garrison raids the tavern.`));
 
   // Promises she's made and favors owed her: someone will come for each, on a later night.
   const favors = state.favors ?? [];
@@ -495,6 +525,9 @@ export function recordsBook(state: RecordsState): HTMLElement {
   right.append(row("Taken upstairs", String(r.invitations)));
   for (const act of UPSTAIRS_ACTS) right.append(row(UPSTAIRS[act].label, String(r.acts[act] ?? 0)));
   right.append(row("Kinds of guest", `${r.upstairsKinds.length}/4`));
+  right.append(row("Stayed down in the taproom", String(r.taproomScenes)));
+  right.append(row("Joined in, all told", String(r.taproomPartners)));
+  right.append(row("Most at once", String(r.taproomMost)));
   right.append(el("h2", "", "Work"));
   right.append(row("Orders served", String(r.served)));
   right.append(row("Bottles poured", String(r.poured)));
@@ -507,6 +540,7 @@ export function recordsBook(state: RecordsState): HTMLElement {
   right.append(el("h2", "", "After Hours"));
   right.append(row("Won", String(r.duelsWon)));
   right.append(row("Lost", String(r.duelsLost)));
+  right.append(row("Climaxes", String(r.climaxes)));
   right.append(row("Called off", String(r.duelsStopped)));
   right.append(el("h2", "", "Secrets"));
   right.append(row("Kept", String(state.facts.protected)));

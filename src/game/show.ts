@@ -32,7 +32,7 @@ export const SHOW_GOLD: Record<ShowPart, { peek: number; bare: number }> = {
 };
 
 /** The nerve a guest needs to ask for that part at all. */
-export const SHOW_NERVE: Record<ShowPart, number> = { breasts: 3, butt: 3, pussy: 6 };
+export const SHOW_NERVE: Record<ShowPart, number> = { breasts: 2, butt: 3, pussy: 5 };
 
 /** How much hornier (lust, 0–10) and bolder (as if she'd let them touch her this many times) it leaves them. */
 export const SHOWN_LUST = { peek: 2, bare: 3 };
@@ -42,17 +42,17 @@ export const ROOM_LUST = 1;
 /** Her own desire for that part, after showing it. */
 export const SHOWN_DESIRE = { peek: 5, bare: 10 };
 
-/** The usual chance a guest asks, as she serves them, before their nerve and mood. */
-export const SHOW_CHANCE = 0.06;
-export const SHOW_PER_NERVE = 0.02;
+/** The usual chance a guest asks, as she takes their order or serves them, before their nerve and mood. */
+export const SHOW_CHANCE = 0.12;
+export const SHOW_PER_NERVE = 0.03;
 /** Lusting or drunk guests ask this much more often. */
 export const SHOW_LOOSE = 1.5;
-export const SHOW_MAX = 0.3;
+export const SHOW_MAX = 0.4;
 
 /** How likely a guest of this kind, this bold, is to ask as she serves them. Nobody asks without the nerve for it. */
 export function showChance(kind: GuestKind, guestNerve: number, loose: boolean, more = 0): number {
   if (guestNerve < SHOW_NERVE.breasts) return 0;
-  const chance = (SHOW_CHANCE + SHOW_PER_NERVE * (guestNerve - 3)) * SHOW_KIND[kind] * (loose ? SHOW_LOOSE : 1) * Math.max(0, 1 + more);
+  const chance = (SHOW_CHANCE + SHOW_PER_NERVE * (guestNerve - SHOW_NERVE.breasts)) * SHOW_KIND[kind] * (loose ? SHOW_LOOSE : 1) * Math.max(0, 1 + more);
   return Math.min(SHOW_MAX, chance);
 }
 

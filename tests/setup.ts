@@ -3,7 +3,8 @@
  * against (fixtures/nights.ts), so pacing the real nights doesn't break the tests. Everything else about the
  * nights (parties, last calls) stays the real thing.
  */
-import { crowdDice, grabDice, NIGHTS, showDice, tableService } from "../src/game/tavern";
+import { lanternDice } from "../src/game/lantern";
+import { crowdDice, grabDice, NIGHTS, showDice, storyRules, tableService } from "../src/game/tavern";
 import { TEST_GUESTS } from "./fixtures/nights";
 
 NIGHTS.forEach((night, index) => {
@@ -18,3 +19,7 @@ grabDice.roll = null;
 tableService.takeOrders = false;
 // Nor asks her for a look (tests/show.test.ts).
 showDice.roll = null;
+// ...and the nights go by number, as written, rather than by fans (tests/ledger.test.ts covers the story).
+storyRules.beats = false;
+// Nor asks for company on a lit Lantern night (tests/lantern.test.ts).
+lanternDice.roll = null;
