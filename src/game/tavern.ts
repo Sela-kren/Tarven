@@ -45,6 +45,7 @@ import {
 import { GUEST_TOO_DRUNK, PULLS, SLAPS, TOO_DRUNK_TO_ALLOW, WAVERED, WORN_THIN } from "./touchtalk";
 import { GIVE_IN_TEXTS, IMPULSE_LINES } from "./touchtalk-givein";
 import { KINK_TALK, kinkOf, type Kink } from "./kinktalk";
+import { START_TITLE, TITLE_BY_ID, TITLES, titleEarned, TWO_SLOTS_FAME } from "./titles";
 
 /** One line of a set, by a roll from 0 to 1. */
 function oneOf(lines: readonly string[], roll: number): string {
@@ -78,7 +79,9 @@ const CUM_WHERE: Record<CumSpot, string> = {
 import { Duel, DUEL_AREAS, type DuelArea, type DuelistStats, type DuelMove, type DuelOutcome, type DuelTest, type Partner } from "./duel";
 import {
   ACT_SKILL_OF,
+  ACT_SKILLS,
   actSkillBonus,
+  BODY_SKILLS,
   bodySkillBonus,
   charmBonus,
   levelOf,
@@ -95,6 +98,7 @@ import {
   effectsOf,
   emptyMeters,
   lewdnessOf,
+  lewdWord,
   METER_MAX,
   METER_NAMES,
   INTIMATE_REGIONS,
@@ -139,7 +143,13 @@ export type Held = Item | "dirty";
  * and "dawn" is the morning after. The world clock, not the tavern, decides when night falls. */
 export type Phase = "day" | "dusk" | "service" | "lastcall" | "bedtime" | "dawn" | "ended";
 /** Something she gained, for the game to show as it happens: a stat or skill level, or her kink changing. */
-export type Gain = { kind: "level"; id: StatId | SkillId; name: string; level: number } | { kind: "kink"; from: Kink; to: Kink };
+export type Gain =
+  | { kind: "level"; id: StatId | SkillId; name: string; level: number }
+  | { kind: "kink"; from: Kink; to: Kink }
+  /** Her Level or her Slut Level went up (with the word for how far she's come, for the Slut Level). */
+  | { kind: "rank"; which: "level" | "slut"; level: number; word?: string }
+  /** She earned a title. */
+  | { kind: "title"; id: string };
 export type GuestStatus = "arriving" | "waiting" | "eating" | "leaving";
 export type PotState = "empty" | "cooking" | "ready" | "burnt";
 export type Target =
@@ -206,6 +216,20 @@ const FAME_DEEDS = [-6, 8, -3];
 const RESPECT_DEEDS = [-2, 2, -1];
 /** This drunk in front of the customers, and they stop taking you seriously. */
 const SLOPPY_DRUNK = 0.6;
+/** Bar work: served this many with nobody walking out is a smooth night; this many at all, a busy one. */
+const SMOOTH_NIGHT_SERVED = 8;
+const BUSY_NIGHT_SERVED = 15;
+/**
+ * Her Level, Karryn-style: one for every few levels her stats and skills have grown in all. Each one past the
+ * first gives her more willpower, more stamina in a brawl, and a little more on everything she's paid.
+ */
+const LEVELS_PER_LEVEL = 3;
+const LEVEL_WILL = 2;
+const LEVEL_STAMINA = 1;
+const LEVEL_PAY = 0.02;
+/** Her Slut Level is her lewdness by tens; every this many pays a gold more on each touch she lets happen. */
+const LEWDNESS_PER_SLUT_LEVEL = 10;
+const SLUT_LEVELS_PER_GOLD = 2;
 /**
  * A foe reaching mid-brawl is bolder than they'd be at the table, Karryn-style: this much more nerve for what they
  * go for (never for whether it lands unasked: that still goes by their own nerve).
@@ -1090,6 +1114,9 @@ export class Tavern {
   effects: Effects = noEffects();
   /** Passives earned as she went to bed last, for the morning to show. */
   newPassives: PassiveDef[] = [];
+  /** Titles she's earned, and the ones she's wearing (titles.ts): one slot, two once she's famous enough. */
+  titles = new Set<string>([START_TITLE]);
+  worn: string[] = [START_TITLE];
   /** She eased the ache herself before sleeping last night. */
   eased = false;
   /** A moment waiting for its 18+ card, until the game takes it. */
@@ -1181,6 +1208,9 @@ export class Tavern {
   private readonly unlocks: PassiveDef[] = [];
   /** Level ups and a change in her kink, for the game to show as they happen (see takeGains). */
   private readonly gains: Gain[] = [];
+  /** Her Level and Slut Level as last shown, so a rise is shown once (and a loaded game doesn't announce itself). */
+  private shownLevel = 1;
+  private shownSlut = 0;
   /** Seconds until passives are checked again during the night. */
   private passiveCheck = 0;
   private readonly cues: Cue[] = [];
@@ -1266,6 +1296,9 @@ export class Tavern {
       if (ladder > 0 && this.stripped >= ladder) r.bareNights++;
       if (this.touchesTonight.reached > 0 && this.touchesTonight.allowed === 0) r.chasteNights++;
     }
+    // Bar work: a night nobody walked out of, and a busy one.
+    if (this.walkouts === 0 && this.served >= SMOOTH_NIGHT_SERVED) r.smoothNights++;
+    if (this.served >= BUSY_NIGHT_SERVED) r.busyNights++;
     if (this.persona.respect >= HIGH_RESPECT_NIGHT) r.respectNights++;
     // A night without a drink keeps her head clear.
     if (this.drinksTonight === 0) this.gainXp("mind", 3);
@@ -1289,7 +1322,17 @@ export class Tavern {
       this.newPassives.push(def);
       this.unlocks.push(def);
     }
-    if (earned.length > 0) this.effects = effectsOf(this.passives);
+    // Titles she's earned: the bonus once, now, and shown to her; she puts them on in the journal.
+    const facts = this.passiveFacts();
+    for (const def of TITLES) {
+      if (this.titles.has(def.id) || !titleEarned(def, facts)) continue;
+      this.titles.add(def.id);
+      const { gold = 0, trust = 0, respect = 0, fame = 0 } = def.bonus;
+      this.adjust(gold, trust, 0);
+      if (respect || fame) this.shift({ respect, fame });
+      this.gains.push({ kind: "title", id: def.id });
+    }
+    if (earned.length > 0) this.refreshEffects();
     // Her new passives can tip her kink over to another: how she talks after the Consent check changes with it.
     if (this.kink !== kinkBefore) this.gains.push({ kind: "kink", from: kinkBefore, to: this.kink });
     // Tonight's records count toward her lewdness even when no new passive came with them.
@@ -1500,7 +1543,8 @@ export class Tavern {
 
   private startStew(): void {
     this.potState = "cooking";
-    this.potTimer = STEW_TIME;
+    // Stew Keeper: it cooks faster.
+    this.potTimer = STEW_TIME * Math.max(0.2, 1 - this.effects.cookSpeed);
     this.cue("stewStart");
   }
 
@@ -1519,7 +1563,8 @@ export class Tavern {
       this.potTimer -= dt;
       if (this.potTimer <= 0) {
         this.potState = "ready";
-        this.potTimer = BURN_TIME;
+        this.potTimer = this.burnTime;
+        this.records.stewsCooked++;
         this.potBowls = this.upgrades.has("bigpot") ? BIG_POT_BOWLS : POT_BOWLS;
         this.say("The stew is ready.");
         this.cue("stewReady");
@@ -1688,7 +1733,8 @@ export class Tavern {
       (bottle ? BOTTLES[bottle].extraPay + e.bottleGold : 0) +
       (tipped ? rules.tip + behaviour.tipBonus + e.serveTip + charmBonus(this.level("charm")).tip : 0) +
       (this.stripped > 0 ? e.strippedGold : 0);
-    const amount = Math.round(base * (1 + e.payPct));
+    // Her Level: a little more on everything, the more she's grown.
+    const amount = Math.round(base * (1 + e.payPct + (this.herLevel - 1) * LEVEL_PAY));
     this.records.served++;
     if (bottle) this.records.poured++;
     this.gainXp("agility", 0.5);
@@ -2019,6 +2065,8 @@ export class Tavern {
       lewdness: this.lewdness,
       corruption: this.corruption,
       levels: this.statLevels(),
+      herLevel: this.herLevel,
+      slutLevel: this.slutLevel,
     };
   }
 
@@ -2033,7 +2081,7 @@ export class Tavern {
 
   /** Her willpower at the top: from Mind, and composure passives. */
   get maxWillpower(): number {
-    return maxWillpower(this.level("mind"), this.effects.willMax);
+    return maxWillpower(this.level("mind"), this.effects.willMax + (this.herLevel - 1) * LEVEL_WILL);
   }
 
   /** Her willpower now, 0 up to the top. Full every morning. */
@@ -2066,9 +2114,80 @@ export class Tavern {
     if (after > before) this.gains.push({ kind: "level", id, name: nameOfSkill(id), level: this.level(id) });
   }
 
-  /** Level ups and kink changes since the game last asked. Reading them empties the queue. */
+  /**
+   * Level ups, kink changes, and her Level or Slut Level going up, since the game last asked. Reading them empties
+   * the queue.
+   */
   takeGains(): Gain[] {
+    const level = this.herLevel;
+    if (level > this.shownLevel) this.gains.push({ kind: "rank", which: "level", level });
+    const slut = this.slutLevel;
+    if (slut > this.shownSlut) this.gains.push({ kind: "rank", which: "slut", level: slut, word: lewdWord(this.lewdness) });
+    this.shownLevel = level;
+    this.shownSlut = slut;
     return this.gains.splice(0);
+  }
+
+  /** What her passives add up to, with the titles she's wearing on top. */
+  private refreshEffects(): void {
+    const e = effectsOf(this.passives);
+    for (const id of this.worn) TITLE_BY_ID.get(id)?.wear(e);
+    this.effects = e;
+  }
+
+  /** How many titles she can wear at once. */
+  get titleSlots(): number {
+    return this.persona.fame >= TWO_SLOTS_FAME ? 2 : 1;
+  }
+
+  /** Titles are changed while the tavern's shut, never in the middle of a night's service. */
+  get canChangeTitles(): boolean {
+    return this.phase !== "service" && this.phase !== "lastcall" && this.fight === null;
+  }
+
+  /** Puts a title on: into a free slot, or in place of the one worn longest if every slot's taken. */
+  wearTitle(id: string): boolean {
+    if (!this.canChangeTitles || !this.titles.has(id) || this.worn.includes(id)) return false;
+    if (this.worn.length >= this.titleSlots) this.worn.shift();
+    this.worn.push(id);
+    this.refreshEffects();
+    return true;
+  }
+
+  /** Takes a title off, leaving the slot empty. */
+  takeOffTitle(id: string): boolean {
+    if (!this.canChangeTitles || !this.worn.includes(id)) return false;
+    this.worn = this.worn.filter((w) => w !== id);
+    this.refreshEffects();
+    return true;
+  }
+
+  /** Her Level: 1, and one more for every few levels her stats and skills have gained between them. */
+  get herLevel(): number {
+    const ids = [...STATS.map((s) => s.id), ...BODY_SKILLS.map((s) => s.id), ...ACT_SKILLS.map((s) => s.id)];
+    const gained = ids.reduce((sum, id) => sum + (this.level(id) - 1), 0);
+    return 1 + Math.floor(gained / LEVELS_PER_LEVEL);
+  }
+
+  /** Her Slut Level, Karryn's: her lewdness by tens. */
+  get slutLevel(): number {
+    return Math.floor(this.lewdness / LEWDNESS_PER_SLUT_LEVEL);
+  }
+
+  /** What her Level adds to her stamina in a brawl. */
+  get levelStamina(): number {
+    return (this.herLevel - 1) * LEVEL_STAMINA;
+  }
+
+  /** How long a ready stew keeps before it burns: longer with Never Burns. */
+  private get burnTime(): number {
+    return BURN_TIME * (1 + this.effects.burnGrace);
+  }
+
+  /** Willpower it costs to say no to a touch part of her wants: less with Firm No and Ice Queen. */
+  private refuseWill(tier: number, boldness: number): number {
+    const cost = refuseCost(tier, boldness);
+    return cost === 0 ? 0 : Math.max(1, Math.round(cost * Math.max(0, 1 - this.effects.refuseEase)));
   }
 
   /** A brawl with nobody in the room, from the B key in development, to try the fight screen. */
@@ -2164,6 +2283,7 @@ export class Tavern {
       brawlSlap: e.brawlSlap,
       brawlReach: e.brawlReach,
       fightDesire: e.fightDesire,
+      extraStamina: this.levelStamina,
     };
   }
 
@@ -2545,7 +2665,7 @@ export class Tavern {
     // Too drunk on either side, and it can't happen anyway: saying no takes nothing out of her.
     const tier = sloppy || guestSloppy ? 0 : tempted;
     const lines: TalkLine[] = [{ ...narrate(fill(touch.reach)), guestId: guest.id }, you(thought)];
-    if (tier > 0 && this.willpower < refuseCost(tier, touch.level)) lines.push(narrate(WORN_THIN));
+    if (tier > 0 && this.willpower < this.refuseWill(tier, touch.level)) lines.push(narrate(WORN_THIN));
     const answers = touchAnswers(touch, { desire, sloppy, guestSloppy, leanMargin });
     // An impulsive guest, on a touch she could say yes to anyway: covered by the player's setting, or asked about.
     const s = this.touchSettings;
@@ -2666,7 +2786,7 @@ export class Tavern {
     let mood = out.mood;
     // Willpower: giving in wears it down; saying no costs it when part of her wanted it, and steadies her when not.
     const refusing = answer === "slap" || answer === "pull";
-    const willCost = refusing ? refuseCost(chat.tier, touch.level) : 0;
+    const willCost = refusing ? this.refuseWill(chat.tier, touch.level) : 0;
     const shaky = refusing && willCost > 0 && this.willpower < willCost;
     if (took) this.spendWill(answer === "lean" ? LEAN_WILL : ALLOW_WILL);
     else if (refusing && willCost === 0) this.restoreWill(STEADY_WILL);
@@ -2678,7 +2798,8 @@ export class Tavern {
     if (took) {
       const skill = SKILL_OF_REGION[touch.region];
       const practised = bodySkillBonus(this.level(skill));
-      gold += (e.touchGold[touch.region] ?? 0) + (answer === "lean" ? e.leanGold : 0) + practised.gold;
+      // Her Slut Level: guests pay more for what they've heard she'll allow.
+      gold += (e.touchGold[touch.region] ?? 0) + (answer === "lean" ? e.leanGold : 0) + practised.gold + Math.floor(this.slutLevel / SLUT_LEVELS_PER_GOLD);
       this.gainXp(skill, answer === "lean" ? 3 : 2);
       this.gainXp("charm", 1);
       // Tonight's desire: the meter for where it landed most, the rest of her a little; more the more practised.
@@ -2787,7 +2908,7 @@ export class Tavern {
       const label = !chat.brawl ? "Get back to work" : this.fight ? "Back to the fight" : "See how it ended";
       return [{ label, disabled: false, run: () => (this.touchChat = null) }];
     }
-    const cost = refuseCost(chat.tier, chat.touch.level);
+    const cost = this.refuseWill(chat.tier, chat.touch.level);
     const willNote = (answer: TouchAnswer): string => {
       if ((answer !== "slap" && answer !== "pull") || cost === 0) return "";
       return this.willpower >= cost ? ` · ${cost} will` : " (no willpower left: it'll show)";
@@ -2982,7 +3103,7 @@ export class Tavern {
             this.potBowls++;
             if (this.potState !== "ready") {
               this.potState = "ready";
-              this.potTimer = BURN_TIME;
+              this.potTimer = this.burnTime;
             }
           }
         },
@@ -3433,7 +3554,7 @@ export class Tavern {
 
   /** The same for someone who minds dirt this much: 1 is usual, 0 doesn't notice, 2 and up can barely sit down. */
   messPatienceFor(fussy: number): number {
-    return Math.max(0.2, 1 - MESS_PATIENCE_LOSS * fussy * Math.min(1, this.messes.length / MESS_FOR_FULL_LOSS));
+    return Math.max(0.2, 1 - MESS_PATIENCE_LOSS * fussy * Math.max(0, 1 - this.effects.tidy) * Math.min(1, this.messes.length / MESS_FOR_FULL_LOSS));
   }
 
   /** What a guest is called: their type (a maid or footman for a servant, by body). */
@@ -3445,6 +3566,7 @@ export class Tavern {
   private clean(id: number, kind: Exclude<MessKind, "dishes">): void {
     const firstMorning = this.settlingIn;
     this.messes.splice(this.messes.findIndex((m) => m.id === id), 1);
+    this.records.messesCleaned++;
     this.cue("wipe");
     if (firstMorning) {
       // The first morning walks her through it: what's left, and the bell once it's done.
@@ -3505,6 +3627,8 @@ export class Tavern {
         passives: [...this.passives],
         eased: this.eased,
         xp: { ...this.xp } as Record<string, number>,
+        titles: [...this.titles],
+        worn: [...this.worn],
       },
       ...(this.layout ? { layout: cloneLayout(this.layout) } : {}),
     };
@@ -3527,12 +3651,19 @@ export class Tavern {
     this.records = progress.records;
     this.passives.clear();
     for (const id of progress.passives) this.passives.add(id);
-    this.effects = effectsOf(this.passives);
+    // Titles: only ones that exist, the first one always; worn only if earned, and no more than she has slots for.
+    this.titles = new Set([START_TITLE, ...(progress.titles ?? []).filter((id) => TITLE_BY_ID.has(id))]);
+    this.worn = (progress.worn ?? [START_TITLE]).filter((id, i, all) => this.titles.has(id) && all.indexOf(id) === i);
     // The brothel isn't saved: it opens again from what she's become.
     this.houseMode = { current: "tavern", unlocked: new Set(["tavern"]), brothel: 0 };
     this.unlockBrothel(true);
     this.eased = progress.eased ?? false;
     this.xp = readExperience(progress.xp);
+    this.worn = this.worn.slice(0, this.titleSlots);
+    this.refreshEffects();
+    // Where she stands now isn't news: only a rise from here is shown.
+    this.shownLevel = this.herLevel;
+    this.shownSlut = this.slutLevel;
     this.fight = null;
     this.lastFight = null;
     this.brawlOffer = null;

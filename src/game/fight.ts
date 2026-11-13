@@ -186,6 +186,8 @@ export interface FighterStats {
   brawlSlap?: number;
   brawlReach?: number;
   fightDesire?: number;
+  /** Extra stamina from her Level. */
+  extraStamina?: number;
 }
 
 export interface FightChoice {
@@ -251,7 +253,7 @@ export class Fight {
     const who = rolled ?? statsOf(kind);
     const foe = who.fight;
     const name = (this.name = who.label.toLowerCase());
-    this.maxStamina = this.stamina = BASE_STAMINA + (stats.levels.endurance - 1) * 4;
+    this.maxStamina = this.stamina = BASE_STAMINA + (stats.levels.endurance - 1) * 4 + (stats.extraStamina ?? 0);
     this.foeMax = this.foeStamina = foe.stamina;
     this.foeAttack = foe.attack + (drunk ? 1 : 0);
     this.foeAccuracy = foe.accuracy - (drunk ? 0.15 : 0);

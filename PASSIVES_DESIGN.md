@@ -303,6 +303,10 @@ Key:
 
 ## 5. Titles (Karryn's Prison style: a bonus when earned, an effect while worn)
 
+**Built** (`src/game/titles.ts`, the journal's Titles tab). The table below was the first draft; the built list is 13 titles: Innkeeper of Tarven (start, worn), Barmaid of the Pass, Keeper of the Hearth, The Untouchable, The Iron Hand (dom side 20 ahead), Everyone's Darling (sub side 20 ahead), Unashamed (Slut Level 8), The Baron's Creature, Pride of Tarven, Drinks Them Under, Queen of the Brawl, Champion of the Night, Seasoned Keeper (Level 5). Earned at the same checks as passives, with a pop-up card; changed in the journal whenever the tavern's shut. Every title does something when worn (tested).
+
+**Level and Slut Level** (built): her Level is 1 + one for every 3 levels her stats and skills gain (+2 willpower, +1 brawl stamina and +2% pay per Level past 1). Her Slut Level is lewdness ÷ 10 (+1 gold on every touch she allows per 2 Slut Levels; guests' extra nerve from lewdness stays its cost). Both show on the Titles page and pop up when they rise.
+
 - **Slots:** wear 1 title. Fame 50 opens a second slot.
 - **Changing:** titles are changed in the journal, during the day.
 

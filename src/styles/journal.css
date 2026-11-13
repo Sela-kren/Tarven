@@ -579,3 +579,26 @@
 #panel .journal-book.skills h2 {
   margin-top: 8px;
 }
+
+/* ---------- Titles: put on and taken off from their card ---------- */
+
+#panel .journal-book .pcard .title-action {
+  margin-top: 6px;
+  padding: 3px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: #f3e2c8;
+  background: #6d4a25;
+  border: 0;
+  box-shadow: inset 0 0 0 2px #3a2615;
+  cursor: pointer;
+}
+
+#panel .journal-book .pcard .title-action:hover:not(:disabled) {
+  background: #8a5f32;
+}
+
+#panel .journal-book .pcard .title-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

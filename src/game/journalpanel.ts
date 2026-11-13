@@ -1,14 +1,17 @@
 /** The journal on the chest, opened over the game: ribbon tabs across the top, one spread per tab. */
 import type { Game } from "./game";
-import { journalBook, passivesBook, privateBook, recordsBook, skillsBook } from "./journal";
+import { journalBook, passivesBook, privateBook, recordsBook, skillsBook, titlesBook } from "./journal";
+import { lewdWord } from "./passives";
+import { TWO_SLOTS_FAME } from "./titles";
 import { DEBT, HEAT_MAX, NIGHTS, TRUST_MAX, TRUST_TO_OVERTHROW } from "./tavern";
 
 /** The journal's spreads, in tab order. */
-export type JournalPage = "ledger" | "private" | "passives" | "skills" | "records";
+export type JournalPage = "ledger" | "private" | "passives" | "titles" | "skills" | "records";
 export const JOURNAL_PAGES: readonly { id: JournalPage; label: string }[] = [
   { id: "ledger", label: "Ledger" },
   { id: "private", label: "Private" },
   { id: "passives", label: "Passives" },
+  { id: "titles", label: "Titles" },
   { id: "skills", label: "Skills" },
   { id: "records", label: "Records" },
 ];
@@ -60,6 +63,21 @@ export function showJournal(game: Game, page: JournalPage = "ledger"): void {
     });
   } else if (page === "passives") {
     book = passivesBook({ owned: tavern.passives, facts });
+  } else if (page === "titles") {
+    // Putting one on or taking it off turns back to this page, showing what changed.
+    book = titlesBook({
+      facts,
+      earned: tavern.titles,
+      worn: tavern.worn,
+      slots: tavern.titleSlots,
+      canChange: tavern.canChangeTitles,
+      twoSlotsFame: TWO_SLOTS_FAME,
+      level: tavern.herLevel,
+      slutLevel: tavern.slutLevel,
+      slutWord: lewdWord(tavern.lewdness),
+      onWear: (id) => tavern.wearTitle(id) && showJournal(game, "titles"),
+      onTakeOff: (id) => tavern.takeOffTitle(id) && showJournal(game, "titles"),
+    });
   } else if (page === "skills") {
     book = skillsBook({ xp: tavern.xp, bonus: tavern.effects.skill, touchable: tavern.playerBody === "Female" });
   } else {

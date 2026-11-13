@@ -25,6 +25,7 @@ import {
   type PassiveFacts,
 } from "./passives";
 import { PASSIVE_ICONS } from "./passiveicons";
+import { bonusText, TITLE_BY_ID, TITLES } from "./titles";
 import {
   ACT_SKILLS,
   BODY_SKILLS,
@@ -350,6 +351,85 @@ export function passivesBook(state: PassivesState): HTMLElement {
   // Open on the first group she's made any start on, or the hands.
   const started = PASSIVE_GROUPS.find((g) => PASSIVES.some((p) => p.group === g.id && (state.owned.has(p.id) || p.progress(state.facts)[0] > 0)));
   show(started?.id ?? "hands");
+  return book;
+}
+
+// ---------- The titles ----------
+
+export interface TitlesState {
+  facts: PassiveFacts;
+  earned: ReadonlySet<string>;
+  worn: readonly string[];
+  slots: number;
+  /** Whether she can change them now: only while the tavern's shut. */
+  canChange: boolean;
+  /** Fame that opens a second slot. */
+  twoSlotsFame: number;
+  /** Her Level, and how far she is to the next; her Slut Level and its word. */
+  level: number;
+  slutLevel: number;
+  slutWord: string;
+  onWear: (id: string) => void;
+  onTakeOff: (id: string) => void;
+}
+
+/**
+ * Her titles, Karryn's: on the left, who she is (her Level and Slut Level) and what she's wearing; on the right,
+ * every title written out, worn, earned or still to earn, with a button to put it on or take it off.
+ */
+export function titlesBook(state: TitlesState): HTMLElement {
+  const book = el("div", "journal-book private passives titles");
+  const left = el("div", "page left");
+  const right = el("div", "page right");
+  book.append(left, el("div", "spine"), right);
+
+  left.append(el("h1", "title", "Titles"));
+  left.append(el("h2", "", "Who she is"));
+  left.append(row("Level", String(state.level), { hint: "Grows with all her stats and skills together" }));
+  left.append(el("p", "note", "One Level for every 3 levels her stats and skills gain. Each gives more willpower, brawl stamina and pay."));
+  left.append(row("Slut Level", String(state.slutLevel), { icon: FLAME, hint: "Her lewdness, by tens" }));
+  left.append(el("p", "reach", state.slutWord));
+
+  left.append(el("h2", "", `Wearing (${state.worn.length}/${state.slots})`));
+  if (state.worn.length === 0) left.append(el("p", "note", "Nothing. Pick a title on the right."));
+  for (const id of state.worn) {
+    const def = TITLE_BY_ID.get(id);
+    if (def) left.append(row(def.name, "worn"));
+  }
+  left.append(
+    el(
+      "p",
+      "note",
+      `${state.slots < 2 ? `A second slot opens at fame ${state.twoSlotsFame}. ` : ""}${state.canChange ? "Change them any time the tavern's shut." : "The tavern's open: change them once it's shut."}`,
+    ),
+  );
+
+  const cards = el("div", "pcards");
+  for (const def of TITLES) {
+    const worn = state.worn.includes(def.id);
+    const have = state.earned.has(def.id);
+    const card = el("div", worn ? "pcard owned" : have ? "pcard ready" : "pcard");
+    const [now, need] = def.progress(state.facts);
+    const head = el("div", "phead");
+    head.append(el("b", "pname", def.name), el("span", "pstate", worn ? "Worn" : have ? "Earned" : `${now}/${need}`));
+    card.append(head);
+    const req = el("div", "preq");
+    req.append(el("span", "", def.need), meter(have ? need : now, 0, need, have ? "pink" : "gold"));
+    card.append(req);
+    const bonus = bonusText(def.bonus);
+    if (bonus) card.append(el("p", "thought", `When earned: ${bonus}`));
+    card.append(el("p", "benefit", `+ ${def.worn}`));
+    if (def.cost) card.append(el("p", "cost", `- ${def.cost}`));
+    if (have) {
+      const button = el("button", "title-action", worn ? "Take off" : "Wear");
+      button.type = "button";
+      button.disabled = !state.canChange;
+      button.addEventListener("click", () => (worn ? state.onTakeOff(def.id) : state.onWear(def.id)));
+      card.append(button);
+    }
+    cards.append(card);
+  }
+  right.append(el("h2", "", "Every title"), cards);
   return book;
 }
 

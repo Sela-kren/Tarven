@@ -128,6 +128,11 @@ export interface Records {
   /** A foe's reach mid-brawl: slapped away, or let happen (her choice, on the touch screen). */
   brawlSlaps: number;
   brawlLets: number;
+  /** Bar work: pots of stew cooked through, messes cleaned up, nights with nobody walking out, busy nights. */
+  stewsCooked: number;
+  messesCleaned: number;
+  smoothNights: number;
+  busyNights: number;
   /** Nights each meter reached the top. */
   maxed: Partial<Record<Meter, number>>;
   /** Nights every meter reached 60. */
@@ -183,6 +188,10 @@ export function newRecords(): Records {
     timesHeld: 0,
     brawlSlaps: 0,
     brawlLets: 0,
+    stewsCooked: 0,
+    messesCleaned: 0,
+    smoothNights: 0,
+    busyNights: 0,
     maxed: {},
     allHigh: 0,
     clothesLost: 0,
@@ -334,6 +343,12 @@ export interface Effects {
   brawlReach: number;
   /** In a brawl: how much less her desire gets in her way, as a fraction. */
   fightDesire: number;
+  /** Bar work: how much faster the stew cooks, how much longer it keeps before burning, and how much less a messy room wears on guests, as fractions. */
+  cookSpeed: number;
+  burnGrace: number;
+  tidy: number;
+  /** How much less willpower saying no costs her, as a fraction. */
+  refuseEase: number;
 }
 
 export function noEffects(): Effects {
@@ -400,6 +415,10 @@ export function noEffects(): Effects {
     brawlSlap: 0,
     brawlReach: 0,
     fightDesire: 0,
+    cookSpeed: 0,
+    burnGrace: 0,
+    tidy: 0,
+    refuseEase: 0,
   };
 }
 
@@ -425,6 +444,9 @@ export interface PassiveFacts {
   corruption: number;
   /** Her stat levels. */
   levels: Record<StatId, number>;
+  /** Her Level (all her stats and skills together) and her Slut Level (lewdness by tens). */
+  herLevel: number;
+  slutLevel: number;
 }
 
 const lets = (f: PassiveFacts, ...regions: TouchRegion[]) => regions.reduce((sum, r) => sum + (f.lets[r] ?? 0), 0);
@@ -2141,6 +2163,110 @@ export const PASSIVES: readonly PassiveDef[] = [
     lewd: 3,
     thought: "(A fight gets my blood up. All of it.)",
   },
+
+  // ---- Bar work: the stew, the mop, and nights that run smooth ----
+  {
+    id: "stewKeeper",
+    name: "Stew Keeper",
+    group: "bar",
+    need: "Cook 10 pots of stew",
+    progress: (f) => count(f.records.stewsCooked, 10),
+    benefit: "The stew cooks 25% faster",
+    effect: (e) => (e.cookSpeed += 0.25),
+    thought: "(Grandma's recipe. I don't even measure any more.)",
+  },
+  {
+    id: "neverBurns",
+    name: "Never Burns",
+    group: "bar",
+    need: "Cook 30 pots of stew",
+    progress: (f) => count(f.records.stewsCooked, 30),
+    benefit: "A ready stew keeps 50% longer before it burns",
+    effect: (e) => (e.burnGrace += 0.5),
+    thought: "(I can smell when it's ready from across the room.)",
+  },
+  {
+    id: "broomInHand",
+    name: "Broom in Hand",
+    group: "bar",
+    need: "Clean up 30 messes",
+    progress: (f) => count(f.records.messesCleaned, 30),
+    benefit: "A messy room wears on guests' patience 25% less",
+    effect: (e) => (e.tidy += 0.25),
+    thought: "(A spill's gone before anyone's noticed it.)",
+  },
+  {
+    id: "spotlessHouse",
+    name: "Spotless House",
+    group: "bar",
+    need: "Clean up 100 messes",
+    progress: (f) => count(f.records.messesCleaned, 100),
+    benefit: "A messy room wears on guests 25% less again; +1 respect every night",
+    effect: (e) => {
+      e.tidy += 0.25;
+      e.perNight.respect += 1;
+    },
+    thought: "(Grandma would be proud of these floors.)",
+  },
+  {
+    id: "nobodyWaits",
+    name: "Nobody Waits",
+    group: "bar",
+    need: "Get through 3 nights with nobody walking out (serving 8 or more)",
+    progress: (f) => count(f.records.smoothNights, 3),
+    benefit: "Guests wait 10% longer",
+    effect: (e) => (e.patience += 0.1),
+    thought: "(Every table looked after. Every one.)",
+  },
+  {
+    id: "rushHour",
+    name: "Rush Hour",
+    group: "bar",
+    need: "Serve 15 or more orders on 3 nights",
+    progress: (f) => count(f.records.busyNights, 3),
+    benefit: "+1 gold on every tipped serve",
+    effect: (e) => (e.serveTip += 1),
+    thought: "(The busier it gets, the better I am.)",
+  },
+
+  // ---- Composure: saying no, and making it stick ----
+  {
+    id: "firmNo",
+    name: "Firm No",
+    group: "composure",
+    need: "Pull away from 15 guests",
+    progress: (f) => count(f.records.pulled, 15),
+    benefit: "Saying no costs 25% less willpower",
+    effect: (e) => (e.refuseEase += 0.25),
+    thought: "(No. Just no. It's getting easier to say.)",
+  },
+  {
+    id: "iceQueen",
+    name: "Ice Queen",
+    group: "composure",
+    need: "Pull away from or slap 100 guests",
+    progress: (f) => count(f.records.pulled + f.records.slapped, 100),
+    benefit: "Saying no costs 25% less willpower again; guests reach for you 15% less",
+    cost: "Fewer touch tips",
+    effect: (e) => {
+      e.refuseEase += 0.25;
+      e.reach -= 0.15;
+    },
+    thought: "(They've stopped trying. Mostly.)",
+  },
+  {
+    id: "spotlessName",
+    name: "Spotless Name",
+    group: "composure",
+    need: "Get through 8 nights without letting anyone touch you",
+    progress: (f) => count(f.records.chasteNights, 8),
+    benefit: "+1 respect and +1 trust every night",
+    effect: (e) => {
+      e.perNight.respect += 1;
+      e.perNight.trust += 1;
+    },
+    thought: "(Folk say my name like it means something decent.)",
+  },
 ];
 
 /**
@@ -2231,6 +2357,9 @@ export interface ProgressSave {
   eased?: boolean;
   /** Experience in every stat and skill. */
   xp?: Record<string, number>;
+  /** Titles earned, and the ones worn (titles.ts). */
+  titles?: string[];
+  worn?: string[];
 }
 
 const DUEL_MOVES: readonly DuelMove[] = ["kiss", "caress", "tease", "undress", "hands", "mouth", "tits", "ride", "anal", "hold", "stop"];
@@ -2247,6 +2376,9 @@ export function readProgress(raw: unknown): ProgressSave {
   out.corruption = num(fields.corruption, 1000);
   out.eased = fields.eased === true;
   if (fields.xp && typeof fields.xp === "object") out.xp = fields.xp as Record<string, number>;
+  const ids = (list: unknown) => (Array.isArray(list) ? list.filter((id): id is string => typeof id === "string") : undefined);
+  out.titles = ids(fields.titles);
+  out.worn = ids(fields.worn);
   if (Array.isArray(fields.passives)) out.passives = [...new Set(fields.passives.filter((id): id is string => typeof id === "string" && PASSIVE_BY_ID.has(id)))];
   const r = fields.records;
   if (r && typeof r === "object") {
@@ -2265,6 +2397,10 @@ export function readProgress(raw: unknown): ProgressSave {
       "timesHeld",
       "brawlSlaps",
       "brawlLets",
+      "stewsCooked",
+      "messesCleaned",
+      "smoothNights",
+      "busyNights",
       "allHigh",
       "clothesLost",
       "bareNights",

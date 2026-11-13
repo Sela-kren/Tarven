@@ -101,6 +101,7 @@ import type { Reaction, SoftPart } from "./player";
 import { DialogueBox } from "./dialogue";
 import { MessageLog } from "./messagelog";
 import { UnlockToasts, type Toast } from "./unlocktoast";
+import { bonusText, TITLE_BY_ID } from "./titles";
 import { KINK_NAMES } from "./kinktalk";
 import { ROLE_PLAYS } from "./duellines";
 import type { PassiveDef, PassiveGroup } from "./passives";
@@ -1478,6 +1479,32 @@ export class Game {
           lines: [levelLine(gain.id)],
           icon: PASSIVE_ICONS[groupOfSkill(gain.id)],
         });
+      } else if (gain.kind === "rank") {
+        const slut = gain.which === "slut";
+        this.log.add(slut ? `Slut Level ${gain.level}: ${gain.word}.` : `She's Level ${gain.level} now.`);
+        this.toasts.show({
+          tone: slut ? "kink" : "level",
+          tag: slut ? "Slut Level up" : "Level up",
+          title: slut ? `Slut Level ${gain.level} · ${gain.word}` : `Level ${gain.level}`,
+          lines: slut
+            ? ["+ Touches you allow pay more", "- Guests grow bolder with what they've heard"]
+            : ["+ More willpower, more stamina in a brawl, and a little more on everything you're paid"],
+          icon: PASSIVE_ICONS[slut ? "desire" : "mind"],
+        });
+        this.audio.play("page");
+      } else if (gain.kind === "title") {
+        const def = TITLE_BY_ID.get(gain.id);
+        if (!def) continue;
+        const bonus = bonusText(def.bonus);
+        this.log.add(`New title: ${def.name}. Wear it from the journal while the tavern's shut.`);
+        this.toasts.show({
+          tone: "passive",
+          tag: "New title",
+          title: def.name,
+          lines: [...(bonus ? [`+ ${bonus} now`] : []), `+ Worn: ${def.worn}`, ...(def.cost ? [`- ${def.cost}`] : []), "Put it on in the journal's Titles tab."],
+          icon: PASSIVE_ICONS.fame,
+        });
+        this.audio.play("page");
       } else {
         this.log.add(`Her kink is now ${KINK_NAMES[gain.to]}.`);
         this.toasts.show({
