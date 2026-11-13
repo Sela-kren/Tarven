@@ -3,7 +3,7 @@ import type { Held } from "./tavern";
 
 /** "suds1" and "suds2" are the two frames of scrubbing at the tub; "sparkle" is a dish coming out clean. */
 /** "anger" is the mark over a guest working up to a brawl. */
-export type IconName = Held | "dots" | "alert" | "anger" | "arrow" | "suds1" | "suds2" | "sparkle";
+export type IconName = Held | "dots" | "alert" | "anger" | "arrow" | "suds1" | "suds2" | "sparkle" | "call";
 
 type Draw = (rect: (color: string, x: number, y: number, w: number, h: number) => void) => void;
 
@@ -127,6 +127,21 @@ const ART: Record<IconName, { bubble: boolean; draw: Draw }> = {
       r(INK, 3, 7, 2, 2);
       r(INK, 7, 7, 2, 2);
       r(INK, 11, 7, 2, 2);
+    },
+  },
+  // A raised hand: a guest calling her over to take their order.
+  call: {
+    bubble: true,
+    draw: (r) => {
+      const skin = "#e2b088";
+      const shade = "#b98462";
+      r(skin, 4, 4, 2, 5);
+      r(skin, 6, 3, 2, 6);
+      r(skin, 8, 3, 2, 6);
+      r(skin, 10, 4, 2, 5);
+      r(skin, 4, 8, 8, 4);
+      r(skin, 2, 8, 2, 3);
+      r(shade, 6, 12, 4, 2);
     },
   },
   alert: {

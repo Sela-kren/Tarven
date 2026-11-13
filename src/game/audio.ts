@@ -183,6 +183,9 @@ export const EFFECTS: Record<Effect, EffectSound> = {
   dishes: { files: ["clink1", "clink2", "pot2"], volume: 0.4, pitch: 0.06 },
   wipe: { files: ["cloth3", "cloth4"], volume: 0.5, pitch: 0.06 },
   rumor: { files: ["book_open"], volume: 0.55 },
+  // A guest sitting down and calling her over; then her jotting down what they want.
+  call: { files: ["click"], volume: 0.35, pitch: 0.1 },
+  order: { files: numbered("page", 3), volume: 0.35, pitch: 0.05 },
 };
 
 /** Every effect file, once each. */

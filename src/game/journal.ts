@@ -471,6 +471,9 @@ export function recordsBook(state: RecordsState): HTMLElement {
   left.append(row("Grabbed at a table", String(r.grabbed)));
   left.append(row("Broke their hold", String(r.grabsBroken)));
   left.append(row("Let them hold you", String(r.grabsAllowed)));
+  // Paid for a look: a peek inside her clothes, or a proper look.
+  left.append(row("Let them peek", String(r.peeks)));
+  left.append(row("Showed them bare", String(r.flashes)));
   left.append(row("Clothes lost", String(r.clothesLost)));
   left.append(row("Nights bared", String(r.bareNights)));
   left.append(row("Nights untouched", String(r.chasteNights)));

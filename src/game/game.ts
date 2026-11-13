@@ -132,6 +132,7 @@ import {
   MAX_WARE,
   NIGHTS,
   STOCK_COST,
+  REPLACE_COST,
   STOCK_PACK,
   Tavern,
   TRAY_SIZE,
@@ -2350,6 +2351,22 @@ export class Game {
         buy: () => tavern.buyStock(ware),
       }),
     );
+    // What she broke, to buy back one at a time.
+    const repairs = (Object.keys(WARE_NAMES) as Ware[])
+      .filter((ware) => tavern.broken[ware] > 0)
+      .map(
+        (ware): Supply => ({
+          name: `Replace a broken ${WARE_NAMES[ware].replace(/e?s$/, "")}`,
+          icon: ware,
+          price: REPLACE_COST,
+          detail: `You've broken ${tavern.broken[ware]} ${WARE_NAMES[ware]}. Buy them back here, ${REPLACE_COST} gold each.`,
+          owned: false,
+          count: tavern.stock[ware],
+          max: tavern.stock[ware] + tavern.broken[ware],
+          canBuy: tavern.canReplace(ware),
+          buy: () => tavern.replaceBroken(ware),
+        }),
+      );
     const drinks = BOTTLE_KINDS.map(
       (bottle): Supply => ({
         name: BOTTLES[bottle].name,
@@ -2362,7 +2379,7 @@ export class Game {
         buy: () => tavern.buyBottle(bottle),
       }),
     );
-    return [...upgrades, ...wares, ...drinks];
+    return [...upgrades, ...repairs, ...wares, ...drinks];
   }
 
   /** The night's report. Spending happens at the house plans, during the day. */
@@ -2377,6 +2394,9 @@ export class Game {
         // What the town is saying about her this morning, from what she did since the day began.
         ...(this.dayStart ? townTalk(this.dayStart, now) : []),
         ...(tavern.isLastNight ? [] : ["Upgrades and more cups and dishes are on the house plans in your room."]),
+        ...(!tavern.isLastNight && tavern.broken.cup + tavern.broken.dish > 0
+          ? [`You've broken ${brokenWords(tavern.broken)}. Buy them back on the house plans.`]
+          : []),
       ].filter((line) => line !== ""),
       [
         {
@@ -2858,4 +2878,11 @@ function groupOfSkill(id: StatId | SkillId): PassiveGroup {
   if (id === "strength" || id === "agility" || id === "endurance") return "brawler";
   if (BODY_SKILLS.some((s) => s.id === id)) return id as PassiveGroup;
   return "afterHours";
+}
+
+/** "2 cups and a dish", for what she's broken. */
+function brokenWords(broken: Record<Ware, number>): string {
+  const word = (n: number, one: string, many: string) => (n === 1 ? `a ${one}` : `${n} ${many}`);
+  const parts = [broken.cup > 0 ? word(broken.cup, "cup", "cups") : "", broken.dish > 0 ? word(broken.dish, "dish", "dishes") : ""];
+  return parts.filter(Boolean).join(" and ");
 }

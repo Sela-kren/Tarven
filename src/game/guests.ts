@@ -176,7 +176,8 @@ export class GuestActor {
     this.troubleIcon.sprite.position.y = ICON_HEIGHT - this.group.position.y;
     const seated = guest.status === "waiting" && !trouble && this.mode === "seated";
     const lift = -this.group.position.y;
-    this.orderIcon.show(seated ? guest.order : null);
+    // Calling her over until she's taken their order; then what they want. The patience bar either way.
+    this.orderIcon.show(seated ? (guest.ordered ? guest.order : "call") : null);
     this.orderIcon.sprite.position.y = ICON_HEIGHT + lift;
     if (seated) this.bar.show(BAR_HEIGHT + lift, guest.patience / guest.maxPatience);
     else this.bar.hide();

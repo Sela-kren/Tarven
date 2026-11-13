@@ -208,6 +208,14 @@ Each type has a base Nerve (section 2) and a preferred desire meter. When they r
 
 ---
 
+## 5b. Taking orders [built]
+A guest who sits down doesn't say what they want until she asks (`takeOrder` in `tavern.ts`).
+- **Calling her over:** a raised hand over their head, the patience bar under it, a line in the log ("A farmer at table B is calling you over") and a call out loud that never names the order ("Over here, love!"). Left too long, they complain nobody's asked.
+- **Take their order** (E on them, tray or no tray): they say it out loud, the log notes it ("...wants an ale"), and only now does the order icon show and can she serve them. Bringing the right thing before she's asked does nothing.
+- Leaning in to listen is another chance to be grabbed (7d).
+- Patience runs from the moment they sit, so a guest left calling can still walk out.
+- The tests' setup has guests order as they sit (`tableService.takeOrders = false`); `tests/orders.test.ts` covers taking orders.
+
 ## 6. Guest states
 
 ### Moods [built]
@@ -283,7 +291,7 @@ A lustful guest with the nerve for it (Nerve 5+) is **impulsive**; so is a worke
 - The settings live in the browser (`tarven.touch`), not in a save. The code is in `src/game/touchsettings.ts`, `tavern.ts` (`maybeReach`, `impulseFacts`, `touchOptions`), `menus.ts` (`showSettingsMenu`, `showDevPanel`) and `touchtalk-givein.ts` (`IMPULSE_LINES`). The tests are in `tests/touchsettings.test.ts`.
 
 ## 7d. Grabbed at the table [built]
-As she sets down what a guest ordered, they may take hold of her: a wrist, her waist, her apron strings (`src/game/grab.ts`, `maybeGrab` in `tavern.ts`). A grab isn't a touch in itself; it's what comes before one. A guest with hold of her goes for her clothes.
+As she leans in to take a guest's order, or sets down what they ordered, they may take hold of her: a wrist, her waist, her apron strings (`src/game/grab.ts`, `maybeGrab` in `tavern.ts`). A grab isn't a touch in itself; it's what comes before one. A guest with hold of her goes for her clothes.
 
 - **How often:** 8% to start, +2.5% per point of nerve past 3, ×1.5 if they're drunk or lusting, by kind (bandits ×1.6, soldiers and smugglers ×1.2, strangers ×0.5), never past 40%. Passives move it (Slippery −30%, Held Fast +25%).
 - **It's talked through:** what they do, what they say (each kind has its own lines), what she thinks, and what's said back after she answers.
@@ -295,6 +303,21 @@ As she sets down what a guest ordered, they may take hold of her: a wrist, her w
 - Nothing left to take, and they let go with a wink.
 - **Records and passives:** grabbed, broke their hold, let them hold you (journal, Records). *Slippery* (break 8 holds: grabbed 30% less). *Held Fast* (let 6 hold you: +2 gold each time; grabbed 25% more).
 - The tests are in `tests/grab.test.ts`; elsewhere the tests' setup turns grabs off (`grabDice.roll = null`).
+
+## 7e. "Give us a look" [built]
+A bold guest may offer coin for a look at her as she serves them (`src/game/show.ts`, `maybeAskToSee` in `tavern.ts`). **Always asked, always her doing**: nothing here happens unless she picks it, and no is always there.
+
+- **What they ask to see:** the part their type likes (breasts, behind, pussy), if they've the nerve for it (pussy needs nerve 6); her breasts otherwise. Chance: 6% + 2% per nerve past 3, by kind, ×1.5 lusting or drunk, at most 30%.
+- **Her answers:**
+  - *Let them peek inside your clothes*: a look at what's under there (her breast band, her smallclothes). 2 gold (4 for her pussy).
+  - *Show them properly*: that part of her bare, for a moment. 5 gold (8 for her pussy), +2 fame, −1 respect. The whole room gets an eyeful: every other guest +1 lust.
+  - *"Not a chance."*
+- **How far she'll go** depends on that part's desire meter (÷10): a proper look needs 3 for breasts or behind and 5 for her pussy, a peek 3 less. Each exhibition passive takes 1 off (up to 2). Not ready, and the answer is greyed out with "(you're not ready for that)".
+- **Too drunk** on either side, and neither yes is there.
+- **It stirs them up:** a peek leaves that guest +2 lust and as bold as if she'd let them touch her once more; a proper look +3 lust and twice. Her own desire for that part rises (+5 / +10).
+- **Grabs and gropes stir them up too:** each touch she lets happen is +1 lust for that guest (and, as before, bolder); letting a guest who grabbed her hold her is +1 lust and +1 bold.
+- **Records and passives:** peeks, proper looks, times she said no (records). *Peep Show* (5 peeks: +1 gold a look, asked 25% more). *Flasher* (5 proper looks: +2 gold a look, asked 50% more).
+- Tests: `tests/show.test.ts`; elsewhere the tests' setup turns asks off (`showDice.roll = null`).
 
 ## 7c. Desire, Karryn-style [built]
 Six desires, 0–100, reset each night to what her passives start them at: **Body, Mouth, Breasts, Butt, Pussy, Cock**. Cock desire is her wanting to be intimate with someone. The rules are in `src/game/desire.ts`; the tests are in `tests/desire.test.ts`.

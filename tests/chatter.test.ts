@@ -11,6 +11,7 @@ const guest = (id: number, kind: GuestKind, changes: Partial<Guest> = {}): Guest
   female: id % 2 === 0,
   look: 0,
   order: "ale",
+  ordered: true,
   seat: id,
   status: "waiting",
   patience: 50,

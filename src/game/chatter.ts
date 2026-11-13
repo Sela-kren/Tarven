@@ -13,7 +13,7 @@ import { SPEAKERS, type BanterContext } from "./banter";
 import { ABOUT_YOU, LEERING_CALLS, LEERING_THANKS, SMUTTY_GOSSIP } from "./gossip";
 import { feltMood, LOW_RESPECT, STRONG_DESIRE, type Mood } from "./mood";
 import { CLASHES, DESIRE_TALKS, DESIRE_THANKS, MOOD_LINES, MOOD_TALKS } from "./moodtalk";
-import { roleLabel } from "./guestroles";
+import { ROLES, ROLES_OF, type GuestRole } from "./guestroles";
 import { ANYONE, EXCHANGES, type Exchange } from "./tabletalk";
 import type { Guest, GuestKind, Item, PartyPlan } from "./tavern";
 
@@ -80,6 +80,28 @@ const CALLS: Record<GuestKind, string[]> = {
     "{Item}, if you please. The best you have.",
     "You there. {Item}. And wipe the table first.",
   ],
+};
+
+/** Calling her over to take their order, before she has: nothing said yet of what they want. */
+const HAILS: Record<GuestKind, string[]> = {
+  farmer: ["Innkeeper! When you've a moment!", "Over here, love!", "A tired soul over here, innkeeper!"],
+  soldier: ["Innkeeper! Over here, and be quick.", "Oi! Service for the baron's men!", "You. Here. Now."],
+  smuggler: ["Innkeeper. When you're free.", "Over here, friend. Quietly.", "A moment of your time, innkeeper."],
+  fugitive: ["Excuse me... could I order?", "Um. Innkeeper? Over here?", "Sorry... is anyone serving?"],
+  adventurer: ["Innkeeper! Heroes need serving!", "Over here! We've coin to spend!", "Oi! Innkeeper! Table of legends here!"],
+  bandit: ["Oi. Innkeeper. Here.", "Red scarf table. Get over here.", "Service. Now."],
+  noble: ["You there. Attend us.", "Innkeeper. We are waiting to be served.", "Does anyone take orders in this place?"],
+};
+
+/** Still waiting for anyone to take their order, once half their patience has gone. */
+const UNASKED: Record<GuestKind, string[]> = {
+  farmer: ["Is anyone taking orders tonight?", "Innkeeper? I've been sat here an age."],
+  soldier: ["Am I invisible?! Over here!", "Someone take my order before I take this place apart!"],
+  smuggler: ["I'd like to order. Sometime this year.", "Ignoring me's a mistake, innkeeper."],
+  fugitive: ["Sorry... I'd still like to order...", "Maybe I should just go..."],
+  adventurer: ["Oi! We've been waiting since the last dragon!", "Innkeeper? Anyone? We're parched!"],
+  bandit: ["Nobody's asked what I want. Bad idea.", "Still waiting. Getting cross."],
+  noble: ["Must I fetch it myself?", "I have never been so neglected."],
 };
 
 /** Calling again, once half their patience has gone. */
@@ -193,8 +215,25 @@ export function unquote(text: string): string {
 }
 
 /**
- * Which party member says each scripted line, matched by what they're called ("Other farmer" is a farmer)
- * and failing that, whoever hasn't spoken yet. Lines with no speaker are left out.
+ * Which of a party's seated members a scripted speaker is, as an index into `unmatched`, or -1 when nobody fits.
+ * A type the group has several of ("Warrior", "Rogue", "Servant") is only ever that type; a group ("Farmer", "Other
+ * soldier", "Pale stranger") is anyone of it; any other name, whoever hasn't spoken yet. Nobody fitting means the
+ * line isn't said, rather than put in the wrong mouth: a mage never speaks the warrior's lines.
+ */
+export function speakerIndex(name: string, unmatched: readonly Guest[]): number {
+  const lower = name.toLowerCase();
+  const named = (Object.keys(ROLES) as GuestRole[]).find(
+    (role) => lower.includes(ROLES[role].label.toLowerCase()) || (role === "servant" && /maid|footman/.test(lower)),
+  );
+  if (named && ROLES_OF[ROLES[named].kind].length > 1) return unmatched.findIndex((g) => g.role === named);
+  const group = named ? ROLES[named].kind : (Object.keys(SPEAKERS) as GuestKind[]).find((kind) => lower.includes(SPEAKERS[kind].toLowerCase()));
+  if (group) return unmatched.findIndex((g) => g.kind === group);
+  return unmatched.length > 0 ? 0 : -1;
+}
+
+/**
+ * Which party member says each scripted line, matched by what they're called (speakerIndex). Lines with no speaker,
+ * and lines for someone who isn't sitting there, are left out.
  */
 export function assignSpeakers(chat: readonly string[], members: readonly Guest[]): ScriptLine[] {
   const unmatched = [...members];
@@ -206,11 +245,9 @@ export function assignSpeakers(chat: readonly string[], members: readonly Guest[
     const [, name, said] = match;
     let id = speakers.get(name);
     if (id === undefined) {
-      const lower = name.toLowerCase();
-      // By their type first ("Archer"), then their group ("Farmer").
-      const byType = unmatched.findIndex((g) => lower.includes(roleLabel(g.role, g.female).toLowerCase()));
-      const index = Math.max(0, byType >= 0 ? byType : unmatched.findIndex((g) => lower.includes(SPEAKERS[g.kind].toLowerCase())));
-      id = (unmatched.splice(index, 1)[0] ?? members[0]).id;
+      const index = speakerIndex(name, unmatched);
+      if (index < 0) continue;
+      id = unmatched.splice(index, 1)[0].id;
       speakers.set(name, id);
     }
     lines.push({ guestId: id, text: unquote(said) });
@@ -224,6 +261,8 @@ interface GuestState {
   called: number;
   /** Counts down to their first call after sitting. */
   callIn: number;
+  /** Whether she had taken their order, last time: the moment she does, they say what they want. */
+  ordered: boolean;
   said: Said | null;
   mood: Mood;
 }
@@ -386,7 +425,7 @@ export class Chatter {
     for (const guest of guests) {
       let state = this.guests.get(guest.id);
       if (!state) {
-        state = { status: guest.status, called: 0, callIn: CALL_DELAY + this.random() * 1.2, said: null, mood: feltMood(guest) };
+        state = { status: guest.status, called: 0, callIn: CALL_DELAY + this.random() * 1.2, ordered: guest.ordered, said: null, mood: feltMood(guest) };
         this.guests.set(guest.id, state);
       }
       state.mood = feltMood(guest);
@@ -414,6 +453,15 @@ export class Chatter {
         }
         continue;
       }
+      // She's come to take their order: they tell her, over whatever they were saying.
+      if (!state.ordered && guest.ordered) {
+        state.ordered = true;
+        const calls = this.leers(guest) ? LEERING_CALLS[kind] : (moodLines?.calls[kind] ?? CALLS[kind]);
+        this.say(state, fill(this.pick(calls), guest.order), "call");
+        // They've said it: no first call left to make.
+        state.called = Math.max(state.called, 1);
+        continue;
+      }
       if (guest.status !== "waiting" || state.said) continue;
 
       // Waiting for their order: call for it, and call again as they lose patience.
@@ -424,12 +472,13 @@ export class Chatter {
         state.callIn -= dt;
         if (state.callIn <= 0 && quietTable) {
           state.called = 1;
-          const calls = this.leers(guest) ? LEERING_CALLS[kind] : (moodLines?.calls[kind] ?? CALLS[kind]);
+          // Before she's taken their order, they only call her over; once she has, they've said what they want.
+          const calls = !guest.ordered ? HAILS[kind] : this.leers(guest) ? LEERING_CALLS[kind] : (moodLines?.calls[kind] ?? CALLS[kind]);
           this.say(state, fill(this.pick(calls), guest.order), "call");
         }
       } else if (state.called === 1 && left < 0.5 && quietTable) {
         state.called = 2;
-        this.say(state, fill(this.pick(NUDGES[kind]), guest.order), "call");
+        this.say(state, fill(this.pick(guest.ordered ? NUDGES[kind] : UNASKED[kind]), guest.order), "call");
       } else if (state.called === 2 && left < 0.22) {
         // Someone about to walk out says so whoever else is talking.
         state.called = 3;

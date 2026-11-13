@@ -32,6 +32,7 @@ const guest = (id: number, kind: GuestKind, mood: Mood): Guest => ({
   female: id % 2 === 0,
   look: 0,
   order: "ale",
+  ordered: true,
   seat: id,
   status: "eating",
   patience: 50,

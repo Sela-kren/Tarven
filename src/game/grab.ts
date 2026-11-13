@@ -1,5 +1,5 @@
 /**
- * A grab at the table: as she sets down what a guest ordered, they take hold of her (a wrist, her waist, her apron
+ * A grab at the table: as she takes a guest's order, or sets down what they ordered, they take hold of her (a wrist, her waist, her apron
  * strings) and keep hold. Not a touch in itself, but what comes before one: a guest with hold of her goes for her
  * clothes next (the "held" touches in touchtalk.ts).
  *
@@ -17,6 +17,14 @@ export const GRAB_MOVES: readonly string[] = [
   "They catch your apron strings as you turn to go, and reel you back to the table.",
   "A hand grabs your forearm before you can straighten up from the {item}.",
   "They hook two fingers in your belt as you put the {item} down, and hold on.",
+];
+
+/** What they do as she leans in to take their order. */
+export const GRAB_AT_ORDER: readonly string[] = [
+  "You lean in to hear what they'll have, and a hand closes round your wrist.",
+  "\"Come closer, I can't hear you,\" they say, and pull you in by the waist.",
+  "As you bend to listen, they catch hold of your apron strings and don't let go.",
+  "They beckon you closer to order, then grab your arm when you do.",
 ];
 
 /** What they say with hold of her, by kind. */

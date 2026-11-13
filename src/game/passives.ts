@@ -132,6 +132,10 @@ export interface Records {
   grabbed: number;
   grabsBroken: number;
   grabsAllowed: number;
+  /** Guests who paid for a look at her (show.ts): a peek inside her clothes, a proper look, and the times she said no. */
+  peeks: number;
+  flashes: number;
+  showsRefused: number;
   /** Bar work: pots of stew cooked through, messes cleaned up, nights with nobody walking out, busy nights. */
   stewsCooked: number;
   messesCleaned: number;
@@ -195,6 +199,9 @@ export function newRecords(): Records {
     grabbed: 0,
     grabsBroken: 0,
     grabsAllowed: 0,
+    peeks: 0,
+    flashes: 0,
+    showsRefused: 0,
     stewsCooked: 0,
     messesCleaned: 0,
     smoothNights: 0,
@@ -285,6 +292,9 @@ export interface Effects {
   grab: number;
   /** Gold she gets each time she lets a guest who grabbed her hold her. */
   grabGold: number;
+  /** How much more often guests offer coin for a look at her, as a fraction; and the extra gold each look earns. */
+  showAsk: number;
+  showGold: number;
   /** Added to every guest's nerve. */
   nerve: number;
   /** Extra gold and fame on each serve while she's lost a piece of clothing. */
@@ -382,6 +392,8 @@ export function noEffects(): Effects {
     reach: 0,
     grab: 0,
     grabGold: 0,
+    showAsk: 0,
+    showGold: 0,
     nerve: 0,
     strippedGold: 0,
     strippedFame: 0,
@@ -1014,6 +1026,34 @@ export const PASSIVES: readonly PassiveDef[] = [
   },
 
   // ---- Exhibition ----
+  {
+    id: "peepShow",
+    name: "Peep Show",
+    group: "exhibition",
+    need: "Let 5 guests peek inside your clothes",
+    progress: (f) => count(f.records.peeks, 5),
+    benefit: "+1 gold for every look you give; guests ask for one 25% more often",
+    effect: (e) => {
+      e.showGold += 1;
+      e.showAsk += 0.25;
+    },
+    lewd: 2,
+    thought: "(A tug at my neckline and the coins come out. Easiest money in the house.)",
+  },
+  {
+    id: "flasher",
+    name: "Flasher",
+    group: "exhibition",
+    need: "Show 5 guests your body bare",
+    progress: (f) => count(f.records.flashes, 5),
+    benefit: "+2 gold for every look you give; guests ask for one 50% more often",
+    effect: (e) => {
+      e.showGold += 2;
+      e.showAsk += 0.5;
+    },
+    lewd: 5,
+    thought: "(The whole room went quiet when I did it. I keep thinking about that quiet.)",
+  },
   {
     id: "heldFast",
     name: "Held Fast",
@@ -2435,6 +2475,9 @@ export function readProgress(raw: unknown): ProgressSave {
       "grabbed",
       "grabsBroken",
       "grabsAllowed",
+      "peeks",
+      "flashes",
+      "showsRefused",
       "stewsCooked",
       "messesCleaned",
       "smoothNights",
