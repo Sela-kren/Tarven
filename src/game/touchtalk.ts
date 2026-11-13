@@ -50,6 +50,11 @@ export interface TouchDef {
    * away always there (GAME_PATH.MD, "Brawl notes").
    */
   brawl?: boolean;
+  /**
+   * Only once a guest has hold of her at the table (grab.ts): a strip try with her wrist in their hand. Asked on the
+   * touch screen like any reach (or, Consent off, the push-vs-hold check, their grip adding to the push).
+   */
+  grab?: boolean;
 }
 
 const ANY: readonly GuestKind[] = [];
@@ -716,6 +721,46 @@ export const TOUCHES: readonly TouchDef[] = [
     thoughts: ["(Mmph— what are they—)", "(I should bite. I'm not biting.)", "(Finally.)"],
     allow: "You let them kiss you, fists still balled in their shirt.",
     lean: "You kiss them back harder, and the tavern erupts.",
+  },
+
+  // ---- At the table, once a guest has hold of her (grab.ts) ----
+  // Any guest's, but only after a grab she let stand (or, Consent off, one that just happened). Asked like any reach:
+  // Pull away is always there.
+  {
+    id: "heldTug",
+    level: 3,
+    region: "clothes",
+    kinds: ANY,
+    strip: true,
+    grab: true,
+    reach: "Still holding your wrist, they hook a finger in your {piece} with the other hand. \"What's under this, then?\"",
+    thoughts: ["(Let go of me first—)", "(They've got me. It's only my {piece}...)", "(Go on. Find out.)"],
+    allow: "You let them tug your {piece} loose. They hold it up, grinning, and the table cheers.",
+    lean: "You lean in so they can reach. Your {piece} comes away, and the table bangs their cups.",
+  },
+  {
+    id: "heldYank",
+    level: 5,
+    region: "clothes",
+    kinds: ANY,
+    strip: true,
+    grab: true,
+    reach: "They reel you in by the arm and get a fist in your {piece}. \"Hold still, love.\"",
+    thoughts: ["(Not here— the whole room—)", "(I could pull away. My feet aren't moving.)", "(Pull, then.)"],
+    allow: "You hold still. One pull, and your {piece} is in their fist. Whistles from every table.",
+    lean: "You lift your arms for them. Your {piece} comes off, and the room roars.",
+  },
+  {
+    id: "heldPeel",
+    level: 7,
+    region: "clothes",
+    kinds: ANY,
+    strip: true,
+    grab: true,
+    reach: "They keep you pinned against the table's edge and start peeling your {piece} off, slow, while their friends count.",
+    thoughts: ["(Everyone's watching— let me go—)", "(They're counting. I'm letting them count.)", "(Slower. Make them wait.)"],
+    allow: "You stand there and let them peel it. Your {piece} is off by 'four', and the cheer shakes the windows.",
+    lean: "You turn to give them the laces. Your {piece} is off before they reach 'three'.",
   },
 ];
 

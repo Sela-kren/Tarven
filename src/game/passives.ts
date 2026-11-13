@@ -128,6 +128,10 @@ export interface Records {
   /** A foe's reach mid-brawl: slapped away, or let happen (her choice, on the touch screen). */
   brawlSlaps: number;
   brawlLets: number;
+  /** Guests who grabbed her as she served them (grab.ts), how often she broke their hold, and how often she let it stand. */
+  grabbed: number;
+  grabsBroken: number;
+  grabsAllowed: number;
   /** Bar work: pots of stew cooked through, messes cleaned up, nights with nobody walking out, busy nights. */
   stewsCooked: number;
   messesCleaned: number;
@@ -188,6 +192,9 @@ export function newRecords(): Records {
     timesHeld: 0,
     brawlSlaps: 0,
     brawlLets: 0,
+    grabbed: 0,
+    grabsBroken: 0,
+    grabsAllowed: 0,
     stewsCooked: 0,
     messesCleaned: 0,
     smoothNights: 0,
@@ -272,10 +279,12 @@ export interface Effects {
   bottleGold: number;
   /** How much more often guests ask for a bottle. */
   bottleAsk: number;
-  /** How much faster washing up goes, as a fraction. */
-  washSpeed: number;
   /** How much more (or, negative, less) often guests reach for her, as a fraction. */
   reach: number;
+  /** How much more (or, negative, less) often guests grab her as she serves them (grab.ts), as a fraction. */
+  grab: number;
+  /** Gold she gets each time she lets a guest who grabbed her hold her. */
+  grabGold: number;
   /** Added to every guest's nerve. */
   nerve: number;
   /** Extra gold and fame on each serve while she's lost a piece of clothing. */
@@ -370,8 +379,9 @@ export function noEffects(): Effects {
     payPct: 0,
     bottleGold: 0,
     bottleAsk: 0,
-    washSpeed: 0,
     reach: 0,
+    grab: 0,
+    grabGold: 0,
     nerve: 0,
     strippedGold: 0,
     strippedFame: 0,
@@ -1005,6 +1015,21 @@ export const PASSIVES: readonly PassiveDef[] = [
 
   // ---- Exhibition ----
   {
+    id: "heldFast",
+    name: "Held Fast",
+    group: "exhibition",
+    need: "Let 6 guests who grab you at the table hold you",
+    progress: (f) => count(f.records.grabsAllowed, 6),
+    benefit: "+2 gold each time you let a guest hold you",
+    cost: "Guests grab you 25% more often",
+    effect: (e) => {
+      e.grabGold += 2;
+      e.grab += 0.25;
+    },
+    lewd: 2,
+    thought: "(Their hand on my wrist, the whole room watching. I didn't pull away.)",
+  },
+  {
     id: "bareShoulders",
     name: "Bare Shoulders",
     group: "exhibition",
@@ -1423,8 +1448,8 @@ export const PASSIVES: readonly PassiveDef[] = [
     group: "bar",
     need: "Wash 50 cups and dishes",
     progress: (f) => count(f.records.washed, 50),
-    benefit: "Washing up goes 25% faster",
-    effect: (e) => (e.washSpeed += 0.25),
+    benefit: "Guests wait 10% longer: everything they're served on shines",
+    effect: (e) => (e.patience += 0.1),
     thought: "(Scrub, rinse, stack. I could do it asleep.)",
   },
 
@@ -2241,6 +2266,16 @@ export const PASSIVES: readonly PassiveDef[] = [
     thought: "(No. Just no. It's getting easier to say.)",
   },
   {
+    id: "slippery",
+    name: "Slippery",
+    group: "composure",
+    need: "Break the hold of 8 guests who grab you at the table",
+    progress: (f) => count(f.records.grabsBroken, 8),
+    benefit: "Guests grab you 30% less often",
+    effect: (e) => (e.grab -= 0.3),
+    thought: "(A twist of the wrist and I'm gone. They never learn.)",
+  },
+  {
     id: "iceQueen",
     name: "Ice Queen",
     group: "composure",
@@ -2397,6 +2432,9 @@ export function readProgress(raw: unknown): ProgressSave {
       "timesHeld",
       "brawlSlaps",
       "brawlLets",
+      "grabbed",
+      "grabsBroken",
+      "grabsAllowed",
       "stewsCooked",
       "messesCleaned",
       "smoothNights",

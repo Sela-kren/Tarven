@@ -14,11 +14,16 @@ import { tessellateForRetro, type World } from "./world";
 const TEMPLATE_PARTS: Record<FurnitureKind, string[]> = {
   chair: ["Chair_A_S"],
   stool: ["Stool_C1"],
-  longTable: ["Table_A", "Plate_A", "Mug_A", "Candle_A"],
-  roundTable: ["Table_C", "Candle_C", "Mug_C"],
+  longTable: ["Table_A", "Candle_A"],
+  roundTable: ["Table_C", "Candle_C"],
 };
 const FURNITURE_OBJECT = /^(Chair|Stool|Table)_/;
 const TABLE_DECORATION = /^(Plate|Mug|Candle)_(A|B|C)$/;
+/**
+ * Cups and plates the room was modelled with, on the tables and the bar. They looked like real dishes waiting to be
+ * cleared, so they're taken out: every cup or plate in the room now is one a guest used.
+ */
+const STILL_DISHES = /^(Plate|Mug)_/;
 /** The walls the plan draws itself, because new floor can open them. */
 const PLANNED_WALLS = ["Wall_W", "Wall_S"];
 const CANDLE_LIGHTS = ["Light_Candle_A", "Light_Candle_B", "Light_Candle_C"];
@@ -55,7 +60,7 @@ export function claimFurniture(root: Object3D): { defaults: Placed[]; whole: str
       const { x, z } = object.getWorldPosition(new Vector3());
       defaults.push({ kind: kindOf(object.name), x, z, turn: quarterTurns(object) });
       claimed.push(object);
-    } else if (TABLE_DECORATION.test(object.name) || PLANNED_WALLS.includes(object.name)) {
+    } else if (TABLE_DECORATION.test(object.name) || STILL_DISHES.test(object.name) || PLANNED_WALLS.includes(object.name)) {
       claimed.push(object);
     }
   });

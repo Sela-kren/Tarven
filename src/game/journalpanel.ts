@@ -46,6 +46,7 @@ export function showJournal(game: Game, page: JournalPage = "ledger"): void {
         persona: tavern.persona,
         lewdness: tavern.lewdness,
         corruption: Math.round(tavern.corruption),
+        favors: tavern.favorsAhead.map((f) => ({ kind: f.kind, note: f.note })),
       },
       (name) => (tavern.name = name),
     );

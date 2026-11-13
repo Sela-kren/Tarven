@@ -8,6 +8,8 @@ const guest = (id: number, kind: GuestKind, changes: Partial<Guest> = {}): Guest
   kind,
   role: defaultRole(kind),
   stats: ROLES[defaultRole(kind)],
+  female: id % 2 === 0,
+  look: 0,
   order: "ale",
   seat: id,
   status: "waiting",

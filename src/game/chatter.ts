@@ -13,7 +13,7 @@ import { SPEAKERS, type BanterContext } from "./banter";
 import { ABOUT_YOU, LEERING_CALLS, LEERING_THANKS, SMUTTY_GOSSIP } from "./gossip";
 import { feltMood, LOW_RESPECT, STRONG_DESIRE, type Mood } from "./mood";
 import { CLASHES, DESIRE_TALKS, DESIRE_THANKS, MOOD_LINES, MOOD_TALKS } from "./moodtalk";
-import { guestFemale, roleLabel } from "./guestroles";
+import { roleLabel } from "./guestroles";
 import { ANYONE, EXCHANGES, type Exchange } from "./tabletalk";
 import type { Guest, GuestKind, Item, PartyPlan } from "./tavern";
 
@@ -208,7 +208,7 @@ export function assignSpeakers(chat: readonly string[], members: readonly Guest[
     if (id === undefined) {
       const lower = name.toLowerCase();
       // By their type first ("Archer"), then their group ("Farmer").
-      const byType = unmatched.findIndex((g) => lower.includes(roleLabel(g.role, guestFemale(g.id)).toLowerCase()));
+      const byType = unmatched.findIndex((g) => lower.includes(roleLabel(g.role, g.female).toLowerCase()));
       const index = Math.max(0, byType >= 0 ? byType : unmatched.findIndex((g) => lower.includes(SPEAKERS[g.kind].toLowerCase())));
       id = (unmatched.splice(index, 1)[0] ?? members[0]).id;
       speakers.set(name, id);

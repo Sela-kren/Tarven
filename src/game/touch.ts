@@ -107,6 +107,8 @@ export interface PickOptions {
   pull?: Partial<Record<TouchRegion, number>>;
   /** A foe reaching mid-brawl: the scuffle's own touches open up, and come up more often than the room's. */
   brawl?: boolean;
+  /** A guest with hold of her at the table: the held strip tries open up, and garments are all they go for. */
+  held?: boolean;
 }
 
 /** How much likelier a brawl's own touches are than the room's, mid-fight. */
@@ -121,6 +123,7 @@ export function touchesFor(kind: GuestKind, guestNerve: number, options: PickOpt
     (t) =>
       (!t.romance || options.invites === true) &&
       (!t.brawl || options.brawl === true) &&
+      (!t.grab || options.held === true) &&
       t.level <= guestNerve &&
       (t.kinds.length === 0 || t.kinds.includes(kind)) &&
       (!t.strip || options.canStrip),
@@ -132,7 +135,10 @@ export function touchesFor(kind: GuestKind, guestNerve: number, options: PickOpt
  * often one they've tried already tonight. Null if their nerve won't stretch to anything.
  */
 export function pickTouch(kind: GuestKind, guestNerve: number, random: () => number, options: PickOptions): TouchDef | null {
-  const choices = touchesFor(kind, guestNerve, options);
+  const open = touchesFor(kind, guestNerve, options);
+  // With hold of her, they go for her clothes, while there's anything left to take.
+  const garments = options.held ? open.filter((t) => t.strip) : [];
+  const choices = garments.length > 0 ? garments : open;
   if (choices.length === 0) return null;
   const weights = choices.map(
     (t) =>

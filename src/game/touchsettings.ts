@@ -85,6 +85,8 @@ export interface ImpulseFacts {
   strip?: boolean;
   /** What her passives add to her hold for this touch (Karryn's resistances): negative is weaker. */
   passiveHold?: number;
+  /** They have hold of her (a grab at the table): their grip adds to their push. */
+  held?: boolean;
 }
 
 /** The check's result: each side's number, what made up hers, and whether the touch lands on its own. */
@@ -108,6 +110,8 @@ export const HOLD_BASE = 6;
 export const STRIP_HOLD = 2;
 /** What a guest's taste for that part adds to their push. */
 export const PREFER_PUSH = 2;
+/** What a guest's grip on her adds to their push (a grab at the table, grab.ts). */
+export const HELD_PUSH = 2;
 
 /**
  * Consent off: does this impulsive guest's touch play out without asking? Their push (nerve, their type's taste,
@@ -126,7 +130,7 @@ export function impulseCheck(f: ImpulseFacts): ImpulseCheck {
   const wanting = want.desire + want.passives + want.experience + want.skill + want.exhibition;
   const clothing = f.strip ? STRIP_HOLD : 0;
   const passives = f.passiveHold ?? 0;
-  const push = round1(f.nerve + (f.prefers ? PREFER_PUSH : 0) + f.exposed);
+  const push = round1(f.nerve + (f.prefers ? PREFER_PUSH : 0) + f.exposed + (f.held ? HELD_PUSH : 0));
   const hold = round1(Math.max(0, HOLD_BASE + f.level + clothing + passives - wanting));
   return { push, hold, want, clothing, passives, lands: push >= hold };
 }

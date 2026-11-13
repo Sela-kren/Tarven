@@ -55,6 +55,8 @@ export interface JournalState {
   persona: Persona;
   lewdness: number;
   corruption: number;
+  /** What's still to come of favors: promises she's made, and favors owed her (favors.ts). */
+  favors?: readonly { kind: "promise" | "return"; note: string }[];
 }
 
 /** The baron's note of what you owe: a rolled scroll with a red seal. */
@@ -159,6 +161,13 @@ export function journalBook(state: JournalState, onName: (name: string) => void)
     row("Heat", `${state.heat}/${state.heatMax}`, { icon: FLAME, bar: meter(state.heat, 0, state.heatMax, "red") }),
   );
   left.append(el("p", state.heat >= state.heatMax - 2 ? "note danger" : "note", `At ${state.heatMax} the baron's men come for you.`));
+
+  // Promises she's made and favors owed her: someone will come for each, on a later night.
+  const favors = state.favors ?? [];
+  if (favors.length > 0) {
+    left.append(el("h2", "", "Your word, and what's owed"));
+    for (const f of favors) left.append(el("p", f.kind === "promise" ? "note danger" : "note", `${f.kind === "promise" ? "Promised" : "Owed"}: ${f.note}`));
+  }
 
   const p = state.persona;
   right.append(el("h2", "", "What they say of you"));
@@ -458,6 +467,10 @@ export function recordsBook(state: RecordsState): HTMLElement {
   // The Consent-off check: which side of her won out (her sub side, her dom side).
   left.append(row("Gave in (sub)", String(r.subWins)));
   left.append(row("Faced them down (dom)", String(r.domWins)));
+  // Grabbed as she served: how often she broke their hold, and how often she let it stand.
+  left.append(row("Grabbed at a table", String(r.grabbed)));
+  left.append(row("Broke their hold", String(r.grabsBroken)));
+  left.append(row("Let them hold you", String(r.grabsAllowed)));
   left.append(row("Clothes lost", String(r.clothesLost)));
   left.append(row("Nights bared", String(r.bareNights)));
   left.append(row("Nights untouched", String(r.chasteNights)));

@@ -161,6 +161,15 @@ Like enemies, no two guests of a type are the same. Each guest rolls their own s
 - The ranges keep the types in order: the best mage still has less brawl stamina than the worst brute.
 - The rolls use their own random source, so they don't change any other chances in the game.
 
+**Who they look like [built].** Each guest also rolls their body (male or female) and a look: skin tone, hair and eye colour, and which colouring of their outfit (or, for farmers, soldiers and strangers, which plain clothes). Before, both came from the order they walked in, which starts over each night, so the first farmer was the same man every night.
+
+**Who comes tonight [built].** Each night's list (NIGHTS) is the night's story, and the road changes around it (`rollArrivals`):
+- Parties and whoever carries the rumor always come, as written.
+- Anyone walking in alone may be another of the night's kinds (30%), comes up to 8s late, and after the first night may stay home (15%).
+- More walk in on top, between ⌊draw/3⌋ and 1 + ⌈draw × 0.6⌉ (at most 6). **Draw** = each upgrade + each set of cups or dishes bought + each bottle on the shelf, so a kitted-out tavern (draw 10) gets 3 to 6 more every night.
+- A busier or quieter night says so in the log as it begins.
+- Tests run the nights as written (`crowdDice.roll = null` in tests/setup.ts).
+
 ---
 
 ## 4. Preferred touch meters [planned]
@@ -262,16 +271,30 @@ A lustful guest with the nerve for it (Nerve 5+) is **impulsive**; so is a worke
 | their Nerve | 6 + the touch's boldness |
 | +2 if their type goes for that part (`prefers`) | − desire for that part ÷ 20 (0–5) |
 | +1 per piece of clothing off her | − her passives for that part (up to 3) |
-| | − times she's let that part be touched ÷ 5 (up to 3) |
+| +2 if they have hold of her (a grab at the table, 7d) | − times she's let that part be touched ÷ 5 (up to 3) |
 | | − body skill practice (up to 3) |
 | | − Exhibition passives, once something's off (up to 2) |
 
 - **Push at or past her hold:** it plays out as *Let it happen*: the guest's reach, an impulse line, the touch's own line, and *Get back to work* (or *Back to the fight*). The comic panel plays, and the Force bar rushes up (`fast`).
 - **Her hold stands:** she's asked like any other time.
 - **The first time** an impulsive guest reaches with Consent still on, the touch freezes as usual with two extra answers on top: *"Let it happen, and let eager guests skip asking (Consent off)"* and *"Always ask me first"*. Every usual answer stays.
-- **It only covers touches she could already say yes to:** desire high enough for *Let it happen*, nobody too drunk, within the boldness chosen, never a garment, never the invitation upstairs. Pull away still works on the next reach.
+- **It only covers touches she could already say yes to:** desire high enough for *Let it happen*, nobody too drunk, within the boldness chosen, never the invitation upstairs. A garment counts, but she holds on to her clothes harder (+2 to her hold). Pull away still works on the next reach.
 - The dev panel (**]**, dev builds only) shows both sides of the last check and why it played out or asked.
 - The settings live in the browser (`tarven.touch`), not in a save. The code is in `src/game/touchsettings.ts`, `tavern.ts` (`maybeReach`, `impulseFacts`, `touchOptions`), `menus.ts` (`showSettingsMenu`, `showDevPanel`) and `touchtalk-givein.ts` (`IMPULSE_LINES`). The tests are in `tests/touchsettings.test.ts`.
+
+## 7d. Grabbed at the table [built]
+As she sets down what a guest ordered, they may take hold of her: a wrist, her waist, her apron strings (`src/game/grab.ts`, `maybeGrab` in `tavern.ts`). A grab isn't a touch in itself; it's what comes before one. A guest with hold of her goes for her clothes.
+
+- **How often:** 8% to start, +2.5% per point of nerve past 3, ×1.5 if they're drunk or lusting, by kind (bandits ×1.6, soldiers and smugglers ×1.2, strangers ×0.5), never past 40%. Passives move it (Slippery −30%, Held Fast +25%).
+- **It's talked through:** what they do, what they say (each kind has its own lines), what she thinks, and what's said back after she answers.
+- **Consent on:** she answers the grab.
+  - *Twist free:* always works, like Pull away. Nothing comes off.
+  - *Slap their hand away:* always works, +1 respect; about a third take it badly and turn angry.
+  - *Let them hold you:* +1 fame. Only now do they go for her clothes, with the held strip tries (any kind: hand-in-the-piece tug L3, a fist in it L5, peeled off slow L7). That reach **asks like any other**, Pull away included.
+- **Consent off:** the grab just happens, with no answer to it ("You don't get the chance to pull away"). They go straight for her clothes, through the push-vs-hold check, with their grip adding +2 to their push. If her hold stands, she's asked as usual. A guest who isn't impulsive still asks.
+- Nothing left to take, and they let go with a wink.
+- **Records and passives:** grabbed, broke their hold, let them hold you (journal, Records). *Slippery* (break 8 holds: grabbed 30% less). *Held Fast* (let 6 hold you: +2 gold each time; grabbed 25% more).
+- The tests are in `tests/grab.test.ts`; elsewhere the tests' setup turns grabs off (`grabDice.roll = null`).
 
 ## 7c. Desire, Karryn-style [built]
 Six desires, 0–100, reset each night to what her passives start them at: **Body, Mouth, Breasts, Butt, Pussy, Cock**. Cock desire is her wanting to be intimate with someone. The rules are in `src/game/desire.ts`; the tests are in `tests/desire.test.ts`.

@@ -1549,6 +1549,22 @@ const GUEST_VARIANTS: Record<GuestOutfit, Record<BodyName, Record<string, string
 };
 
 /** The colours a guest's outfit is put on with: its preset, changed by one of its variants. */
+/**
+ * A guest's own skin, hair and eyes, from the look they rolled walking in (Guest.look), so no two farmers are the
+ * same man. Each takes its own share of the number, so they don't move together.
+ */
+export function guestPersonColors(look: number): Record<string, string> {
+  const at = (palette: readonly string[], step: number) => palette[Math.floor(look / step) % palette.length];
+  return {
+    skin: at(SKIN_TONES, GUEST_LOOKS),
+    hair: at(HAIR_COLORS, GUEST_LOOKS * SKIN_TONES.length),
+    eyes: at(EYE_COLORS, GUEST_LOOKS * SKIN_TONES.length * HAIR_COLORS.length),
+  };
+}
+
+/** How many guests' looks go by before their outfit, skin, hair and eyes all come round again. */
+export const GUEST_PERSON_LOOKS = GUEST_LOOKS * SKIN_TONES.length * HAIR_COLORS.length * EYE_COLORS.length;
+
 export function guestOutfitColors(body: BodyName, outfit: GuestOutfit, variant: number): Record<string, string> {
   const def = LOOK_OPTIONS[body].outfits.find((o) => o.id === outfit)!;
   const index = ((variant % GUEST_LOOKS) + GUEST_LOOKS) % GUEST_LOOKS;

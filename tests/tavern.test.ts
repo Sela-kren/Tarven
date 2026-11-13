@@ -369,14 +369,13 @@ function playWholeGame(pickChoice: number, tripTime: number): Tavern {
         t.interact(0, { kind: "mess", id: mess.id });
         t.interact(0, station("wash"));
       }
-      while (t.tub.length > 0) t.tick(dt, { listeningTo: null, night: false, scrubber: 0 });
+      if (t.tub.length > 0) t.interact(0, station("wash"));
       openForNight(t);
     }
     let busy = 0;
-    let scrubber: number | null = null;
     for (let steps = 0; t.phase === "service" && steps < 20000; steps++) {
       const rumorGuest = t.guests.find((g) => g.rumor && (g.status === "waiting" || g.status === "eating"));
-      t.tick(dt, { listeningTo: rumorGuest?.id ?? null, night: true, scrubber });
+      t.tick(dt, { listeningTo: rumorGuest?.id ?? null, night: true });
       for (const guest of [...t.guests]) {
         if (guest.status === "arriving") t.guestArrived(guest.id);
         if (guest.status === "leaving") t.guestLeft(guest.id);
@@ -385,7 +384,6 @@ function playWholeGame(pickChoice: number, tripTime: number): Tavern {
       busy -= dt;
       if (busy > 0) continue;
 
-      scrubber = null;
       const held = t.carrying[0];
       const waiting = t.guests.filter((g) => g.status === "waiting").sort((a, b) => a.patience - b.patience);
       if (held === "dirty") {
@@ -402,7 +400,7 @@ function playWholeGame(pickChoice: number, tripTime: number): Tavern {
       } else if (waiting.length === 0 || !hasWareFor(waiting[0].order)) {
         // Nobody to serve, or nothing clean to serve them on: wash up.
         const pile = t.messes.find((m) => m.kind === "dishes");
-        if (t.tub.length > 0) scrubber = 0;
+        if (t.tub.length > 0) t.interact(0, station("wash"));
         else if (pile) {
           t.interact(0, { kind: "mess", id: pile.id });
           busy = tripTime;

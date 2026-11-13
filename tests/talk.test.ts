@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { drunkLabel, Tavern, type Guest, type Target } from "../src/game/tavern";
+import { drunkLabel, Tavern, TIP_DRINK_DECLINE, TIP_DRINK_LABEL, type Guest, type Target } from "../src/game/tavern";
 
 /** The real room: two tables of two, a round table of three, and four bar stools. */
 const TABLES = ["A", "A", "B", "B", "C", "C", "C", "Bar", "Bar", "Bar", "Bar"];
@@ -194,18 +194,24 @@ describe("a drink as a tip", () => {
   }
 
   const said = (t: Tavern) => t.talkLines.map((line) => line.text);
+  /** Turns down the drink they offered, which brings on what they say next: a compliment, a favor or a dare. */
+  const pastDrink = (t: Tavern) => t.chooseTalk(t.talkChoices.findIndex((c) => c.label === TIP_DRINK_DECLINE));
 
   it("opens a conversation with the guest, who offers you a drink", () => {
     const t = tipped();
     expect(t.inConversation).toBe(true);
     expect(t.talkLines[0].speaker).toMatch(/^Farmer/);
-    expect(t.talkChoices[0].label).toBe("Drink it, on them");
+    // First only the drink they offered is asked, right under their offer.
+    expect(t.talkChoices.map((c) => c.label)).toEqual([TIP_DRINK_LABEL, TIP_DRINK_DECLINE, "Get back to work"]);
     const gold = t.gold;
     t.chooseTalk(0);
     expect(t.drunk).toBeCloseTo(0.3);
     expect(t.gold).toBe(gold + 2);
     expect(t.persona.drinks).toBe(1);
     expect(t.talkReplyLines[0]).toEqual({ speaker: "You", text: "\"Cheers!\"" });
+    // Then what they say next, with its own answers, and no drink among them.
+    expect(t.talkReplyLines.at(-1)?.speaker).toMatch(/^Farmer/);
+    expect(t.talkChoices.map((c) => c.label)).not.toContain(TIP_DRINK_LABEL);
     t.chooseTalk(t.talkChoices.length - 1);
     expect(t.inConversation).toBe(false);
   });
@@ -216,6 +222,8 @@ describe("a drink as a tip", () => {
       t.playerBody = "Female";
       t.persona.flirt = 8;
     });
+    pastDrink(shy);
+    pastDrink(bold);
     expect(said(shy)).toContain("\"Has anyone told you you've got the prettiest eyes on the whole pass?\"");
     expect(said(bold).some((text) => text.includes("flirt back"))).toBe(true);
     // Only a known flirt gets to flirt back shamelessly.
@@ -225,11 +233,13 @@ describe("a drink as a tip", () => {
 
   it("fits the compliment to who you play", () => {
     const him = tipped((t) => (t.playerBody = "Male"));
+    pastDrink(him);
     expect(said(him)).toContain("\"Look at the arms on you! Bet you roll those casks like they're apples.\"");
   });
 
   it("builds your reputation from how you answer", () => {
     const t = tipped();
+    pastDrink(t);
     const play = t.talkChoices.findIndex((c) => c.label === "Laugh and play along");
     t.chooseTalk(play);
     expect(t.persona.flirt).toBe(1);
@@ -249,16 +259,19 @@ describe("a drink as a tip", () => {
       t.random = () => (rolls++ < 4 ? 0 : 0.7);
     };
     const asked = tipped(favorRolls);
+    pastDrink(asked);
     expect(said(asked).some((text) => /letter|ewe|slate/.test(text))).toBe(true);
     const distrusted = tipped((t) => {
       favorRolls(t);
       t.persona.sold = 1;
     });
+    pastDrink(distrusted);
     expect(said(distrusted).some((text) => text.includes("I hear you sell what you hear"))).toBe(true);
   });
 
   it("says your answer aloud before what comes of it", () => {
     const t = tipped();
+    pastDrink(t);
     t.chooseTalk(t.talkChoices.findIndex((c) => c.label === "Laugh and play along"));
     expect(t.talkReplyLines[0].speaker).toBe("You");
     expect(t.talkReplyLines[1].speaker).toBeNull();
@@ -272,6 +285,7 @@ describe("a drink as a tip", () => {
     const asks = new Set<string>();
     const favorText = () => said(t).find((text) => /letter|ewe|slate/.test(text));
     for (let i = 0; i < 4; i++) {
+      if (t.inConversation) pastDrink(t);
       const ask = favorText();
       if (ask) {
         expect(asks.has(ask)).toBe(false);

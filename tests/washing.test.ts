@@ -3,7 +3,6 @@ import { STOCK_COST, STOCK_PACK, Tavern, type Guest, type Station, type Target }
 
 const TABLES = ["A", "A", "A", "B", "B", "B", "Bar", "Bar", "Bar", "Bar", "Bar"];
 const idle = { listeningTo: null, night: true };
-const scrubbing = { ...idle, scrubber: 0 };
 const station = (s: Station): Target => ({ kind: "station", station: s });
 const at = (guest: Guest): Target => ({ kind: "guest", id: guest.id });
 
@@ -127,22 +126,27 @@ describe("washing up", () => {
     t.interact(0, { kind: "mess", id: dirtyPile(t).id });
     expect(t.carrying[0]).toBe("dirty");
     expect(t.messes).toHaveLength(0);
+    // One press at the tub, and it's washed and back on the shelf.
+    expect(t.prompt(0, station("wash"))?.label).toBe("Wash the dirty cup");
     t.interact(0, station("wash"));
     expect(t.carrying[0]).toBeNull();
-    expect(t.tub).toEqual(["cup"]);
-    run(t, 1.5, scrubbing);
     expect(t.tub).toHaveLength(0);
     expect(t.cleanWare.cup).toBe(before + 1);
   });
 
-  it("only scrubs while you stand at the tub with empty hands", () => {
+  it("washes whatever was already in the tub along with it, in the same press", () => {
     const t = opened();
-    t.tub.push("dish");
+    t.tub.push("dish", "dish");
+    const dishes = t.cleanWare.dish;
     run(t, 3);
-    expect(t.tub).toHaveLength(1);
-    t.interact(0, station("bread"));
-    run(t, 3, scrubbing);
-    expect(t.tub).toHaveLength(1);
+    expect(t.tub).toHaveLength(2);
+    t.messes.push({ id: 90, kind: "dishes", spots: [0], wares: ["cup"] });
+    t.interact(0, { kind: "mess", id: 90 });
+    expect(t.prompt(0, station("wash"))?.label).toBe("Wash the 3 dirty dishes");
+    t.interact(0, station("wash"));
+    expect(t.tub).toHaveLength(0);
+    expect(t.cleanWare.dish).toBe(dishes + 2);
+    expect(t.records.washed).toBe(3);
   });
 
   it("takes several piles in one trip", () => {
@@ -151,8 +155,9 @@ describe("washing up", () => {
     t.interact(0, { kind: "mess", id: 90 });
     t.interact(0, { kind: "mess", id: 91 });
     expect(t.carryCount[0]).toBe(2);
+    const { cup, dish } = t.cleanWare;
     t.interact(0, station("wash"));
-    expect([...t.tub].sort()).toEqual(["cup", "dish"]);
+    expect(t.cleanWare).toEqual({ cup: cup + 1, dish: dish + 1 });
   });
 
   it("seats new guests away from dirty tables while there's room", () => {
@@ -186,8 +191,8 @@ describe("washing up", () => {
     const t = opened();
     t.tub.push("cup");
     t.phase = "bedtime";
-    expect(t.prompt(0, station("wash"))?.label).toContain("Scrubbing");
-    run(t, 1.5, scrubbing);
+    expect(t.prompt(0, station("wash"))?.label).toBe("Wash the dirty cup");
+    t.interact(0, station("wash"));
     expect(t.tub).toHaveLength(0);
   });
 

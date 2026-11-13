@@ -24,8 +24,9 @@ import {
   LOOK_OPTIONS,
   loadLooks,
   newLook,
-  GUEST_LOOKS,
+  GUEST_PERSON_LOOKS,
   guestOutfitColors,
+  guestPersonColors,
   OUTFIT_COLORS,
   randomLook,
   storeLooks,
@@ -64,7 +65,7 @@ import {
 } from "./furnishings";
 import { BuildMode, type Supply } from "./buildmode";
 import { GuestActor, Walker } from "./guests";
-import { guestFemale, statsOf, type GuestRole } from "./guestroles";
+import { statsOf, type GuestRole } from "./guestroles";
 import { cloneLayout, emptyLayout, footprint, HousePlan, seatSpecs, type FurnitureKind, type HouseLayout, type Placed } from "./house";
 import { HouseView } from "./houseview";
 import { COIN, FLAME, StatsHud, VILLAGERS } from "./hud";
@@ -322,6 +323,34 @@ const OUTFITS: Record<GuestKind | "visitor", { top: number; legs: number; hair: 
   visitor: { top: 0x2f5590, legs: 0x1c1c22, hair: 0x2b2018 },
 };
 
+/**
+ * The plain clothes a group comes in, one set per guest, so a room of farmers isn't one coat over and over. The
+ * garrison keeps its red; only the breeches under it differ. The first set is the group's own (OUTFITS).
+ */
+const PLAIN_CLOTHES: Partial<Record<GuestKind | "visitor", { top: number; legs: number }[]>> = {
+  farmer: [
+    { top: 0x8a7a3e, legs: 0x4c3a24 },
+    { top: 0x6a5a3a, legs: 0x3a2e22 },
+    { top: 0x9a8a6a, legs: 0x5a4a32 },
+    { top: 0x5c6a3a, legs: 0x4a3a2a },
+    { top: 0x7a4a2a, legs: 0x3a3226 },
+    { top: 0xb8a882, legs: 0x5c4c36 },
+  ],
+  soldier: [
+    { top: 0x8c2020, legs: 0x3a3a40 },
+    { top: 0x8c2020, legs: 0x2a2a2e },
+    { top: 0x7a1c1c, legs: 0x4a4038 },
+    { top: 0x962626, legs: 0x32323a },
+  ],
+  fugitive: [
+    { top: 0xbcb4a2, legs: 0x6a6252 },
+    { top: 0x5a5a52, legs: 0x3a3632 },
+    { top: 0x6a5240, legs: 0x4a4236 },
+    { top: 0x3e4a52, legs: 0x2e2e2a },
+  ],
+};
+/** Which share of a guest's look picks their plain clothes: past what picks their outfit, skin, hair and eyes. */
+const PLAIN_STEP = GUEST_PERSON_LOOKS;
 
 /** Who the player can be, by sibling index: the male body, then the female one. */
 const PLAYER_LABELS = ["Male", "Female"];
@@ -1062,10 +1091,9 @@ export class Game {
     return copy;
   }
 
-  /** Which colours of a guest's outfit they come in, so guests of one kind don't all look alike. */
-  private guestLook(guest: { id: number; kind: GuestKind; role: GuestRole }): number {
-    // The id's lowest bit already picks the body, so the rest of it picks the colours.
-    return statsOf(guest.kind, guest.role).outfit ? Math.floor(guest.id / 2) % GUEST_LOOKS : 0;
+  /** Who a guest is to look at, as they rolled it walking in (Guest.look): 0 is their kind's plain look. */
+  private guestLook(guest: { look: number }): number {
+    return guest.look;
   }
 
   /**
@@ -1084,11 +1112,14 @@ export class Game {
       if (object instanceof Mesh) object.castShadow = false;
     });
     const own = kind === "visitor" ? null : statsOf(kind, role).outfit;
+    // Their own skin, hair and eyes, when they rolled a look; their kind's hair when they didn't.
+    const person = look > 0 ? guestPersonColors(look) : { [slots.hair]: hex(outfit.hair) };
     if (own) {
-      const colors = guestOutfitColors(body, own, look);
-      dressColors(model, body, { ...colors, [slots.hair]: hex(outfit.hair) }, own);
+      dressColors(model, body, { ...guestOutfitColors(body, own, look), ...person }, own);
     } else {
-      dressColors(model, body, { [slots.top]: hex(outfit.top), [slots.legs]: hex(outfit.legs), [slots.hair]: hex(outfit.hair) });
+      const plain = PLAIN_CLOTHES[kind] ?? [];
+      const clothes = look > 0 && plain.length > 0 ? plain[Math.floor(look / PLAIN_STEP) % plain.length] : outfit;
+      dressColors(model, body, { [slots.top]: hex(clothes.top), [slots.legs]: hex(clothes.legs), ...person });
     }
     return new Body(model, body);
   }
@@ -1201,7 +1232,7 @@ export class Game {
         const wait = this.doorQueue;
         this.doorQueue += ENTRY_GAP_SECONDS;
         actor = new GuestActor(
-          this.makeGuestBody(guest.kind, guestFemale(guest.id), this.guestLook(guest), guest.role),
+          this.makeGuestBody(guest.kind, guest.female, this.guestLook(guest), guest.role),
           guest,
           this.world.seats[guest.seat],
           this.nav,
@@ -1273,10 +1304,9 @@ export class Game {
       burnt: "alert",
     };
     this.potIcon.show(potIcons[tavern.potState]);
-    // Scrubbing: the suds bubble between two frames, and each dish that comes out clean sparkles for a moment.
+    // The tub sparkles for a moment after a wash, and shows anything left in it overnight.
     const justWashed = performance.now() - tavern.washedAt < WASH_SPARKLE_MS;
-    const sudsFrame = Math.floor(this.time * 5) % 2 === 0 ? "suds1" : "suds2";
-    this.washIcon.show(justWashed ? "sparkle" : tavern.scrubbing ? sudsFrame : tavern.tub.length > 0 ? "dirty" : null);
+    this.washIcon.show(justWashed ? "sparkle" : tavern.tub.length > 0 ? "dirty" : null);
     this.potStew.visible = tavern.potState !== "empty";
     this.potStew.material = tavern.potState === "burnt" ? this.burntMaterial : this.potStewMaterial;
   }
@@ -2251,7 +2281,7 @@ export class Game {
     const guest = this.tavern.talkGuests.find((g) => g.id === line.guestId) ?? this.tavern.talkGuests[0];
     if (!guest) return null;
     // Guests are drawn standing, fresh from a body of the same kind, rather than as they sit.
-    const female = guestFemale(guest.id);
+    const female = guest.female;
     const look = this.guestLook(guest);
     const key = `${guest.role}:${female}:${look}`;
     let portrait = this.guestPortraits.get(key);
@@ -2494,9 +2524,7 @@ export class Game {
     }
 
     const listening = this.listeningTo();
-    const { position } = player;
-    const atTub = Math.hypot(position.x - this.spots.wash.x, position.z - this.spots.wash.z) <= STATION_RANGE;
-    tavern.tick(dt, { listeningTo: listening, night: this.clock.isNight, scrubber: atTub ? this.active : null });
+    tavern.tick(dt, { listeningTo: listening, night: this.clock.isNight });
     // Trouble brewing: the guest shouts it out loud, once.
     if (tavern.trouble && tavern.trouble !== this.shoutedTrouble) {
       this.shoutedTrouble = tavern.trouble;
@@ -2652,7 +2680,7 @@ export class Game {
   /** A foe's body to picture: the guest as they stand in the room, or one made up for a test brawl. */
   private foeBody(guestId: number, kind: GuestKind): { root: Object3D; name: string } | null {
     const actor = this.actors.get(guestId);
-    const female = guestFemale(guestId);
+    const female = this.tavern.guests.find((g) => g.id === guestId)?.female ?? false;
     if (actor) return { root: actor.bodyRoot, name: female ? "Female" : "Male" };
     if (this.testFoe?.kind !== kind) this.testFoe = { kind, body: this.makeGuestBody(kind, false) };
     return { root: this.testFoe.body.root, name: "Male" };

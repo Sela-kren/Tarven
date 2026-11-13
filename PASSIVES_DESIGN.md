@@ -213,6 +213,7 @@ Key:
 
 | Passive | Requirement | Benefit | Cost | Lewd |
 |---|---|---|---|---|
+| Held Fast (built) | let 6 guests who grab you at the table hold you | +2 gold each time you let a guest hold you | guests grab you 25% more often | 2 |
 | Bare Shoulders | lose 1 piece | +1 gold per serve while a piece is off | none | 2 |
 | Show-Off | lose 10 pieces in all | clothes Ease −10; +1 fame per serve while undressed | none | 5 |
 | Exhibitionist | end 3 nights in underwear | Body Start +10; new day option **Serve in less** (start the night with a piece off: +tips) | −Respect, +1 Heat per night | 10 |
@@ -261,7 +262,7 @@ Key:
 | Barmaid of the Pass | serve 300 | +10% on all pay | none |
 | Good Stuff | pour 10 bottles | +1 gold per bottle | none |
 | Sommelier | pour 40 bottles | guests ask for bottles more | none |
-| Clean Hands | wash 50 cups or dishes | wash 20% faster | none |
+| Clean Hands | wash 50 cups or dishes | guests wait 10% longer (washing is one press now) | none |
 
 ### Composure (saying no: Karryn's Prison's Sadism, without the cruelty)
 
@@ -272,6 +273,7 @@ Key:
 | Untouchable | turn away 30 | guests reach for her 30% less often | fewer touch tips |
 | Lady of the House | 3 nights with no touch allowed | +1 Trust each night; guests mind themselves | none |
 | Iron Will | Respect +8 for 3 nights | bold guests' nerve −1 | none |
+| Slippery (built) | break the hold of 8 guests who grab you at the table | guests grab you 30% less often | none |
 
 ### Corruption
 

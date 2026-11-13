@@ -29,6 +29,8 @@ const guest = (id: number, kind: GuestKind, mood: Mood): Guest => ({
   kind,
   role: defaultRole(kind),
   stats: ROLES[defaultRole(kind)],
+  female: id % 2 === 0,
+  look: 0,
   order: "ale",
   seat: id,
   status: "eating",
