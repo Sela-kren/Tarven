@@ -6,6 +6,17 @@ import {
   BRIEF_STYLES, LINGERIE_MATERIAL, TOP_STYLES, bottomStyle, coversNipples, lingerieTexture, topStyle, type Rgb, type UnderStyle,
 } from "./lingerie";
 import { PUBIC_MATERIAL, PUBIC_STYLES, pubicStyle, pubicTexture, type PubicStyle } from "./pubes";
+import {
+  CANAL_MATERIAL, HOLE_MATERIAL, LABIA_MATERIAL, VULVA_MATERIAL, VULVA_STRETCHED, VULVA_TYPES, gridOf, readVulva, rideVulva,
+  shapeVulva, vulvaRiders, vulvaShape, type VulvaPatch, type VulvaRiders, type VulvaShape, type VulvaType,
+} from "./vulva";
+import {
+  ANUS_MATERIAL, ANUS_SKIN_MATERIAL, ANUS_STRETCHED, ANUS_TYPES, anusShape, readAnus, shapeAnus, type AnusPatch, type AnusType,
+} from "./anus";
+import {
+  GLANS_MATERIAL, PENIS_MATERIAL, PENIS_TYPES, SCROTUM_MATERIAL, penisFrame, penisShape, readPenis, shapePenis, type PenisPatch,
+  type PenisType,
+} from "./penis";
 import { coatRetroMaterial, coverCoat, solidRetroMaterial, stainRetroMaterial } from "./retro";
 import type { LegSize } from "./skirt";
 
@@ -39,6 +50,12 @@ export interface Look {
   bustShape?: string;
   /** Her pubic hair's style's id. Missing means the first, trimmed. */
   pubes?: string;
+  /** Her vulva's type's id. Missing means the first, tucked. */
+  vulva?: string;
+  /** Her anus's type's id. Missing means the first, tight. */
+  anus?: string;
+  /** His penis's type's id. Missing means the first, uncut. */
+  penis?: string;
   /** The shoe style's id. Missing means the character's own shoes, the first in their list. */
   shoes?: string;
   /** Her bra's style's id, or a one-piece's, worn instead of her briefs too. Missing means her breast band. */
@@ -59,6 +76,9 @@ export function copyLook(look: Look): Look {
   if (look.nipples) copy.nipples = look.nipples;
   if (look.bustShape) copy.bustShape = look.bustShape;
   if (look.pubes) copy.pubes = look.pubes;
+  if (look.vulva) copy.vulva = look.vulva;
+  if (look.anus) copy.anus = look.anus;
+  if (look.penis) copy.penis = look.penis;
   if (look.shoes) copy.shoes = look.shoes;
   if (look.bra) copy.bra = look.bra;
   if (look.briefs) copy.briefs = look.briefs;
@@ -250,6 +270,12 @@ export interface LookOptions {
   bustShapes: BustShape[];
   /** Styles of pubic hair, for a body built with the patch they're drawn on; the first is the default. */
   pubes: PubicStyle[];
+  /** Types of vulva, for a body built with the grid they're shaped from; the first is the default. */
+  vulva: VulvaType[];
+  /** Types of anus, for a body built with the disc they're shaped from; the first is the default. */
+  anus: AnusType[];
+  /** Types of penis, for a body built with the tube and sack they're shaped from; the first is the default. */
+  penis: PenisType[];
   /** Pairs of shoes; the first is the character's own, which the look starts with. Empty for one with no others. */
   shoes: ShoeStyleDef[];
   /**
@@ -322,6 +348,12 @@ const EYE_COLORS = ["#0a0807", "#192126", "#3a2416", "#5b8ead", "#3d6e3f", "#7a5
 const LIP_COLORS = ["#cc706d", "#e59993", "#d88a7a", "#b04a52", "#8c3a3a", "#9e6554"];
 /** Areolae from pale pink to deep brown. */
 const NIPPLE_COLORS = ["#f0b8ad", "#e09a8c", "#c97d70", "#b46a5c", "#94544a", "#6e3d33", "#4c2a23"];
+/** The slit and inner lips, from light pink to deep brown. */
+const VULVA_COLORS = ["#eaa8a4", "#d98a8c", "#c4707a", "#a8586a", "#8a4a52", "#6a3a3c", "#4a2a2a"];
+/** The rim of her anus, from pink to deep brown. */
+const ANUS_COLORS = ["#d8a090", "#c4867a", "#a8705f", "#8e5a4c", "#74463b", "#5a352c", "#40261f"];
+/** His glans, from light pink to deep brown. */
+const GLANS_COLORS = ["#e2a09a", "#d0868a", "#b86e72", "#9c5a5c", "#7e4a48", "#5e3834", "#432824"];
 /** Pubic hair: the hair's own colours, then dyes. */
 const PUBIC_COLORS = [...HAIR_COLORS, "#d0508a", "#8a3ab0", "#2f5fb0", "#2f8a6a", "#c02828"];
 const GEM_COLORS = ["#3aa6d6", "#3f9a5a", "#b0303a", "#7a3fa0", "#e0c040", "#e8e8f0"];
@@ -340,6 +372,20 @@ function pirateColors(): ColorDef[] {
     dye("boots", "Boots", "T_boot"),
     dye("hat", "Hat", "T_hat"),
     dye("braid", "Braid", "T_braid"),
+  ];
+}
+
+/**
+ * The adventuring party's kit, which both bodies have: the archer's jerkin, bracers and mantle (a cloak the noble
+ * wears too), the warrior's mail, plate and tabard (the cleric's tabard too), and the mage's and cleric's robes.
+ */
+function factionColors(): ColorDef[] {
+  const dye = (id: string, label: string, material: string): ColorDef =>
+    ({ id, label, tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", material]] });
+  return [
+    dye("jerkin", "Jerkin", "T_jerkin"), dye("bracers", "Bracers", "T_bracer"), dye("cloak", "Cloak", "T_cloak"),
+    dye("mail", "Mail", "T_mail"), dye("plate", "Plate", "T_plate"), dye("tabard", "Tabard", "T_tabard"),
+    dye("robe", "Robe", "T_robe"),
   ];
 }
 
@@ -487,6 +533,12 @@ const FEMALE_SLIDERS: SliderDef[] = [
   { id: "areolaSize", label: "Areola size", tab: "body", group: "Nipples", terms: [] },
   // Her pubic hair changes no bones either: the style is drawn on its patch this much smaller or bigger (pubes.ts).
   { id: "pubesSize", label: "Size", tab: "body", group: "Pubic hair", terms: [] },
+  // Nor does her vulva: the dresser shapes its grid from these and the type (see vulva.ts).
+  { id: "vulvaSize", label: "Size", tab: "body", group: "Vulva", terms: [] },
+  { id: "vulvaFull", label: "Outer lips", tab: "body", group: "Vulva", terms: [] },
+  { id: "vulvaLips", label: "Inner lips", tab: "body", group: "Vulva", terms: [] },
+  // Her anus likewise: its disc is shaped from this and the type (see anus.ts).
+  { id: "anusSize", label: "Size", tab: "body", group: "Anus", terms: [] },
   // Each glute has its own bone, about 3 cm inside the curve of the rear. The rear is fullest low down and
   // blends into the small of the back, so every change fades out above the joint instead of leaving a shelf.
   {
@@ -628,6 +680,14 @@ const MALE_SLIDERS: SliderDef[] = [
       ...terms(both("ForeArm"), [0.15, 0, 0.15]),
     ],
   },
+  // His penis and scrotum change no bones: the dresser shapes their tube and sack from these and the type (see
+  // penis.ts).
+  { id: "penisLength", label: "Length", tab: "body", group: "Penis", terms: [] },
+  { id: "penisGirth", label: "Girth", tab: "body", group: "Penis", terms: [] },
+  { id: "penisHead", label: "Head", tab: "body", group: "Penis", terms: [] },
+  { id: "penisSkin", label: "Foreskin", tab: "body", group: "Penis", terms: [] },
+  { id: "ballsSize", label: "Size", tab: "body", group: "Testicles", terms: [] },
+  { id: "ballsHang", label: "Hang", tab: "body", group: "Testicles", terms: [] },
   { id: "head", label: "Head size", tab: "face", terms: terms(["Head"], [0.12, 0.12, 0.12]) },
   { id: "faceWidth", label: "Face width", tab: "face", terms: terms(["Head"], [0.12, 0, 0.04]) },
   { id: "faceLength", label: "Face length", tab: "face", terms: terms(["Head"], [0, 0.1, 0]) },
@@ -706,12 +766,17 @@ const FEMALE_COLORS: ColorDef[] = [
   {
     id: "skin", label: "Skin tone", tab: "skin", mode: "tone", palette: SKIN_TONES,
     parts: [
-      ["Body", "T_skin_f"], ["Body", "T_navel"], ["Body", "T_face_skin"], ["Body", "T_face_mid"], ["Body", "T_face_cool"],
+      ["Body", "T_skin_f"], ["Body", "T_navel"], ["Body", LABIA_MATERIAL], ["Body", ANUS_SKIN_MATERIAL], ["Body", "T_face_skin"], ["Body", "T_face_mid"], ["Body", "T_face_cool"],
       ["Body", "T_face_lit"], ["Body", "T_face_white"], ["Body", "T_face_blush"], ["Body", "T_face_pink"],
     ],
   },
   { id: "lips", label: "Lips", tab: "face", mode: "dye", palette: LIP_COLORS, follows: "skin", parts: [["Body", "T_lip"], ["Body", "T_lip_lit"]] },
   { id: "nipples", label: "Nipples", tab: "skin", mode: "dye", palette: NIPPLE_COLORS, follows: "skin", parts: [["Body", "T_areola"]] },
+  {
+    id: "vulva", label: "Vulva", tab: "skin", mode: "dye", palette: VULVA_COLORS, follows: "skin",
+    parts: [["Body", VULVA_MATERIAL], ["Body", CANAL_MATERIAL]],
+  },
+  { id: "anus", label: "Anus", tab: "skin", mode: "dye", palette: ANUS_COLORS, follows: "skin", parts: [["Body", ANUS_MATERIAL]] },
   { id: "eyes", label: "Eyes", tab: "face", mode: "dye", palette: EYE_COLORS, parts: [["Body", "T_soot"]] },
   { id: "hair", label: "Hair and brows", tab: "hair", mode: "dye", palette: HAIR_COLORS, parts: [["Hair", "T_hair_f"], ["Body", "T_hair_f"]] },
   { id: "pubes", label: "Pubic hair", tab: "hair", mode: "dye", palette: PUBIC_COLORS, follows: "hair", parts: [["Body", PUBIC_MATERIAL]] },
@@ -727,7 +792,11 @@ const FEMALE_COLORS: ColorDef[] = [
   { id: "shoes", label: "Shoes", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Shoes", "T_leather"]] },
   // Her shoes' soles and heels, and a boot's laces.
   { id: "soles", label: "Soles and heels", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Shoes", "T_sole_dark"]] },
-  { id: "smalls", label: "Smallclothes", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Body", "T_smalls"]] },
+  // Her braies, and the skin under her openings, painted the same while she's covered.
+  {
+    id: "smalls", label: "Smallclothes", tab: "clothes", mode: "dye", palette: CLOTH_COLORS,
+    parts: [["Body", "T_smalls"], ["Body", HOLE_MATERIAL]],
+  },
   // Her breast band, painted on like the braies but its own piece: it comes off by itself, and holds her bust while on.
   {
     id: "bra", label: "Breast band", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Body", "T_bra"]],
@@ -744,6 +813,10 @@ const FEMALE_COLORS: ColorDef[] = [
   // The pirate's rig. Her corset is the bodice, her shirt the blouse, and her belt and corset laces the belt.
   ...pirateColors(),
   { id: "feather", label: "Feather", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_plume"]] },
+  // The adventuring party's kit. The archer's shirt is the blouse, her belt and chest strap the belt, her arrows'
+  // fletching the feather. The mage's hat is the pirate's, banded in the braid. The noble's gown is the bodice and
+  // skirt, its neckline edged in the braid, with the girdle and jewellery.
+  ...factionColors(),
 ];
 
 const FEMALE_OUTFITS: OutfitDef[] = [
@@ -782,14 +855,94 @@ const FEMALE_OUTFITS: OutfitDef[] = [
       belt: "#3d2314", breeches: "#4c3c2b", boots: "#221a15", shoes: "#221a15", stockings: "#221a15",
     },
   },
+  {
+    // A green hooded mantle, a cream shirt, a tan jerkin with dark bracers, belt and strap, grey-brown breeches and
+    // boots, and a quiver of white-fletched arrows on her back.
+    id: "archer", label: "Archer", mesh: "Archer", guestOnly: true,
+    colors: ["cloak", "bracers", "belt", "feather", "blouse", "jerkin", "breeches", "boots", "shoes", "bra", "smalls"],
+    preset: {
+      cloak: "#3a4a2c", blouse: "#ddd3bc", jerkin: "#7a5432", bracers: "#3a2616", belt: "#3d2314", breeches: "#4a3f33",
+      boots: "#3a2a1e", shoes: "#3a2a1e", feather: "#efebe2",
+    },
+  },
+  {
+    // Grey mail, steel plate, a blue tabard with a blue badge, a round shield in the tabard's colour and a sword.
+    id: "warrior", label: "Warrior", mesh: "Warrior", guestOnly: true,
+    colors: ["tabard", "plate", "belt", "gems", "mail", "shoes", "bra", "smalls"],
+    preset: { tabard: "#24345a", plate: "#a7abb2", mail: "#6e7078", belt: "#3d2314", gems: "#3aa6d6", shoes: "#2b2018" },
+  },
+  {
+    // A violet robe with bell sleeves, a red sash, a gold amulet with a blue gem, a tall black hat and a staff.
+    id: "mage", label: "Mage", mesh: "Mage", guestOnly: true,
+    colors: ["hat", "braid", "sash", "jewels", "gems", "robe", "stockings", "shoes", "soles", "bra", "smalls"],
+    preset: {
+      hat: "#1c1716", braid: "#c99a3a", robe: "#4a2a6e", sash: "#8c2020", jewels: "#c99a3a", gems: "#3aa6d6",
+      stockings: "#1c1716", shoes: "#2b2018",
+    },
+    legwear: "kneehigh",
+  },
+  {
+    // A white robe under a blue tabard with a gold sun, a white hood, a leather belt and a mace.
+    id: "cleric", label: "Cleric", mesh: "Cleric", guestOnly: true,
+    colors: ["tabard", "belt", "jewels", "gems", "robe", "stockings", "shoes", "soles", "bra", "smalls"],
+    preset: {
+      robe: "#ece6d8", tabard: "#24345a", belt: "#3d2314", jewels: "#c99a3a", gems: "#e8e4dc", stockings: "#ece6d8",
+      shoes: "#3d2314",
+    },
+    legwear: "kneehigh",
+  },
+  {
+    // The bandit gang's rogue: a black hooded mantle, the gang's red scarf over her face, a grey shirt under a dark
+    // leather vest, wrapped forearms, dark breeches and boots, two daggers and a coin pouch.
+    id: "rogue", label: "Rogue", mesh: "Rogue", guestOnly: true,
+    colors: ["sash", "cloak", "bracers", "belt", "blouse", "jerkin", "breeches", "boots", "shoes", "bra", "smalls"],
+    preset: {
+      cloak: "#1c1c22", sash: "#8c2020", bracers: "#221a15", belt: "#221a15", blouse: "#4f4f52", jerkin: "#2b2018",
+      breeches: "#2b2b2b", boots: "#1c1716", shoes: "#1c1716",
+    },
+  },
+  {
+    // The bandit gang's brute: the gang's red bandana, a fur mantle, a studded leather vest with bare arms, wrapped
+    // forearms, brown breeches and boots, and an axe.
+    id: "brute", label: "Brute", mesh: "Brute", guestOnly: true,
+    colors: ["sash", "cloak", "bracers", "belt", "jerkin", "breeches", "boots", "shoes", "bra", "smalls"],
+    preset: {
+      sash: "#8c2020", cloak: "#5c4a36", bracers: "#3d2314", belt: "#2b2018", jerkin: "#3d2314", breeches: "#4c3c2b",
+      boots: "#2b2018", shoes: "#2b2018",
+    },
+  },
+  {
+    // A noble's maid: a black dress to mid-calf with white collar and cuffs, a white apron with a bib, a frilled
+    // white cap and black stockings.
+    id: "servant", label: "Maid", mesh: "Servant", guestOnly: true,
+    colors: ["apron", "bodice", "skirt", "stockings", "shoes", "soles", "blouse", "bra", "smalls"],
+    preset: {
+      bodice: "#1c1c22", skirt: "#1c1c22", apron: "#f1ece0", blouse: "#f1ece0", stockings: "#1c1c22", shoes: "#1c1716",
+    },
+    legwear: "kneehigh",
+  },
+  {
+    // A wine velvet gown edged in gold braid, linen ruffles at the wrists, a gold girdle and circlet, and blue gems.
+    id: "noble", label: "Noble", mesh: "Noble", guestOnly: true,
+    colors: ["jewels", "gems", "braid", "bodice", "girdle", "skirt", "stockings", "shoes", "soles", "blouse", "bra", "smalls"],
+    preset: {
+      bodice: "#5b1430", skirt: "#4a1028", braid: "#c99a3a", girdle: "#c99a3a", jewels: "#c99a3a", gems: "#3aa6d6",
+      blouse: "#f1ece0", stockings: "#f1ece0", shoes: "#3d2314",
+    },
+    legwear: "kneehigh",
+  },
 ];
 
 const MALE_COLORS: ColorDef[] = [
   {
     id: "skin", label: "Skin tone", tab: "skin", mode: "tone", palette: SKIN_TONES,
-    parts: [["Body", "T_skin"], ["Body", "T_skin_lit"], ["Body", "T_skin_deep"], ["Body", "T_skin_shade"]],
+    parts: [
+      ["Body", "T_skin"], ["Body", "T_skin_lit"], ["Body", "T_skin_deep"], ["Body", "T_skin_shade"], ["Body", PENIS_MATERIAL],
+      ["Body", SCROTUM_MATERIAL],
+    ],
   },
   { id: "lips", label: "Lips", tab: "face", mode: "dye", palette: LIP_COLORS, follows: "skin", parts: [["Body", "T_lip_m"]] },
+  { id: "glans", label: "Glans", tab: "skin", mode: "dye", palette: GLANS_COLORS, follows: "skin", parts: [["Body", GLANS_MATERIAL]] },
   { id: "eyes", label: "Eyes", tab: "face", mode: "dye", palette: EYE_COLORS, parts: [["Body", "T_iris_m"]] },
   {
     id: "hair", label: "Hair and brows", tab: "hair", mode: "dye", palette: HAIR_COLORS,
@@ -804,6 +957,12 @@ const MALE_COLORS: ColorDef[] = [
   { id: "boots", label: "Boots", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Shoes", "T_leather"], ["Cloth", "T_boot"]] },
   { id: "smalls", label: "Smallclothes", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Body", "T_smalls"]] },
   ...pirateColors().filter((def) => def.id !== "boots"),
+  // The adventurer's kit, and the noble's doublet, cap feather, and chain of office with its gem.
+  ...factionColors(),
+  { id: "doublet", label: "Doublet", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_doublet"]] },
+  { id: "feather", label: "Feather", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_plume"]] },
+  { id: "jewels", label: "Chain", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_jewel"]] },
+  { id: "gems", label: "Gems", tab: "clothes", mode: "dye", palette: GEM_COLORS, parts: [["Cloth", "T_gem"]] },
 ];
 
 export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
@@ -824,6 +983,9 @@ export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
     nipples: NIPPLE_TYPES,
     bustShapes: BUST_SHAPES,
     pubes: PUBIC_STYLES,
+    vulva: VULVA_TYPES,
+    anus: ANUS_TYPES,
+    penis: [],
     shoes: FEMALE_SHOES,
     tops: TOP_STYLES,
     bottoms: BRIEF_STYLES,
@@ -850,11 +1012,82 @@ export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
           breeches: "#4c3c2b", boots: "#221a15",
         },
       },
+      {
+        // A green hooded mantle, a cream shirt with its sleeves pushed up, a tan jerkin, dark bracers and strap, and a
+        // quiver of white-fletched arrows on his back.
+        id: "archer", label: "Archer", mesh: "Archer", guestOnly: true,
+        colors: ["cloak", "bracers", "belt", "feather", "shirt", "jerkin", "breeches", "boots", "smalls"],
+        preset: {
+          cloak: "#3a4a2c", shirt: "#ddd3bc", jerkin: "#7a5432", bracers: "#3a2616", breeches: "#4a3f33", boots: "#3a2a1e",
+          feather: "#efebe2",
+        },
+      },
+      {
+        // Grey mail, steel plate, a blue tabard with a blue badge, a round shield in the tabard's colour and a sword.
+        id: "warrior", label: "Warrior", mesh: "Warrior", guestOnly: true,
+        colors: ["tabard", "plate", "belt", "gems", "mail", "boots", "smalls"],
+        preset: { tabard: "#24345a", plate: "#a7abb2", mail: "#6e7078", gems: "#3aa6d6", boots: "#2b2018" },
+      },
+      {
+        // A violet robe with bell sleeves, a red sash, a gold amulet with a blue gem, a tall black hat and a staff.
+        id: "mage", label: "Mage", mesh: "Mage", guestOnly: true,
+        colors: ["hat", "braid", "sash", "jewels", "gems", "robe", "breeches", "boots", "smalls"],
+        preset: {
+          hat: "#1c1716", braid: "#c99a3a", robe: "#4a2a6e", sash: "#8c2020", jewels: "#c99a3a", gems: "#3aa6d6",
+          breeches: "#2b2b2b", boots: "#2b2018",
+        },
+      },
+      {
+        // A white robe under a blue tabard with a gold sun, a white hood, a leather belt and a mace.
+        id: "cleric", label: "Cleric", mesh: "Cleric", guestOnly: true,
+        colors: ["tabard", "belt", "jewels", "gems", "robe", "breeches", "boots", "smalls"],
+        preset: {
+          robe: "#ece6d8", tabard: "#24345a", jewels: "#c99a3a", gems: "#e8e4dc", breeches: "#4c3c2b", boots: "#3d2314",
+        },
+      },
+      {
+        // The bandit gang's rogue: a black hooded mantle, the gang's red scarf over his face, a grey shirt under a dark
+        // leather vest, wrapped forearms, dark breeches and boots, two daggers and a coin pouch.
+        id: "rogue", label: "Rogue", mesh: "Rogue", guestOnly: true,
+        colors: ["sash", "cloak", "bracers", "belt", "shirt", "jerkin", "breeches", "boots", "smalls"],
+        preset: {
+          cloak: "#1c1c22", sash: "#8c2020", bracers: "#221a15", shirt: "#4f4f52", jerkin: "#2b2018", breeches: "#2b2b2b",
+          boots: "#1c1716",
+        },
+      },
+      {
+        // The bandit gang's brute: the gang's red bandana, a fur mantle, a studded leather vest with bare arms, wrapped
+        // forearms, brown breeches and boots, and an axe.
+        id: "brute", label: "Brute", mesh: "Brute", guestOnly: true,
+        colors: ["sash", "cloak", "bracers", "belt", "jerkin", "breeches", "boots", "smalls"],
+        preset: { sash: "#8c2020", cloak: "#5c4a36", bracers: "#3d2314", jerkin: "#3d2314", breeches: "#4c3c2b", boots: "#2b2018" },
+      },
+      {
+        // A noble's footman, in the house's livery: a wine coat with tails, edged in gold braid with gold buttons,
+        // over a straw waistcoat, a white cravat, black breeches and white stockings.
+        id: "servant", label: "Footman", mesh: "Servant", guestOnly: true,
+        colors: ["braid", "doublet", "waistcoat", "shirt", "breeches", "boots", "smalls"],
+        preset: {
+          doublet: "#5b1430", braid: "#c99a3a", waistcoat: "#e3cf9c", shirt: "#f1ece0", breeches: "#1c1c22", boots: "#1c1716",
+        },
+      },
+      {
+        // A wine velvet doublet edged in gold braid, a linen ruff, a navy cape, a gold chain and a black cap with a feather.
+        id: "noble", label: "Noble", mesh: "Noble", guestOnly: true,
+        colors: ["hat", "braid", "feather", "cloak", "jewels", "gems", "doublet", "shirt", "breeches", "boots", "smalls"],
+        preset: {
+          hat: "#1c1716", braid: "#c99a3a", feather: "#efebe2", cloak: "#24345a", jewels: "#c99a3a", gems: "#8c2020",
+          shirt: "#f1ece0", doublet: "#5b1430", breeches: "#2b2b2b", boots: "#221a15",
+        },
+      },
     ],
     legwear: [],
     nipples: [],
     bustShapes: [],
     pubes: [],
+    vulva: [],
+    anus: [],
+    penis: PENIS_TYPES,
     shoes: [],
     tops: [],
     bottoms: [],
@@ -1163,30 +1396,168 @@ export function playerOutfits(body: BodyName): OutfitDef[] {
   return LOOK_OPTIONS[body].outfits.filter((outfit) => !outfit.guestOnly);
 }
 
-/** How many ways a guest's pirate rig can be coloured. */
-export const PIRATE_LOOKS = 4;
+/** The outfits only guests wear. */
+export type GuestOutfit = "pirate" | "archer" | "warrior" | "mage" | "cleric" | "noble" | "servant" | "rogue" | "brute";
 
-/** Colours over the pirate preset, so a crew of them don't all look alike. The first is the preset itself. */
-const PIRATE_VARIANTS: Record<BodyName, Record<string, string>[]> = {
-  Male: [
-    {},
-    { waistcoat: "#5b1417", sash: "#2b3d23" },
-    { waistcoat: "#2b2b2b", sash: "#8a7a3e", breeches: "#7d6c55" },
-    { waistcoat: "#4c3c2b", sash: "#24345a", shirt: "#b8ad96", hat: "#3d2314" },
-  ],
-  Female: [
-    {},
-    { bodice: "#1c1c22", sash: "#24345a", feather: "#8c2020" },
-    { bodice: "#3d2314", sash: "#2b3d23", breeches: "#7d6c55" },
-    { bodice: "#24345a", sash: "#8a7a3e", feather: "#e3cf9c", blouse: "#b8ad96" },
-  ],
+/** An adventuring party's callings, each in its own kit: the archer, the warrior who shields the rest, the mage and the healer. */
+export const ADVENTURER_OUTFITS: readonly GuestOutfit[] = ["archer", "warrior", "mage", "cleric"];
+/** A noble, and the servant who comes with them: a maid, or a footman in the house's livery. */
+export const NOBLE_OUTFITS: readonly GuestOutfit[] = ["noble", "servant"];
+/** The bandit gang: rogues and brutes, every one in the gang's red. */
+export const BANDIT_OUTFITS: readonly GuestOutfit[] = ["rogue", "brute"];
+
+/** How many ways a guest's outfit can be coloured. */
+export const GUEST_LOOKS = 4;
+/** How many ways a guest's pirate rig can be coloured. */
+export const PIRATE_LOOKS = GUEST_LOOKS;
+
+/** Colours over each guest outfit's preset, so a party of them don't all look alike. The first is the preset itself. */
+const GUEST_VARIANTS: Record<GuestOutfit, Record<BodyName, Record<string, string>[]>> = {
+  pirate: {
+    Male: [
+      {},
+      { waistcoat: "#5b1417", sash: "#2b3d23" },
+      { waistcoat: "#2b2b2b", sash: "#8a7a3e", breeches: "#7d6c55" },
+      { waistcoat: "#4c3c2b", sash: "#24345a", shirt: "#b8ad96", hat: "#3d2314" },
+    ],
+    Female: [
+      {},
+      { bodice: "#1c1c22", sash: "#24345a", feather: "#8c2020" },
+      { bodice: "#3d2314", sash: "#2b3d23", breeches: "#7d6c55" },
+      { bodice: "#24345a", sash: "#8a7a3e", feather: "#e3cf9c", blouse: "#b8ad96" },
+    ],
+  },
+  // Travel-worn: mantles in green, grey, rust and blue, over leather from tan to near black.
+  archer: {
+    Male: [
+      {},
+      { cloak: "#4f4f52", jerkin: "#3d2314", breeches: "#5c5530" },
+      { cloak: "#5c3a22", jerkin: "#8a6a3e", shirt: "#b8ad96", bracers: "#221a15" },
+      { cloak: "#24345a", jerkin: "#4c3c2b", breeches: "#2b2b2b", boots: "#221a15" },
+    ],
+    Female: [
+      {},
+      { cloak: "#4f4f52", jerkin: "#3d2314", breeches: "#5c5530" },
+      { cloak: "#7a2a22", jerkin: "#8a6a3e", blouse: "#b8ad96", bracers: "#221a15" },
+      { cloak: "#24345a", jerkin: "#4c3c2b", breeches: "#2b2b2b", boots: "#221a15", shoes: "#221a15" },
+    ],
+  },
+  // The warrior's tabard and shield in blue, red, green and black, over bright or blackened steel.
+  warrior: {
+    Male: [
+      {},
+      { tabard: "#8c2020", gems: "#c99a3a" },
+      { tabard: "#2b4a2e", plate: "#7d7f86", gems: "#e8e4dc" },
+      { tabard: "#1c1c22", plate: "#4f4f52", mail: "#4f4f52", gems: "#8c2020" },
+    ],
+    Female: [
+      {},
+      { tabard: "#8c2020", gems: "#c99a3a" },
+      { tabard: "#2b4a2e", plate: "#7d7f86", gems: "#e8e4dc" },
+      { tabard: "#1c1c22", plate: "#4f4f52", mail: "#4f4f52", gems: "#8c2020" },
+    ],
+  },
+  // The mage's robe in violet, midnight blue, deep red and green, the hat to match or black.
+  mage: {
+    Male: [
+      {},
+      { robe: "#1c2a4f", hat: "#1c2a4f", sash: "#c99a3a", gems: "#e8e4dc" },
+      { robe: "#5b1417", sash: "#1c1716", gems: "#c99a3a" },
+      { robe: "#1f3a26", hat: "#3d2314", sash: "#6e6233", gems: "#3f9a5a" },
+    ],
+    Female: [
+      {},
+      { robe: "#1c2a4f", hat: "#1c2a4f", sash: "#c99a3a", gems: "#e8e4dc" },
+      { robe: "#5b1417", sash: "#1c1716", gems: "#c99a3a" },
+      { robe: "#1f3a26", hat: "#3d2314", sash: "#6e6233", gems: "#3f9a5a" },
+    ],
+  },
+  // The cleric's white robe under a blue, red, green or gold tabard; one in grey.
+  cleric: {
+    Male: [
+      {},
+      { tabard: "#8c2020" },
+      { robe: "#b8ad96", tabard: "#2b4a2e", jewels: "#a7abb2" },
+      { tabard: "#b8892e", jewels: "#ece6d8", gems: "#c99a3a" },
+    ],
+    Female: [
+      {},
+      { tabard: "#8c2020", stockings: "#8c2020" },
+      { robe: "#b8ad96", tabard: "#2b4a2e", jewels: "#a7abb2", stockings: "#b8ad96" },
+      { tabard: "#b8892e", jewels: "#ece6d8", gems: "#c99a3a" },
+    ],
+  },
+  // The gang's red stays; the rest is whatever they took off the road.
+  rogue: {
+    Male: [
+      {},
+      { cloak: "#2b2b2b", jerkin: "#3d2314", shirt: "#b8ad96" },
+      { cloak: "#3d2314", jerkin: "#1c1c22", breeches: "#4c3c2b" },
+      { cloak: "#16223f", jerkin: "#4c3c2b", shirt: "#7d6c55", boots: "#3d2314" },
+    ],
+    Female: [
+      {},
+      { cloak: "#2b2b2b", jerkin: "#3d2314", blouse: "#b8ad96" },
+      { cloak: "#3d2314", jerkin: "#1c1c22", breeches: "#4c3c2b" },
+      { cloak: "#16223f", jerkin: "#4c3c2b", blouse: "#7d6c55", boots: "#3d2314", shoes: "#3d2314" },
+    ],
+  },
+  brute: {
+    Male: [
+      {},
+      { cloak: "#4f4f52", jerkin: "#221a15" },
+      { cloak: "#7d6c55", jerkin: "#5c4a36", breeches: "#2b2b2b" },
+      { cloak: "#2b2018", jerkin: "#4c3c2b", bracers: "#7d6c55" },
+    ],
+    Female: [
+      {},
+      { cloak: "#4f4f52", jerkin: "#221a15" },
+      { cloak: "#7d6c55", jerkin: "#5c4a36", breeches: "#2b2b2b" },
+      { cloak: "#2b2018", jerkin: "#4c3c2b", bracers: "#7d6c55" },
+    ],
+  },
+  // His livery in the house colours the nobles wear; her dress in black, navy, grey or brown.
+  servant: {
+    Male: [
+      {},
+      { doublet: "#1c2a4f", waistcoat: "#ece6d8" },
+      { doublet: "#1f3a26", waistcoat: "#c99a3a", breeches: "#4c3c2b" },
+      { doublet: "#1c1c22", braid: "#a7abb2", waistcoat: "#8c2020" },
+    ],
+    Female: [
+      {},
+      { bodice: "#16223f", skirt: "#16223f", stockings: "#16223f" },
+      { bodice: "#4f4f52", skirt: "#4f4f52", stockings: "#f1ece0" },
+      { bodice: "#3d2314", skirt: "#3d2314", apron: "#e3cf9c", blouse: "#e3cf9c" },
+    ],
+  },
+  // House colours: wine, midnight blue, forest green and black, always with gold.
+  noble: {
+    Male: [
+      {},
+      { doublet: "#1c2a4f", cloak: "#5b1430", gems: "#3aa6d6" },
+      { doublet: "#1f3a26", cloak: "#2b2b2b", feather: "#8c2020", gems: "#3f9a5a" },
+      { doublet: "#1c1c22", cloak: "#6e6233", hat: "#5b1430", breeches: "#4c3c2b" },
+    ],
+    Female: [
+      {},
+      { bodice: "#1c2a4f", skirt: "#16223f", gems: "#e8e4dc" },
+      { bodice: "#1f3a26", skirt: "#1a3020", gems: "#3f9a5a" },
+      { bodice: "#1c1c22", skirt: "#24242c", gems: "#8c2020", blouse: "#e3cf9c" },
+    ],
+  },
 };
+
+/** The colours a guest's outfit is put on with: its preset, changed by one of its variants. */
+export function guestOutfitColors(body: BodyName, outfit: GuestOutfit, variant: number): Record<string, string> {
+  const def = LOOK_OPTIONS[body].outfits.find((o) => o.id === outfit)!;
+  const index = ((variant % GUEST_LOOKS) + GUEST_LOOKS) % GUEST_LOOKS;
+  return { ...def.preset, ...GUEST_VARIANTS[outfit][body][index] };
+}
 
 /** The colours a guest's pirate rig is put on with: its preset, changed by one of the variants. */
 export function pirateGuestColors(body: BodyName, variant: number): Record<string, string> {
-  const pirate = LOOK_OPTIONS[body].outfits.find((outfit) => outfit.id === "pirate")!;
-  const index = ((variant % PIRATE_LOOKS) + PIRATE_LOOKS) % PIRATE_LOOKS;
-  return { ...pirate.preset, ...PIRATE_VARIANTS[body][index] };
+  return guestOutfitColors(body, "pirate", variant);
 }
 
 /**
@@ -1220,6 +1591,7 @@ export function dressColors(
     if (slot.part === "Body" && slot.original.name === DISC_MATERIAL && band) slot.mesh.material = band;
     // ...and their pubic hair stays under them.
     if (slot.part === "Body" && slot.original.name === PUBIC_MATERIAL) slot.mesh.visible = false;
+    if (slot.part === "Body" && PRIVATE_MATERIALS.includes(slot.original.name)) slot.mesh.visible = false;
     // They wear the band and braies painted on their bodies; the patch for other styles stays empty.
     if (slot.part === "Body" && slot.original.name === LINGERIE_MATERIAL) slot.mesh.visible = false;
     if (slot.part === "Hair") slot.mesh.visible = hairMeshOf(slot.mesh, body) === "";
@@ -1472,6 +1844,17 @@ const point = new Vector3();
 const offset = new Vector3();
 const moved = new Vector3();
 const unbind = new Matrix4();
+/**
+ * How far her pubic hair's points rise above her vulva's shape where they lie over it: it is built under the grid
+ * (0.9 mm off the skin to the grid's 1.1 mm), and must end up over it.
+ */
+const PUBIC_OVER_VULVA = 0.0004;
+/** How near his penis's root a piece of clothing has to come to cover his groin. */
+const GROIN_REACH = 0.035;
+/** Her vulva's and anus's meshes, and his penis's, which only show while bare there; guests never show them. */
+const PRIVATE_MATERIALS: readonly string[] = [
+  VULVA_MATERIAL, LABIA_MATERIAL, CANAL_MATERIAL, ANUS_MATERIAL, ANUS_SKIN_MATERIAL, PENIS_MATERIAL, GLANS_MATERIAL, SCROTUM_MATERIAL,
+];
 /** The colour her areolae flush towards as she's aroused. */
 const FLUSHED = new Color(0.55, 0.16, 0.18);
 
@@ -1505,11 +1888,45 @@ export class Dresser {
    * disc and how far from its tip. They tent out as it stands, and are all that change when only her arousal does.
    */
   private readonly nipples: { slot: MeshSlot; discs: Disc[]; riders: Map<MeshSlot, Riders> } | null = null;
+  /** How aroused her vulva shows, from 0 to 1; a state of the night, never part of the look. */
+  private vulvaArousal = 0;
+  /**
+   * Whether her vulva and anus show: she has nothing on over them. Hidden, they lie flat and closed, nothing rides
+   * over them, and the skin under their openings shows instead, in her smallclothes.
+   */
+  private vulvaShown = false;
+  /** How open her vulva and her anus are, from 0 to 1; a state of the moment, never part of the look. */
+  private vulvaOpen = 0;
+  private anusOpen = 0;
+  /**
+   * Her vulva's grid, for a body built with it: its meshes (the slit, the outer lips, and her canal if it has one),
+   * and the points of other meshes lying over it (her coat, clothes and pubic hair), which rise over its shape,
+   * `over` more on top of it.
+   */
+  private readonly vulva: { slots: MeshSlot[]; patch: VulvaPatch; riders: Map<MeshSlot, { riders: VulvaRiders; over: number }> } | null = null;
+  /** Her anus's disc, for a body built with it: its two meshes (the rim and canal, the skin around them). */
+  private readonly anus: { slots: MeshSlot[]; patch: AnusPatch } | null = null;
+  /** His penis's tube and sack, for a body built with them: the shaft, the glans, then the sack. */
+  private readonly penis: { slots: MeshSlot[]; patch: PenisPatch; groin: MeshSlot[] } | null = null;
+  /** Whether his penis was last shaped held in what covers his groin, rather than free. */
+  private penisPacked = false;
+  /** How hard he is, from 0 (soft) to 1; a state of the moment, never part of the look. */
+  private erection = 0;
   /**
    * What the last look left, for arousal to change the discs and their riders without redoing the whole body:
-   * every mesh's moves, where the discs lie on the skin, and the riders' moves before they tent.
+   * every mesh's moves, where the discs lie on the skin, and the riders' moves before they tent. Likewise for her
+   * vulva: where its meshes lie on the skin, and its riders' moves before they rise over it.
    */
-  private shaped: { totals: Float32Array[]; settled: Float32Array[]; onSkin: Float32Array; flat: Map<MeshSlot, Float32Array> } | null = null;
+  private shaped: {
+    totals: Float32Array[];
+    settled: Float32Array[];
+    onSkin: Float32Array;
+    flat: Map<MeshSlot, Float32Array>;
+    vulvaSkin: Float32Array[];
+    vulvaFlat: Map<MeshSlot, Float32Array>;
+    anusSkin: Float32Array[];
+    penisSkin: Float32Array[];
+  } | null = null;
   private look: Look = newLook();
 
   constructor(model: Object3D, readonly body: BodyName) {
@@ -1575,6 +1992,17 @@ export class Dresser {
       bodyPoints.fill(1e6, lingerieSlot.bodyStart * 3, (lingerieSlot.bodyStart + lingerieSlot.bind.length / 3) * 3);
       lingerieSlot.mesh.castShadow = false;
     }
+    // Her vulva's grid and canal too, and her anus's disc, which stand off the skin once shaped.
+    const bodySlot = (name: string) => this.slots.find((slot) => slot.part === "Body" && slot.original.name === name);
+    const found = (names: string[]) => names.map(bodySlot).filter((slot): slot is MeshSlot => slot !== undefined);
+    const vulvaSlots = found([VULVA_MATERIAL, LABIA_MATERIAL]);
+    const canalSlot = bodySlot(CANAL_MATERIAL);
+    const anusSlots = found([ANUS_MATERIAL, ANUS_SKIN_MATERIAL]);
+    const penisSlots = found([PENIS_MATERIAL, GLANS_MATERIAL, SCROTUM_MATERIAL]);
+    for (const slot of [...vulvaSlots, ...(canalSlot ? [canalSlot] : []), ...anusSlots, ...penisSlots]) {
+      bodyPoints.fill(1e6, slot.bodyStart * 3, (slot.bodyStart + slot.bind.length / 3) * 3);
+      slot.mesh.castShadow = false;
+    }
     for (const slot of this.slots) {
       if (FOLLOWING_PARTS.includes(slot.part) && bodyCount >= FOLLOW_POINTS) slot.follow = nearestBody(slot.bind, bodyPoints);
     }
@@ -1600,6 +2028,47 @@ export class Dresser {
       }
       discSlot.shapeFrom = skinUnder(discs, discSlot.bind);
       this.nipples = { slot: discSlot, discs, riders };
+    }
+
+    const uvs = vulvaSlots.map((slot) => slot.mesh.geometry.getAttribute("uv"));
+    const canalUv = canalSlot?.mesh.geometry.getAttribute("uv");
+    const patch = vulvaSlots.length === 2 && uvs.every(Boolean) ? readVulva(uvs, canalUv) : null;
+    // The canal shapes along with the grid, as the last of its meshes.
+    if (patch?.canal && canalSlot) vulvaSlots.push(canalSlot);
+    if (patch) {
+      const grid = gridOf(patch, vulvaSlots.map((slot) => slot.bind));
+      const riders = new Map<MeshSlot, { riders: VulvaRiders; over: number }>();
+      for (const slot of this.slots) {
+        const pubic = slot === pubicSlot;
+        if (!slot.follow && !pubic) continue;
+        const found = vulvaRiders(slot.bind, grid);
+        // Her pubic hair lies under the grid as built; it rises clear over it, so a full bush still covers her.
+        if (found) riders.set(slot, { riders: found, over: pubic ? PUBIC_OVER_VULVA : 0 });
+      }
+      this.vulva = { slots: vulvaSlots, patch, riders };
+    }
+    const anusUvs = anusSlots.map((slot) => slot.mesh.geometry.getAttribute("uv"));
+    const anus = anusSlots.length === 2 && anusUvs.every(Boolean) ? readAnus(anusUvs) : null;
+    if (anus) this.anus = { slots: anusSlots, patch: anus };
+    const penisUvs = penisSlots.map((slot) => slot.mesh.geometry.getAttribute("uv"));
+    const penis = penisSlots.length === 3 && penisUvs.every(Boolean) ? readPenis(penisUvs.slice(0, 2), penisUvs.slice(2)) : null;
+    if (penis) {
+      // The clothes over his groin, nearest first: any of them on, his penis lies packed in it rather than showing.
+      const root = penisFrame(penis, penisSlots.map((slot) => slot.bind)).root;
+      const near = (slot: MeshSlot) => {
+        let best = Infinity;
+        for (let v = 0; v < slot.bind.length; v += 3) {
+          best = Math.min(best, Math.hypot(slot.bind[v] - root[0], slot.bind[v + 1] - root[1], slot.bind[v + 2] - root[2]));
+        }
+        return best;
+      };
+      const groin = this.slots
+        .filter((slot) => slot.part === "Cloth")
+        .map((slot) => ({ slot, d: near(slot) }))
+        .filter(({ d }) => d < GROIN_REACH)
+        .sort((a, b) => a.d - b.d)
+        .map(({ slot }) => slot);
+      this.penis = { slots: penisSlots, patch: penis, groin };
     }
 
     // Measured on the own shoes: the other styles' heels reach below it, which is what lifts her onto them.
@@ -1799,6 +2268,34 @@ export class Dresser {
       this.shapeNipples(onSkin, moves.map((m) => m.total), flat);
     }
 
+    // Her vulva, likewise, shaped on the skin where the reshaping left it, and what lies over it rising over it.
+    // Her anus too.
+    const { vulva, anus } = this;
+    const onSkinOf = (slot: MeshSlot) => {
+      const { total } = moves[this.slots.indexOf(slot)];
+      const on = new Float32Array(slot.bind.length);
+      for (let i = 0; i < on.length; i++) on[i] = slot.bind[i] + total[i];
+      return on;
+    };
+    this.vulvaShown = (vulva !== null || anus !== null || this.penis !== null) && !this.underwearOn().bottomOn;
+    let vulvaSkin: Float32Array[] = [];
+    const vulvaFlat = new Map<MeshSlot, Float32Array>();
+    if (vulva) {
+      vulvaSkin = vulva.slots.map(onSkinOf);
+      for (const [slot, { riders }] of vulva.riders) {
+        const own = moves[this.slots.indexOf(slot)].total;
+        const before = new Float32Array(riders.verts.length * 3);
+        riders.verts.forEach((v, k) => before.set(own.subarray(v * 3, v * 3 + 3), k * 3));
+        vulvaFlat.set(slot, before);
+      }
+      this.shapeVulva(vulvaSkin, moves.map((m) => m.total), vulvaFlat);
+    }
+    const anusSkin = anus ? anus.slots.map(onSkinOf) : [];
+    this.shapeAnus(anusSkin, moves.map((m) => m.total));
+    // His penis likewise, from where its tube and sack lie on his skin.
+    const penisSkin = this.penis ? this.penis.slots.map(onSkinOf) : [];
+    this.shapePenis(penisSkin, moves.map((m) => m.total));
+
     // Longer or shorter legs would lift the feet off the floor or sink them into it, and heels reach below it: the
     // whole body moves to match, standing on the shoes she has on.
     const shoes = shoeMeshFor(this.body, look);
@@ -1817,7 +2314,13 @@ export class Dresser {
     }
     // The nipples stand off the disc, so its faces need their own light.
     nipples?.slot.mesh.geometry.computeVertexNormals();
-    this.shaped = { totals: moves.map((m) => m.total), settled: moves.map((m) => m.settled), onSkin, flat };
+    for (const slot of [...(vulva?.slots ?? []), ...(anus?.slots ?? []), ...(this.penis?.slots ?? [])]) {
+      slot.mesh.geometry.computeVertexNormals();
+    }
+    this.shaped = {
+      totals: moves.map((m) => m.total), settled: moves.map((m) => m.settled), onSkin, flat, vulvaSkin, vulvaFlat, anusSkin,
+      penisSkin,
+    };
 
     for (const rest of this.bones) {
       const delta = shift.get(rest)!;
@@ -1846,14 +2349,26 @@ export class Dresser {
   }
 
   /**
-   * How aroused she is, from 0 to 1: her nipples stand and her areolae draw in and flush. Only the discs and the
-   * clothing points riding on them change, so it can follow her from moment to moment.
+   * How aroused she is, from 0 to 1: her nipples stand and her areolae draw in and flush, and her vulva (`vulva`,
+   * the same unless given) swells, parts and flushes. Only the discs, the grid and the points riding on them
+   * change, so it can follow her from moment to moment.
    */
-  setArousal(level: number): void {
+  setArousal(level: number, vulva = level): void {
     const a = Math.min(1, Math.max(0, level));
-    const ends = (a === 0 || a === 1) && a !== this.arousal;
+    const b = Math.min(1, Math.max(0, vulva));
+    const moved = (to: number, from: number) => Math.abs(to - from) >= 0.02 || ((to === 0 || to === 1) && to !== from);
     const { nipples } = this;
-    if (!nipples || (Math.abs(a - this.arousal) < 0.02 && !ends)) return;
+    const nipplesMove = nipples !== null && moved(a, this.arousal);
+    const vulvaMoves = this.vulva !== null && moved(b, this.vulvaArousal);
+    if (!nipplesMove && !vulvaMoves) return;
+    if (vulvaMoves) {
+      this.vulvaArousal = b;
+      this.refreshVulva();
+    }
+    if (!nipples || !nipplesMove) {
+      this.showPieces();
+      return;
+    }
     this.arousal = a;
     const { shaped } = this;
     if (shaped) {
@@ -1867,6 +2382,177 @@ export class Dresser {
       }
     }
     this.showPieces();
+  }
+
+  /** Her vulva's shape from her look and how aroused she is; null for a body without one. */
+  private vulvaShapeNow(): VulvaShape | null {
+    const types = LOOK_OPTIONS[this.body].vulva;
+    const type = types.find((t) => t.id === this.look.vulva) ?? types[0];
+    if (!type) return null;
+    const { sliders } = this.look;
+    return vulvaShape(
+      type, clampSlider(sliders.vulvaSize), clampSlider(sliders.vulvaFull), clampSlider(sliders.vulvaLips), this.vulvaArousal,
+      this.vulvaOpen,
+    );
+  }
+
+  /**
+   * How open her vulva and her anus are, from 0 (closed) through 1 (fully open) to 2 (stretched as wide as they go,
+   * VULVA_STRETCHED and ANUS_STRETCHED): the cut down her slit parts onto her canal, and her anus's rim widens onto
+   * its own. Only their meshes change, so it can follow her moment to moment.
+   */
+  setOpening(vulva: number, anus: number): void {
+    const v = Math.min(VULVA_STRETCHED, Math.max(0, vulva));
+    const a = Math.min(ANUS_STRETCHED, Math.max(0, anus));
+    const ends = [0, 1, VULVA_STRETCHED];
+    const moved = (to: number, from: number) => Math.abs(to - from) >= 0.02 || (ends.includes(to) && to !== from);
+    if (this.vulva && moved(v, this.vulvaOpen)) {
+      this.vulvaOpen = v;
+      this.refreshVulva();
+    }
+    if (this.anus && moved(a, this.anusOpen)) {
+      this.anusOpen = a;
+      this.refreshAnus();
+    }
+  }
+
+  /**
+   * Shapes her anus's disc from where its meshes lie on the skin (`skin`) into `totals`, every mesh's moves. Hidden,
+   * it lies closed.
+   */
+  private shapeAnus(skin: Float32Array[], totals: Float32Array[]): void {
+    const { anus } = this;
+    const types = LOOK_OPTIONS[this.body].anus;
+    const type = types.find((t) => t.id === this.look.anus) ?? types[0];
+    if (!anus || !type) return;
+    const shape = anusShape(type, clampSlider(this.look.sliders.anusSize), this.vulvaShown ? this.anusOpen : 0);
+    const out = anus.slots.map((slot) => new Float32Array(slot.bind.length));
+    shapeAnus(anus.patch, skin, shape, out);
+    anus.slots.forEach((slot, m) => {
+      const total = totals[this.slots.indexOf(slot)];
+      for (let i = 0; i < slot.bind.length; i++) total[i] = out[m][i] - slot.bind[i];
+    });
+  }
+
+  /**
+   * How hard he is, from 0 (soft) to 1: his penis grows, thickens and stands, its foreskin drawing back, and his
+   * scrotum draws up. Only their meshes change, so it can follow him moment to moment.
+   */
+  setErection(level: number): void {
+    const e = Math.min(1, Math.max(0, level));
+    const moved = Math.abs(e - this.erection) >= 0.02 || ((e === 0 || e === 1) && e !== this.erection);
+    if (!this.penis || !moved) return;
+    this.erection = e;
+    this.refreshPenis();
+    this.showPieces();
+  }
+
+  /**
+   * What covers his groin now, if anything: the nearest piece of clothing over it he has on, or else his
+   * smallclothes. His penis lies packed in it, a bulge in its cloth.
+   */
+  private penisCover(): MeshSlot | null {
+    const { penis } = this;
+    if (!penis) return null;
+    if (!this.undressed && !this.underwear) {
+      const outfit = outfitOf(this.body, this.look).mesh;
+      const pieces = LOOK_OPTIONS[this.body].pieces.filter((piece) => this.look.hidden.includes(piece.id));
+      const on = penis.groin.find(
+        (slot) =>
+          outfitMeshOf(slot.mesh, this.body) === outfit &&
+          !covers(this.stripped, slot.part, slot.original.name) &&
+          !pieces.some((piece) => covers(piece.parts, slot.part, slot.original.name)),
+      );
+      if (on) return on;
+    }
+    if (!this.underwearOn().bottomOn) return null;
+    return this.slots.find((slot) => slot.part === "Body" && slot.original.name === "T_smalls") ?? null;
+  }
+
+  /** Shapes his penis's tube and sack from where their meshes lie on the skin (`skin`) into `totals`. */
+  private shapePenis(skin: Float32Array[], totals: Float32Array[]): void {
+    const { penis } = this;
+    this.penisPacked = this.penisCover() !== null;
+    const types = LOOK_OPTIONS[this.body].penis;
+    const type = types.find((t) => t.id === this.look.penis) ?? types[0];
+    if (!penis || !type) return;
+    const { sliders } = this.look;
+    const shape = penisShape(
+      type, clampSlider(sliders.penisLength), clampSlider(sliders.penisGirth), clampSlider(sliders.penisHead),
+      clampSlider(sliders.penisSkin), clampSlider(sliders.ballsSize), clampSlider(sliders.ballsHang), this.erection,
+      this.penisPacked ? 1 : 0,
+    );
+    const out = penis.slots.map((slot) => new Float32Array(slot.bind.length));
+    shapePenis(penis.patch, skin, shape, out);
+    penis.slots.forEach((slot, m) => {
+      const total = totals[this.slots.indexOf(slot)];
+      for (let i = 0; i < slot.bind.length; i++) total[i] = out[m][i] - slot.bind[i];
+    });
+  }
+
+  /** Reshapes his penis alone, from what the last look left. */
+  private refreshPenis(): void {
+    const { penis, shaped } = this;
+    if (!penis || !shaped) return;
+    this.shapePenis(shaped.penisSkin, shaped.totals);
+    for (const slot of penis.slots) {
+      const i = this.slots.indexOf(slot);
+      this.writePositions(slot, shaped.totals[i], shaped.settled[i]);
+      slot.mesh.geometry.computeVertexNormals();
+    }
+  }
+
+  /** Reshapes her anus alone, from what the last look left. */
+  private refreshAnus(): void {
+    const { anus, shaped } = this;
+    if (!anus || !shaped) return;
+    this.shapeAnus(shaped.anusSkin, shaped.totals);
+    for (const slot of anus.slots) {
+      const i = this.slots.indexOf(slot);
+      this.writePositions(slot, shaped.totals[i], shaped.settled[i]);
+      slot.mesh.geometry.computeVertexNormals();
+    }
+  }
+
+  /**
+   * Shapes her vulva's grid from where its meshes lie on the skin (`skin`, in the model's space) into `totals`,
+   * every mesh's moves, and lifts what lies over it: each rider goes from its move before rising (`flat`) out from
+   * the skin as far as the shape stands under it. Hidden, the grid lies flat and nothing rises.
+   */
+  private shapeVulva(skin: Float32Array[], totals: Float32Array[], flat: Map<MeshSlot, Float32Array>): void {
+    const { vulva } = this;
+    if (!vulva) return;
+    const shape = this.vulvaShown ? this.vulvaShapeNow() : null;
+    const out = vulva.slots.map((slot) => new Float32Array(slot.bind.length));
+    const frame = shapeVulva(vulva.patch, skin, shape, out);
+    vulva.slots.forEach((slot, m) => {
+      const total = totals[this.slots.indexOf(slot)];
+      for (let i = 0; i < slot.bind.length; i++) total[i] = out[m][i] - slot.bind[i];
+    });
+    for (const [slot, { riders, over }] of vulva.riders) {
+      const own = totals[this.slots.indexOf(slot)];
+      const before = flat.get(slot)!;
+      const rise = rideVulva(riders, frame, shape, over);
+      riders.verts.forEach((v, k) => {
+        for (let axis = 0; axis < 3; axis++) own[v * 3 + axis] = before[k * 3 + axis] + rise[k * 3 + axis];
+      });
+    }
+  }
+
+  /** Reshapes her vulva and its riders alone, from what the last look left: for her arousal, or her undressing. */
+  private refreshVulva(): void {
+    const { vulva, shaped } = this;
+    if (!vulva || !shaped) return;
+    this.shapeVulva(shaped.vulvaSkin, shaped.totals, shaped.vulvaFlat);
+    for (const slot of vulva.slots) {
+      const i = this.slots.indexOf(slot);
+      this.writePositions(slot, shaped.totals[i], shaped.settled[i]);
+      slot.mesh.geometry.computeVertexNormals();
+    }
+    for (const [slot, { riders }] of vulva.riders) {
+      const i = this.slots.indexOf(slot);
+      this.writePositions(slot, shaped.totals[i], shaped.settled[i], riders.verts);
+    }
   }
 
   /**
@@ -1992,6 +2678,17 @@ export class Dresser {
     const stockingsOff = this.undressed || this.underwear || covers(this.stripped, "Cloth", HOSE_BANDS[0]);
     const shoes = shoeMeshFor(this.body, this.look);
     const under = this.underwearOn();
+    // Her vulva shows once nothing covers it; it rises from the skin as it shows and lies flat again as it's covered.
+    // Her anus likewise.
+    const vulvaShown = (this.vulva !== null || this.anus !== null || this.penis !== null) && !under.bottomOn;
+    // Putting on or taking off what covers his groin packs his penis in it or frees it.
+    const cover = this.penisCover();
+    if ((cover !== null) !== this.penisPacked) this.refreshPenis();
+    if (vulvaShown !== this.vulvaShown) {
+      this.vulvaShown = vulvaShown;
+      this.refreshVulva();
+      this.refreshAnus();
+    }
     for (const slot of this.slots) {
       if (slot.part === "Cum") continue;
       // Only the shoes she has on; never undressed, as nothing is modelled under them.
@@ -2012,6 +2709,30 @@ export class Dresser {
         slot.mesh.material = this.discMaterial(slot);
         continue;
       }
+      if (this.penis?.slots.includes(slot)) {
+        // Covered, it shows packed in what covers it, in that cloth; bare, as it is.
+        if (cover) {
+          slot.mesh.visible = true;
+          slot.mesh.material = cover.worn;
+          continue;
+        }
+        slot.mesh.visible = vulvaShown;
+        // The glans flushes darker as he hardens; the rest keeps its own colour.
+        const flush = Math.round(this.erection * 5) / 5;
+        const glans = slot.original.name === GLANS_MATERIAL && flush > 0;
+        slot.mesh.material = glans ? paint(slot.original, averageColor(slot.worn).clone().lerp(FLUSHED, 0.2 * flush)) : slot.worn;
+        continue;
+      }
+      if (this.vulva?.slots.includes(slot) || this.anus?.slots.includes(slot)) {
+        slot.mesh.visible = vulvaShown;
+        // The slit and canal flush darker as she's aroused, like her areolae; the rest keeps its own colour.
+        const flush = Math.round(this.vulvaArousal * 5) / 5;
+        const inner = (slot.original.name === VULVA_MATERIAL || slot.original.name === CANAL_MATERIAL) && flush > 0;
+        slot.mesh.material = inner ? paint(slot.original, averageColor(slot.worn).clone().lerp(FLUSHED, 0.25 * flush)) : slot.worn;
+        continue;
+      }
+      // The skin under her openings gives way to them while they show; otherwise it's painted like the skin around.
+      if (slot.part === "Body" && slot.original.name === HOLE_MATERIAL) slot.mesh.visible = !vulvaShown;
       if (slot.part === "Body" && slot.original.name === PUBIC_MATERIAL) {
         // Only bare: under her smallclothes, or with none to show, it stays hidden.
         const style = pubicStyle(this.look.pubes);
@@ -2035,7 +2756,7 @@ export class Dresser {
         // Her band and braies give way to the styles drawn instead of them; a one-piece takes the braies' place too.
         const drawnOver =
           (slot.original.name === BAND_MATERIAL && under.top !== null) ||
-          (slot.original.name === "T_smalls" && (under.whole || under.bottom !== null));
+          ((slot.original.name === "T_smalls" || slot.original.name === HOLE_MATERIAL) && (under.whole || under.bottom !== null));
         const bare = stripped || drawnOver || (this.undressed && covers(painted, slot.part, slot.original.name));
         slot.mesh.material = bare && skin ? skin.worn : slot.worn;
         continue;
@@ -2170,6 +2891,18 @@ export function randomLook(body: BodyName, random: () => number = Math.random): 
     const style = pick(options.pubes);
     if (style !== options.pubes[0]) look.pubes = style.id;
   }
+  if (options.vulva.length) {
+    const type = pick(options.vulva);
+    if (type !== options.vulva[0]) look.vulva = type.id;
+  }
+  if (options.anus.length) {
+    const type = pick(options.anus);
+    if (type !== options.anus[0]) look.anus = type.id;
+  }
+  if (options.penis.length) {
+    const type = pick(options.penis);
+    if (type !== options.penis[0]) look.penis = type.id;
+  }
   if (options.shoes.length) {
     const style = pick(options.shoes);
     if (style !== options.shoes[0]) look.shoes = style.id;
@@ -2215,6 +2948,9 @@ export function readLook(raw: unknown, body: BodyName): Look | null {
   if (options.nipples.slice(1).some((type) => type.id === data.nipples)) look.nipples = data.nipples;
   if (options.bustShapes.slice(1).some((shape) => shape.id === data.bustShape)) look.bustShape = data.bustShape;
   if (options.pubes.slice(1).some((style) => style.id === data.pubes)) look.pubes = data.pubes;
+  if (options.vulva.slice(1).some((type) => type.id === data.vulva)) look.vulva = data.vulva;
+  if (options.anus.slice(1).some((type) => type.id === data.anus)) look.anus = data.anus;
+  if (options.penis.slice(1).some((type) => type.id === data.penis)) look.penis = data.penis;
   if (options.shoes.slice(1).some((style) => style.id === data.shoes)) look.shoes = data.shoes;
   if (options.tops.slice(1).some((style) => style.id === data.bra)) look.bra = data.bra;
   if (options.bottoms.slice(1).some((style) => style.id === data.briefs)) look.briefs = data.briefs;

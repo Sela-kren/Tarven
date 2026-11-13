@@ -59,6 +59,18 @@ describe("the wardrobe", () => {
     expect(stripStages("Female", "priestess")).toBe(7);
   });
 
+  it("takes the archer's mantle and the warrior's armour off first, and the noble's chain never", () => {
+    expect(stripLadder("Female", "archer").map((g) => g.id)).toEqual(
+      ["belt", "cloak", "bracers", "jerkin", "breeches", "blouse", "bra", "smalls"],
+    );
+    expect(stripLadder("Female", "warrior").map((g) => g.id)).toEqual(["belt", "tabard", "plate", "mail", "bra", "smalls"]);
+    expect(stripLadder("Male", "cleric").map((g) => g.id)).toEqual(["tabard", "robe", "breeches", "smalls"]);
+    expect(stripLadder("Female", "servant").map((g) => g.id)).toEqual(
+      ["apron", "bodice", "skirt", "stockings", "blouse", "bra", "smalls"],
+    );
+    expect(stripLadder("Male", "noble").map((g) => g.id)).toEqual(["cloak", "doublet", "breeches", "shirt", "smalls"]);
+  });
+
   it("only goes for what the outfit has", () => {
     for (const body of BODIES) {
       for (const outfit of LOOK_OPTIONS[body].outfits) {

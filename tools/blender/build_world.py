@@ -589,6 +589,7 @@ MALE = {
     "chin_z": 1.655, "head_scale": (0.85, 0.95, 1.0), "jaw": 1.0, "angular_head": True,
     "hat_z": 1.8,  # where a hat's crown sits, just above the brow
     "hair_outlines": HAIR_SHORT,
+    "penis": True,  # a tube and a sack at his groin the game shapes into his penis and scrotum
     "skinned": True, "quads": True, "plated": True, "skin": "skin", "pants": "trousers", "belt": "leather",
     "sleeve_rows": 7, "leg_drop": {}, "trunk_blend": (1.1, 0.08),
     "bare_profile": [(0.89, 0.173, 0.1, 0.125), (0.976, 0.16, 0.1, 0.13), (1.04, 0.14, 0.1, 0.12), (1.125, 0.13, 0.095, 0.1),
@@ -632,6 +633,8 @@ FEMALE = {
     "pubes": True,  # a patch over her mound the game draws her pubic hair's style on
     "lingerie": True,  # a patch over her trunk the game draws her underwear styles on
     "navel": 0.962,  # the height of her navel, a small pit pressed into the bare belly
+    "vulva": True,  # a grid over her groin the game shapes into her vulva, opening onto her canal
+    "anus": True,  # a disc in the cleft of her rear the game shapes into her anus, opening onto its canal
     "name": "Female", "tunic": "tee_white", "hair": "hair_f", "skin": "skin_f", "pants": "pants_red",
     "belt": "waistband", "shoe": "shoe_w", "sole": "sole_w", "splay": 0.28, "leg_splay": 0.05,
     "arm_sides": 8, "cuff_bands": 0, "midriff_bands": 2, "bare_arm_bands": 2, "bare_forearm": True,
@@ -2529,8 +2532,10 @@ def hair_spring_weights(spec, name, hairs, clear_of=()):
         bm.free()
 
 
-def refine_soft_parts(obj, name, regions=REFINE_REGIONS):
-    """Splits each face in these regions into four, leaving the arms alone. Weights follow the new corners."""
+def refine_soft_parts(obj, name, regions=REFINE_REGIONS, smooth=None, touching=False):
+    """Splits each face in these regions into four, leaving the arms alone. Weights follow the new corners. The new
+    corners round the surface out by `smooth` (REFINE_SMOOTH unless given); 0 leaves it exactly as it was. A face is
+    in a region if its middle is, or, `touching`, if any corner is: long faces reaching into it are split too."""
     arms = {g.index for g in obj.vertex_groups if g.name.startswith((f"{name}_UpperArm", f"{name}_ForeArm"))}
     bm = bmesh.new()
     bm.from_mesh(obj.data)
@@ -2548,10 +2553,14 @@ def refine_soft_parts(obj, name, regions=REFINE_REGIONS):
     def on_arm(vert):
         return deform is not None and any(group in arms and w > 0.2 for group, w in vert[deform].items())
 
-    faces = [f for f in bm.faces if inside(f.calc_center_median()) and not any(on_arm(v) for v in f.verts)]
+    def chosen(f):
+        return any(inside(v.co) for v in f.verts) if touching else inside(f.calc_center_median())
+
+    faces = [f for f in bm.faces if chosen(f) and not any(on_arm(v) for v in f.verts)]
     edges = list({e for f in faces for e in f.edges})
     if edges:
-        bmesh.ops.subdivide_edges(bm, edges=edges, cuts=1, use_grid_fill=True, smooth=REFINE_SMOOTH)
+        bmesh.ops.subdivide_edges(bm, edges=edges, cuts=1, use_grid_fill=True,
+                                  smooth=REFINE_SMOOTH if smooth is None else smooth)
     bm.to_mesh(obj.data)
     bm.free()
     obj.data.update()
@@ -2696,6 +2705,498 @@ def press_navel(spec, m, body_obj):
     mesh.update()
 
 
+# ---------------------------------------------------------------- vulva
+
+# A grid lying just over the skin of her groin, from the bottom of her mound down and back between her legs, which
+# the game shapes into her vulva from her look and how aroused she is (vulva.ts): the outer lips, the slit with the
+# inner lips in it, and the hood. Its middle faces, the slit, wear their own material (T_vulva); the rest wear her
+# skin's (T_labia), which the game tones with her skin. Each corner's column and row ride in its UVs, as both
+# materials are flat colours: u is the column, 0 at -x to 1 at +x, and v the row, 0 at the top to 1 at the bottom.
+# The groin is built in a few large faces meeting in a point, so its skin is split finer first, on every layer at
+# once so the clothes over it keep their place, and the grid lies on a rounded surface.
+VULVA_COLUMNS = (-1.0, -0.72, -0.5, -0.34, -0.2, -0.09, 0.0, 0.09, 0.2, 0.34, 0.5, 0.72, 1.0)  # across, finer inside
+VULVA_ROWS = 13  # evenly spaced along her
+# The grid as built, as big as the game ever makes it (Size at 1); at smaller sizes the shape fills less of it.
+VULVA_HALF = 0.034  # its half width
+# Its length over the skin: from the front of her mound down to where her groin turns under. Past that her trunk
+# is only a narrow ridge between her thighs, which close over anything laid there and push it out as they move.
+VULVA_LENGTH = 0.085
+VULVA_TOP = 0.812  # the height of its top row, on the front of her mound
+# Her middle is found by rays from inside her groin at (y, z), turning from a little above forwards round to back
+# between her legs.
+VULVA_CORE = (0.012, 0.8)
+# Off her middle her groin dips into a notch between the fronts of her thighs. Each row is aimed as a gentle curve
+# across, drawing back this far at its ends, and as narrow as this share of the width where it faces down; each
+# point then lies on the skin it looks in on from outside her, so it takes that skin's weights and moves with her
+# thighs exactly as the skin does. Nothing spans a hollow, which a moving thigh would push through, but the narrow
+# crease her skin has down her middle is filled up to this deep.
+VULVA_WRAP = 0.008
+VULVA_NARROW = 0.45
+VULVA_TAPER = 0.35  # how much narrower its last row is
+VULVA_FILL = 0.01
+VULVA_LIFT = 0.0008
+# The faces that wear T_vulva: those this close to the middle across, and along (a share of the length): the
+# slit. isInner in vulva.ts.
+VULVA_INNER = (0.2, 0.36 * 0.92)
+# The skin it lies on.
+VULVA_SKINS = ("T_skin_f", "T_smalls", "T_hole")
+# Each pass of splitting the groin's skin, as a share of the reach around it.
+VULVA_REFINE = [1.0, 0.75]
+# And once more under her slit and round her anus, so the skin hidden under her openings (VULVA_HOLE, ANUS_HOLE)
+# follows their shapes closely. Only split, the surface left exactly as it was, so the grid and the disc lie on
+# the skin as they did.
+OPENING_REFINE = [([(0.0, 0.042, 0.742), (0.0, 0.06, 0.775)], (0.021, 0.02, 0.024), 1),
+                  ([(0.0, -0.026, 0.765)], (0.026, 0.022, 0.026), -1)]
+# Her opening: between these two rows the grid is cut down its middle, and the two sides of the cut open onto her
+# canal (T_canal), a pocket going into her. Closed, the sides meet and it lies flat between them; the game parts
+# them (vulva.ts). Each side of the cut has its own corners: u a quarter column to the left or right of the middle.
+# The canal's corners carry their place across it in u, 0 on the left side of the cut to 1 on the right, and their
+# row in v; this many lie between the two sides, down into her and back up.
+VULVA_CUT = (5, 10)
+VULVA_CANAL = 5
+VULVA_CANAL_DEPTH = 0.03  # how deep it is as built, at the middle of the cut; the game sets its own
+# The skin under her opening is hidden while it shows (T_hole), so it never stands in front of her canal: the faces
+# whose middles lie within this far either side of the line of the cut, stretched as wide as the game opens it, and
+# this far past its top, as much longer as it grows, and a little past its bottom (it grows no longer there). No
+# further, so the grid covers it at every size: its bottom row never comes up past BOTTOM in vulva.ts. While she's
+# covered it wears her smallclothes, as the skin around it does.
+VULVA_HOLE = 0.017
+VULVA_HOLE_ENDS = (0.008, 0.0)
+# The skin's many-sided faces this near her slit are split into triangles first (SkinProbe.split): a point and how
+# far from it.
+VULVA_SPLIT = ((0.0, 0.05, 0.758), 0.05)
+
+
+def smooth01(t):
+    """0 below 0, 1 above 1, and an S-curve between."""
+    t = min(1.0, max(0.0, t))
+    return t * t * (3 - 2 * t)
+
+
+def vulva_regions(share):
+    """The groin, front and back of its lowest point: (centres, radii, side) as refine_soft_parts takes them."""
+    return [([(0.0, 0.035, 0.785)], (0.065 * share, 0.06 * share, 0.06 * share), 1),
+            ([(0.0, 0.0, 0.77)], (0.06 * share, 0.05 * share, 0.045 * share), -1)]
+
+
+class SkinProbe:
+    """The bare skin of a body in a bmesh, to find points on it with rays and read its weights there."""
+
+    def __init__(self, bm, mesh, m, materials, skins=VULVA_SKINS):
+        bm.verts.index_update()
+        self.bm = bm
+        self.deform = bm.verts.layers.deform.active
+        self.uv = bm.loops.layers.uv.active
+        names = [mat.name if mat else "" for mat in mesh.materials]
+        self.slots = {}
+        for key, material_name in materials:
+            if material_name not in names:
+                mesh.materials.append(m[key])
+                names.append(material_name)
+            self.slots[key] = names.index(material_name)
+        self.names = names
+        # Only the skin's faces: the rays never meet the pubic patch or anything else lying over it.
+        skins = {i for i, n in enumerate(names) if n in skins}
+        self.faces = [f for f in bm.faces if f.material_index in skins]
+        self.tree = BVHTree.FromPolygons([v.co.copy() for v in bm.verts], [[v.index for v in f.verts] for f in self.faces])
+
+    def ray(self, origin, direction, reach=1e6):
+        return self.tree.ray_cast(origin, direction, reach)[0]
+
+    def nearest(self, point):
+        return self.tree.find_nearest(point)[0]
+
+    def weights(self, point):
+        """The skin's weights at a point on it, from the corners of the face nearest it."""
+        _, _, index, _ = self.tree.find_nearest(point)
+        face = self.faces[index]
+        near = [(1 / max(1e-5, (v.co - point).length), v) for v in face.verts]
+        total = sum(w for w, _ in near)
+        weights = {}
+        for w, v in near:
+            for group, share in v[self.deform].items():
+                weights[group] = weights.get(group, 0.0) + share * w / total
+        return weights
+
+    def vert(self, co, weights):
+        vert = self.bm.verts.new(co)
+        for group, share in weights.items():
+            vert[self.deform][group] = share
+        return vert
+
+    def face(self, verts, slot, uvs, outwards=None):
+        """A face on these corners in this material, its UVs given per corner; turned to face `outwards` if given."""
+        if outwards is not None:
+            a, b, c = (v.co for v in verts[:3])
+            if (b - a).cross(c - a).dot(outwards) < 0:
+                verts, uvs = verts[::-1], uvs[::-1]
+        f = self.bm.faces.new(verts)
+        f.material_index = self.slots[slot]
+        f.smooth = False
+        for loop, coord in zip(f.loops, uvs):
+            loop[self.uv].uv = coord
+        return f
+
+    def split(self, near):
+        """Splits the skin's many-sided faces with a corner for which near(corner) is true into triangles, as the game
+        draws them anyway: so a long face reaching in under an opening leaves only its part there to be hidden. Not
+        its quads, which would fold the other way and move the skin."""
+        faces = [f for f in self.faces if len(f.verts) > 4 and any(near(v.co) for v in f.verts)]
+        if faces:
+            made = bmesh.ops.triangulate(self.bm, faces=faces, quad_method="BEAUTY", ngon_method="BEAUTY")["faces"]
+            self.faces = [f for f in self.faces if f.is_valid] + list(made)
+            # What's laid on the skin from here on lies on it as it's split.
+            self.bm.verts.index_update()
+            self.tree = BVHTree.FromPolygons([v.co.copy() for v in self.bm.verts],
+                                             [[v.index for v in f.verts] for f in self.faces])
+
+    def hole(self, near, under=None):
+        """Puts the smallclothes' faces of the skin for which near(centre) is true into T_hole: only those wholly
+        under(corner), if given, so none reaches out from under what covers it while it's hidden."""
+        smalls = self.names.index("T_smalls")
+        count = 0
+        for f in self.faces:
+            if (f.material_index == smalls and near(f.calc_center_median())
+                    and (under is None or all(under(v.co) for v in f.verts))):
+                f.material_index = self.slots["hole"]
+                count += 1
+        return count
+
+
+def add_vulva(m, name, body_obj):
+    """Lays the grid on the finished body, weighted like the skin under it, with her canal behind its cut."""
+    mesh = body_obj.data
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    probe = SkinProbe(bm, mesh, m, (("vulva", "T_vulva"), ("labia", "T_labia"), ("canal", "T_canal"), ("hole", "T_hole")))
+    probe.split(lambda p: (p - Vector(VULVA_SPLIT[0])).length < VULVA_SPLIT[1])
+    tree = probe.tree
+
+    # Her middle, from the front of her mound round to between her legs.
+    core = Vector((0.0, *VULVA_CORE))
+    line = []
+    for i in range(361):
+        a = math.radians(-25 + 185 * i / 360)
+        point = tree.ray_cast(core, Vector((0.0, math.cos(a), -math.sin(a))))[0]
+        if point is None:
+            raise RuntimeError("add_vulva: a ray from inside her groin met no skin")
+        if line or point.z <= VULVA_TOP:
+            line.append(point)
+    lengths = [0.0]
+    for a, b in zip(line, line[1:]):
+        lengths.append(lengths[-1] + (b - a).length)
+
+    def along(d):
+        """The point this far along her middle from the top."""
+        for k in range(1, len(line)):
+            if lengths[k] >= d:
+                f = (d - lengths[k - 1]) / max(1e-9, lengths[k] - lengths[k - 1])
+                return line[k - 1].lerp(line[k], f)
+        raise RuntimeError("add_vulva: her middle ends before the grid does")
+
+    step = VULVA_LENGTH / (VULVA_ROWS - 1)
+    grid = {}
+    normals = []
+    for r in range(VULVA_ROWS):
+        middle = along(r * step + step)
+        tangent = (along(r * step + step * 1.5) - along(r * step + step * 0.5)).normalized()
+        normal = Vector((0.0, -tangent.z, tangent.y))  # out of her, square to her middle
+        # Narrower where it faces down, and narrower again in its last rows, which reach into the notch where her
+        # thighs meet; there her trunk's skin runs inside her thighs.
+        width = VULVA_HALF * (VULVA_NARROW + (1 - VULVA_NARROW) * max(0.0, normal.y))
+        width *= 1 - VULVA_TAPER * smooth01((r / (VULVA_ROWS - 1) - 0.65) / 0.35)
+        points = []
+        for s in VULVA_COLUMNS:
+            planned = middle + Vector((s * width, 0.0, 0.0)) - normal * VULVA_WRAP * s * s
+            # The skin under the aim, looking in from outside her; failing that, the skin nearest it.
+            point = tree.ray_cast(planned + normal * 0.04, -normal, 0.08)[0]
+            if point is None:
+                point = tree.find_nearest(planned)[0]
+            points.append(point)
+        # The crease down her middle, filled: no point lies further in than its neighbours, so the crease's walls
+        # never stand in front of the slit. Only so far, so the notch between her thighs stays as it is.
+        depths = [(p - middle).dot(normal) for p in points]
+        filled = list(depths)
+        for _ in range(VULVA_ROWS):
+            for c in range(1, len(filled) - 1):
+                filled[c] = max(filled[c], min(depths[c] + VULVA_FILL, (filled[c - 1] + filled[c + 1]) / 2))
+        for c, (point, depth, fill) in enumerate(zip(points, depths, filled)):
+            grid[c, r] = probe.vert(point + normal * (fill - depth + VULVA_LIFT), probe.weights(point))
+        normals.append(normal)
+
+    # The cut down the middle column: each side of it gets its own corners, at the same place while she's closed.
+    columns = len(VULVA_COLUMNS)
+    middle_column = columns // 2
+    top, bottom = VULVA_CUT
+    sides = {}
+    for r in range(top + 1, bottom):
+        shared = grid[middle_column, r]
+        sides[r] = (shared, probe.vert(shared.co.copy(), dict(shared[probe.deform].items())))  # (left, right)
+
+    def corner(c, r, column_side):
+        """The corner at (c, r) for a face on this side of the middle column, and its UV."""
+        u = c / (columns - 1)
+        if c == middle_column and r in sides:
+            return sides[r][0 if column_side < 0 else 1], (u + column_side * 0.25 / (columns - 1), r / (VULVA_ROWS - 1))
+        return grid[c, r], (u, r / (VULVA_ROWS - 1))
+
+    half, slit = VULVA_INNER
+    for r in range(VULVA_ROWS - 1):
+        for c in range(columns - 1):
+            column_side = -1 if c < middle_column else 1
+            corners = [corner(cc, rr, column_side) for cc, rr in ((c, r), (c + 1, r), (c + 1, r + 1), (c, r + 1))]
+            s = (VULVA_COLUMNS[c] + VULVA_COLUMNS[c + 1]) / 2
+            t = (r + 0.5) / (VULVA_ROWS - 1)
+            slot = "vulva" if abs(s) < half and abs(t - 0.5) < slit else "labia"
+            probe.face([v for v, _ in corners], slot, [coord for _, coord in corners])
+
+    # Her canal: across each row of the cut, from its left side down into her and back up to its right side, a
+    # little open as built so its faces have a way to face. Deepest at the middle of the cut; at its ends, where
+    # the cut's sides meet, it closes into a wall.
+    canal = {}
+    across = Vector((1.0, 0.0, 0.0))
+    for r in range(top, bottom + 1):
+        if r in sides:
+            left, right = sides[r]
+        else:
+            left = right = grid[middle_column, r]
+        weights = dict(left[probe.deform].items())
+        depth = VULVA_CANAL_DEPTH * (0.25 + 0.75 * math.sin(math.pi * (r - top) / (bottom - top)))
+        canal[0, r], canal[VULVA_CANAL + 1, r] = left, right
+        for k in range(1, VULVA_CANAL + 1):
+            a = math.pi * k / (VULVA_CANAL + 1)
+            co = left.co - across * math.cos(a) * 0.003 - normals[r] * math.sin(a) * depth
+            canal[k, r] = probe.vert(co, weights)
+    # The canal's edges are its own corners, as they're another material's; at the same places as the cut's sides.
+    for r in range(top, bottom + 1):
+        for k in (0, VULVA_CANAL + 1):
+            canal[k, r] = probe.vert(canal[k, r].co.copy(), dict(canal[k, r][probe.deform].items()))
+    for r in range(top, bottom):
+        for k in range(VULVA_CANAL + 1):
+            corners = [(k, r), (k + 1, r), (k + 1, r + 1), (k, r + 1)]
+            verts = [canal[key] for key in corners]
+            # Facing in, towards the opening above it.
+            centre = sum((v.co for v in verts), Vector()) / 4
+            opening = (grid[middle_column, r].co + grid[middle_column, r + 1].co) / 2
+            uvs = [(kk / (VULVA_CANAL + 1), rr / (VULVA_ROWS - 1)) for kk, rr in corners]
+            probe.face(verts, "canal", uvs, outwards=opening - centre)
+
+    # The skin under the opening, within reach of the line of the cut.
+    line = [grid[middle_column, r].co.copy() for r in range(top, bottom + 1)]
+
+    def near_cut(point):
+        for i, (a, b) in enumerate(zip(line, line[1:])):
+            ab = b - a
+            t = (point - a).dot(ab) / ab.length_squared
+            # Past the cut's ends only off its first and last stretches, and only so far.
+            low = -VULVA_HOLE_ENDS[0] / ab.length if i == 0 else 0.0
+            high = 1.0 + (VULVA_HOLE_ENDS[1] / ab.length if i == len(line) - 2 else 0.0)
+            if low <= t <= high and (a + ab * t - point).length < VULVA_HOLE:
+                return True
+        return False
+
+    print(f"add_vulva: {probe.hole(near_cut)} faces of skin under her opening")
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.update()
+
+
+# ---------------------------------------------------------------- anus
+
+# A disc of rings and spokes lying over the skin in the cleft of her rear, like the nipple discs, with a short canal
+# going into her from its middle. The game shapes it from her look and how open it is (anus.ts): the rim puckered
+# in folds while it's closed, and the canal shown as it opens. Each corner's ring and spoke ride in its UVs: u the
+# ring, 0 at the bottom of the canal through the rim to 1 at the disc's edge on her skin, and v the spoke. The rim's
+# rings and the canal wear T_anus; the rest of the disc her skin (T_anus_skin), which the game tones with her skin.
+ANUS_SPOKES = 12
+ANUS_RINGS = 8  # out from the rim to the edge
+ANUS_CANAL = 3  # rings down the canal, besides its bottom
+ANUS_RIM = 3  # the rings out from the rim that wear T_anus
+ANUS_RADIUS = 0.026  # the disc's edge, out past the rim stretched as wide as the game makes it
+ANUS_DEPTH = 0.03  # the canal's depth as built
+ANUS_MOUTH = 0.0005  # the rim's radius as built: closed
+ANUS_LIFT = 0.0008
+# Where it's found: looking out from inside her, back and down into the cleft of her rear.
+ANUS_AIM = ((0.0, 0.0, 0.8), (0.0, -0.6, -0.8))
+# The skin under it hidden while it shows, as under her vulva's opening: this far from its middle. The cleft's walls
+# close in around it, so well out past the rim stretched, while still under the disc.
+ANUS_HOLE = 0.022
+
+
+def add_anus(m, name, body_obj):
+    """Lays the disc and its canal on the finished body, weighted like the skin under it."""
+    mesh = body_obj.data
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    probe = SkinProbe(bm, mesh, m, (("anus", "T_anus"), ("anus_skin", "T_anus_skin"), ("hole", "T_hole")))
+    start, aim = (Vector(v) for v in ANUS_AIM)
+    centre = probe.ray(start, aim.normalized())
+    probe.split(lambda p: (p - centre).length < ANUS_RADIUS)
+    centre = probe.ray(start, aim.normalized())
+    # Square to the line of her cleft, from two more rays either side.
+    turn = lambda a: Matrix.Rotation(a, 3, "X") @ aim.normalized()
+    before, after = probe.ray(start, turn(-0.08)), probe.ray(start, turn(0.08))
+    tangent = (after - before).normalized()
+    normal = Vector((0.0, -tangent.z, tangent.y))
+    if normal.dot(aim) < 0:
+        normal = -normal
+    across = Vector((1.0, 0.0, 0.0))
+    up = normal.cross(across).normalized()
+    weights = probe.weights(centre)
+    last = ANUS_CANAL + 1 + ANUS_RINGS
+    rings = {0: [probe.vert(centre - normal * ANUS_DEPTH * 1.2, weights)]}
+    for i in range(1, ANUS_CANAL + 1):
+        depth = ANUS_DEPTH * (ANUS_CANAL + 1 - i) / ANUS_CANAL
+        rings[i] = [probe.vert(centre - normal * depth + (across * math.cos(a) + up * math.sin(a)) * ANUS_MOUTH, weights)
+                    for a in (2 * math.pi * k / ANUS_SPOKES for k in range(ANUS_SPOKES))]
+    rings[ANUS_CANAL + 1] = [probe.vert(centre + normal * ANUS_LIFT + (across * math.cos(a) + up * math.sin(a)) * ANUS_MOUTH, weights)
+                             for a in (2 * math.pi * k / ANUS_SPOKES for k in range(ANUS_SPOKES))]
+    for j in range(1, ANUS_RINGS + 1):
+        ring = []
+        for k in range(ANUS_SPOKES):
+            a = 2 * math.pi * k / ANUS_SPOKES
+            aimed = centre + (across * math.cos(a) + up * math.sin(a)) * ANUS_RADIUS * j / ANUS_RINGS
+            point = probe.ray(aimed + normal * 0.03, -normal, 0.06)
+            if point is None:
+                point = probe.nearest(aimed)
+            ring.append(probe.vert(point + normal * ANUS_LIFT, probe.weights(point)))
+        rings[ANUS_CANAL + 1 + j] = ring
+    uv = lambda i, k: (i / last, k / ANUS_SPOKES)
+    for i in range(last):
+        slot = "anus" if i + 1 <= ANUS_CANAL + 1 + ANUS_RIM else "anus_skin"
+        for k in range(ANUS_SPOKES):
+            k1 = (k + 1) % ANUS_SPOKES
+            if i == 0:
+                verts, uvs = [rings[0][0], rings[1][k], rings[1][k1]], [uv(0, k), uv(1, k), uv(1, k + 1)]
+            else:
+                verts = [rings[i][k], rings[i + 1][k], rings[i + 1][k1], rings[i][k1]]
+                uvs = [uv(i, k), uv(i + 1, k), uv(i + 1, k + 1), uv(i, k + 1)]
+            # The disc faces out of her; the canal faces in, towards its middle.
+            if i >= ANUS_CANAL + 1:
+                outwards = normal
+            else:
+                face_centre = sum((v.co for v in verts), Vector()) / len(verts)
+                axis = centre + normal * (face_centre - centre).dot(normal)
+                outwards = axis - face_centre if i > 0 else normal
+            probe.face(verts, slot, uvs, outwards=outwards)
+    hidden = probe.hole(lambda p: (p - centre).length < ANUS_HOLE, lambda p: (p - centre).length < ANUS_RADIUS - 0.002)
+    print(f"add_anus: {hidden} faces of skin under it")
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.update()
+
+
+# ---------------------------------------------------------------- penis
+
+# A tube standing straight out of the skin of his groin, and a sack below it with its mouth lying on his skin, which
+# the game shapes into his penis and scrotum from his look and how aroused he is (penis.ts): soft, hanging in front
+# of the sack with the foreskin over the glans; hard, standing up and out with it drawn back. The tube's rings run
+# from its root, a little inside him, through the shaft, the outer foreskin, its lip and the inner foreskin folding
+# back, to the sulcus and over the glans to a single corner at the tip; the sack's from its mouth down to a single
+# corner at its bottom. Each corner's ring rides in u and its spoke in v. Up to the lip the tube wears T_penis and
+# from it on T_glans; the sack wears T_scrotum. The game sets every corner itself, so as built they only need to lie
+# where it finds them: the root's ring and the sack's mouth on his skin, the tube standing straight out of him.
+PENIS_SPOKES = 12
+PENIS_SHAFT = 8
+PENIS_OUTER = 3
+PENIS_INNER = 2
+PENIS_GLANS = 4
+PENIS_LIP = PENIS_SHAFT + PENIS_OUTER
+PENIS_TIP = PENIS_LIP + PENIS_INNER + 1 + PENIS_GLANS + 1
+SCROTUM_RINGS = 8  # from the mouth, besides the corner at the bottom
+PENIS_LENGTH = 0.14  # as built, standing straight out
+PENIS_RADIUS = 0.016
+# Where it leaves him: at this height, found by a ray from inside him forwards, just off his middle so it never
+# runs along the seam down it.
+PENIS_ROOT = (0.0005, 0.0, 1.005)
+# The sack's mouth, below the root on his skin, and its half width and height.
+SCROTUM_MOUTH = (0.0005, 0.0, 0.982)
+SCROTUM_MOUTH_SIZE = (0.017, 0.009)
+# The skin they're found on.
+PENIS_SKINS = ("T_skin", "T_smalls")
+
+
+def add_penis(m, name, body_obj):
+    """Lays the tube and the sack on the finished body, weighted like the skin where they leave it."""
+    mesh = body_obj.data
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    probe = SkinProbe(bm, mesh, m, (("penis", "T_penis"), ("glans", "T_glans"), ("scrotum", "T_scrotum")), PENIS_SKINS)
+    forward = Vector((0.0, 1.0, 0.0))
+    across = Vector((1.0, 0.0, 0.0))
+    up = Vector((0.0, 0.0, 1.0))
+    root = probe.ray(Vector(PENIS_ROOT), forward)
+    if root is None:
+        raise RuntimeError("add_penis: a ray from inside his groin met no skin")
+    root = Vector((0.0, root.y, root.z))
+    weights = probe.weights(root)
+
+    def spoke(k):
+        a = 2 * math.pi * k / PENIS_SPOKES
+        return across * math.cos(a) + up * math.sin(a)
+
+    rings = []
+    for i in range(PENIS_TIP):
+        s = PENIS_LENGTH * (i - 0.3) / PENIS_TIP
+        rings.append([probe.vert(root + forward * s + spoke(k) * PENIS_RADIUS, weights) for k in range(PENIS_SPOKES)])
+    tip = probe.vert(root + forward * PENIS_LENGTH, weights)
+    uv = lambda i, k: (i / PENIS_TIP, k / PENIS_SPOKES)
+    for i in range(PENIS_TIP):
+        slot = "penis" if i < PENIS_LIP else "glans"
+        for k in range(PENIS_SPOKES):
+            k1 = (k + 1) % PENIS_SPOKES
+            if i == PENIS_TIP - 1:
+                verts, uvs = [rings[i][k], rings[i][k1], tip], [uv(i, k), uv(i, k + 1), uv(PENIS_TIP, k)]
+                outwards = forward
+            else:
+                verts = [rings[i][k], rings[i + 1][k], rings[i + 1][k1], rings[i][k1]]
+                uvs = [uv(i, k), uv(i + 1, k), uv(i + 1, k + 1), uv(i, k + 1)]
+                outwards = spoke(k + 0.5)
+            probe.face(verts, slot, uvs, outwards=outwards)
+
+    # The sack: its mouth on his skin, looking in from in front of him, then hanging down to its bottom.
+    centre = probe.ray(Vector(SCROTUM_MOUTH), forward)
+    if centre is None:
+        raise RuntimeError("add_penis: a ray from inside his groin met no skin below the root")
+    centre = Vector((0.0, centre.y, centre.z))
+    width, height = SCROTUM_MOUTH_SIZE
+    mouth = []
+    for k in range(PENIS_SPOKES):
+        aimed = centre + across * math.cos(2 * math.pi * k / PENIS_SPOKES) * width + up * math.sin(2 * math.pi * k / PENIS_SPOKES) * height
+        point = probe.ray(aimed + forward * 0.04, -forward, 0.08)
+        if point is None:
+            point = probe.nearest(aimed)
+        mouth.append(probe.vert(point, probe.weights(point)))
+    axis = lambda t: centre + forward * 0.02 - up * 0.065 * t
+    sack = [mouth]
+    for j in range(1, SCROTUM_RINGS):
+        t = j / SCROTUM_RINGS
+        r = 0.022 * math.sin(math.pi * (0.15 + 0.85 * t))
+        ring = []
+        for k in range(PENIS_SPOKES):
+            a = 2 * math.pi * k / PENIS_SPOKES
+            # Across him and, the sack hanging, out of him: the way up turns to the way out as it hangs.
+            ring.append(probe.vert(axis(t) + (across * math.cos(a) + forward * math.sin(a)) * r, weights))
+        sack.append(ring)
+    bottom = probe.vert(axis(1.0), weights)
+    suv = lambda j, k: (j / SCROTUM_RINGS, k / PENIS_SPOKES)
+    for j in range(SCROTUM_RINGS):
+        for k in range(PENIS_SPOKES):
+            k1 = (k + 1) % PENIS_SPOKES
+            if j == SCROTUM_RINGS - 1:
+                verts, uvs = [sack[j][k], sack[j][k1], bottom], [suv(j, k), suv(j, k + 1), suv(SCROTUM_RINGS, k)]
+            else:
+                verts = [sack[j][k], sack[j + 1][k], sack[j + 1][k1], sack[j][k1]]
+                uvs = [suv(j, k), suv(j + 1, k), suv(j + 1, k + 1), suv(j, k + 1)]
+            # Facing out from the sack's middle line, as the game shapes it the same way round.
+            face_centre = sum((v.co for v in verts), Vector()) / len(verts)
+            probe.face(verts, "scrotum", uvs, outwards=face_centre - axis((j + 0.5) / SCROTUM_RINGS))
+    print(f"add_penis: root at {tuple(round(c, 3) for c in root)}, sack's mouth at {tuple(round(c, 3) for c in centre)}")
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.update()
+
+
 # ---------------------------------------------------------------- pubic hair
 
 # The skin over her mound, copied a hair's breadth out into its own material. The game draws the hair's style on it
@@ -2760,7 +3261,7 @@ LINGERIE_TOP = 1.4
 # Over the pubic patch (PUBES_LIFT), under the coat (COAT_LIFT), so what lands on her lies over her underwear too.
 LINGERIE_LIFT = 0.0012
 # The skin materials it copies, and the bones whose skin it leaves out: her arms, hands and head.
-LINGERIE_SKINS = ("T_skin_f", "T_bra", "T_smalls", "T_navel")
+LINGERIE_SKINS = ("T_skin_f", "T_bra", "T_smalls", "T_navel", "T_hole")
 LINGERIE_SKIPS = ("UpperArm", "ForeArm", "Hand", "Head")
 
 
@@ -3708,10 +4209,1169 @@ def build_pirate_extra(spec, m, fit):
     return extra
 
 
+# ---------------------------------------------------------------- the adventurer's kit and the noble's clothes
+# The two guest factions that come once her name starts to travel (STORY.md, section 5). Both bodies have both, and
+# for now only guests wear them, like the pirate's rig.
+#
+# The adventurers come as a party, each in the kit of their calling:
+#   the archer: a leather jerkin over a linen shirt with its sleeves pushed up, leather bracers, breeches tucked into
+#     knee boots with turned-down tops, a belt with a pouch, a hooded mantle, and a quiver of arrows on the back on a
+#     strap across the chest;
+#   the warrior, the party's shield: mail from neck to knee, a tabard over it, plate on the shoulders, forearms and
+#     shins, a round shield on the back and a sword at the left hip;
+#   the mage: a robe with wide bell sleeves, a sash, an amulet, a tall pointed hat and a staff across the back;
+#   the cleric, the healer: a robe under a tabard with a sun on the chest, a hood worn down, and a mace at the hip.
+# Her robes are long skirts on her skirt panels; his hang front and back from the waist, following both legs.
+# The noble: he wears a velvet doublet with a short flared skirt edged in gold braid, puffed sleeves, a linen ruff
+# and cuffs, breeches and tall boots, a gold chain of office, a short cape over his left shoulder and a flat cap
+# with a feather. She wears a velvet gown with a square neckline edged in braid, long sleeves ending in linen
+# ruffles and a skirt to the floor, a gold girdle with a chain hanging from it, and a circlet.
+GUEST_COLOURS = (("jerkin", (0.42, 0.28, 0.16)), ("bracer", (0.2, 0.12, 0.07)), ("cloak", (0.2, 0.26, 0.17)),
+                 ("doublet", (0.3, 0.06, 0.12)),
+                 # The adventuring party's: the warrior's mail, plate and tabard, and the mage's and cleric's robes.
+                 ("mail", (0.4, 0.41, 0.43)), ("plate", (0.6, 0.61, 0.64)), ("tabard", (0.17, 0.23, 0.42)),
+                 ("robe", (0.27, 0.15, 0.37)))
+ADVENTURER_BOOT = -0.04  # the boots reach just below the knee
+ADVENTURER_CUFF = (0.012, 0.04)  # the boots' turned-down tops: how far below and above the top of the leg
+ADVENTURER_BELT = {"Female": (0.872, 0.9), "Male": (1.075, 1.108)}
+ADVENTURER_JERKIN = 1.24  # her jerkin's top at the front, over the painted breast band (to 1.205)
+ADVENTURER_BRACER = 0.07  # how far the bracers stop below the elbow
+NOBLE_BOOT = 0.06  # his boots reach above the knee
+NOBLE_NECKLINE = (1.225, 1.27)  # her gown's square neckline, at the front and at the back
+NOBLE_SQUARE = 0.085  # how wide the neckline is either side of the middle
+NOBLE_SKIRT = [SKIRT_TOP, 0.94, 0.88, 0.8, 0.7, 0.58, 0.46, 0.34, 0.22, 0.1]  # down to the floor
+NOBLE_GIRDLE = (0.958, 0.982)
+NOBLE_PEPLUM = (1.11, 0.99)  # his doublet's skirt, from the belt line down over the hips
+
+
+def shell(extra, key, skin, normals, faces, lift, mat):
+    """
+    A layer over these worn skin faces, `lift(index)` further out than the clothes, with the skin's own weights, so
+    it bends exactly as the clothes under it do. For pieces worn over the rest: a mantle, a cape, a strap, a chain.
+    """
+    for f in faces:
+        for i in f:
+            if not extra.has(f"{key}{i}", 0):
+                normal = normals.get(i) or (0.0, 0.0, 0.0)
+                co = tuple(a + b * (CLOTH_GAP + lift(i)) for a, b in zip(skin.points[i], normal))
+                extra.add(f"{key}{i}", 0, co, dict(skin.weights[i]))
+        extra.face([f"{key}{i}" for i in f], 0, mat)
+
+
+class ClothSurface:
+    """
+    An outfit's trunk as worn, to lay thin pieces on: straps, braid, a chain. A point is found by casting at the
+    trunk from in front or behind, and takes the weights of the corners round it.
+    """
+
+    def __init__(self, skin, faces, place):
+        trunk = [f for f, _ in faces if face_bone(skin, f)[0] in ("Hips", "Torso")]
+        self.kept = sorted({i for f in trunk for i in f})
+        renumbered = {old: new for new, old in enumerate(self.kept)}
+        self.points = [Vector(place(i)) for i in self.kept]
+        self.polys = [[renumbered[i] for i in f] for f in trunk]
+        self.skin = skin
+        self.tree = BVHTree.FromPolygons(self.points, self.polys)
+
+    def hit(self, x, z, front=True):
+        """(point, outward normal, weights) where the trunk is at (x, z), on its front or its back."""
+        sign = 1.0 if front else -1.0
+        loc, normal, index, _ = self.tree.ray_cast(Vector((x, sign * 1.0, z)), Vector((0.0, -sign, 0.0)))
+        if loc is None:
+            return None
+        if normal.y * sign < 0:
+            normal = -normal
+        weights = {}
+        corners = self.polys[index]
+        shares = [1.0 / max(1e-4, (self.points[c] - loc).length) for c in corners]
+        for c, share in zip(corners, shares):
+            for bone, w in self.skin.weights[self.kept[c]].items():
+                weights[bone] = weights.get(bone, 0.0) + w * share / sum(shares)
+        return loc, normal.normalized(), weights
+
+
+def lay_strap(extra, key, surface, path, half, lift, mat, front=True, thickness=0.003):
+    """A flat strap along a path of (x, z) points on the front or back of the trunk, `lift` off the cloth."""
+    hits = [h for h in (surface.hit(x, z, front) for x, z in path) if h]
+    if len(hits) < 2:
+        return
+    for i, (loc, normal, weights) in enumerate(hits):
+        along = hits[min(i + 1, len(hits) - 1)][0] - hits[max(i - 1, 0)][0]
+        side = along.cross(normal).normalized()
+        for j, sign in enumerate((-1, 1)):
+            co = loc + normal * lift + side * sign * half
+            extra.add(f"{key}o{i}_{j}", 0, tuple(co), weights)
+            extra.add(f"{key}i{i}_{j}", 0, tuple(co - normal * thickness), weights)
+    for i in range(len(hits) - 1):
+        o0, o1, i0, i1 = f"{key}o{i}_", f"{key}o{i + 1}_", f"{key}i{i}_", f"{key}i{i + 1}_"
+        extra.face((o0 + "0", o1 + "0", o1 + "1", o0 + "1"), 0, mat)
+        extra.face((i0 + "1", i1 + "1", i1 + "0", i0 + "0"), 0, mat)
+        extra.face((o0 + "1", o1 + "1", i1 + "1", i0 + "1"), 0, mat)
+        extra.face((i0 + "0", i1 + "0", o1 + "0", o0 + "0"), 0, mat)
+
+
+def lay_patch(extra, key, surface, rows, lift, mat, front=True, thickness=0.004):
+    """A closed patch on the trunk: rows of (z, left x, right x) from top to bottom, `lift` off the cloth."""
+    columns = 5
+    grid = []
+    for z, x0, x1 in rows:
+        grid.append([surface.hit(x0 + (x1 - x0) * k / (columns - 1), z, front) for k in range(columns)])
+    if any(h is None for row in grid for h in row):
+        return
+
+    def point(r, k):
+        loc, normal, weights = grid[r][k]
+        return tuple(loc + normal * lift), weights
+    # add_sheet thickens towards the body's axis, which is right for a patch lying on the trunk.
+    add_sheet(extra, key, point, len(rows), columns, mat, thickness)
+
+
+def shoulder_faces(spec, m, skin, front, back, side=0):
+    """
+    The worn skin's faces over the shoulders, from `front` below the top of them at the front to `back` below at the
+    back. `side` -1 keeps only the left (x < 0), 1 only the right.
+    """
+    top = spec["shoulder"][1]
+    faces = []
+    for f, mat in skin.faces:
+        if mat is m["stripe"] or len(f) > 4:
+            continue
+        bone, (cx, cy, cz) = face_bone(skin, f)
+        if side and cx * side < -0.015:
+            continue
+        on_arm = bone.startswith("UpperArm") and cz > top - 0.06
+        if bone in ("Hips", "Torso") or on_arm:
+            if cz > top - (back if cy < 0 else front):
+                faces.append(f)
+    return faces
+
+
+def cowl(extra, spec, key, mat, gap=0.022):
+    """A hood worn down: a loose roll of cloth round the base of the neck, lying lower and fuller at the back."""
+    z0, w0, f0, b0, cy0 = spec["neck"][0][:5]
+    sides = 12
+    rows = ((z0 - 0.03, gap + 0.012, 0.0), (z0, gap + 0.01, -0.012), (z0 + 0.03, gap, -0.03))
+    for r, (z, grow, sag) in enumerate(rows):
+        for k, (x, y, _) in enumerate(ring(z, w0 + grow, f0 + grow, b0 + grow * 1.6, cy0, n=sides)):
+            back = max(0.0, -(y - cy0) / (b0 + grow * 1.6))
+            extra.add(f"{key}{r}_{k}", 0, (x, y, z + sag * back - 0.012 * back), {"Torso": 1.0})
+    for r in range(len(rows) - 1):
+        for k in range(sides):
+            k1 = (k + 1) % sides
+            extra.face((f"{key}{r + 1}_{k}", f"{key}{r}_{k}", f"{key}{r}_{k1}", f"{key}{r + 1}_{k1}"), 0, mat)
+
+
+def boot_cuff(extra, spec, key, top, size, m):
+    """A boot's top turned down over itself, round both legs."""
+    below, above = size
+    for side, sx in (("L", -1), ("R", 1)):
+        z0, z1 = top - below, top + above * 0.3
+        rings = [leg_ring(spec, z0, 0.014, sx), leg_ring(spec, z1, 0.019, sx),
+                 leg_ring(spec, z1, 0.013, sx), leg_ring(spec, z0, 0.01, sx)]
+        add_band(extra, f"{key}{side}", rings, lambda co, side=side: leg_weights(spec, co[2], side), m["boot"])
+
+
+def adventurer_cloth(spec, m, skin):
+    """
+    The worn skin's faces the adventurer's kit covers: the shirt's sleeves, pushed up, with bracers below them, the
+    jerkin over the trunk, breeches and knee boots.
+    """
+    male = spec.get("plated", False)
+    boot_top = spec["knee_z"] + ADVENTURER_BOOT
+    bracer_top = spec["elbow_z"] - ADVENTURER_BRACER
+    tee, belt = m[spec["tunic"]], m[spec["belt"]]
+    faces = []
+    for f, mat in skin.faces:
+        if mat is m["stripe"] or len(f) > 4:
+            continue
+        bone, (cx, cy, cz) = face_bone(skin, f)
+        if bone.startswith("UpperArm"):
+            faces.append((f, m["linen"]))
+        elif bone.startswith("ForeArm"):
+            faces.append((f, m["bracer"] if cz < bracer_top else m["linen"]))
+        elif bone.startswith(("Thigh", "Shin")):
+            faces.append((f, m["boot"] if cz < boot_top else m["breeches"]))
+        elif bone not in ("Hips", "Torso"):
+            continue
+        elif face_leans(skin, f, "UpperArm"):
+            faces.append((f, m["linen"]))
+        elif male:
+            if mat is belt:
+                faces.append((f, m["leather"]))
+            elif mat is not tee:
+                faces.append((f, m["breeches"]))
+            elif cy > 0 and cz > 1.47 and abs(cx) < 0.018 + 0.35 * (cz - 1.47):
+                faces.append((f, m["linen"]))  # the shirt shows in the jerkin's open neck
+            else:
+                faces.append((f, m["jerkin"]))
+        elif cz < spec["hips_z"]:
+            faces.append((f, m["breeches"]))
+        elif cz < (ADVENTURER_JERKIN if cy > 0 else ADVENTURER_JERKIN + 0.03):
+            faces.append((f, m["jerkin"]))
+        elif cy > 0 and cz > 1.25 and abs(cx) < 0.012 + 0.45 * (cz - 1.25):
+            continue  # the shirt's open neck
+        else:
+            faces.append((f, m["linen"]))
+    return faces
+
+
+def adventurer_lift(spec):
+    """How far each part stands out from the worn skin: a loose shirt, bracers and boots over the limbs."""
+    boot_top = spec["knee_z"] + ADVENTURER_BOOT
+    bracer_top = spec["elbow_z"] - ADVENTURER_BRACER
+    shoulders = None if spec.get("plated") else spec["shoulder"][1] - 0.1
+
+    def lift(bone, z):
+        if bone.startswith("UpperArm"):
+            return 0.022 if shoulders and z > shoulders - 0.02 else 0.012
+        if bone.startswith("ForeArm"):
+            return 0.007 if z < bracer_top else 0.016  # the sleeve rolled up above the bracer
+        if bone.startswith(("Thigh", "Shin")):
+            return 0.01 if z < boot_top else 0.005
+        if shoulders and z > shoulders:
+            return 0.016
+        return 0.006
+    return lift
+
+
+def build_adventurer_extra(spec, m, skin, normals, surface, quiver=False):
+    """
+    The mantle and its hood, the strap across the chest, the belt and pouch, the jerkin's laces and the boot tops,
+    and the archer's quiver.
+    """
+    extra = Skin()
+    female = not spec.get("plated", False)
+    top = spec["shoulder"][1]
+    shoulders = None if not female else top - 0.1
+
+    def over(amount):
+        def lift(i):
+            weights = skin.weights[i]
+            bone = max(weights, key=weights.get)
+            z = skin.points[i][2]
+            base = 0.022 if shoulders and z > shoulders - 0.02 and (bone.startswith("UpperArm") or z > shoulders) else 0.012
+            return base + amount
+        return lift
+
+    # The mantle: to the top of the chest at the front, halfway down the back behind.
+    front, back = (0.07, 0.2) if female else (0.0, 0.2)
+    shell(extra, "mantle", skin, normals, shoulder_faces(spec, m, skin, front, back), over(0.014), m["cloak"])
+    cowl(extra, spec, "hood", m["cloak"])
+    # The hood's point, lying down the back over the mantle.
+    neck = spec["neck"][0][0]
+    hood = [(neck - 0.02 - d, -w, w) for d, w in ((0.0, 0.075), (0.05, 0.065), (0.1, 0.045), (0.15, 0.02), (0.18, 0.004))]
+    if not female:
+        hood = [(z - 0.03, x0 * 1.25, x1 * 1.25) for z, x0, x1 in hood]
+    lay_patch(extra, "hoodback", surface, hood, 0.045 if female else 0.05, m["cloak"], front=False)
+
+    # The strap, from the right shoulder across the chest to the left hip, and the same way across the back.
+    belt = ADVENTURER_BELT[spec["name"]]
+    x0, z0, x1, z1 = (0.1, top - 0.02, -0.15, belt[1]) if female else (0.13, top + 0.02, -0.18, belt[1])
+    path = [(x0 + (x1 - x0) * t / 12, z0 + (z1 - z0) * t / 12) for t in range(13)]
+    for front_side in (True, False):
+        lay_strap(extra, "strap" + ("f" if front_side else "b"), surface, path, 0.014 if female else 0.018,
+                  0.01, m["leather"], front=front_side)
+
+    # The belt, with a pouch on the right hip and its buckle at the front.
+    waist_band(extra, spec, "belt", belt, 0.014 if female else 0.02, m["leather"])
+    mid = sum(belt) / 2
+    w, f, _ = profile_at(spec, mid)
+    hips = lambda co: {"Hips": 1.0}
+    a = 0.35  # the right hip, a little to the front
+    out = (math.cos(a), math.sin(a))
+    reach = 0.034 if female else 0.04
+    facing(extra, "pouch", (math.cos(a) * (w + reach), math.sin(a) * (f + reach), mid - 0.03), (0.03, 0.04), out, hips,
+           m["leather"], depth=0.022)
+    facing(extra, "flap", (math.cos(a) * (w + reach + 0.004), math.sin(a) * (f + reach + 0.004), mid - 0.004), (0.031, 0.014),
+           out, hips, m["bracer"], depth=0.004)
+    facing(extra, "buckle", (0.0, f + (0.02 if female else 0.026), mid), (0.014, 0.014), (0.0, 1.0), hips, m["pewter"])
+
+    # Laces up the front of the jerkin.
+    blend_start, blend_span = spec.get("trunk_blend", (0.985, 0.05))
+
+    def trunk(co):
+        t = min(1.0, max(0.0, (co[2] - blend_start) / blend_span))
+        return {"Hips": 1 - t, "Torso": t}
+
+    laces = (0.94, 0.98, 1.02, 1.06) if female else (1.17, 1.23, 1.29, 1.35, 1.41)
+    for i, z in enumerate(laces):
+        y = profile_at(spec, z)[1] + CLOTH_GAP + (0.01 if female else 0.012)
+        for j, sx in enumerate((-1, 1)):
+            corners = [(sx * 0.018, y, z - 0.004), (sx * 0.018, y, z + 0.002), (-sx * 0.018, y, z + 0.02), (-sx * 0.018, y, z + 0.014)]
+            add_slab(extra, f"lace{i}_{j}", corners, (0.0, 0.003, 0.0), trunk, m["bracer"])
+
+    boot_cuff(extra, spec, "cuff", spec["knee_z"] + ADVENTURER_BOOT, ADVENTURER_CUFF, m)
+    if quiver:
+        build_quiver(extra, spec, surface, m)
+    return extra
+
+
+def noble_cloth(spec, m, skin):
+    """
+    The worn skin's faces a noble's clothes cover. His: the doublet with puffed sleeves and linen cuffs, breeches
+    and tall boots. Hers: the gown's bodice and long sleeves with linen ruffles, and legwear under the skirt.
+    """
+    male = spec.get("plated", False)
+    boot_top = spec["knee_z"] + NOBLE_BOOT
+    cuff = spec["wrist_z"] + 0.03
+    tee, belt = m[spec["tunic"]], m[spec["belt"]]
+    faces = []
+    for f, mat in skin.faces:
+        if mat is m["stripe"] or len(f) > 4:
+            continue
+        bone, (cx, cy, cz) = face_bone(skin, f)
+        cloth = m["doublet"] if male else m["bodice"]
+        if bone.startswith("UpperArm"):
+            faces.append((f, cloth))
+        elif bone.startswith("ForeArm"):
+            faces.append((f, m["linen"] if cz < cuff else cloth))
+        elif male and bone.startswith(("Thigh", "Shin")):
+            faces.append((f, m["boot"] if cz < boot_top else m["breeches"]))
+        elif male and bone in ("Hips", "Torso"):
+            faces.append((f, cloth if mat in (tee, belt) or face_leans(skin, f, "UpperArm") else m["breeches"]))
+        elif male:
+            continue
+        elif is_legwear(bone, cz):
+            faces.append((f, legwear_band(m, bone, cz)))
+        elif bone not in ("Hips", "Torso"):
+            continue
+        elif face_leans(skin, f, "UpperArm"):
+            faces.append((f, cloth))
+        elif cz < (NOBLE_NECKLINE[0] if cy > 0 else NOBLE_NECKLINE[1]):
+            faces.append((f, cloth))
+        elif cy > 0 and abs(cx) < NOBLE_SQUARE:
+            continue  # the square neckline
+        elif cz < NOBLE_NECKLINE[1] + 0.03:
+            faces.append((f, cloth))  # the shoulders either side of it
+    return faces
+
+
+def noble_lift(spec):
+    """His sleeves and breeches puff out; her gown fits close, with a ruffle at each wrist."""
+    male = spec.get("plated", False)
+    cuff = spec["wrist_z"] + 0.03
+    thigh_top = spec["hips_z"] - 0.06
+    shoulders = None if male else spec["shoulder"][1] - 0.1
+
+    def lift(bone, z):
+        if bone.startswith("UpperArm"):
+            if male:
+                return 0.028
+            return 0.014 if shoulders and z > shoulders - 0.02 else 0.006
+        if bone.startswith("ForeArm"):
+            return (0.018 if male else 0.022) if z < cuff else (0.008 if male else 0.005)
+        if male and bone.startswith("Thigh"):
+            return 0.022 if z > thigh_top - 0.18 else 0.01  # puffed at the top, tucked into the boots
+        if male and bone.startswith("Shin"):
+            return 0.01
+        if bone.startswith(("Thigh", "Shin")):
+            return 0.0
+        if shoulders and z > shoulders:
+            return 0.01
+        return 0.008 if male else 0.003
+    return lift
+
+
+def build_cap(extra, fit, m):
+    """A flat cap: a soft crown spreading wider than the head, tipped to his right, with a feather at the left."""
+    base, cy, rx, rf, rb, top = fit
+    n = HAT_SIDES
+
+    def at(a, grow, z):
+        tip = 0.014 * math.cos(a)  # lower on his right
+        return math.cos(a) * (rx + grow), cy + math.sin(a) * ((rf if math.sin(a) > 0 else rb) + grow), z - tip
+
+    angles = [2 * math.pi * k / n for k in range(n)]
+    rings = [(0.0, base + 0.005), (0.004, base + 0.02), (0.034, base + 0.045), (0.03, base + 0.062), (0.0, base + 0.072)]
+    for r, (grow, z) in enumerate(rings):
+        for k, a in enumerate(angles):
+            extra.add(f"cap{r}_{k}", 0, at(a, grow, z), {"Head": 1.0})
+    extra.add("captop", 0, (0.0, cy, base + 0.074), {"Head": 1.0})
+    for r in range(len(rings) - 1):
+        for k in range(n):
+            k1 = (k + 1) % n
+            mat = m["braid"] if r == 0 else m["hat"]
+            extra.face((f"cap{r + 1}_{k}", f"cap{r}_{k}", f"cap{r}_{k1}", f"cap{r + 1}_{k1}"), 0, mat)
+    last = len(rings) - 1
+    for k in range(n):
+        extra.face((f"cap{last}_{k}", f"cap{last}_{(k + 1) % n}", "captop"), 0, m["hat"])
+
+    # The feather, tucked in at the left and lying back along the crown.
+    x0, y0, z0 = at(math.pi + 0.3, 0.03, base + 0.05)
+    path = [((0.0, 0.0, 0.0), 0.005), ((-0.006, -0.03, 0.03), 0.016), ((-0.006, -0.075, 0.05), 0.02),
+            ((0.0, -0.125, 0.045), 0.014), ((0.006, -0.155, 0.03), 0.003)]
+
+    def across(tangent):
+        _, ty, tz = tangent
+        length = math.hypot(ty, tz) or 1.0
+        return 0.0, -tz / length, ty / length
+
+    add_ribbon(extra, "plume", [((x0 + dx, y0 + dy, z0 + dz), half) for (dx, dy, dz), half in path], across, m["plume"])
+
+
+def build_noble_extra(spec, m, skin, normals, fit, surface):
+    """
+    His: the doublet's skirt and its braid, buttons, the ruff, the chain of office, the cape and the cap.
+    Hers: the gown's skirt, braid round the neckline, the girdle and its chain, and a circlet.
+    """
+    extra = Skin()
+    male = spec.get("plated", False)
+    top = spec["shoulder"][1]
+    blend_start, blend_span = spec.get("trunk_blend", (0.985, 0.05))
+
+    def trunk(co):
+        t = min(1.0, max(0.0, (co[2] - blend_start) / blend_span))
+        return {"Hips": 1 - t, "Torso": t}
+
+    if male:
+        # The doublet's short skirt, flaring over the hips, its lower edge following the thighs a little.
+        sides = SKIRT_SIDES
+        z0, z1 = NOBLE_PEPLUM
+        for r, (z, reach) in enumerate(((z0, 0.012), (z1 + 0.04, 0.03), (z1, 0.042))):
+            w, f, b = profile_at(spec, z)
+            for k in range(sides):
+                a = 2 * math.pi * k / sides
+                x, y = math.cos(a) * (w + reach), math.sin(a) * ((f if math.sin(a) > 0 else b) + reach)
+                share = 0.4 * r / 2 * min(1.0, abs(x) / 0.06)
+                side = "L" if x < 0 else "R"
+                weights = {"Hips": 1 - share, f"Thigh_{side}": share} if share > 0 else {"Hips": 1.0}
+                extra.add(f"peplum{r}_{k}", 0, (x, y, z), weights)
+        for r in range(2):
+            for k in range(sides):
+                k1 = (k + 1) % sides
+                mat = m["braid"] if r == 1 else m["doublet"]
+                extra.face((f"peplum{r}_{k}", f"peplum{r + 1}_{k}", f"peplum{r + 1}_{k1}", f"peplum{r}_{k1}"), 0, mat)
+
+        # Gold buttons down the front.
+        for i, z in enumerate((1.16, 1.22, 1.28, 1.34, 1.4, 1.46)):
+            y = profile_at(spec, z)[1] + CLOTH_GAP + 0.012
+            facing(extra, f"button{i}", (0.0, y, z), (0.007, 0.007), (0.0, 1.0), trunk, m["jewel"], depth=0.005)
+
+        # A linen ruff round the neck.
+        z0 = spec["neck"][0][0]
+        neck_band(extra, spec, "ruff", (z0 + 0.026, z0 + 0.052), 0.024, m["linen"], sides=14)
+        neck_band(extra, spec, "ruffin", (z0 + 0.052, z0 + 0.026), 0.012, m["linen"], sides=14)
+
+        # The chain of office, hanging low on the chest from the tops of the shoulders, with a medallion.
+        path = [(x / 100, 1.355 + 7.5 * (x / 100) ** 2) for x in range(-14, 15, 2)]
+        lay_strap(extra, "chain", surface, path, 0.007, 0.012, m["jewel"])
+        facing(extra, "medal", (0.0, profile_at(spec, 1.34)[1] + CLOTH_GAP + 0.024, 1.34), (0.02, 0.022), (0.0, 1.0),
+               lambda co: {"Torso": 1.0}, m["jewel"], depth=0.006)
+        facing(extra, "medalgem", (0.0, profile_at(spec, 1.34)[1] + CLOTH_GAP + 0.031, 1.34), (0.009, 0.01), (0.0, 1.0),
+               lambda co: {"Torso": 1.0}, m["gem"], depth=0.003)
+
+        # A short cape over the left shoulder, to the waist behind.
+        def cape(i):
+            weights = skin.weights[i]
+            bone = max(weights, key=weights.get)
+            return 0.05 if bone.startswith("UpperArm") else 0.036
+        shell(extra, "cape", skin, normals, shoulder_faces(spec, m, skin, 0.04, 0.36, side=-1), cape, m["cloak"])
+
+        build_cap(extra, fit, m)
+        boot_cuff(extra, spec, "cuff", spec["knee_z"] + NOBLE_BOOT, (0.014, 0.05), m)
+        return extra
+
+    # Her gown's skirt, full, down to the floor.
+    long_skirt(extra, spec, "skirt", NOBLE_SKIRT, 0.1, m["skirt"])
+
+    # Braid along the bottom of the square neckline and up each side of it.
+    low, edge = NOBLE_NECKLINE[0] - 0.008, NOBLE_SQUARE + 0.006
+    path = ([(-edge, low + 0.06 - 0.015 * t) for t in range(4)] + [(-edge + 2 * edge * t / 8, low) for t in range(9)]
+            + [(edge, low + 0.015 * t) for t in range(1, 5)])
+    lay_strap(extra, "braid", surface, path, 0.008, 0.005, m["braid"])
+
+    # The girdle, low on the waist, with a chain hanging down the front to a gem.
+    waist_band(extra, spec, "girdle", NOBLE_GIRDLE, 0.03, m["girdle"])
+    gz = sum(NOBLE_GIRDLE) / 2
+    a = math.pi / 2
+    x, y, _ = skirt_point(spec, a, 0.62)
+    front = profile_at(spec, gz)[1] + 0.034
+    hang = lambda co: skirt_weights(a, co[2])
+    corners = [(-0.008, front, gz), (0.008, front, gz), (0.008, y * 1.07 + 0.006, 0.62), (-0.008, y * 1.07 + 0.006, 0.62)]
+    add_slab(extra, "chain", corners, (0.0, 0.004, 0.0), hang, m["girdle"])
+    facing(extra, "chaingem", (0.0, y * 1.07 + 0.012, 0.61), (0.013, 0.016), (0.0, 1.0), hang, m["gem"], depth=0.006)
+
+    # A thin circlet round her brow, a gem at the front.
+    base, cy, rx, rf, rb, _ = fit
+    n = HAT_SIDES
+    for r, z in enumerate((base - 0.008, base + 0.006)):
+        for k in range(n):
+            ang = 2 * math.pi * k / n
+            extra.add(f"circlet{r}_{k}", 0, (math.cos(ang) * (rx - 0.004),
+                                             cy + math.sin(ang) * ((rf if math.sin(ang) > 0 else rb) - 0.004), z), {"Head": 1.0})
+    for k in range(n):
+        k1 = (k + 1) % n
+        extra.face((f"circlet1_{k}", f"circlet0_{k}", f"circlet0_{k1}", f"circlet1_{k1}"), 0, m["jewel"])
+    facing(extra, "circletgem", (0.0, cy + rf + 0.0, base - 0.001), (0.007, 0.009), (0.0, 1.0), lambda co: {"Head": 1.0}, m["gem"])
+    return extra
+
+
+# ---------------------------------------------------------------- the adventuring party
+WARRIOR_TABARD = {"Female": (0.085, 0.6), "Male": (0.11, 0.72)}  # the tabard's half width, and where it ends
+WARRIOR_SHIELD = {"Female": (0.15, 1.1), "Male": (0.18, 1.28)}  # the shield's radius, and the height of its middle
+ROBE_SKIRT = NOBLE_SKIRT
+ROBE_BELT = {"Female": (0.955, 0.985), "Male": ADVENTURER_BELT["Male"]}  # her robes are belted above the skirt
+CHEST = {"Female": 1.24, "Male": 1.38}  # where a badge or a pendant sits on the chest
+
+
+def skirt_grow(zs, full, z):
+    """How much wider a long skirt over zs, `full` wider at the hem, is at height z than its outline."""
+    for r in range(len(zs) - 1):
+        if zs[r + 1] <= z <= zs[r]:
+            t = (zs[r] - z) / (zs[r] - zs[r + 1])
+            return 1.0 + full * (r + t) / (len(zs) - 1)
+    return 1.0 + (full if z < zs[-1] else 0.0)
+
+
+def long_skirt(extra, spec, key, zs, full, mat):
+    """A full skirt on her skirt panels, from the hips down through zs, `full` wider at the hem than at the top."""
+    sides = SKIRT_SIDES
+    for r, z in enumerate(zs):
+        for k in range(sides):
+            a = 2 * math.pi * k / sides
+            x, y, _ = skirt_point(spec, a, z)
+            grow = 1.0 + full * (r / (len(zs) - 1))
+            extra.add(f"{key}{r}_{k}", 0, (x * grow, y * grow, z), skirt_weights(a, z))
+    for r in range(len(zs) - 1):
+        for k in range(sides):
+            extra.face((f"{key}{r}_{k}", f"{key}{r + 1}_{k}", f"{key}{r + 1}_{(k + 1) % sides}", f"{key}{r}_{(k + 1) % sides}"),
+                       0, mat)
+
+
+def body_depth(spec, z, front):
+    """How far the worn body reaches forwards (or backwards) at height z: the trunk, or the further of the legs."""
+    reach = 0.0
+    if z >= spec["hips_z"] - 0.14:
+        _, f, b = profile_at(spec, z)
+        reach = f if front else b
+    if z <= spec["hips_z"] - 0.02:
+        for sx in (-1, 1):
+            for _, y, _ in leg_ring(spec, z, CLOTH_GAP, sx):
+                reach = max(reach, y if front else -y)
+    return reach
+
+
+def legs_weights(spec, z):
+    """From the hips onto both thighs, then both shins, half each: a panel hanging between the legs."""
+    def ease(t):
+        t = min(1.0, max(0.0, t))
+        return t * t * (3 - 2 * t)
+
+    t1 = ease((spec["hips_z"] - 0.02 - z) / 0.16)
+    t2 = ease((spec["knee_z"] + 0.04 - z) / 0.16)
+    weights = {"Hips": 1 - t1}
+    for side in "LR":
+        weights[f"Thigh_{side}"] = t1 * (1 - t2) / 2
+        weights[f"Shin_{side}"] = t1 * t2 / 2
+    return {bone: w for bone, w in weights.items() if w > 1e-4}
+
+
+def robe_panel(extra, spec, key, z_top, z_bottom, half, flare, lift, mat, front=True, skirt=None, rows=7):
+    """
+    A panel hanging from the waist in front of (or behind) the legs, a robe's or a tabard's, `half` wide either side
+    of the middle and `flare` wider at the hem. On his legs it follows both legs at once, so it stays between them
+    as he walks and lies over his lap seated. Over her long skirt (`skirt` its heights and how full it is) it
+    moves with the skirt.
+    """
+    sign = 1.0 if front else -1.0
+    columns = 4
+    zs = [z_top + (z_bottom - z_top) * r / (rows - 1) for r in range(rows)]
+    # Cloth hangs from the furthest the body reaches above it, so the panel never cuts into the legs.
+    reach = []
+    for z in zs:
+        reach.append(max([body_depth(spec, z, front)] + reach[-1:]))
+
+    def point(r, k):
+        t = r / (rows - 1)
+        w = half * (1 + flare * t)
+        x, z = -w + 2 * w * k / (columns - 1), zs[r]
+        if skirt is not None:
+            _, sy, _ = skirt_point(spec, math.pi / 2 if front else -math.pi / 2, z)
+            y = sy * skirt_grow(*skirt, z) + sign * lift
+            return (x, y, z), skirt_weights(math.atan2(y, x) % (2 * math.pi), z)
+        return (x, sign * (reach[r] + lift + 0.012 * t), z), legs_weights(spec, z)
+    add_sheet(extra, key, point, rows, columns, mat, 0.005)
+
+
+def rod(extra, key, p0, p1, r0, r1, weights, mat, cap=None, sides=6):
+    """
+    A closed tube from p0 to p1, r0 thick at p0 and r1 at p1, such as a staff, a quiver, a scabbard or, short and
+    wide, a shield. `weights` is a dict, or a function of the point.
+    """
+    a, b = Vector(p0), Vector(p1)
+    axis = (b - a).normalized()
+    u = axis.cross(Vector((0.0, 0.0, 1.0)))
+    if u.length < 1e-4:
+        u = axis.cross(Vector((1.0, 0.0, 0.0)))
+    u.normalize()
+    v = axis.cross(u)
+    weigh = weights if callable(weights) else (lambda co: dict(weights))
+    for e, (p, r) in enumerate(((a, r0), (b, r1))):
+        for k in range(sides):
+            t = 2 * math.pi * k / sides
+            co = p + (u * math.cos(t) + v * math.sin(t)) * r
+            extra.add(f"{key}{e}_{k}", 0, tuple(co), weigh(tuple(co)))
+        extra.add(f"{key}c{e}", 0, tuple(p), weigh(tuple(p)))
+    for k in range(sides):
+        k1 = (k + 1) % sides
+        extra.face((f"{key}0_{k}", f"{key}0_{k1}", f"{key}1_{k1}", f"{key}1_{k}"), 0, mat)
+        extra.face((f"{key}0_{k1}", f"{key}0_{k}", f"{key}c0"), 0, cap or mat)
+        extra.face((f"{key}1_{k}", f"{key}1_{k1}", f"{key}c1"), 0, cap or mat)
+
+
+def behind(surface, path, gap):
+    """How far back a straight piece along path, (x, z) points, must lie to clear the back by gap."""
+    hits = [h for h in (surface.hit(x, z, front=False) for x, z in path) if h]
+    return min(loc.y for loc, _, _ in hits) - gap
+
+
+def hip_weights(spec, side):
+    """For a piece hanging at one hip: on the hips at the belt, onto that thigh lower down."""
+    def weights(co):
+        t = min(1.0, max(0.0, (spec["hips_z"] - 0.02 - co[2]) / 0.25)) * 0.6
+        return {"Hips": 1 - t, f"Thigh_{side}": t} if t > 0 else {"Hips": 1.0}
+    return weights
+
+
+def shoulder_plates(spec, m, skin):
+    """The worn skin's faces a pauldron covers: the top of each shoulder, as (upper plate, lower plate)."""
+    top = spec["shoulder"][1]
+    upper, lower = [], []
+    for f, mat in skin.faces:
+        if mat is m["stripe"] or len(f) > 4:
+            continue
+        bone, (_, _, cz) = face_bone(skin, f)
+        on_arm = bone.startswith("UpperArm") or (bone in ("Hips", "Torso") and face_leans(skin, f, "UpperArm"))
+        if on_arm and cz > top - 0.1:
+            upper.append(f)
+        elif bone.startswith("UpperArm") and cz > top - 0.16:
+            lower.append(f)
+    return upper, lower
+
+
+def tabard_faces(spec, m, skin, half, bottom, top):
+    """The worn trunk's faces a tabard covers, front and back: `half` either side of the middle, from bottom to top."""
+    faces = []
+    for f, mat in skin.faces:
+        if mat is m["stripe"] or len(f) > 4:
+            continue
+        bone, (cx, _, cz) = face_bone(skin, f)
+        if bone in ("Hips", "Torso") and abs(cx) < half and bottom < cz < top and not face_leans(skin, f, "UpperArm"):
+            faces.append(f)
+    return faces
+
+
+def badge(extra, key, surface, z, size, lift, mat, gem=None, gem_size=None):
+    """A badge facing out from the chest at height z, `lift` off the cloth, with a gem set in it."""
+    hit = surface.hit(0.0, z)
+    if not hit:
+        return
+    loc, normal, weights = hit
+    out = Vector((normal.x, normal.y, 0.0)).normalized()
+    at = loc + normal * lift
+    facing(extra, key, tuple(at), size, (out.x, out.y), lambda co: dict(weights), mat, depth=0.005)
+    if gem:
+        at = at + normal * 0.006
+        facing(extra, key + "gem", tuple(at), gem_size, (out.x, out.y), lambda co: dict(weights), gem, depth=0.004)
+
+
+def build_quiver(extra, spec, surface, m):
+    """A quiver slung across the back from the right shoulder, with the fletched ends of four arrows."""
+    top = spec["shoulder"][1]
+    male = spec.get("plated", False)
+    (x0, z0), (x1, z1) = ((0.11, top + 0.1), (-0.04, top - 0.36)) if male else ((0.09, top + 0.07), (-0.03, top - 0.3))
+    y = behind(surface, [(x0 + (x1 - x0) * t / 6, z0 + (z1 - z0) * t / 6) for t in range(7)], 0.075)
+    a, b = Vector((x0, y, z0)), Vector((x1, y, z1))
+    torso = {"Torso": 1.0}
+    rod(extra, "quiver", b, a, 0.034, 0.04, torso, m["leather"], m["bracer"], sides=8)
+    up = (a - b).normalized()
+    side = up.cross(Vector((0.0, 1.0, 0.0))).normalized()
+    for i, (du, dv) in enumerate(((-0.014, -0.008), (0.012, -0.01), (-0.004, 0.012), (0.016, 0.01))):
+        start = a + side * du + Vector((0.0, dv, 0.0)) - up * 0.02
+        tip = start + up * (0.1 + 0.012 * i)
+        rod(extra, f"arrow{i}", start, tip, 0.004, 0.004, torso, m["wood"], sides=4)
+        rod(extra, f"fletch{i}", tip - up * 0.045, tip, 0.012, 0.008, torso, m["plume"], sides=3)
+
+
+def build_wizard_hat(extra, fit, m):
+    """A tall pointed hat with a wide drooping brim and a band, its tip bending back."""
+    base, cy, rx, rf, rb, top = fit
+    n = HAT_SIDES
+
+    def at(a, grow, z, dy=0.0, scale=1.0):
+        return (math.cos(a) * (rx + grow) * scale,
+                cy + dy + math.sin(a) * ((rf if math.sin(a) > 0 else rb) + grow) * scale, z)
+
+    angles = [2 * math.pi * k / n for k in range(n)]
+    # The brim's cross-section: from the crown out to its drooping edge and back underneath.
+    brim = [(0.0, base), (0.085, base - 0.02), (0.085, base - 0.026), (0.0, base - 0.006)]
+    for p, (grow, z) in enumerate(brim):
+        for k, a in enumerate(angles):
+            extra.add(f"brim{p}_{k}", 0, at(a, grow, z), {"Head": 1.0})
+    for p in range(len(brim)):
+        p1 = (p + 1) % len(brim)
+        for k in range(n):
+            k1 = (k + 1) % n
+            extra.face((f"brim{p}_{k}", f"brim{p1}_{k}", f"brim{p1}_{k1}", f"brim{p}_{k1}"), 0, m["hat"])
+    height = top - base
+    cone = [(0.004, base, 0.0, 1.0), (0.004, base + 0.03, 0.0, 1.0), (0.0, base + 0.6 * height, -0.004, 0.92),
+            (0.0, top + 0.02, -0.02, 0.62), (0.0, top + 0.1, -0.05, 0.34), (0.0, top + 0.16, -0.1, 0.16)]
+    for r, (grow, z, dy, scale) in enumerate(cone):
+        for k, a in enumerate(angles):
+            extra.add(f"cone{r}_{k}", 0, at(a, grow, z, dy, scale), {"Head": 1.0})
+    extra.add("conetip", 0, (0.0, cy - 0.17, top + 0.17), {"Head": 1.0})
+    for r in range(len(cone) - 1):
+        for k in range(n):
+            k1 = (k + 1) % n
+            extra.face((f"cone{r + 1}_{k}", f"cone{r}_{k}", f"cone{r}_{k1}", f"cone{r + 1}_{k1}"), 0,
+                       m["braid"] if r == 0 else m["hat"])
+    last = len(cone) - 1
+    for k in range(n):
+        extra.face((f"cone{last}_{k}", f"cone{last}_{(k + 1) % n}", "conetip"), 0, m["hat"])
+
+
+def warrior_cloth(spec, m, skin):
+    """The worn skin's faces the warrior's kit covers: mail everywhere, plate vambraces and greaves."""
+    male = spec.get("plated", False)
+    belt = m[spec["belt"]]
+    vambrace = spec["elbow_z"] - 0.04
+    faces = []
+    for f, mat in skin.faces:
+        if mat is m["stripe"] or len(f) > 4:
+            continue
+        bone, (_, _, cz) = face_bone(skin, f)
+        if bone.startswith("ForeArm"):
+            faces.append((f, m["plate"] if cz < vambrace else m["mail"]))
+        elif bone.startswith("Shin"):
+            faces.append((f, m["plate"]))
+        elif bone.startswith(("UpperArm", "Thigh")):
+            faces.append((f, m["mail"]))
+        elif bone not in ("Hips", "Torso"):
+            continue
+        elif male and mat is belt:
+            faces.append((f, m["leather"]))
+        else:
+            faces.append((f, m["mail"]))
+    return faces
+
+
+def warrior_lift(spec):
+    """Mail sits a little off the body; the plate stands further off it."""
+    vambrace = spec["elbow_z"] - 0.04
+    shoulders = None if spec.get("plated") else spec["shoulder"][1] - 0.1
+
+    def lift(bone, z):
+        if bone.startswith("UpperArm"):
+            return 0.02 if shoulders and z > shoulders - 0.02 else 0.01
+        if bone.startswith("ForeArm"):
+            return 0.014 if z < vambrace else 0.01
+        if bone.startswith("Shin"):
+            return 0.016
+        if bone.startswith("Thigh"):
+            return 0.008
+        if shoulders and z > shoulders:
+            return 0.016
+        return 0.008
+    return lift
+
+
+def build_warrior_extra(spec, m, skin, normals, surface):
+    """The tabard and its badge, the belt, pauldrons, a round shield on the back and a sword at the left hip."""
+    extra = Skin()
+    female = not spec.get("plated", False)
+    name = spec["name"]
+    top = spec["shoulder"][1]
+    belt = ADVENTURER_BELT[name]
+    mid = sum(belt) / 2
+    half, end = WARRIOR_TABARD[name]
+
+    shell(extra, "tabard", skin, normals, tabard_faces(spec, m, skin, half, belt[0], top - 0.01), lambda i: 0.02, m["tabard"])
+    for front in (True, False):
+        robe_panel(extra, spec, "skirt" + ("f" if front else "b"), mid, end, half, 0.12, 0.03, m["tabard"], front=front)
+    badge(extra, "badge", surface, CHEST[name], (0.026, 0.03), 0.016, m["gem"])
+    waist_band(extra, spec, "belt", belt, 0.03 if female else 0.036, m["leather"])
+    w, f, _ = profile_at(spec, mid)
+    facing(extra, "buckle", (0.0, f + (0.036 if female else 0.042), mid), (0.016, 0.016), (0.0, 1.0),
+           lambda co: {"Hips": 1.0}, m["iron"])
+
+    upper, lower = shoulder_plates(spec, m, skin)
+    shell(extra, "pauldron", skin, normals, upper, lambda i: 0.034 if female else 0.04, m["plate"])
+    shell(extra, "lame", skin, normals, lower, lambda i: 0.026 if female else 0.03, m["plate"])
+
+    # The round shield, slung on the back: a face in the tabard's colour, an iron rim and boss.
+    radius, height = WARRIOR_SHIELD[name]
+    hit = surface.hit(0.0, height, front=False)
+    if hit:
+        loc, normal, _ = hit
+        out = Vector((0.0, normal.y, 0.0)).normalized()
+        centre = loc + out * 0.055
+        torso = {"Torso": 1.0}
+        rod(extra, "shield", centre - out * 0.012, centre + out * 0.012, radius, radius, torso, m["iron"], m["tabard"], sides=14)
+        rod(extra, "boss", centre + out * 0.012, centre + out * 0.032, 0.045, 0.018, torso, m["iron"], sides=8)
+
+    # The sword in its scabbard at the left hip, sloping back, the hilt forwards above the belt.
+    x = -(w + (0.03 if female else 0.038))
+    mouth = Vector((x, 0.03, mid))
+    down = Vector((-0.02, -0.25, -1.0)).normalized()
+    length = 0.5 if female else 0.6
+    hang = hip_weights(spec, "L")
+    rod(extra, "scabbard", mouth, mouth + down * length, 0.022, 0.014, hang, m["leather"], sides=4)
+    rod(extra, "grip", mouth, mouth - down * 0.15, 0.01, 0.01, hang, m["leather"], sides=4)
+    guard = Vector((0.0, -down.z, down.y)).normalized()
+    rod(extra, "guard", mouth - guard * 0.05, mouth + guard * 0.05, 0.008, 0.008, hang, m["iron"], sides=4)
+    rod(extra, "pommel", mouth - down * 0.15, mouth - down * 0.17, 0.014, 0.01, hang, m["iron"], sides=6)
+    return extra
+
+
+def robe_cloth(spec, m, skin):
+    """The worn skin's faces a robe covers: sleeves and trunk, his breeches and boots, and her legwear under it."""
+    male = spec.get("plated", False)
+    boot_top = spec["knee_z"] + ADVENTURER_BOOT
+    tee, belt = m[spec["tunic"]], m[spec["belt"]]
+    faces = []
+    for f, mat in skin.faces:
+        if mat is m["stripe"] or len(f) > 4:
+            continue
+        bone, (cx, cy, cz) = face_bone(skin, f)
+        if bone.startswith(("UpperArm", "ForeArm")):
+            faces.append((f, m["robe"]))
+        elif male and bone.startswith(("Thigh", "Shin")):
+            faces.append((f, m["boot"] if cz < boot_top else m["breeches"]))
+        elif male and bone in ("Hips", "Torso"):
+            faces.append((f, m["robe"] if mat in (tee, belt) or face_leans(skin, f, "UpperArm") else m["breeches"]))
+        elif male:
+            continue
+        elif is_legwear(bone, cz):
+            faces.append((f, legwear_band(m, bone, cz)))
+        elif bone not in ("Hips", "Torso"):
+            continue
+        elif cy > 0 and cz > 1.255 and abs(cx) < 0.03 + 0.4 * (cz - 1.255):
+            continue  # a small neckline
+        else:
+            faces.append((f, m["robe"]))
+    return faces
+
+
+def robe_lift(spec, bell):
+    """A loose robe; the mage's sleeves widen into bells at the wrist."""
+    male = spec.get("plated", False)
+    elbow, wrist = spec["elbow_z"], spec["wrist_z"]
+    shoulders = None if male else spec["shoulder"][1] - 0.1
+
+    def lift(bone, z):
+        if bone.startswith("UpperArm"):
+            return 0.018 if shoulders and z > shoulders - 0.02 else 0.01
+        if bone.startswith("ForeArm"):
+            if not bell:
+                return 0.008
+            t = min(1.0, max(0.0, (elbow - z) / (elbow - wrist)))
+            return 0.008 + 0.05 * t ** 1.5
+        if bone.startswith(("Thigh", "Shin")):
+            return (0.008 if bone.startswith("Thigh") else 0.012) if male else 0.0
+        if shoulders and z > shoulders:
+            return 0.012
+        return 0.006
+    return lift
+
+
+def build_robe_extra(spec, m, skin, normals, surface, fit, calling):
+    """
+    The robe's skirt (hers) or panels (his), and the calling's own pieces. The mage: a sash, an amulet, the pointed
+    hat and a staff on the back. The cleric: a tabard with a sun on the chest, a belt, a hood and a mace.
+    """
+    extra = Skin()
+    female = not spec.get("plated", False)
+    name = spec["name"]
+    top = spec["shoulder"][1]
+    belt = ROBE_BELT[name]
+    mid = sum(belt) / 2
+    skirt = (ROBE_SKIRT, 0.12) if female else None
+    if female:
+        long_skirt(extra, spec, "robe", *skirt, m["robe"])
+    else:
+        for front in (True, False):
+            robe_panel(extra, spec, "robe" + ("f" if front else "b"), mid, 0.2, 0.13, 0.35, 0.012, m["robe"], front=front)
+    reach = 0.032 if female else 0.022
+    w, f, _ = profile_at(spec, mid)
+
+    if calling == "mage":
+        waist_band(extra, spec, "sash", belt, reach, m["sash"])
+        badge(extra, "amulet", surface, CHEST[name] + 0.02, (0.018, 0.022), 0.008, m["jewel"], m["gem"], (0.01, 0.012))
+        build_wizard_hat(extra, fit, m)
+        # The staff, across the back from behind the right shoulder, with a gem at its head.
+        (x0, z0), (x1, z1) = ((0.17, top + 0.38), (-0.15, top - 0.62)) if not female else ((0.13, top + 0.3), (-0.11, top - 0.52))
+        path = [(x0 + (x1 - x0) * t / 10, z0 + (z1 - z0) * t / 10) for t in range(11)]
+        y = behind(surface, path, 0.06)
+        torso = {"Torso": 1.0}
+        head, foot = Vector((x0, y, z0)), Vector((x1, y, z1))
+        rod(extra, "staff", foot, head, 0.011, 0.014, torso, m["wood"], sides=6)
+        up = (head - foot).normalized()
+        rod(extra, "orb", head - up * 0.005, head + up * 0.05, 0.026, 0.012, torso, m["gem"], sides=6)
+        return extra
+
+    # The cleric.
+    half = WARRIOR_TABARD[name][0] * 0.9
+    shell(extra, "tabard", skin, normals, tabard_faces(spec, m, skin, half, belt[0], top - 0.01), lambda i: 0.016, m["tabard"])
+    for front in (True, False):
+        robe_panel(extra, spec, "skirt" + ("f" if front else "b"), mid, 0.36 if female else 0.42, half, 0.1,
+                   0.012 if female else 0.026, m["tabard"], front=front, skirt=skirt)
+    badge(extra, "sun", surface, CHEST[name], (0.032, 0.032), 0.012, m["jewel"], m["gem"], (0.012, 0.012))
+    waist_band(extra, spec, "belt", belt, reach + 0.008, m["leather"])
+    cowl(extra, spec, "hood", m["robe"])
+    # The mace, hanging head down through a loop at the right hip.
+    x = w + reach + 0.02
+    hang = hip_weights(spec, "R")
+    grip, neck = Vector((x, 0.04, mid + 0.06)), Vector((x + 0.006, 0.0, mid - 0.24))
+    rod(extra, "haft", grip, neck, 0.01, 0.01, hang, m["wood"], sides=5)
+    down = (neck - grip).normalized()
+    rod(extra, "mace", neck, neck + down * 0.09, 0.036, 0.03, hang, m["iron"], sides=6)
+    return extra
+
+
+# ---------------------------------------------------------------- the bandits and the nobles' servants
+# The bandits are one gang, and every one of them wears its red: a scarf over the face or a bandana, in the sash's
+# colour. Two kinds, so they aren't one body over and over:
+#   the rogue: a dark hooded mantle, the red scarf over nose and mouth, a leather vest over a shirt, wrapped
+#     forearms, a dagger at the right hip and another across the back of the belt, and a coin pouch;
+#   the brute: a sleeveless studded vest with the arms bare, a fur mantle, the red bandana knotted at the back,
+#     wrapped forearms and an axe at the left hip.
+# The nobles' servant: she is the maid, in a black dress to mid-calf with white collar and cuffs, a white apron
+# with a bib, and a frilled white cap; he is the footman, in the house's livery: a coat with tails, edged in braid
+# with gold buttons, over a waistcoat, a white cravat, breeches and white stockings.
+# The guest factions' outfits, which only guests wear (STORY.md, section 5).
+FACTION_OUTFITS = ("Archer", "Warrior", "Mage", "Cleric", "Noble", "Servant", "Rogue", "Brute")
+MAID_SKIRT = [SKIRT_TOP, 0.94, 0.88, 0.8, 0.7, 0.58, 0.46, 0.36, 0.27]  # to mid-calf
+FOOTMAN_COAT = 1.1  # where his coat opens over the waistcoat, widening up to the cravat
+MAID_COLLAR = 1.29
+
+
+def face_scarf(extra, spec, fit, mat):
+    """A scarf tied over the nose and mouth: in front of the face from ear to ear, hanging in a point below the chin."""
+    cy = fit[1]
+    chin = spec["chin_z"]
+    points = spec["face_points"]
+    angles = [math.radians(d) for d in range(5, 176, 17)]
+    zs = [chin + 0.055, chin + 0.03, chin + 0.005, chin - 0.02]
+    reach = []
+    for r, z in enumerate(zs):
+        row = []
+        for k, a in enumerate(angles):
+            best = 0.0
+            for x, y, pz in points:
+                if abs(pz - z) < 0.018 and abs(math.atan2(y - cy, x) - a) < 0.22:
+                    best = max(best, x * math.cos(a) + (y - cy) * math.sin(a))
+            if r:
+                best = max(best, reach[-1][k])  # cloth falls straight from the face above
+            row.append(best or 0.06)
+        reach.append(row)
+
+    def point(r, k):
+        a = angles[k]
+        out = reach[r][k] + 0.008
+        z = zs[r] - (0.035 * math.sin(a) ** 2 if r == len(zs) - 1 else 0.0)
+        return (math.cos(a) * out, cy + math.sin(a) * out, z), {"Head": 1.0}
+    add_sheet(extra, "scarf", point, len(zs), len(angles), mat, 0.003)
+
+
+def headband(extra, fit, key, mat, tails=True):
+    """A cloth band round the brow, over the hair, knotted at the back with two tails hanging from the knot."""
+    base, cy, rx, rf, rb, _ = fit
+    n = HAT_SIDES
+    for r, z in enumerate((base - 0.022, base + 0.004)):
+        for k in range(n):
+            a = 2 * math.pi * k / n
+            extra.add(f"{key}{r}_{k}", 0, (math.cos(a) * (rx + 0.003), cy + math.sin(a) * ((rf if math.sin(a) > 0 else rb) + 0.003), z),
+                      {"Head": 1.0})
+    for k in range(n):
+        k1 = (k + 1) % n
+        extra.face((f"{key}1_{k}", f"{key}0_{k}", f"{key}0_{k1}", f"{key}1_{k1}"), 0, mat)
+    if tails:
+        y, z = cy - rb - 0.008, base - 0.01
+        head = lambda co: {"Head": 1.0}
+        facing(extra, f"{key}knot", (0.0, y, z), (0.014, 0.014), (0.0, -1.0), head, mat, depth=0.01)
+        for i, sx in enumerate((-1, 1)):
+            corners = [(sx * 0.004, y - 0.006, z), (sx * 0.02, y - 0.006, z), (sx * 0.04, y - 0.03, z - 0.12), (sx * 0.018, y - 0.03, z - 0.12)]
+            add_slab(extra, f"{key}tail{i}", corners, (0.0, 0.003, 0.0), head, mat)
+
+
+def bandit_cloth(spec, m, skin, sleeves):
+    """The worn skin's faces a bandit's clothes cover: the archer's cut, and for the brute, no shirt under the vest."""
+    faces = adventurer_cloth(spec, m, skin)
+    return faces if sleeves else [(f, mat) for f, mat in faces if mat is not m["linen"]]
+
+
+def build_bandit_extra(spec, m, skin, normals, surface, fit, calling):
+    """The gang's red, the belt and boot tops, and each kind's own pieces."""
+    extra = Skin()
+    female = not spec.get("plated", False)
+    name = spec["name"]
+    belt = ADVENTURER_BELT[name]
+    mid = sum(belt) / 2
+    w, f, b = profile_at(spec, mid)
+    reach = 0.014 if female else 0.02
+    hips = lambda co: {"Hips": 1.0}
+    waist_band(extra, spec, "belt", belt, reach, m["leather"])
+    boot_cuff(extra, spec, "cuff", spec["knee_z"] + ADVENTURER_BOOT, ADVENTURER_CUFF, m)
+
+    if calling == "rogue":
+        front, back = (0.07, 0.2) if female else (0.0, 0.2)
+        shell(extra, "mantle", skin, normals, shoulder_faces(spec, m, skin, front, back), lambda i: 0.036 if female else 0.026,
+              m["cloak"])
+        cowl(extra, spec, "hood", m["cloak"])
+        face_scarf(extra, spec, fit, m["sash"])
+        # A dagger at the right hip, sloping forwards, and another across the back of the belt.
+        x = w + reach + 0.016
+        hang = hip_weights(spec, "R")
+        mouth = Vector((x, 0.04, mid))
+        down = Vector((0.02, 0.15, -1.0)).normalized()
+        rod(extra, "sheath", mouth, mouth + down * 0.2, 0.013, 0.007, hang, m["leather"], sides=4)
+        rod(extra, "grip", mouth, mouth - down * 0.08, 0.008, 0.008, hang, m["bracer"], sides=4)
+        rod(extra, "guard", mouth + Vector((0.0, -0.03, 0.0)), mouth + Vector((0.0, 0.03, 0.0)), 0.005, 0.005, hang, m["iron"], sides=4)
+        yb = -(b + reach + 0.012)
+        rod(extra, "backsheath", (-0.12, yb, mid - 0.005), (0.06, yb, mid + 0.025), 0.007, 0.013, hips, m["leather"], sides=4)
+        rod(extra, "backgrip", (0.06, yb, mid + 0.025), (0.14, yb, mid + 0.04), 0.008, 0.008, hips, m["bracer"], sides=4)
+        a = math.pi - 0.45  # the coin pouch, at the left hip a little to the front
+        out = (math.cos(a), math.sin(a))
+        facing(extra, "pouch", (math.cos(a) * (w + reach + 0.02), math.sin(a) * (f + reach + 0.02), mid - 0.035), (0.026, 0.032),
+               out, hips, m["leather"], depth=0.02)
+        return extra
+
+    # The brute.
+    front, back = (0.05, 0.16) if female else (0.02, 0.18)
+    shell(extra, "mantle", skin, normals, shoulder_faces(spec, m, skin, front, back), lambda i: 0.034 if female else 0.04,
+          m["cloak"])
+    cowl(extra, spec, "fur", m["cloak"], gap=0.03)
+    headband(extra, fit, "bandana", m["sash"])
+    # Iron studs on the vest's front.
+    rows = (0.93, 0.98, 1.03) if female else (1.17, 1.23, 1.29, 1.35, 1.41)
+    for i, z in enumerate(rows):
+        for j, x in enumerate((-0.07, -0.025, 0.025, 0.07)):
+            hit = surface.hit(x, z)
+            if hit:
+                loc, normal, weights = hit
+                at = loc + normal * 0.008
+                facing(extra, f"stud{i}_{j}", tuple(at), (0.006, 0.006), (normal.x, normal.y), lambda co, w=weights: dict(w),
+                       m["iron"], depth=0.004)
+    facing(extra, "buckle", (0.0, f + reach + 0.004, mid), (0.024, 0.02), (0.0, 1.0), hips, m["iron"], depth=0.006)
+    # The axe, hung through the belt at the left hip, its head forwards by the belt.
+    x = -(w + reach + 0.02)
+    hang = hip_weights(spec, "L")
+    top, foot = Vector((x, 0.03, mid + 0.1)), Vector((x - 0.01, -0.03, mid - 0.4))
+    rod(extra, "haft", foot, top, 0.012, 0.012, hang, m["wood"], sides=5)
+    blade = [(x, 0.03, mid + 0.125), (x, 0.03, mid + 0.065), (x, 0.115, mid + 0.03), (x, 0.125, mid + 0.16)]
+    add_slab(extra, "axehead", blade, (0.008, 0.0, 0.0), hang, m["iron"])
+    return extra
+
+
+def servant_cloth(spec, m, skin):
+    """
+    The worn skin's faces a servant's clothes cover. Hers: the maid's black dress with white collar and cuffs, and
+    legwear under the skirt. His: the footman's coat over a waistcoat and cravat, breeches and white stockings.
+    """
+    male = spec.get("plated", False)
+    cuff = spec["wrist_z"] + 0.03
+    tee, belt = m[spec["tunic"]], m[spec["belt"]]
+    dress = m["doublet"] if male else m["bodice"]
+    faces = []
+    for f, mat in skin.faces:
+        if mat is m["stripe"] or len(f) > 4:
+            continue
+        bone, (cx, cy, cz) = face_bone(skin, f)
+        if bone.startswith("UpperArm"):
+            faces.append((f, dress))
+        elif bone.startswith("ForeArm"):
+            faces.append((f, m["linen"] if cz < cuff else dress))
+        elif male and bone.startswith("Thigh"):
+            faces.append((f, m["breeches"]))
+        elif male and bone.startswith("Shin"):
+            faces.append((f, m["linen"]))  # white stockings
+        elif male and bone in ("Hips", "Torso"):
+            if not (mat in (tee, belt) or face_leans(skin, f, "UpperArm")):
+                faces.append((f, m["breeches"]))
+            elif cy > 0 and cz > 1.5 and abs(cx) < 0.06:
+                faces.append((f, m["linen"]))  # the cravat's fall
+            elif cy > 0 and cz > FOOTMAN_COAT and abs(cx) < 0.04 + 0.12 * (cz - FOOTMAN_COAT):
+                faces.append((f, m["waistcoat"]))
+            else:
+                faces.append((f, dress))
+        elif male:
+            continue
+        elif is_legwear(bone, cz):
+            faces.append((f, legwear_band(m, bone, cz)))
+        elif bone in ("Hips", "Torso"):
+            faces.append((f, m["linen"] if cz > MAID_COLLAR else dress))
+    return faces
+
+
+def servant_lift(spec):
+    """Neat, close-fitting clothes; her cuffs and his stand out a little at the wrist."""
+    male = spec.get("plated", False)
+    cuff = spec["wrist_z"] + 0.03
+    shoulders = None if male else spec["shoulder"][1] - 0.1
+
+    def lift(bone, z):
+        if bone.startswith("UpperArm"):
+            return 0.012 if male else (0.014 if shoulders and z > shoulders - 0.02 else 0.006)
+        if bone.startswith("ForeArm"):
+            return 0.014 if z < cuff else (0.01 if male else 0.005)
+        if bone.startswith("Thigh"):
+            return 0.008 if male else 0.0
+        if bone.startswith("Shin"):
+            return 0.003 if male else 0.0
+        if shoulders and z > shoulders:
+            return 0.01
+        return 0.008 if male else 0.003
+    return lift
+
+
+def build_servant_extra(spec, m, skin, normals, surface, fit):
+    """Her skirt, apron with its bib and band, and cap; his coat's tails, braid and buttons, and the cravat."""
+    extra = Skin()
+    male = spec.get("plated", False)
+    name = spec["name"]
+    if male:
+        mid = sum(ADVENTURER_BELT[name]) / 2
+        robe_panel(extra, spec, "tails", mid, spec["knee_z"] + 0.05, 0.13, 0.2, 0.014, m["doublet"], front=False)
+        for sx in (-1, 1):
+            path = [(sx * (0.04 + 0.12 * (z / 100 - FOOTMAN_COAT) + 0.004), z / 100) for z in range(110, 151, 4)]
+            lay_strap(extra, f"edge{sx}", surface, path, 0.006, 0.005, m["braid"])
+            for i, z in enumerate((1.16, 1.24, 1.32, 1.4)):
+                x = sx * (0.04 + 0.12 * (z - FOOTMAN_COAT) + 0.022)
+                hit = surface.hit(x, z)
+                if hit:
+                    loc, normal, weights = hit
+                    facing(extra, f"button{sx}_{i}", tuple(loc + normal * 0.008), (0.007, 0.007), (normal.x, normal.y),
+                           lambda co, w=weights: dict(w), m["braid"], depth=0.005)
+        z0 = spec["neck"][0][0]
+        neck_band(extra, spec, "cravat", (z0 - 0.005, z0 + 0.03), 0.014, m["linen"], sides=12)
+        badge(extra, "knot", surface, 1.53, (0.022, 0.016), 0.014, m["linen"])
+        return extra
+
+    skirt = (MAID_SKIRT, 0.12)
+    long_skirt(extra, spec, "skirt", *skirt, m["skirt"])
+    robe_panel(extra, spec, "apron", 0.975, 0.4, 0.12, 0.15, 0.008, m["apron"], skirt=skirt)
+    waist_band(extra, spec, "band", (0.962, 0.99), 0.03, m["apron"])
+    bib = [fc for fc in tabard_faces(spec, m, skin, 0.07, 0.96, 1.2) if face_bone(skin, fc)[1][1] > 0]
+    shell(extra, "bib", skin, normals, bib, lambda i: 0.008, m["apron"])
+    # The frilled cap, standing up across the top of the head from ear to ear, both sides showing.
+    base, cy, rx, _, _, top = fit
+    angles = [math.pi * k / 10 for k in range(11)]
+    for r, grow in enumerate((0.004, 0.03)):
+        for k, t in enumerate(angles):
+            extra.add(f"cap{r}_{k}", 0, (math.cos(t) * (rx + grow), cy + 0.012 - 0.012 * r, base + (top - base + grow) * math.sin(t)),
+                      {"Head": 1.0})
+    for k in range(len(angles) - 1):
+        quad = (f"cap0_{k}", f"cap0_{k + 1}", f"cap1_{k + 1}", f"cap1_{k}")
+        extra.face(quad, 0, m["linen"])
+        extra.face(tuple(reversed(quad)), 0, m["linen"])
+    return extra
+
+
 def more_outfits(spec, m, skin, normals, fit):
     """
     {outfit: (worn skin faces, where each corner sits, extra pieces)} for the outfits after the character's own:
-    her dirndl and priestess's set, and the pirate's rig for both. `fit` is where a hat goes on the head.
+    her dirndl and priestess's set, and the pirate's rig, the adventurer's kit and the noble's clothes for both.
+    `fit` is where a hat goes on the head.
     """
     def lifted(amount):
         def place(index):
@@ -3735,13 +5395,31 @@ def more_outfits(spec, m, skin, normals, fit):
             return 0.006 if PRIESTESS_ARMLET[0] <= z else 0.004
         return 0.002
 
-    pirate = (pirate_cloth(spec, m, skin), lifted(pirate_lift(spec)), build_pirate_extra(spec, m, fit))
+    archer = (adventurer_cloth(spec, m, skin), lifted(adventurer_lift(spec)))
+    warrior = (warrior_cloth(spec, m, skin), lifted(warrior_lift(spec)))
+    mage = (robe_cloth(spec, m, skin), lifted(robe_lift(spec, bell=True)))
+    cleric = (robe_cloth(spec, m, skin), lifted(robe_lift(spec, bell=False)))
+    noble = (noble_cloth(spec, m, skin), lifted(noble_lift(spec)))
+    rogue = (bandit_cloth(spec, m, skin, sleeves=True), lifted(adventurer_lift(spec)))
+    brute = (bandit_cloth(spec, m, skin, sleeves=False), lifted(adventurer_lift(spec)))
+    servant = (servant_cloth(spec, m, skin), lifted(servant_lift(spec)))
+    guests = {
+        "Pirate": (pirate_cloth(spec, m, skin), lifted(pirate_lift(spec)), build_pirate_extra(spec, m, fit)),
+        "Archer": (*archer, build_adventurer_extra(spec, m, skin, normals, ClothSurface(skin, *archer), quiver=True)),
+        "Warrior": (*warrior, build_warrior_extra(spec, m, skin, normals, ClothSurface(skin, *warrior))),
+        "Mage": (*mage, build_robe_extra(spec, m, skin, normals, ClothSurface(skin, *mage), fit, "mage")),
+        "Cleric": (*cleric, build_robe_extra(spec, m, skin, normals, ClothSurface(skin, *cleric), fit, "cleric")),
+        "Noble": (*noble, build_noble_extra(spec, m, skin, normals, fit, ClothSurface(skin, *noble))),
+        "Servant": (*servant, build_servant_extra(spec, m, skin, normals, ClothSurface(skin, *servant), fit)),
+        "Rogue": (*rogue, build_bandit_extra(spec, m, skin, normals, ClothSurface(skin, *rogue), fit, "rogue")),
+        "Brute": (*brute, build_bandit_extra(spec, m, skin, normals, ClothSurface(skin, *brute), fit, "brute")),
+    }
     if spec.get("outfit") != "medieval":
-        return {"Pirate": pirate}
+        return guests
     return {
         "Dirndl": (dirndl_cloth(spec, m, skin), lifted(dirndl_puff), build_dirndl_extra(spec, m)),
         "Priestess": (priestess_cloth(spec, m, skin), lifted(priestess_lift), build_priestess_extra(spec, m)),
-        "Pirate": pirate,
+        **guests,
     }
 
 
@@ -4074,6 +5752,9 @@ def skin_character(c, m, spec, root):
         obj.matrix_world = Matrix.Identity(4)
     # Measured now, before the head is joined into the body: a hat has to clear the head and the character's own hair.
     fit = hat_fit(spec, [parts[f"{name}_Head"], parts[f"{name}_Hair"]])
+    # And the lower face, for a scarf tied over it.
+    chin = spec["chin_z"]
+    spec["face_points"] = [tuple(v.co) for v in parts[f"{name}_Head"].data.vertices if chin - 0.05 < v.co.z < chin + 0.09]
 
     # The whole body in skin, so clothes can come off or change without leaving holes; only the smallclothes stay.
     smalls, band = smallclothes(spec, bare_skin)
@@ -4154,7 +5835,9 @@ def skin_character(c, m, spec, root):
         more, more_kept = pieces.mesh(f"{name}_Cloth{outfit}Pieces", pieces.faces)
         outfits.append(join(obj, [pieces.link(c, more, more_kept, name, f"{name}_Cloth{outfit}Pieces")]))
     # Every dress she can wear has the leg warmers and garter belt too, for the legwear styles that show them.
-    dresses = [cloth_obj] + [obj for obj in outfits if obj.name != label("ClothPirate")] if medieval else []
+    # Not the outfits whose breeches or mail cover her legs.
+    covered = {label(f"Cloth{outfit}") for outfit in ("Pirate", "Archer", "Warrior", "Rogue", "Brute")}
+    dresses = [cloth_obj] + [obj for obj in outfits if obj.name not in covered] if medieval else []
     for dress in dresses:
         join(dress, [build_warmers(c, m, name, skin, normals)])
 
@@ -4226,12 +5909,18 @@ def skin_character(c, m, spec, root):
             if spec.get("navel"):
                 for reach in NAVEL_REFINE:
                     refine_soft_parts(layer, name, navel_regions(spec, reach))
+            if spec.get("vulva"):
+                for share in VULVA_REFINE:
+                    refine_soft_parts(layer, name, vulva_regions(share))
+                refine_soft_parts(layer, name, OPENING_REFINE, smooth=0.0, touching=True)
         add_jiggle_weights(name, (body_obj, cloth_obj, *outfits))
     for dress in dresses:
         join(dress, [build_garter(c, m, name, dress)])
     if spec.get("jiggle"):
-        # Built on the finished body, so it lies on the refined bust and takes the springs' weights too.
-        coat = build_coat(c, m, name, body_obj, (cloth_obj, *outfits))
+        # Built on the finished body, so it lies on the refined bust and takes the springs' weights too. Not on the
+        # factions' outfits, which only guests wear, and guests never show what's on them.
+        worn = [obj for obj in outfits if obj.name not in {label(f"Cloth{o}") for o in FACTION_OUTFITS}]
+        coat = build_coat(c, m, name, body_obj, (cloth_obj, *worn))
     else:
         coat = []
     if spec.get("nipples"):
@@ -4242,6 +5931,13 @@ def skin_character(c, m, spec, root):
         press_navel(spec, m, body_obj)
     if spec.get("pubes"):
         add_pubes(m, name, body_obj)
+    if spec.get("vulva"):
+        # After the pubic patch, which copies every front face over her mound and would copy the grid too.
+        add_vulva(m, name, body_obj)
+    if spec.get("anus"):
+        add_anus(m, name, body_obj)
+    if spec.get("penis"):
+        add_penis(m, name, body_obj)
     if spec.get("lingerie"):
         # Last, so it copies only the finished skin, never the pubic patch or the nipple discs.
         add_lingerie(m, name, body_obj)
@@ -4371,6 +6067,11 @@ def main():
     for key, colour in PIRATE_COLOURS:
         mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
     rng.bit_generator.state = random_state
+    # The adventurer's kit and the noble's clothes, the same way.
+    random_state = rng.bit_generator.state
+    for key, colour in GUEST_COLOURS:
+        mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
+    rng.bit_generator.state = random_state
     # What men leave on her, likewise.
     random_state = rng.bit_generator.state
     mats["cum"] = material("T_cum", tex_flat("T_cum", (0.93, 0.92, 0.87)))
@@ -4386,6 +6087,28 @@ def main():
     # The inside of her navel, likewise: her skin (skin_f) in shadow. The game tones it along with her skin.
     random_state = rng.bit_generator.state
     mats["navel"] = material("T_navel", tex_flat("T_navel", (0.52, 0.33, 0.26), variation=0.02))
+    rng.bit_generator.state = random_state
+    # Her vulva, likewise: the slit and inner lips one flat pink the game tints with her skin and flushes as she's
+    # aroused, and the outer lips her skin (skin_f), which the game tones along with it.
+    random_state = rng.bit_generator.state
+    mats["vulva"] = material("T_vulva", tex_flat("T_vulva", (0.76, 0.44, 0.43), variation=0.02))
+    # Nearly flat: its UVs carry the grid, so the skin's mottling would come out much finer on it than on her.
+    mats["labia"] = material("T_labia", tex_flat("T_labia", (0.86, 0.63, 0.5), variation=0.03))
+    # Her canal, a deeper pink, which the game dyes along with the slit.
+    mats["canal"] = material("T_canal", tex_flat("T_canal", (0.6, 0.26, 0.29), variation=0.02))
+    # Her anus: its rim and canal a darker, browner pink, and the rest of its disc her skin.
+    mats["anus"] = material("T_anus", tex_flat("T_anus", (0.62, 0.38, 0.35), variation=0.02))
+    mats["anus_skin"] = material("T_anus_skin", tex_flat("T_anus_skin", (0.86, 0.63, 0.5), variation=0.03))
+    # The skin under her openings, hidden while they show and otherwise in her smallclothes, as around it.
+    mats["hole"] = material("T_hole", tex_flat("T_hole", (0.74, 0.68, 0.58)))
+    rng.bit_generator.state = random_state
+    # His penis and scrotum, likewise: the shaft and sack his skin (skin) a little darker, which the game tones with
+    # his skin, and the glans one flat pink it tints with his skin and flushes as he's aroused. Nearly flat, as their
+    # UVs carry their rings and spokes.
+    random_state = rng.bit_generator.state
+    mats["penis"] = material("T_penis", tex_flat("T_penis", (0.68, 0.46, 0.36), variation=0.03))
+    mats["glans"] = material("T_glans", tex_flat("T_glans", (0.72, 0.42, 0.4), variation=0.02))
+    mats["scrotum"] = material("T_scrotum", tex_flat("T_scrotum", (0.62, 0.41, 0.33), variation=0.03))
     rng.bit_generator.state = random_state
     # Her underwear styles' patch, likewise: plain white, which the game draws each style on in its own colours.
     random_state = rng.bit_generator.state

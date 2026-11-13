@@ -25,6 +25,13 @@ const hairAt = (data: Uint8Array, x: number, h: number) => {
 };
 
 describe("pubic hair styles", () => {
+  it("never grows over the slit, though a full bush covers the outer lips beside it", () => {
+    const bush = drawPubes(pubicStyle("bush"));
+    expect(hairAt(bush, 0, -0.012)).toBe(false);
+    expect(hairAt(bush, 0.018, -0.012)).toBe(true);
+    expect(hairAt(bush, 0, 0.02)).toBe(true);
+  });
+
   it("has trimmed first and bare last, with a heart among them", () => {
     expect(PUBIC_STYLES[0].id).toBe("trimmed");
     expect(PUBIC_STYLES.at(-1)!.id).toBe("bare");

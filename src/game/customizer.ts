@@ -26,7 +26,20 @@ export interface CustomizerHooks {
   random(body: BodyName): Look;
   /** Dresses the preview as she is, down to her smallclothes, or bare, to see the body while shaping it. */
   dress(dressing: Dressing): void;
+  /**
+   * Opens her vulva and anus on the preview, 0 closed, 1 fully and 2 stretched (VULVA_STRETCHED), to see them; never
+   * part of the look.
+   */
+  open(vulva: number, anus: number): void;
+  /** How hard the preview shows his penis, 0 soft to 1 hard, to see it; never part of the look. */
+  erect(level: number): void;
 }
+
+/** How hard the preview shows his penis: soft, half hard and hard. */
+const ERECTIONS: readonly [number, string][] = [[0, "Soft"], [0.5, "Half"], [1, "Hard"]];
+
+/** How far the preview opens her vulva or anus: closed, relaxed, fully open, and stretched as wide as she goes. */
+const OPENINGS: readonly [number, string][] = [[0, "Closed"], [0.35, "Relaxed"], [1, "Open"], [2, "Stretched"]];
 
 /** How the preview is dressed while shaping: her clothes on, down to her smallclothes, or bare. */
 export type Dressing = "dressed" | "underwear" | "nude";
@@ -48,6 +61,10 @@ export class Customizer {
   private readonly tabsEl = make("div", "tabs");
   private readonly paneEl = make("div", "pane");
   private readonly clothesEl = make("div", "clothes");
+  /** How open the preview has her vulva and anus. */
+  private opening = { vulva: 0, anus: 0 };
+  /** How hard the preview has his penis. */
+  private erection = 0;
 
   constructor(private readonly el: HTMLElement, private readonly hooks: CustomizerHooks) {
     const box = make("div", "box");
@@ -100,6 +117,10 @@ export class Customizer {
     this.look = copyLook(look);
     this.titleEl.textContent = `Customize: ${label}`;
     this.markDressing("dressed");
+    this.opening = { vulva: 0, anus: 0 };
+    this.hooks.open(0, 0);
+    this.erection = 0;
+    this.hooks.erect(0);
     this.el.classList.add("open");
     this.show("body");
   }
@@ -137,6 +158,9 @@ export class Customizer {
       delete this.look.nipples;
       delete this.look.bustShape;
       delete this.look.pubes;
+      delete this.look.vulva;
+      delete this.look.anus;
+      delete this.look.penis;
     }
     this.changed();
     this.show(this.current);
@@ -205,6 +229,18 @@ export class Customizer {
         if (def.group === "Pubic hair" && options.pubes.length) {
           rows.push(this.choiceRow("Style", options.pubes, () => this.look.pubes, (id) => (this.look.pubes = id)));
         }
+        if (def.group === "Vulva" && options.vulva.length) {
+          rows.push(this.choiceRow("Type", options.vulva, () => this.look.vulva, (id) => (this.look.vulva = id)));
+          rows.push(this.openingRow("vulva"));
+        }
+        if (def.group === "Anus" && options.anus.length) {
+          rows.push(this.choiceRow("Type", options.anus, () => this.look.anus, (id) => (this.look.anus = id)));
+          rows.push(this.openingRow("anus"));
+        }
+        if (def.group === "Penis" && options.penis.length) {
+          rows.push(this.choiceRow("Type", options.penis, () => this.look.penis, (id) => (this.look.penis = id)));
+          rows.push(this.erectionRow());
+        }
       }
       group = def.group;
       rows.push(def.stops ? this.stopsRow(def.id, def.label, def.stops) : this.sliderRow(def.id, def.label));
@@ -244,6 +280,70 @@ export class Customizer {
       buttons.forEach((button, index) => {
         button.classList.toggle("on", styles[index].id === chosen);
         button.setAttribute("aria-pressed", String(styles[index].id === chosen));
+      });
+    };
+    mark();
+    grid.append(...buttons);
+    row.append(grid);
+    return row;
+  }
+
+  /**
+   * How open the preview shows her vulva or anus: to see it work, never saved. It undresses her to see it, as
+   * they only show bare.
+   */
+  private openingRow(which: "vulva" | "anus"): HTMLElement {
+    const row = make("div", "row styles");
+    row.append(make("span", "name", "Preview"));
+    const grid = make("div", "style-grid");
+    const buttons = OPENINGS.map(([amount, label]) => {
+      const button = make("button", "", label);
+      button.type = "button";
+      button.addEventListener("click", () => {
+        this.opening[which] = amount;
+        if (amount > 0) this.dress("nude");
+        this.hooks.open(this.opening.vulva, this.opening.anus);
+        mark();
+      });
+      return button;
+    });
+    const mark = () => {
+      buttons.forEach((button, index) => {
+        const on = OPENINGS[index][0] === this.opening[which];
+        button.classList.toggle("on", on);
+        button.setAttribute("aria-pressed", String(on));
+      });
+    };
+    mark();
+    grid.append(...buttons);
+    row.append(grid);
+    return row;
+  }
+
+  /**
+   * How hard the preview shows his penis: to see it work, never saved. It undresses him to see it, as it only shows
+   * bare.
+   */
+  private erectionRow(): HTMLElement {
+    const row = make("div", "row styles");
+    row.append(make("span", "name", "Preview"));
+    const grid = make("div", "style-grid");
+    const buttons = ERECTIONS.map(([amount, label]) => {
+      const button = make("button", "", label);
+      button.type = "button";
+      button.addEventListener("click", () => {
+        this.erection = amount;
+        this.dress("nude");
+        this.hooks.erect(amount);
+        mark();
+      });
+      return button;
+    });
+    const mark = () => {
+      buttons.forEach((button, index) => {
+        const on = ERECTIONS[index][0] === this.erection;
+        button.classList.toggle("on", on);
+        button.setAttribute("aria-pressed", String(on));
       });
     };
     mark();

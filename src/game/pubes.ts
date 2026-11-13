@@ -9,8 +9,13 @@ export const PUBIC_MATERIAL = "T_pubic";
 
 /** The patch's UV frame, as build_world.py lays it: model metres, u across and v up (glTF stores v flipped). */
 export const PUBIC_FRAME = { half: 0.11, bottom: 0.68, top: 0.96 } as const;
-/** The top of her cleft, the point every style is placed from, as a height in the model. */
-export const PUBIC_CLEFT = 0.755;
+/**
+ * The top of her cleft, the point every style is placed from, as a height in the model: the top of her vulva's
+ * slit (vulva.ts) at its usual size.
+ */
+export const PUBIC_CLEFT = 0.786;
+/** No hair grows over the slit itself, below the top of her cleft: this far either side of her middle. */
+const SLIT_HALF = 0.007;
 /** The texture's size: square texels about 3.4 mm across, coarse like the rest of her. */
 export const PUBIC_WIDTH = 64;
 export const PUBIC_HEIGHT = 80;
@@ -140,8 +145,8 @@ export function drawPubes(style: PubicStyle, size = 0): Uint8Array {
       if (style.shape) {
         let d = style.shape(x / scale, h / scale) * scale;
         if (style.ragged) d += style.ragged * (noise(x / 0.011, h / 0.011) * 2 - 1);
-        // Full inside, scattering out across the fuzz.
-        const cover = style.fuzz > 0 ? clamp(0.5 + d / style.fuzz, 0, 1) : d > 0 ? 1 : 0;
+        // Full inside, scattering out across the fuzz; never over the slit, where only her outer lips grow it.
+        const cover = h < 0.002 && Math.abs(x) < SLIT_HALF ? 0 : style.fuzz > 0 ? clamp(0.5 + d / style.fuzz, 0, 1) : d > 0 ? 1 : 0;
         // The scatter is mirrored, so a shaved shape comes out even on both sides.
         alpha = hash(Math.min(column, PUBIC_WIDTH - 1 - column) + 977, row + 131) < cover ? 255 : 0;
       }

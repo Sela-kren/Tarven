@@ -24,9 +24,10 @@ import {
   LOOK_OPTIONS,
   loadLooks,
   newLook,
+  GUEST_LOOKS,
+  guestOutfitColors,
   OUTFIT_COLORS,
-  PIRATE_LOOKS,
-  pirateGuestColors,
+  type GuestOutfit,
   randomLook,
   storeLooks,
   type BodyName,
@@ -92,6 +93,7 @@ import { saveBadges } from "./saveicons";
 import { SkyDial } from "./skydial";
 import { TouchComic } from "./touchcomic";
 import { arousalOf, easeArousal } from "./nipples";
+import { easeOpening } from "./vulva";
 import { METER_MAX } from "./passives";
 import type { Reaction, SoftPart } from "./player";
 import { DialogueBox } from "./dialogue";
@@ -298,6 +300,13 @@ const OUTFITS: Record<GuestKind | "visitor", { top: number; legs: number; hair: 
   // Whoever comes in at last call, dressed unlike any guest so nobody takes them for one who stayed behind.
   visitor: { top: 0x2f5590, legs: 0x1c1c22, hair: 0x2b2018 },
 };
+
+/**
+ * The kinds of guest who come in outfits of their own, in colours of their own; only their hair is taken from
+ * OUTFITS. A kind with several outfits comes in each of them in turn. The adventuring party's kits
+ * (ADVENTURER_OUTFITS) and the noble's clothes are ready for the factions to come (STORY.md, section 5).
+ */
+const GUEST_OUTFIT: Partial<Record<GuestKind, readonly GuestOutfit[]>> = { smuggler: ["pirate"] };
 
 /** Who the player can be, by sibling index: the male body, then the female one. */
 const PLAYER_LABELS = ["Male", "Female"];
@@ -795,6 +804,8 @@ export class Game {
       builtColor: (id) => this.builtColor(id),
       random: (body) => randomLook(body),
       dress: (dressing) => this.chosen !== null && this.dressers[this.chosen].setDressing(dressing),
+      open: (vulva, anus) => (this.openingPreview = { vulva, anus }),
+      erect: (level) => (this.erectionPreview = level),
     });
 
     this.spawnPoints = [this.siblings[0].position.clone(), this.siblings[1].position.clone()];
@@ -981,7 +992,8 @@ export class Game {
   /** Which colours of a guest's outfit they come in, so guests of one kind don't all look alike. */
   private guestLook(guest: { id: number; kind: GuestKind }): number {
     // The id's lowest bit already picks the body, so the rest of it picks the colours.
-    return guest.kind === "smuggler" ? Math.floor(guest.id / 2) % PIRATE_LOOKS : 0;
+    const outfits = GUEST_OUTFIT[guest.kind];
+    return outfits ? Math.floor(guest.id / 2) % (GUEST_LOOKS * outfits.length) : 0;
   }
 
   private makeGuestBody(kind: GuestKind | "visitor", female: boolean, look = 0): Body {
@@ -995,8 +1007,12 @@ export class Game {
       // Only the siblings cast shadows, to keep the frame rate up.
       if (object instanceof Mesh) object.castShadow = false;
     });
-    if (kind === "smuggler") {
-      dressColors(model, body, { ...pirateGuestColors(body, look), [slots.hair]: hex(outfit.hair) }, "pirate");
+    const outfits = kind === "visitor" ? undefined : GUEST_OUTFIT[kind];
+    if (outfits) {
+      // The look picks which of the kind's outfits, then which colours of it.
+      const own = outfits[look % outfits.length];
+      const colors = guestOutfitColors(body, own, Math.floor(look / outfits.length));
+      dressColors(model, body, { ...colors, [slots.hair]: hex(outfit.hair) }, own);
     } else {
       dressColors(model, body, { [slots.top]: hex(outfit.top), [slots.legs]: hex(outfit.legs), [slots.hair]: hex(outfit.hair) });
     }
@@ -1937,14 +1953,62 @@ export class Game {
 
   /** How aroused the player shows, easing towards what the night has done to her. */
   private arousalShown = 0;
+  /** Likewise for her vulva, which follows her Pussy desire. */
+  private vulvaArousalShown = 0;
+  /**
+   * How open her vulva and anus show, 0 closed to 2 stretched, easing towards how open they're meant to be; and how
+   * open the customizer's preview has them.
+   */
+  private openingShown = { vulva: 0, anus: 0 };
+  private openingPreview = { vulva: 0, anus: 0 };
+  /** How hard his penis shows, easing like her arousal; and how hard the customizer's preview has it. */
+  private erectionShown = 0;
+  private erectionPreview = 0;
+  /**
+   * How full the player's vulva and anus are, from 0 (nothing in her) to 1 (stretched as wide as she goes): for
+   * mating, which sets them while something is in her and puts them back to 0 after. While full she shows stretched
+   * open, more the fuller; let go, she gapes a while, then closes back slowly.
+   */
+  filled = { vulva: 0, anus: 0 };
 
-  /** Her nipples stand and her areolae flush as her breasts' desire, or a duel's pleasure, rises. */
+  /**
+   * Her nipples stand and her areolae flush as her breasts' desire, or a duel's pleasure, rises; her vulva swells
+   * and parts with her Pussy desire, or the duel's pleasure.
+   */
   private syncArousal(dt: number): void {
     const { tavern } = this;
     const duel = tavern.duel ? { state: tavern.duel.state, pleasure: tavern.duel.pleasure / 100 } : null;
     const target = arousalOf(tavern.meters.breasts / METER_MAX, duel);
     this.arousalShown = easeArousal(this.arousalShown, target, dt);
-    this.dressers.forEach((dresser, index) => dresser.setArousal(index === this.active ? this.arousalShown : 0));
+    const vulva = arousalOf(tavern.meters.pussy / METER_MAX, duel);
+    this.vulvaArousalShown = easeArousal(this.vulvaArousalShown, vulva, dt);
+    this.dressers.forEach((dresser, index) =>
+      index === this.active ? dresser.setArousal(this.arousalShown, this.vulvaArousalShown) : dresser.setArousal(0),
+    );
+    // Played as him, he hardens as the night's desire or a duel's pleasure rises, whichever is strongest; in the
+    // customizer, the preview's erection shows instead.
+    if (this.screen === "customize") {
+      if (this.chosen !== null) this.dressers[this.chosen].setErection(this.erectionPreview);
+    } else {
+      this.erectionShown = easeArousal(this.erectionShown, Math.max(target, vulva), dt);
+      this.dressers.forEach((dresser, index) => dresser.setErection(index === this.active ? this.erectionShown : 0));
+    }
+    // Her desire relaxes her open a little: her vulva parts as Pussy desire rises, her anus eases a touch with Butt
+    // desire; filled, she stretches round what's in her. In the customizer, the preview's opening shows instead.
+    if (this.screen === "customize") {
+      if (this.chosen !== null) this.dressers[this.chosen].setOpening(this.openingPreview.vulva, this.openingPreview.anus);
+      return;
+    }
+    const butt = arousalOf(tavern.meters.butt / METER_MAX, null);
+    const { filled } = this;
+    const meant = (full: number, desire: number) => (full > 0 ? 1 + Math.min(1, full) : desire);
+    this.openingShown = {
+      vulva: easeOpening(this.openingShown.vulva, meant(filled.vulva, 0.3 * this.vulvaArousalShown), dt),
+      anus: easeOpening(this.openingShown.anus, meant(filled.anus, 0.12 * butt), dt),
+    };
+    this.dressers.forEach((dresser, index) =>
+      index === this.active ? dresser.setOpening(this.openingShown.vulva, this.openingShown.anus) : dresser.setOpening(0, 0),
+    );
   }
 
   /** What men have left on her tonight, stage by stage, as last shown; "" until it is first shown. */

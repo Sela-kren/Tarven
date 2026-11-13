@@ -47,13 +47,31 @@ export interface Garment {
   styled?: boolean;
 }
 
-/** The pirate's rig that both bodies have. The hat keeps its braid and feather, so it stays on with them. */
+/**
+ * The pirate's rig that both bodies have. The hat keeps its braid and feather, so it stays on with them. The noble's
+ * clothes are edged in the same braid, and his cap is the hat.
+ */
 const PIRATE_GARMENTS: readonly Garment[] = [
+  // The pirate's sash, and the bandits' red scarf or bandana.
   { id: "sash", label: "sash", layer: "accessory", region: "waist" },
   { id: "breeches", label: "breeches", layer: "outer", region: "bottom" },
   { id: "boots", label: "boots", layer: "outer", region: "feet", keep: "the shoes inside them never come off either" },
   { id: "hat", label: "hat", layer: "accessory", region: "top", keep: "its braid and feather are sewn on and would be left hanging in the air" },
-  { id: "braid", label: "braid", layer: "accessory", region: "top", keep: "it's sewn round the hat's brim" },
+  { id: "braid", label: "braid", layer: "accessory", region: "top", keep: "it's sewn along the edges of what it trims" },
+];
+
+/**
+ * The adventuring party's kit that both bodies have, which only guests wear for now. The mantle comes off first,
+ * and the tabard and plate before the mail under them.
+ */
+const ADVENTURER_GARMENTS: readonly Garment[] = [
+  { id: "cloak", label: "cloak", layer: "accessory", region: "top" },
+  { id: "bracers", label: "bracers", layer: "accessory", region: "top" },
+  { id: "tabard", label: "tabard", layer: "accessory", region: "top" },
+  { id: "plate", label: "armour", layer: "accessory", region: "top" },
+  { id: "jerkin", label: "jerkin", layer: "outer", region: "top" },
+  { id: "mail", label: "mail shirt", layer: "outer", region: "top" },
+  { id: "robe", label: "robe", layer: "outer", region: "top" },
 ];
 
 export const WARDROBE: Record<WardrobeBody, readonly Garment[]> = {
@@ -78,7 +96,11 @@ export const WARDROBE: Record<WardrobeBody, readonly Garment[]> = {
     { id: "gems", label: "gems", layer: "accessory", region: "top", keep: "they're set in her jewellery and necklace" },
     // The pirate's rig, which only guests wear for now. Her corset is the bodice and her shirt the chemise.
     ...PIRATE_GARMENTS,
-    { id: "feather", label: "feather", layer: "accessory", region: "top", keep: "it's pinned in her hat" },
+    { id: "feather", label: "feather", layer: "accessory", region: "top", keep: "it's pinned in her hat, or on her arrows" },
+    // The adventuring party's kit, which only guests wear for now. The archer's shirt is the chemise, her strap goes
+    // with the belt and her arrows' fletching with the feather; the mage's hat is the hat. The noble's gown is her
+    // bodice and skirt, with the girdle and jewellery.
+    ...ADVENTURER_GARMENTS,
   ],
   Male: [
     {
@@ -96,6 +118,13 @@ export const WARDROBE: Record<WardrobeBody, readonly Garment[]> = {
     { id: "shirt", label: "shirt", layer: "under", region: "top" },
     { id: "waistcoat", label: "waistcoat", layer: "outer", region: "top" },
     ...PIRATE_GARMENTS.filter((g) => g.id !== "boots"),
+    // The adventuring party's kit and the noble's clothes, which only guests wear for now. His cap and the mage's
+    // hat are the pirate's hat; the mage's amulet and cleric's sun are the chain.
+    ...ADVENTURER_GARMENTS,
+    { id: "doublet", label: "doublet", layer: "outer", region: "top" },
+    { id: "feather", label: "feather", layer: "accessory", region: "top", keep: "it's pinned in his cap, or on his arrows" },
+    { id: "jewels", label: "chain", layer: "accessory", region: "top", keep: "his chain of office is his; dares are for clothes" },
+    { id: "gems", label: "gems", layer: "accessory", region: "top", keep: "they're set in his chain" },
   ],
 };
 

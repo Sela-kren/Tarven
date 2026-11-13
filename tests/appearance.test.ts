@@ -28,6 +28,11 @@ import {
   nearestStop,
   newLook,
   outfitOf,
+  ADVENTURER_OUTFITS,
+  BANDIT_OUTFITS,
+  GUEST_LOOKS,
+  NOBLE_OUTFITS,
+  guestOutfitColors,
   PIRATE_LOOKS,
   pirateGuestColors,
   playerOutfits,
@@ -664,14 +669,19 @@ describe("outfits", () => {
     expect([mesh.visible, dirndl.visible]).toEqual([false, true]);
   });
 
-  it("keeps the pirate's rig for guests: never offered, rolled or loaded for a player", () => {
+  it("keeps the guests' outfits for guests: never offered, rolled or loaded for a player", () => {
     for (const body of ["Female", "Male"] as const) {
-      expect(outfitOf(body, { outfit: "pirate" }).mesh).toBe("Pirate");
-      expect(playerOutfits(body).map((o) => o.id)).not.toContain("pirate");
-      expect(readLook({ outfit: "pirate" }, body)!.outfit).toBeUndefined();
-      let seed = 0;
-      const random = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
-      for (let i = 0; i < 50; i++) expect(randomLook(body, random).outfit).not.toBe("pirate");
+      for (const [id, mesh] of [
+        ["pirate", "Pirate"], ["archer", "Archer"], ["warrior", "Warrior"], ["mage", "Mage"], ["cleric", "Cleric"],
+        ["noble", "Noble"], ["servant", "Servant"], ["rogue", "Rogue"], ["brute", "Brute"],
+      ] as const) {
+        expect(outfitOf(body, { outfit: id }).mesh).toBe(mesh);
+        expect(playerOutfits(body).map((o) => o.id)).not.toContain(id);
+        expect(readLook({ outfit: id }, body)!.outfit).toBeUndefined();
+        let seed = 0;
+        const random = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+        for (let i = 0; i < 50; i++) expect(randomLook(body, random).outfit).not.toBe(id);
+      }
     }
   });
 
@@ -682,6 +692,31 @@ describe("outfits", () => {
       for (const look of looks) for (const id of Object.keys(look)) expect(clothes, `${body}: ${id}`).toContain(id);
       expect(new Set(looks.map((look) => JSON.stringify(look))).size).toBe(PIRATE_LOOKS);
       expect(pirateGuestColors(body, PIRATE_LOOKS)).toEqual(looks[0]);
+    }
+  });
+
+  it("colours the adventurers' and nobles' clothes in a few ways too, all from the body's own clothes colours", () => {
+    for (const body of ["Female", "Male"] as const) {
+      const clothes = LOOK_OPTIONS[body].colors.filter((c) => c.tab === "clothes").map((c) => c.id);
+      for (const outfit of [...ADVENTURER_OUTFITS, ...NOBLE_OUTFITS, ...BANDIT_OUTFITS]) {
+        const looks = Array.from({ length: GUEST_LOOKS }, (_, i) => guestOutfitColors(body, outfit, i));
+        for (const look of looks) for (const id of Object.keys(look)) expect(clothes, `${body} ${outfit}: ${id}`).toContain(id);
+        expect(new Set(looks.map((look) => JSON.stringify(look))).size).toBe(GUEST_LOOKS);
+        expect(guestOutfitColors(body, outfit, -1)).toEqual(looks[GUEST_LOOKS - 1]);
+      }
+    }
+    // Her gown and robes reach the floor but have stockings under them; the archer's breeches and warrior's mail have none.
+    for (const outfit of ["noble", "mage", "cleric"]) expect(legwearOf("Female", { outfit })!.id).toBe("kneehigh");
+    for (const outfit of ["archer", "warrior"]) expect(legwearOf("Female", { outfit })).toBeNull();
+    // A party is four callings, each with an outfit on both bodies.
+    expect(ADVENTURER_OUTFITS).toEqual(["archer", "warrior", "mage", "cleric"]);
+    // The servant is her maid's dress and his footman's livery; the bandits all wear the gang's red.
+    expect(outfitOf("Female", { outfit: "servant" }).label).toBe("Maid");
+    expect(outfitOf("Male", { outfit: "servant" }).label).toBe("Footman");
+    for (const body of ["Female", "Male"] as const) {
+      for (const outfit of BANDIT_OUTFITS) {
+        for (let i = 0; i < GUEST_LOOKS; i++) expect(guestOutfitColors(body, outfit, i).sash).toBe("#8c2020");
+      }
     }
   });
 
