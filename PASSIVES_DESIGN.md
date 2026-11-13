@@ -391,6 +391,13 @@ Her private epilogue comes from Lewdness × Corruption and is shown next to the 
   - New passive group, After Hours: Night Owl, Good Sport, House Champion, Queen of the Night, Never Holds Back, Cool as Ice, Edge Walker, Bare and Bold, Clever Fingers, Sweet Tooth, Born Rider.
   - Brawls never turn into a duel: the two are separate.
 
+- [x] **Her two sides, her hold, and brawl passives** (Karryn's Softcore/Hardcore Masochist and Sadist, resistances, and combat passives). 20 new passives.
+  - **Rule for every passive:** it must change something about her (an effect or a skill level), and its count must be reachable in play. `tests/passivesides.test.ts` checks both for the whole list.
+  - **Two sides:** her sub side is rough touches let + times she gave in (Consent off); her dom side is slaps + times she faced them down. Soft Touch / Easy Prey need the sub side 10 / 25 ahead; Stern Keeper / Rules the Room need the dom side 10 / 25 ahead. Sub weakens her hold, dom strengthens it.
+  - **Her hold, part by part:** the Consent-off check's hold now takes passives into account (`hold`, `holdOf`). One passive per body group at 40–60 lets weakens the hold on that part by 1, and each also has a benefit that works with Consent on. Loose Laces (clothes, −1), Buttoned Up (clothes kept 15 times, +2) and Guarded (60 turned away, +1 everywhere).
+  - **Brawl:** Wrestler (land 15 grapples), Hold Breaker (held 15 times), Thick Skin (take 20 grapples), Stinging Reply (slap 5 reaches mid-brawl), Scrapper's Blush (let 5 reaches mid-brawl, her choice).
+  - New records: clothesKept, grapplesLanded, grapplesTaken, timesHeld, brawlSlaps, brawlLets.
+
 ### Next
 
 **4. Titles** (Karryn's Prison style)

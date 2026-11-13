@@ -163,7 +163,7 @@ export function showDevPanel(game: Game, back: () => void): void {
     ? [
         `Last reach: ${last.guest} (${last.kind}, likes ${last.prefers})${last.brawl ? " in a brawl" : ""} · ${last.touch} on the ${last.region}, boldness ${last.facts.level}`,
         `Their push ${num(last.check.push)} = nerve ${last.facts.nerve} + taste ${last.facts.prefers ? PREFER_PUSH : 0} + exposure ${last.facts.exposed}`,
-        `Her hold ${num(last.check.hold)} = ${HOLD_BASE} + boldness ${last.facts.level}${last.check.clothing ? ` + clothing ${last.check.clothing}` : ""} − desire ${num(last.check.want.desire)} − passives ${num(last.check.want.passives)} − experience ${num(last.check.want.experience)} − skill ${num(last.check.want.skill)} − exhibition ${num(last.check.want.exhibition)}`,
+        `Her hold ${num(last.check.hold)} = ${HOLD_BASE} + boldness ${last.facts.level}${last.check.clothing ? ` + clothing ${last.check.clothing}` : ""}${last.check.passives ? ` ${last.check.passives > 0 ? "+" : "−"} passives ${num(Math.abs(last.check.passives))}` : ""} − desire ${num(last.check.want.desire)} − passives ${num(last.check.want.passives)} − experience ${num(last.check.want.experience)} − skill ${num(last.check.want.skill)} − exhibition ${num(last.check.want.exhibition)}`,
         `Check: ${last.check.lands ? "push wins" : "hold stands"} · ${
           last.landed
             ? "it played out without asking"

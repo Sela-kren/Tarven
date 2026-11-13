@@ -49,6 +49,11 @@ export const ACT_SKILLS: readonly { id: ActSkill; act?: UpstairsAct; name: strin
   { id: "upAnal", name: "Anal" },
 ];
 
+/** A stat's or skill's name, for the level-up card. */
+export function nameOfSkill(id: StatId | SkillId): string {
+  return STATS.find((s) => s.id === id)?.name ?? BODY_SKILLS.find((s) => s.id === id)?.name ?? ACT_SKILLS.find((s) => s.id === id)?.name ?? id;
+}
+
 export const ACT_SKILL_OF: Record<UpstairsAct, ActSkill> = {
   kiss: "upKiss",
   hands: "upHands",

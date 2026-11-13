@@ -119,6 +119,15 @@ export interface Records {
    */
   subWins: number;
   domWins: number;
+  /** Clothing reaches she turned away (pulled away from or slapped): she kept it on. */
+  clothesKept: number;
+  /** Brawls: grapples of hers that landed, theirs that landed on her, and times they had hold of her. */
+  grapplesLanded: number;
+  grapplesTaken: number;
+  timesHeld: number;
+  /** A foe's reach mid-brawl: slapped away, or let happen (her choice, on the touch screen). */
+  brawlSlaps: number;
+  brawlLets: number;
   /** Nights each meter reached the top. */
   maxed: Partial<Record<Meter, number>>;
   /** Nights every meter reached 60. */
@@ -168,6 +177,12 @@ export function newRecords(): Records {
     rough: 0,
     subWins: 0,
     domWins: 0,
+    clothesKept: 0,
+    grapplesLanded: 0,
+    grapplesTaken: 0,
+    timesHeld: 0,
+    brawlSlaps: 0,
+    brawlLets: 0,
     maxed: {},
     allHigh: 0,
     clothesLost: 0,
@@ -304,6 +319,21 @@ export interface Effects {
   duelUndress: number;
   /** Extra willpower at the top (see willpower.ts). */
   willMax: number;
+  /**
+   * Her hold in the Consent-off check (touchsettings.ts), Karryn's resistances: added to it everywhere, and for each
+   * kind of touch. Negative is weaker: touches get past her more easily.
+   */
+  hold: number;
+  holdOf: Partial<Record<TouchRegion, number>>;
+  /** In a brawl: extra chance her grapples land; less hurt from theirs; how much of being held she shrugs off. */
+  grappleHit: number;
+  grappleGuard: number;
+  heldEase: number;
+  /** In a brawl: extra damage when she slaps away a reach; how much likelier a foe reaches instead of swinging. */
+  brawlSlap: number;
+  brawlReach: number;
+  /** In a brawl: how much less her desire gets in her way, as a fraction. */
+  fightDesire: number;
 }
 
 export function noEffects(): Effects {
@@ -362,6 +392,14 @@ export function noEffects(): Effects {
     duelEdge: 0,
     duelUndress: 0,
     willMax: 0,
+    hold: 0,
+    holdOf: {},
+    grappleHit: 0,
+    grappleGuard: 0,
+    heldEase: 0,
+    brawlSlap: 0,
+    brawlReach: 0,
+    fightDesire: 0,
   };
 }
 
@@ -393,6 +431,23 @@ const lets = (f: PassiveFacts, ...regions: TouchRegion[]) => regions.reduce((sum
 const kindsOf = (f: PassiveFacts, ...regions: TouchRegion[]) => new Set(regions.flatMap((r) => f.records.kinds[r] ?? [])).size;
 const acts = (f: PassiveFacts, ...which: UpstairsAct[]) => which.reduce((sum, a) => sum + (f.records.acts[a] ?? 0), 0);
 const maxed = (f: PassiveFacts, meter: Meter) => f.records.maxed[meter] ?? 0;
+/**
+ * Her two sides, Karryn's Masochism and Sadism levels: what counts toward each (rough touches she let happen and
+ * giving in with Consent off; slaps and facing them down), and how far one runs ahead of the other.
+ */
+const subSide = (f: PassiveFacts) => f.records.rough + f.records.subWins;
+const domSide = (f: PassiveFacts) => f.records.slapped + f.records.domWins;
+const subLead = (f: PassiveFacts) => Math.max(0, subSide(f) - domSide(f));
+const domLead = (f: PassiveFacts) => Math.max(0, domSide(f) - subSide(f));
+/** Adds the same to her hold for each kind of touch given. */
+const holdFor = (e: Effects, n: number, ...regions: TouchRegion[]) => {
+  for (const r of regions) e.holdOf[r] = (e.holdOf[r] ?? 0) + n;
+};
+/** Adds the same gold to each kind of touch given. */
+const goldFor = (e: Effects, n: number, ...regions: TouchRegion[]) => {
+  for (const r of regions) e.touchGold[r] = (e.touchGold[r] ?? 0) + n;
+};
+const EVERY_TOUCH: readonly TouchRegion[] = ["hand", "face", "hair", "shoulder", "waist", "rear", "chest", "lap", "lips", "neck", "thigh", "clothes", "intimate"];
 
 // ---------- The passives ----------
 
@@ -1798,6 +1853,294 @@ export const PASSIVES: readonly PassiveDef[] = [
     lewd: 4,
     thought: "(I set the pace now.)",
   },
+
+  // ---- Her two sides: Karryn's Softcore and Hardcore Masochist and Sadist, one side running ahead of the other ----
+  {
+    id: "softTouch",
+    name: "Soft Touch",
+    group: "masochism",
+    need: "Get rough or give in 10 more times than you slap or face them down",
+    progress: (f) => count(subLead(f), 10),
+    benefit: "Pleasure builds 10% faster; every rough touch you allow adds +3 to every desire",
+    cost: "Your hold is 1 weaker on every touch (Consent off)",
+    effect: (e) => {
+      e.pleasure += 0.1;
+      e.roughMeters += 3;
+      e.hold -= 1;
+    },
+    lewd: 4,
+    thought: "(I don't fight it the way I used to. I don't want to.)",
+  },
+  {
+    id: "easyPrey",
+    name: "Easy Prey",
+    group: "masochism",
+    need: "Get rough or give in 25 more times than you slap or face them down, with lewdness 20 or more",
+    progress: (f) => count(subLead(f), 25),
+    also: (f) => f.lewdness >= 20,
+    benefit: "Every touch you allow pays +1 gold; pleasure builds 15% faster",
+    cost: "Your hold is 2 weaker on every touch; guests are bolder (+1 nerve)",
+    effect: (e) => {
+      goldFor(e, 1, ...EVERY_TOUCH);
+      e.pleasure += 0.15;
+      e.hold -= 2;
+      e.nerve += 1;
+    },
+    lewd: 8,
+    thought: "(They all know I'll give in. So do I.)",
+  },
+  {
+    id: "sternKeeper",
+    name: "Stern Keeper",
+    group: "sadism",
+    need: "Slap or face them down 10 more times than you get rough or give in",
+    progress: (f) => count(domLead(f), 10),
+    benefit: "Your hold is 1 stronger on every touch; +1 respect for each pull away",
+    cost: "Guests reach for you 10% less often (fewer touch tips)",
+    effect: (e) => {
+      e.hold += 1;
+      e.pullRespect += 1;
+      e.reach -= 0.1;
+    },
+    thought: "(One look, and they think twice. Good.)",
+  },
+  {
+    id: "rulesTheRoom",
+    name: "Rules the Room",
+    group: "sadism",
+    need: "Slap or face them down 25 more times than you get rough or give in",
+    progress: (f) => count(domLead(f), 25),
+    benefit: "Your hold is 2 stronger on every touch; guests are meeker (-1 nerve); +2 fame a slap",
+    cost: "Every desire fills 10% slower",
+    effect: (e) => {
+      e.hold += 2;
+      e.nerve -= 1;
+      e.slapFame += 2;
+      for (const m of METERS) e.sens[m] -= 0.1;
+    },
+    lewd: 2,
+    thought: "(This is my house. They touch when I say so.)",
+  },
+
+  // ---- Her hold, part by part: Karryn's resistances. Let a part be touched enough, and it gives way easier ----
+  {
+    id: "openPalms",
+    name: "Open Palms",
+    group: "hands",
+    need: "Let guests hold your hand 50 times",
+    progress: (f) => count(lets(f, "hand"), 50),
+    benefit: "Hand touches pay +1 gold",
+    cost: "Your hold on hand touches is 1 weaker (Consent off)",
+    effect: (e) => {
+      goldFor(e, 1, "hand");
+      holdFor(e, -1, "hand");
+    },
+    lewd: 2,
+    thought: "(I hold my hand out before they even ask now.)",
+  },
+  {
+    id: "softMouth",
+    name: "Soft Mouth",
+    group: "mouth",
+    need: "Let guests touch your face or kiss you 50 times",
+    progress: (f) => count(lets(f, "face", "lips"), 50),
+    benefit: "Mouth desire starts each night at +5",
+    cost: "Your hold on face and lip touches is 1 weaker (Consent off)",
+    effect: (e) => {
+      e.start.mouth += 5;
+      holdFor(e, -1, "face", "lips");
+    },
+    lewd: 3,
+    thought: "(My lips part on their own when someone leans in.)",
+  },
+  {
+    id: "bareThroat",
+    name: "Bare Throat",
+    group: "neck",
+    need: "Let guests touch your neck, hair or shoulders 50 times",
+    progress: (f) => count(lets(f, "neck", "hair", "shoulder"), 50),
+    benefit: "Body desire fills 10% faster",
+    cost: "Your hold on neck, hair and shoulder touches is 1 weaker (Consent off)",
+    effect: (e) => {
+      e.sens.body += 0.1;
+      holdFor(e, -1, "neck", "hair", "shoulder");
+    },
+    lewd: 2,
+    thought: "(I tip my head aside without thinking. It's an invitation, and they know it.)",
+  },
+  {
+    id: "needyChest",
+    name: "Needy Chest",
+    group: "breasts",
+    need: "Let guests touch your chest 40 times",
+    progress: (f) => count(lets(f, "chest"), 40),
+    benefit: "Breasts desire starts each night at +5",
+    cost: "Your hold on chest touches is 1 weaker (Consent off)",
+    effect: (e) => {
+      e.start.breasts += 5;
+      holdFor(e, -1, "chest");
+    },
+    lewd: 4,
+    thought: "(They ache by the end of the night if nobody's touched them.)",
+  },
+  {
+    id: "looseHips",
+    name: "Loose Hips",
+    group: "hips",
+    need: "Let guests hold your waist 60 times",
+    progress: (f) => count(lets(f, "waist"), 60),
+    benefit: "Waist touches pay +1 gold",
+    cost: "Your hold on waist touches is 1 weaker (Consent off)",
+    effect: (e) => {
+      goldFor(e, 1, "waist");
+      holdFor(e, -1, "waist");
+    },
+    lewd: 2,
+    thought: "(I sway past the tables slow, so the hands can find me.)",
+  },
+  {
+    id: "boldBehind",
+    name: "Bold Behind",
+    group: "butt",
+    need: "Let guests touch your rear 40 times",
+    progress: (f) => count(lets(f, "rear"), 40),
+    benefit: "Butt desire starts each night at +5",
+    cost: "Your hold on rear touches is 1 weaker (Consent off)",
+    effect: (e) => {
+      e.start.butt += 5;
+      holdFor(e, -1, "rear");
+    },
+    lewd: 4,
+    thought: "(I bend over the far tables on purpose now.)",
+  },
+  {
+    id: "openKnees",
+    name: "Open Knees",
+    group: "thighs",
+    need: "Let guests have your lap or thighs 40 times",
+    progress: (f) => count(lets(f, "thigh", "lap"), 40),
+    benefit: "Pussy desire starts each night at +5",
+    cost: "Your hold on lap and thigh touches is 1 weaker (Consent off)",
+    effect: (e) => {
+      e.start.pussy += 5;
+      holdFor(e, -1, "thigh", "lap");
+    },
+    lewd: 4,
+    thought: "(My knees part the moment a hand lands on them.)",
+  },
+  {
+    id: "meltingPoint",
+    name: "Melting Point",
+    group: "pussy",
+    need: "Let guests touch you there 40 times",
+    progress: (f) => count(lets(f, "intimate"), 40),
+    benefit: "Pussy desire fills 15% faster",
+    cost: "Your hold on touches there is 1 weaker (Consent off)",
+    effect: (e) => {
+      e.sens.pussy += 0.15;
+      holdFor(e, -1, "intimate");
+    },
+    lewd: 6,
+    thought: "(One touch there and I'm gone. Everyone can tell.)",
+  },
+  {
+    id: "looseLaces",
+    name: "Loose Laces",
+    group: "exhibition",
+    need: "Lose 20 pieces of clothing to guests",
+    progress: (f) => count(f.records.clothesLost, 20),
+    benefit: "+1 gold on each serve while you've lost a piece",
+    cost: "Your hold on your clothes is 1 weaker (Consent off)",
+    effect: (e) => {
+      e.strippedGold += 1;
+      holdFor(e, -1, "clothes");
+    },
+    lewd: 4,
+    thought: "(I tie everything loose now. Easier for them. Easier for me.)",
+  },
+  {
+    id: "buttonedUp",
+    name: "Buttoned Up",
+    group: "composure",
+    need: "Turn away 15 guests going for your clothes",
+    progress: (f) => count(f.records.clothesKept, 15),
+    benefit: "Your hold on your clothes is 2 stronger (Consent off); +1 respect for each pull away",
+    effect: (e) => {
+      holdFor(e, 2, "clothes");
+      e.pullRespect += 1;
+    },
+    thought: "(Every lace double-knotted. Let them try.)",
+  },
+  {
+    id: "guarded",
+    name: "Guarded",
+    group: "composure",
+    need: "Pull away from or slap 60 guests",
+    progress: (f) => count(f.records.pulled + f.records.slapped, 60),
+    benefit: "Your hold is 1 stronger on every touch (Consent off); +5 willpower",
+    effect: (e) => {
+      e.hold += 1;
+      e.willMax += 5;
+    },
+    thought: "(I've said no so often it doesn't cost me anything any more.)",
+  },
+
+  // ---- Brawls: the grapples, theirs and hers, and a foe's reach mid-fight ----
+  {
+    id: "wrestler",
+    name: "Wrestler",
+    group: "brawler",
+    need: "Land 15 grapples in brawls (grab, headlock, hair-pull, tackle)",
+    progress: (f) => count(f.records.grapplesLanded, 15),
+    benefit: "Your grapples are 10% likelier to land",
+    effect: (e) => (e.grappleHit += 0.1),
+    thought: "(Get hold of them first, and the fight's half won.)",
+  },
+  {
+    id: "holdBreaker",
+    name: "Hold Breaker",
+    group: "brawler",
+    need: "Get caught in a brawler's hold 15 times",
+    progress: (f) => count(f.records.timesHeld, 15),
+    benefit: "Being held throws you off half as much",
+    effect: (e) => (e.heldEase += 0.5),
+    thought: "(I know every way out of a grip now.)",
+  },
+  {
+    id: "thickSkin",
+    name: "Thick Skin",
+    group: "brawler",
+    need: "Take 20 grapples in brawls",
+    progress: (f) => count(f.records.grapplesTaken, 20),
+    benefit: "Their grapples do 1 less damage",
+    effect: (e) => (e.grappleGuard += 1),
+    thought: "(Squeeze all you like. I've had worse.)",
+  },
+  {
+    id: "stingingReply",
+    name: "Stinging Reply",
+    group: "brawler",
+    need: "Slap away 5 reaches in the middle of a brawl",
+    progress: (f) => count(f.records.brawlSlaps, 5),
+    benefit: "A slap mid-brawl hits for 2 more",
+    effect: (e) => (e.brawlSlap += 2),
+    thought: "(Reach for me in a fight, and you'll get the back of my hand.)",
+  },
+  {
+    id: "scrappersBlush",
+    name: "Scrapper's Blush",
+    group: "brawler",
+    need: "Let 5 reaches happen in the middle of a brawl",
+    progress: (f) => count(f.records.brawlLets, 5),
+    benefit: "Your desire gets in your way 25% less in a fight",
+    cost: "Brawlers reach for you more often (+10%)",
+    effect: (e) => {
+      e.fightDesire += 0.25;
+      e.brawlReach += 0.1;
+    },
+    lewd: 3,
+    thought: "(A fight gets my blood up. All of it.)",
+  },
 ];
 
 /**
@@ -1916,6 +2259,12 @@ export function readProgress(raw: unknown): ProgressSave {
       "rough",
       "subWins",
       "domWins",
+      "clothesKept",
+      "grapplesLanded",
+      "grapplesTaken",
+      "timesHeld",
+      "brawlSlaps",
+      "brawlLets",
       "allHigh",
       "clothesLost",
       "bareNights",

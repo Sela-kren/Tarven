@@ -83,6 +83,7 @@ import {
   charmBonus,
   levelOf,
   mindBonus,
+  nameOfSkill,
   readExperience,
   SKILL_OF_REGION,
   STATS,
@@ -137,6 +138,8 @@ export type Held = Item | "dirty";
  * the night's service and last call. "bedtime" is the closed tavern after last call, until you go to bed,
  * and "dawn" is the morning after. The world clock, not the tavern, decides when night falls. */
 export type Phase = "day" | "dusk" | "service" | "lastcall" | "bedtime" | "dawn" | "ended";
+/** Something she gained, for the game to show as it happens: a stat or skill level, or her kink changing. */
+export type Gain = { kind: "level"; id: StatId | SkillId; name: string; level: number } | { kind: "kink"; from: Kink; to: Kink };
 export type GuestStatus = "arriving" | "waiting" | "eating" | "leaving";
 export type PotState = "empty" | "cooking" | "ready" | "burnt";
 export type Target =
@@ -1176,6 +1179,8 @@ export class Tavern {
   private readonly spiltAt = new Set<number>();
   private readonly messages: string[] = [];
   private readonly unlocks: PassiveDef[] = [];
+  /** Level ups and a change in her kink, for the game to show as they happen (see takeGains). */
+  private readonly gains: Gain[] = [];
   /** Seconds until passives are checked again during the night. */
   private passiveCheck = 0;
   private readonly cues: Cue[] = [];
@@ -1277,6 +1282,7 @@ export class Tavern {
    */
   private awardPassives(): void {
     const earned = newlyEarned(this.passives, this.passiveFacts());
+    const kinkBefore = this.kink;
     for (const def of earned) {
       this.passives.add(def.id);
       this.corruption += def.corruption ?? 0;
@@ -1284,6 +1290,8 @@ export class Tavern {
       this.unlocks.push(def);
     }
     if (earned.length > 0) this.effects = effectsOf(this.passives);
+    // Her new passives can tip her kink over to another: how she talks after the Consent check changes with it.
+    if (this.kink !== kinkBefore) this.gains.push({ kind: "kink", from: kinkBefore, to: this.kink });
     // Tonight's records count toward her lewdness even when no new passive came with them.
     this.unlockBrothel();
   }
@@ -2050,7 +2058,17 @@ export class Tavern {
   }
 
   private gainXp(id: StatId | SkillId, n: number): void {
-    if (n > 0) this.xp[id] = (this.xp[id] ?? 0) + n;
+    if (n <= 0) return;
+    const before = levelOf(this.xp[id] ?? 0);
+    this.xp[id] = (this.xp[id] ?? 0) + n;
+    const after = levelOf(this.xp[id]);
+    // A new level: the game shows it, so the player knows what practice has done for her.
+    if (after > before) this.gains.push({ kind: "level", id, name: nameOfSkill(id), level: this.level(id) });
+  }
+
+  /** Level ups and kink changes since the game last asked. Reading them empties the queue. */
+  takeGains(): Gain[] {
+    return this.gains.splice(0);
   }
 
   /** A brawl with nobody in the room, from the B key in development, to try the fight screen. */
@@ -2140,6 +2158,12 @@ export class Tavern {
       stare: e.fightStare,
       will: this.willpower,
       maxWill: this.maxWillpower,
+      grappleHit: e.grappleHit,
+      grappleGuard: e.grappleGuard,
+      heldEase: e.heldEase,
+      brawlSlap: e.brawlSlap,
+      brawlReach: e.brawlReach,
+      fightDesire: e.fightDesire,
     };
   }
 
@@ -2187,6 +2211,9 @@ export class Tavern {
     this.gainXp("endurance", 3);
     const r = this.records;
     r.dodges += fight.dodges;
+    r.grapplesLanded += fight.grapplesLanded;
+    r.grapplesTaken += fight.grapplesTaken;
+    r.timesHeld += fight.timesHeld;
     const guest = this.guests.find((g) => g.id === fight.guestId);
     let text: string;
     if (fight.outcome === "won" && fight.spent) {
@@ -2612,6 +2639,7 @@ export class Tavern {
       nerve: guestNerve,
       prefers: preferred === METER_OF[touch.region],
       strip: touch.strip === true,
+      passiveHold: this.effects.hold + (this.effects.holdOf[touch.region] ?? 0),
     };
   }
 
@@ -2628,6 +2656,10 @@ export class Tavern {
     // Letting it, leaning in or giving in: all three are her yes.
     const took = touchLands(answer);
     const r = this.records;
+    // A reach mid-brawl, slapped away or let happen; a garment she kept on. Her answers, counted for her passives.
+    if (chat.brawl && took) r.brawlLets++;
+    if (chat.brawl && answer === "slap") r.brawlSlaps++;
+    if (touch.strip && !took) r.clothesKept++;
     let gold = out.gold;
     let respect = out.respect;
     let fame = out.fame;

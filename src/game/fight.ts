@@ -176,6 +176,16 @@ export interface FighterStats {
   pleasure?: number;
   /** The part of her the foe's type goes for. */
   prefers?: DuelArea;
+  /**
+   * From her passives: extra chance her grapples land; less hurt from theirs; the share of being held she shrugs
+   * off; extra damage from a slap mid-brawl; how much likelier a foe reaches; how much less desire gets in her way.
+   */
+  grappleHit?: number;
+  grappleGuard?: number;
+  heldEase?: number;
+  brawlSlap?: number;
+  brawlReach?: number;
+  fightDesire?: number;
 }
 
 export interface FightChoice {
@@ -214,6 +224,10 @@ export class Fight {
   readonly xp: Partial<Record<StatId, number>> = {};
   /** Dodges that worked, for the records. */
   dodges = 0;
+  /** Her grapples that landed, theirs that landed on her, and times they had hold of her: for the records. */
+  grapplesLanded = 0;
+  grapplesTaken = 0;
+  timesHeld = 0;
   /** Her willpower: staring down and steeling herself spend it, blows that land wear it down. */
   will: number;
   readonly maxWill: number;
@@ -262,7 +276,18 @@ export class Fight {
 
   /** What her desire costs her right now; nothing when desire plays no part. */
   get penalties(): DesirePenalties {
-    return this.desire ? desirePenalties(this.desire) : { accuracy: 0, dodge: 0, voice: 0, damage: 0, grapple: 0, reach: 0 };
+    if (!this.desire) return { accuracy: 0, dodge: 0, voice: 0, damage: 0, grapple: 0, reach: 0 };
+    // Passives (Scrapper's Blush) take some of the sting out of wanting it.
+    const keep = Math.max(0, 1 - (this.stats.fightDesire ?? 0));
+    const p = desirePenalties(this.desire);
+    return {
+      accuracy: p.accuracy * keep,
+      dodge: p.dodge * keep,
+      voice: p.voice * keep,
+      damage: Math.round(p.damage * keep),
+      grapple: p.grapple * keep,
+      reach: p.reach * keep,
+    };
   }
 
   /** Any desire at 80 or more. */
@@ -289,14 +314,16 @@ export class Fight {
     const end = (levels.endurance - 1) * 0.02;
     // In their grip, everything but a dodge is harder; and wanting it throws her aim off (Mouth desire).
     const p = this.penalties;
-    const off = (this.held ? HELD_CHANCE : 0) + p.accuracy;
+    // Hold Breaker shrugs off part of being held; Wrestler makes her grapples likelier.
+    const off = (this.held ? HELD_CHANCE * Math.max(0, 1 - (this.stats.heldEase ?? 0)) : 0) + p.accuracy;
+    const grip = this.stats.grappleHit ?? 0;
     return {
       strike: Math.min(0.95, 0.7 + agi) - off,
       shove: Math.min(0.95, 0.8 + agi) - off,
-      grab: Math.min(0.95, 0.75 + agi) - off,
-      headlock: Math.min(0.95, 0.65 + str) - off,
-      hairpull: Math.min(0.95, 0.85 + agi) - off,
-      tackle: Math.min(0.9, 0.55 + str + end) - off,
+      grab: Math.min(0.95, 0.75 + agi + grip) - off,
+      headlock: Math.min(0.95, 0.65 + str + grip) - off,
+      hairpull: Math.min(0.95, 0.85 + agi + grip) - off,
+      tackle: Math.min(0.9, 0.55 + str + end + grip) - off,
       dodge: 1,
       // With no willpower left she's rattled, and it shows in her voice; so does wanting it (Pussy desire).
       talk: clamp01(
@@ -420,6 +447,7 @@ export class Fight {
         if (roll < c.grab) {
           this.foeStamina = Math.max(0, this.foeStamina - 1);
           this.holding = true;
+          this.grapplesLanded++;
           this.say("grab:hit", "You catch their wrist and twist it up behind them. (-1)");
           this.gain("strength", 1);
           this.gain("agility", 1);
@@ -432,6 +460,7 @@ export class Fight {
           const damage = this.blow(3 + (levels.strength - 1) + this.stats.damage);
           this.foeStamina = Math.max(0, this.foeStamina - damage);
           this.staggered = true;
+          this.grapplesLanded++;
           this.say("headlock:hit", `You get an arm round their neck and squeeze till they sag. (-${damage})`);
           this.gain("strength", 3);
         } else this.say("headlock:miss", "They wrench free before you can lock it.");
@@ -441,6 +470,7 @@ export class Fight {
         if (roll < c.hairpull) {
           this.foeStamina = Math.max(0, this.foeStamina - 2);
           this.foeAccuracy = Math.max(MIN_ACCURACY, this.foeAccuracy - HAIRPULL_ACCURACY);
+          this.grapplesLanded++;
           this.say("hairpull:hit", "You grab a fistful of hair and yank. Their eyes water. (-2)");
           this.gain("agility", 1);
         } else this.say("hairpull:miss", "They jerk their head out of reach.");
@@ -451,6 +481,7 @@ export class Fight {
           const damage = this.blow(4 + (levels.strength - 1) + this.stats.damage);
           this.foeStamina = Math.max(0, this.foeStamina - damage);
           this.staggered = true;
+          this.grapplesLanded++;
           this.say("tackle:hit", `You drive a shoulder into their middle and take them down over a bench. (-${damage})`);
           this.gain("strength", 2);
           this.gain("endurance", 1);
@@ -568,7 +599,7 @@ export class Fight {
     // Her Cock desire draws them on, and once it burns, any foe might.
     const p = this.penalties;
     const tempted = this.stats.workedUp || (this.desire?.cock ?? 0) >= HORNY_AT;
-    if (tempted && this.reaches < MAX_REACHES && this.random() < REACH_IN_BRAWL + p.reach) {
+    if (tempted && this.reaches < MAX_REACHES && this.random() < REACH_IN_BRAWL + p.reach + (this.stats.brawlReach ?? 0)) {
       this.reaches++;
       this.reaching = true;
       this.dodging = false;
@@ -615,8 +646,13 @@ export class Fight {
     this.wander();
     const pick = pickGrapple(this.kind, this.random());
     const def = FOE_GRAPPLES[pick];
-    if (def.holds) this.held = true;
-    hurt(this.foeAttack + def.damage, HIT_WILL * def.will, `their:${pick}`, def.text);
+    this.grapplesTaken++;
+    if (def.holds) {
+      this.held = true;
+      this.timesHeld++;
+    }
+    // Thick Skin: their grapples hurt less.
+    hurt(this.foeAttack + def.damage - (this.stats.grappleGuard ?? 0), HIT_WILL * def.will, `their:${pick}`, def.text);
   }
 
   /** Their hands wander in a grapple: her desire for the part their type goes for rises, and a little all over. */
@@ -637,8 +673,10 @@ export class Fight {
     this.reaching = false;
     this.will = Math.max(0, Math.min(this.maxWill, will));
     if (answer === "slap") {
-      this.foeStamina = Math.max(0, this.foeStamina - 2);
-      this.say("reach:slap", "Your slap rocks them back on their heels. (-2)");
+      // Stinging Reply: a slap mid-brawl hits harder.
+      const sting = 2 + (this.stats.brawlSlap ?? 0);
+      this.foeStamina = Math.max(0, this.foeStamina - sting);
+      this.say("reach:slap", `Your slap rocks them back on their heels. (-${sting})`);
       if (this.foeStamina <= 0) {
         this.say("knockout", "They go down and stay down. A couple of regulars carry them out.");
         this.outcome = "won";

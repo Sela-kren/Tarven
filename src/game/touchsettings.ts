@@ -83,6 +83,8 @@ export interface ImpulseFacts {
   prefers: boolean;
   /** They're after a piece of her clothing: her hold is the stronger for it. */
   strip?: boolean;
+  /** What her passives add to her hold for this touch (Karryn's resistances): negative is weaker. */
+  passiveHold?: number;
 }
 
 /** The check's result: each side's number, what made up hers, and whether the touch lands on its own. */
@@ -95,6 +97,8 @@ export interface ImpulseCheck {
   want: { desire: number; passives: number; experience: number; skill: number; exhibition: number };
   /** What a garment adds to her hold: 0 for anything else. */
   clothing: number;
+  /** What her passives add to her hold (negative takes away). */
+  passives: number;
   lands: boolean;
 }
 
@@ -121,9 +125,10 @@ export function impulseCheck(f: ImpulseFacts): ImpulseCheck {
   };
   const wanting = want.desire + want.passives + want.experience + want.skill + want.exhibition;
   const clothing = f.strip ? STRIP_HOLD : 0;
+  const passives = f.passiveHold ?? 0;
   const push = round1(f.nerve + (f.prefers ? PREFER_PUSH : 0) + f.exposed);
-  const hold = round1(Math.max(0, HOLD_BASE + f.level + clothing - wanting));
-  return { push, hold, want, clothing, lands: push >= hold };
+  const hold = round1(Math.max(0, HOLD_BASE + f.level + clothing + passives - wanting));
+  return { push, hold, want, clothing, passives, lands: push >= hold };
 }
 
 function round1(n: number): number {

@@ -100,6 +100,11 @@ import { METER_MAX } from "./passives";
 import type { Reaction, SoftPart } from "./player";
 import { DialogueBox } from "./dialogue";
 import { MessageLog } from "./messagelog";
+import { UnlockToasts, type Toast } from "./unlocktoast";
+import { KINK_NAMES } from "./kinktalk";
+import { ROLE_PLAYS } from "./duellines";
+import type { PassiveDef, PassiveGroup } from "./passives";
+import { BODY_SKILLS, STATS, type SkillId, type StatId } from "./skills";
 import { AiNarrator } from "./ainarrator";
 import { setFlavorSource } from "./flavor";
 import { SpeechBubbles, type Speaker } from "./speech";
@@ -678,6 +683,8 @@ export class Game {
   private readonly promptEl = element("prompt");
   /** The message log under the stats: news, what was said, and passives as she earns them. */
   private readonly log = new MessageLog(element("stats"));
+  /** Big cards at the top of the screen for a new passive, a level up, or her kink changing. */
+  private readonly toasts = new UnlockToasts();
   /** Extra lines for the log from a local AI model (KoboldCpp), when it's running. N turns it on and off. */
   private readonly narrator = new AiNarrator(
     (text) => this.log.add(text, "ai"),
@@ -1456,10 +1463,33 @@ export class Game {
     }
     for (const def of this.tavern.takeUnlocks()) {
       this.log.addPassive(def);
+      this.toasts.show(passiveToast(def));
       this.narrator.moment(`She has changed: she is now known for "${def.name}" (${def.benefit}).`, "passive");
       // A page turning: it's gone in her journal.
       this.audio.play("page");
     }
+    for (const gain of this.tavern.takeGains()) {
+      if (gain.kind === "level") {
+        this.log.add(`${gain.name} is now level ${gain.level}.`);
+        this.toasts.show({
+          tone: "level",
+          tag: "Level up",
+          title: `${gain.name} ${gain.level}`,
+          lines: [levelLine(gain.id)],
+          icon: PASSIVE_ICONS[groupOfSkill(gain.id)],
+        });
+      } else {
+        this.log.add(`Her kink is now ${KINK_NAMES[gain.to]}.`);
+        this.toasts.show({
+          tone: "kink",
+          tag: "Her kink changed",
+          title: `${KINK_NAMES[gain.from]} → ${KINK_NAMES[gain.to]}`,
+          lines: ["How she and the guests talk after the Consent check follows it now."],
+          icon: gain.to === "plain" ? undefined : PASSIVE_ICONS[gain.to],
+        });
+      }
+    }
+    this.toasts.update(dt);
     this.log.update(dt);
     this.narrator.update(dt);
   }
@@ -2745,4 +2775,32 @@ export class Game {
     this.updateSound();
     this.input.endFrame();
   }
+}
+
+/** The card for a new passive: what it gives, what it costs, and what it opens up (a role-play it unlocks). */
+function passiveToast(def: PassiveDef): Toast {
+  const opens = ROLE_PLAYS.filter((p) => p.needs === def.id).map((p) => `+ Unlocks the "${p.name}" role-play After Hours`);
+  return {
+    tone: "passive",
+    tag: "New passive",
+    title: def.name,
+    lines: [`+ ${def.benefit}`, ...(def.cost ? [`- ${def.cost}`] : []), ...opens],
+    icon: PASSIVE_ICONS[def.group],
+  };
+}
+
+/** What a level in a stat or skill does for her, in a line. */
+function levelLine(id: StatId | SkillId): string {
+  const stat = STATS.find((s) => s.id === id);
+  if (stat) return `+ ${stat.does}`;
+  if (BODY_SKILLS.some((s) => s.id === id)) return "+ Touches there need less desire, warm you faster and pay more";
+  return "+ Better at it upstairs and After Hours";
+}
+
+/** The passive group whose picture fits a stat or skill. */
+function groupOfSkill(id: StatId | SkillId): PassiveGroup {
+  if (id === "charm" || id === "mind") return id;
+  if (id === "strength" || id === "agility" || id === "endurance") return "brawler";
+  if (BODY_SKILLS.some((s) => s.id === id)) return id as PassiveGroup;
+  return "afterHours";
 }
