@@ -415,13 +415,12 @@ export const NIGHTS: NightPlan[] = [
   {
     intro: "Night 1. Ale is at the bar, bread is in the basket by the oven. Take dirty cups and dishes to the wash tub by the barrels. Press E to act.",
     guests: [
-      arrive(3, "farmer", "ale"),
-      arrive(10, "soldier", "ale"),
-      arrive(17, "farmer", "bread", false, 0),
-      arrive(17, "farmer", "ale", false, 0),
-      arrive(25, "smuggler", "ale", true),
-      arrive(33, "fugitive", "bread"),
-      arrive(42, "soldier", "bread"),
+      // A gentle first night: five guests, one every 15 seconds or so, so she can learn the tap, the bread and the tub.
+      arrive(5, "farmer", "ale"),
+      arrive(20, "farmer", "bread", false, 0),
+      arrive(20, "farmer", "ale", false, 0),
+      arrive(40, "smuggler", "ale", true),
+      arrive(60, "soldier", "bread"),
     ],
     parties: [
       {
@@ -462,21 +461,17 @@ export const NIGHTS: NightPlan[] = [
   {
     intro: "Night 2. Stew is on the menu. Start the pot at the fire early, and serve it before it burns.",
     guests: [
-      arrive(2, "farmer", "stew"),
-      arrive(7, "soldier", "ale"),
-      arrive(12, "smuggler", "stew"),
-      arrive(17, "farmer", "bread"),
-      arrive(23, "fugitive", "stew", true, 0),
-      arrive(23, "smuggler", "ale", false, 0),
-      arrive(29, "soldier", "ale", false, 1),
-      arrive(29, "soldier", "bread", false, 1),
-      arrive(35, "farmer", "ale"),
-      arrive(41, "smuggler", "bread"),
-      arrive(45, "adventurer", "ale", false, 2),
-      arrive(45, "adventurer", "stew", false, 2),
-      arrive(45, "adventurer", "bread", false, 2),
-      arrive(45, "adventurer", "ale", false, 2),
-      arrive(48, "soldier", "stew"),
+      // Ten guests over 70 seconds: the two tables first, and the adventurers' party of four last, once the room has cleared.
+      arrive(5, "farmer", "stew"),
+      arrive(18, "fugitive", "stew", true, 0),
+      arrive(18, "smuggler", "ale", false, 0),
+      arrive(35, "soldier", "ale", false, 1),
+      arrive(35, "soldier", "bread", false, 1),
+      arrive(52, "farmer", "ale"),
+      arrive(70, "adventurer", "ale", false, 2),
+      arrive(70, "adventurer", "stew", false, 2),
+      arrive(70, "adventurer", "bread", false, 2),
+      arrive(70, "adventurer", "ale", false, 2),
     ],
     parties: [
       {
@@ -556,25 +551,20 @@ export const NIGHTS: NightPlan[] = [
   {
     intro: "Night 3. The last night before the baron collects. The road is busy, so keep moving.",
     guests: [
-      arrive(2, "soldier", "ale"),
-      arrive(6, "farmer", "stew"),
-      arrive(10, "smuggler", "ale"),
+      // The busiest night, but still breathing room: thirteen guests over 105 seconds, a table every 15 or so.
+      arrive(5, "soldier", "ale"),
       arrive(15, "farmer", "bread", true, 0),
       arrive(15, "farmer", "ale", false, 0),
       arrive(15, "smuggler", "stew", false, 0),
-      arrive(20, "soldier", "stew"),
-      arrive(24, "fugitive", "ale"),
-      arrive(29, "smuggler", "stew"),
-      arrive(31, "bandit", "ale", false, 2),
-      arrive(31, "bandit", "ale", false, 2),
-      arrive(34, "farmer", "ale"),
-      arrive(38, "soldier", "bread", false, 1),
-      arrive(38, "soldier", "ale", false, 1),
-      arrive(43, "fugitive", "stew"),
-      arrive(48, "farmer", "bread"),
-      arrive(50, "noble", "stew", false, 3),
-      arrive(50, "noble", "bread", false, 3),
-      arrive(54, "smuggler", "ale"),
+      arrive(32, "fugitive", "ale"),
+      arrive(45, "bandit", "ale", false, 2),
+      arrive(45, "bandit", "ale", false, 2),
+      arrive(60, "soldier", "bread", false, 1),
+      arrive(60, "soldier", "ale", false, 1),
+      arrive(75, "smuggler", "stew"),
+      arrive(90, "noble", "stew", false, 3),
+      arrive(90, "noble", "bread", false, 3),
+      arrive(105, "farmer", "ale"),
     ],
     parties: [
       {
@@ -1051,6 +1041,10 @@ export class Tavern {
   private readonly dirtyHeld: [Ware[], Ware[]] = [[], []];
   /** Scrubbing left on the one at the front of the tub. */
   private washLeft = WASH_TIME;
+  /** Someone is at the tub scrubbing right now, for the tub's animation. */
+  scrubbing = false;
+  /** When the last dish came out clean (performance.now()), for the tub's sparkle. */
+  washedAt = -Infinity;
   /** Seats where ale went on the floor tonight. */
   private readonly spiltAt = new Set<number>();
   private readonly messages: string[] = [];
@@ -1300,7 +1294,7 @@ export class Tavern {
   }
 
   private startPour(): void {
-    this.tapLeft--;
+    // The tap never runs dry: pouring only takes a clean cup.
     this.cleanWare.cup--;
     this.cue("pour");
     // Drunk hands fumble the tap.
@@ -1423,6 +1417,15 @@ export class Tavern {
     return guest.party === null || this.partyGuests(guest.party).every((g) => g.status === "eating" && g.eatLeft <= 0);
   }
 
+  /**
+   * A guest leaves in the middle of things (thrown out, or off with the till after knocking her down): whatever they
+   * were eating or drinking from stays on the table, so no cup or dish goes missing with them.
+   */
+  private sendOff(guest: Guest): void {
+    if (guest.status === "eating") this.leaveDirty(guest);
+    guest.status = "leaving";
+  }
+
   /** A guest has finished: what they ate from stays on the table, in that table's pile. */
   private leaveDirty(guest: Guest): void {
     const ware = WARE_OF[guest.order];
@@ -1439,11 +1442,13 @@ export class Tavern {
 
   /** Whoever is at the tub with empty hands scrubs what's in it, one at a time, slower when drunk. */
   private updateWash(dt: number, scrubber: number | null): void {
-    if (this.tub.length === 0 || scrubber === null || this.carrying[scrubber] !== null) return;
+    this.scrubbing = this.tub.length > 0 && scrubber !== null && this.carrying[scrubber] === null;
+    if (!this.scrubbing) return;
     this.washLeft -= (dt * (1 + this.effects.washSpeed)) / (1 + DRUNK_FUMBLE * this.drunk);
     if (this.washLeft > 0) return;
     this.washLeft = WASH_TIME;
     this.cleanWare[this.tub.shift() as Ware]++;
+    this.washedAt = performance.now();
     this.records.washed++;
     this.cue("wipe");
     if (this.tub.length === 0) this.say(this.messes.length === 0 && this.phase !== "service" ? "The tavern is spotless." : "All washed up.");
@@ -1928,7 +1933,7 @@ export class Tavern {
     let text: string;
     if (fight.outcome === "won") {
       r.fightsWon++;
-      if (guest) guest.status = "leaving";
+      if (guest) this.sendOff(guest);
       this.shift({ respect: 2, fame: 3 });
       // Throwing out one of the baron's men gets back to him.
       this.adjust(0, 0, fight.kind === "soldier" ? 1 : 0);
@@ -1943,7 +1948,7 @@ export class Tavern {
       r.fightsLost++;
       const taken = Math.min(this.gold, LOST_FIGHT_GOLD + this.nightIndex * 2);
       this.adjust(-taken, 0, 0);
-      if (guest) guest.status = "leaving";
+      if (guest) this.sendOff(guest);
       this.shift({ respect: -2 });
       text = `Knocked down. They grab ${taken} gold from the till on their way out.`;
     }
@@ -2836,7 +2841,6 @@ export class Tavern {
     } else if (index === 1) {
       const pay = JUG_PAY * members.length;
       state.jug = true;
-      this.tapLeft--;
       // A shared jug never goes round without some of it ending up on the floor.
       if (members[0]) this.spiltAt.add(members[0].seat);
       this.gold += pay;
@@ -3049,7 +3053,8 @@ export class Tavern {
     this.heat = save.heat;
     this.upgrades.clear();
     for (const id of save.upgrades) this.upgrades.add(id);
-    this.tapLeft = save.tapLeft;
+    // The tap no longer runs dry, so an old save's empty tap comes back full.
+    this.tapLeft = TAP_SIZE;
     this.persona = readPersona(save.persona);
     this.touchMemory = readTouchMemory(save.touch);
     const progress = readProgress(save.progress);

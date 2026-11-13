@@ -214,6 +214,8 @@ const CUSTOMIZE_FACE_SHOT = { side: 0.17, distance: 1.35 };
 const CUSTOMIZE_GROIN_SHOT = { side: 0.14, share: 0.5, distance: 1.3 };
 /** How fast the camera eases between customise shots, per second. */
 const CUSTOMIZE_CAMERA_RATE = 6;
+/** How long a dish that's just come out clean sparkles over the tub, in milliseconds. */
+const WASH_SPARKLE_MS = 300;
 /** How far the character turns per pixel dragged, in radians. */
 const CUSTOMIZE_TURN_PER_PIXEL = 0.012;
 /** Outline thickness around a hovered or chosen sibling, in the model's own units. */
@@ -1212,7 +1214,10 @@ export class Game {
       burnt: "alert",
     };
     this.potIcon.show(potIcons[tavern.potState]);
-    this.washIcon.show(tavern.tub.length > 0 ? "dirty" : null);
+    // Scrubbing: the suds bubble between two frames, and each dish that comes out clean sparkles for a moment.
+    const justWashed = performance.now() - tavern.washedAt < WASH_SPARKLE_MS;
+    const sudsFrame = Math.floor(this.time * 5) % 2 === 0 ? "suds1" : "suds2";
+    this.washIcon.show(justWashed ? "sparkle" : tavern.scrubbing ? sudsFrame : tavern.tub.length > 0 ? "dirty" : null);
     this.potStew.visible = tavern.potState !== "empty";
     this.potStew.material = tavern.potState === "burnt" ? this.burntMaterial : this.potStewMaterial;
   }

@@ -596,9 +596,91 @@ body:has(#build.open) #status-card {
 }
 
 #stats .stat {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 7px;
+}
+
+/* A number that just changed pops and flashes: green for the better, red for the worse. */
+#stats b {
+  display: inline-block;
+}
+
+#stats .bump-better b {
+  animation: stat-pop 0.35s ease-out, stat-better 0.7s ease-out;
+}
+
+#stats .bump-worse b {
+  animation: stat-pop 0.35s ease-out, stat-worse 0.7s ease-out;
+}
+
+@keyframes stat-pop {
+  30% {
+    transform: scale(1.35);
+  }
+}
+
+@keyframes stat-better {
+  0%,
+  45% {
+    color: #7dff6a;
+  }
+}
+
+@keyframes stat-worse {
+  0%,
+  45% {
+    color: #ff6b4a;
+  }
+}
+
+/* The difference, "+5" or "-1", floats up off the number and fades. */
+#stats .delta {
+  position: absolute;
+  left: 40px;
+  top: -4px;
+  font-size: 17px;
+  pointer-events: none;
+  white-space: nowrap;
+  animation: stat-delta 1s ease-out forwards;
+}
+
+#stats .delta.better {
+  color: #7dff6a;
+}
+
+#stats .delta.worse {
+  color: #ff6b4a;
+}
+
+@keyframes stat-delta {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-24px);
+  }
+}
+
+/* Without motion: the flash of colour stays, the pop and the rising number don't. */
+@media (prefers-reduced-motion: reduce) {
+  #stats .bump-better b {
+    animation: stat-better 0.7s ease-out;
+  }
+
+  #stats .bump-worse b {
+    animation: stat-worse 0.7s ease-out;
+  }
+
+  #stats .delta {
+    display: none;
+  }
 }
 
 #stats .icon {

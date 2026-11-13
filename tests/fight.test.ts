@@ -102,6 +102,23 @@ describe("brawls in the tavern", () => {
     expect(t.takeFightResult()?.outcome).toBe("won");
   });
 
+  it("leaves the cup of a guest thrown out mid-drink on the table, so no cup goes missing", () => {
+    const { t, id } = withGuest();
+    const guest = t.guests.find((g) => g.id === id)!;
+    expect(guest.order).toBe("ale");
+    guest.status = "eating";
+    guest.eatLeft = 30;
+    t.startFight(id);
+    for (let i = 0; i < 30 && t.fight; i++) {
+      const canThrow = !t.fight.choices().find((c) => c.move === "throw")!.disabled;
+      t.fightMove(canThrow ? "throw" : "strike");
+    }
+    expect(t.takeFightResult()?.outcome).toBe("won");
+    expect(guest.status).toBe("leaving");
+    const left = t.messes.filter((m) => m.kind === "dishes" && m.spots.includes(guest.seat));
+    expect(left.flatMap((m) => m.wares ?? [])).toEqual(["cup"]);
+  });
+
   it("costs only gold and pride when she loses", () => {
     const { t, id } = withGuest();
     t.gold = 50;

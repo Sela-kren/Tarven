@@ -2783,8 +2783,143 @@ export class Dresser {
   }
 }
 
-/** For each of `points`, the nearest body points, weighted by closeness, and how much it keeps its own move. */
-function nearestBody(points: Float32Array, body: Float32Array): FollowTable {
+/** Body points put out of reach (nipple discs, the pubic patch and so on are moved to 1e6): never followed. */
+const OUT_OF_REACH = 1e5;
+/** About how many body points each cell of the search grid would hold if they filled its box. They lie on a surface, so the cells they're in hold more. */
+const POINTS_PER_CELL = 1;
+/** The most cells the search grid may have, whatever the body. */
+const MAX_CELLS = 1 << 21;
+
+/**
+ * Puts (d, b) among the FOLLOW_POINTS nearest so far, kept in order by distance and then by index. Ties go to the
+ * lower index, so the result is the same whatever order the points are looked at in.
+ */
+function considerNearest(best: Float64Array, bestAt: Int32Array, d: number, b: number): void {
+  const last = FOLLOW_POINTS - 1;
+  if (d > best[last] || (d === best[last] && b >= bestAt[last])) return;
+  let k = last;
+  while (k > 0 && (best[k - 1] > d || (best[k - 1] === d && bestAt[k - 1] > b))) {
+    best[k] = best[k - 1];
+    bestAt[k] = bestAt[k - 1];
+    k--;
+  }
+  best[k] = d;
+  bestAt[k] = b;
+}
+
+/** The body points sorted into a grid of cubes, so a search only looks at the cubes near it. */
+interface BodyGrid {
+  min: [number, number, number];
+  size: number;
+  n: [number, number, number];
+  /** Where each cell's points start in `items`; the cell after it marks the end. */
+  start: Int32Array;
+  items: Int32Array;
+}
+
+/** Each body's grid, built once: every clothing mesh searches the same body points. */
+const bodyGrids = new WeakMap<Float32Array, BodyGrid | null>();
+
+function bodyGrid(body: Float32Array): BodyGrid | null {
+  if (bodyGrids.has(body)) return bodyGrids.get(body)!;
+  const grid = buildBodyGrid(body);
+  bodyGrids.set(body, grid);
+  return grid;
+}
+
+function buildBodyGrid(body: Float32Array): BodyGrid | null {
+  const count = body.length / 3;
+  const min: [number, number, number] = [Infinity, Infinity, Infinity];
+  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+  let real = 0;
+  for (let b = 0; b < count; b++) {
+    if (Math.abs(body[b * 3]) >= OUT_OF_REACH) continue;
+    real++;
+    for (let a = 0; a < 3; a++) {
+      min[a] = Math.min(min[a], body[b * 3 + a]);
+      max[a] = Math.max(max[a], body[b * 3 + a]);
+    }
+  }
+  if (real < FOLLOW_POINTS) return null;
+  const extent = [0, 1, 2].map((a) => Math.max(max[a] - min[a], 1e-3));
+  let size = Math.cbrt((extent[0] * extent[1] * extent[2] * POINTS_PER_CELL) / real);
+  const cellsAt = (s: number) => extent.map((e) => Math.max(1, Math.ceil(e / s) + 1)) as [number, number, number];
+  let n = cellsAt(size);
+  while (n[0] * n[1] * n[2] > MAX_CELLS) n = cellsAt((size *= 1.5));
+  const cellOf = (b: number) => {
+    const at = [0, 1, 2].map((a) => Math.min(n[a] - 1, Math.max(0, Math.floor((body[b * 3 + a] - min[a]) / size))));
+    return (at[2] * n[1] + at[1]) * n[0] + at[0];
+  };
+  const start = new Int32Array(n[0] * n[1] * n[2] + 1);
+  const cells = new Int32Array(count).fill(-1);
+  for (let b = 0; b < count; b++) {
+    if (Math.abs(body[b * 3]) >= OUT_OF_REACH) continue;
+    cells[b] = cellOf(b);
+    start[cells[b] + 1]++;
+  }
+  for (let c = 0; c < start.length - 1; c++) start[c + 1] += start[c];
+  const fill = start.slice(0, -1);
+  const items = new Int32Array(real);
+  // In index order, so each cell lists its points lowest first.
+  for (let b = 0; b < count; b++) if (cells[b] >= 0) items[fill[cells[b]]++] = b;
+  return { min, size, n, start, items };
+}
+
+/** Checks one cell's body points against (x, y, z). */
+function lookInCell(grid: BodyGrid, body: Float32Array, cell: number, x: number, y: number, z: number, best: Float64Array, bestAt: Int32Array): void {
+  const { start, items } = grid;
+  for (let i = start[cell], end = start[cell + 1]; i < end; i++) {
+    const b = items[i];
+    const dx = body[b * 3] - x, dy = body[b * 3 + 1] - y, dz = body[b * 3 + 2] - z;
+    considerNearest(best, bestAt, dx * dx + dy * dy + dz * dz, b);
+  }
+}
+
+/**
+ * The FOLLOW_POINTS nearest body points to (x, y, z), into `best` and `bestAt`: the cells around it, ring by ring
+ * outwards, until no cell further out could hold anything nearer than the furthest kept.
+ */
+function gridNearest(grid: BodyGrid, body: Float32Array, x: number, y: number, z: number, best: Float64Array, bestAt: Int32Array): void {
+  const { min, size, n } = grid;
+  const nx = n[0], ny = n[1], nz = n[2];
+  const cx = Math.floor((x - min[0]) / size), cy = Math.floor((y - min[1]) / size), cz = Math.floor((z - min[2]) / size);
+  // Rings past this one hold no cells at all.
+  const lastRing = Math.max(Math.abs(cx), Math.abs(nx - 1 - cx), Math.abs(cy), Math.abs(ny - 1 - cy), Math.abs(cz), Math.abs(nz - 1 - cz));
+  for (let r = 0; r <= lastRing; r++) {
+    // Only the cells of this ring that lie inside the grid.
+    const z0 = Math.max(0, cz - r), z1 = Math.min(nz - 1, cz + r);
+    const y0 = Math.max(0, cy - r), y1 = Math.min(ny - 1, cy + r);
+    const x0 = Math.max(0, cx - r), x1 = Math.min(nx - 1, cx + r);
+    for (let gz = z0; gz <= z1; gz++) {
+      const zEdge = gz === cz - r || gz === cz + r;
+      for (let gy = y0; gy <= y1; gy++) {
+        const row = (gz * ny + gy) * nx;
+        if (zEdge || gy === cy - r || gy === cy + r) {
+          for (let gx = x0; gx <= x1; gx++) lookInCell(grid, body, row + gx, x, y, z, best, bestAt);
+        } else {
+          if (cx - r >= 0 && cx - r < nx) lookInCell(grid, body, row + cx - r, x, y, z, best, bestAt);
+          if (r > 0 && cx + r >= 0 && cx + r < nx) lookInCell(grid, body, row + cx + r, x, y, z, best, bestAt);
+        }
+      }
+    }
+    // Anything not yet looked at lies outside the block of cells searched so far: done once the furthest kept is
+    // nearer than the block's nearest face. (A hair under, so rounding can't put a point inside it.)
+    const reach =
+      Math.min(
+        x - (min[0] + (cx - r) * size), min[0] + (cx + r + 1) * size - x,
+        y - (min[1] + (cy - r) * size), min[1] + (cy + r + 1) * size - y,
+        z - (min[2] + (cz - r) * size), min[2] + (cz + r + 1) * size - z,
+      ) - 1e-6;
+    if (reach > 0 && best[FOLLOW_POINTS - 1] < reach * reach) return;
+  }
+}
+
+/**
+ * For each of `points`, the nearest body points, weighted by closeness, and how much it keeps its own move.
+ * The body points go into a grid first, so each point only searches near itself rather than the whole body: the
+ * same nearest points as checking every one (ties to the lower index), in a fraction of the time.
+ */
+export function nearestBody(points: Float32Array, body: Float32Array): FollowTable {
   const count = points.length / 3;
   const bodyCount = body.length / 3;
   const found = new Int32Array(count * FOLLOW_POINTS);
@@ -2792,22 +2927,18 @@ function nearestBody(points: Float32Array, body: Float32Array): FollowTable {
   const own = new Float32Array(count);
   const best = new Float64Array(FOLLOW_POINTS);
   const bestAt = new Int32Array(FOLLOW_POINTS);
+  const grid = bodyGrid(body);
   for (let v = 0; v < count; v++) {
     const x = points[v * 3], y = points[v * 3 + 1], z = points[v * 3 + 2];
     best.fill(Infinity);
     bestAt.fill(0);
-    for (let b = 0; b < bodyCount; b++) {
-      const dx = body[b * 3] - x, dy = body[b * 3 + 1] - y, dz = body[b * 3 + 2] - z;
-      const d = dx * dx + dy * dy + dz * dz;
-      if (d >= best[FOLLOW_POINTS - 1]) continue;
-      let k = FOLLOW_POINTS - 1;
-      while (k > 0 && best[k - 1] > d) {
-        best[k] = best[k - 1];
-        bestAt[k] = bestAt[k - 1];
-        k--;
+    if (grid) gridNearest(grid, body, x, y, z, best, bestAt);
+    else {
+      // Too few body points to be worth a grid: check every one.
+      for (let b = 0; b < bodyCount; b++) {
+        const dx = body[b * 3] - x, dy = body[b * 3 + 1] - y, dz = body[b * 3 + 2] - z;
+        considerNearest(best, bestAt, dx * dx + dy * dy + dz * dz, b);
       }
-      best[k] = d;
-      bestAt[k] = b;
     }
     let sum = 0;
     for (let k = 0; k < FOLLOW_POINTS; k++) {

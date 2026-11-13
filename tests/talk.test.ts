@@ -115,7 +115,7 @@ describe("parties", () => {
     expect(t.heat).toBe(2);
   });
 
-  it("buy a jug: gold, one serving from the tap, and patience back", () => {
+  it("buy a jug: gold and patience back, and the tap never runs dry", () => {
     const t = atNight(0, 18);
     const party = partyOf(t, 0);
     party[0].patience = 1;
@@ -124,7 +124,7 @@ describe("parties", () => {
     t.interact(0, at(party[0]));
     t.chooseTalk(1);
     expect(t.gold).toBe(gold + 6);
-    expect(t.tapLeft).toBe(tap - 1);
+    expect(t.tapLeft).toBe(tap);
     expect(party[0].patience).toBe(party[0].maxPatience);
     expect(t.talkChoices[1].disabled).toBe(true);
   });

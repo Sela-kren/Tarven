@@ -28,7 +28,8 @@ describe("tavern snapshot", () => {
     t.gold = 64;
     t.trust = 7;
     t.heat = 2;
-    t.tapLeft = 3;
+    // The tap never runs dry: an empty one from an old save loads full.
+    t.tapLeft = 0;
     t.upgrades.add("bigpot");
     t.nightIndex = 1;
     const saved = t.snapshot();
@@ -39,7 +40,7 @@ describe("tavern snapshot", () => {
     loaded.carrying[0] = "ale";
     loaded.restore(saved);
 
-    expect(loaded.snapshot()).toEqual(saved);
+    expect(loaded.snapshot()).toEqual({ ...saved, tapLeft: 8 });
     expect(loaded.phase).toBe("day");
     expect(loaded.guests).toHaveLength(0);
     expect(loaded.carrying).toEqual([null, null]);

@@ -198,7 +198,8 @@ describe("the stew pot", () => {
     t.interact(0, station("tap"));
     run(t, 2);
     expect(t.aleReady).toBe(1);
-    expect(t.tapLeft).toBe(7);
+    // The tap never runs dry.
+    expect(t.tapLeft).toBe(8);
   });
 });
 

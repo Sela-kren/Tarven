@@ -157,18 +157,32 @@ export const WILL = pixelSvg(
   { K: OUTLINE, W: "#e4f0ff", B: "#5a8ad8", D: "#36589a", T: "#c9c1ac" },
 );
 
-/** One icon and its number. */
+/** How long a change's "+5" floats over a stat before it's taken away, in milliseconds (a little over its animation). */
+const DELTA_LIFE_MS = 1200;
+/** Changes this close together, in milliseconds, add up in one "+7" rather than two numbers on top of each other. */
+const DELTA_MERGE_MS = 500;
+
+/**
+ * One icon and its number. When the number changes it pops, flashing green for a change for the better and red for
+ * the worse, and the difference ("+5", "-1") floats up off it.
+ */
 class Stat {
   readonly el = document.createElement("span");
   private readonly icon = document.createElement("span");
   private readonly value = document.createElement("b");
   private readonly of = document.createElement("small");
   private shown = "";
+  /** The number last shown, or null before the first. */
+  private last: number | null = null;
+  /** The difference floating over it now, if it's recent enough to add to: its element, its total, when it began. */
+  private delta: { el: HTMLElement; total: number; at: number; timer: number } | null = null;
 
   constructor(
     parent: HTMLElement,
     private readonly name: string,
     icon: string,
+    /** Whether more is better: gold, cups and dishes are; heat isn't. */
+    private readonly moreIsBetter = true,
   ) {
     this.el.className = "stat";
     this.icon.className = "icon";
@@ -188,6 +202,40 @@ class Stat {
     this.el.classList.toggle("warn", warn);
     this.el.title = `${this.name}: ${value}${of}`;
     this.el.setAttribute("aria-label", this.el.title);
+    const number = Number(value);
+    if (Number.isFinite(number)) {
+      if (this.last !== null && number !== this.last) this.changed(number - this.last);
+      this.last = number;
+    }
+  }
+
+  /** Pops the number, and floats the difference up off it, added to the last one if that's only just begun. */
+  private changed(by: number): void {
+    const now = performance.now();
+    const recent = this.delta && now - this.delta.at < DELTA_MERGE_MS ? this.delta : null;
+    const total = (recent?.total ?? 0) + by;
+    if (recent) {
+      window.clearTimeout(recent.timer);
+      recent.el.remove();
+      this.delta = null;
+    }
+    // Up and back down again before it showed: nothing to tell.
+    if (total === 0) return;
+    const better = total > 0 === this.moreIsBetter;
+    // Taken off and put back, so a second change straight after the first replays the pop.
+    this.el.classList.remove("bump-better", "bump-worse");
+    void this.el.offsetWidth;
+    this.el.classList.add(better ? "bump-better" : "bump-worse");
+    const el = document.createElement("span");
+    el.className = `delta ${better ? "better" : "worse"}`;
+    el.textContent = total > 0 ? `+${total}` : `−${-total}`;
+    el.setAttribute("aria-hidden", "true");
+    this.el.append(el);
+    const timer = window.setTimeout(() => {
+      el.remove();
+      if (this.delta?.el === el) this.delta = null;
+    }, DELTA_LIFE_MS);
+    this.delta = { el, total, at: recent?.at ?? now, timer };
   }
 
   /** Shows or hides it. The style sheet lays stats out with display, which would beat the hidden attribute. */
@@ -210,8 +258,10 @@ export class StatsHud {
     row.className = "row";
     this.gold = new Stat(row, "Gold", COIN);
     // Heat only comes up here as a warning; it, trust and the rest are kept in the journal.
-    this.heat = new Stat(row, "Heat", FLAME);
+    this.heat = new Stat(row, "Heat", FLAME, false);
     this.tap = new Stat(row, "Ale left in the tap", KEG);
+    // The tap never runs dry now, so there's nothing to count.
+    this.tap.show(false);
     this.cups = new Stat(row, "Clean cups", CUP);
     this.dishes = new Stat(row, "Clean dishes", DISH);
     // A small badge after the stats while you're drunk; hidden when sober.

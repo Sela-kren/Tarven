@@ -1,7 +1,8 @@
 import { CanvasTexture, NearestFilter, Sprite, SpriteMaterial, SRGBColorSpace, Texture } from "three";
 import type { Held } from "./tavern";
 
-export type IconName = Held | "dots" | "alert" | "arrow";
+/** "suds1" and "suds2" are the two frames of scrubbing at the tub; "sparkle" is a dish coming out clean. */
+export type IconName = Held | "dots" | "alert" | "arrow" | "suds1" | "suds2" | "sparkle";
 
 type Draw = (rect: (color: string, x: number, y: number, w: number, h: number) => void) => void;
 
@@ -13,6 +14,24 @@ const BOWL = "#c9c1ac";
 const STEW = "#7a3f16";
 const INK = "#1c140e";
 const GLASS = "#3a2a20";
+const WATER = "#6f9fc0";
+const SUDS = "#ffffff";
+const SHINE = "#ffe27a";
+
+/** A dish in the tub's water with soap bubbles over it, the bubbles at `bubbles` (x, y, size). */
+const suds = (bubbles: readonly [number, number, number][]): { bubble: boolean; draw: Draw } => ({
+  bubble: true,
+  draw: (r) => {
+    r(WATER, 2, 10, 12, 3);
+    r(BOWL, 4, 8, 8, 3);
+    r(BOWL, 5, 11, 6, 1);
+    for (const [x, y, size] of bubbles) {
+      r(INK, x - 1, y, size + 2, size);
+      r(INK, x, y - 1, size, size + 2);
+      r(SUDS, x, y, size, size);
+    }
+  },
+});
 
 /** The colour of each bottled drink, in its bottle and in the cup. */
 export const DRINK_COLORS = { wine: "#8a1c2c", mead: "#e0a030", vodka: "#dfe8f0" } as const;
@@ -83,6 +102,22 @@ const ART: Record<IconName, { bubble: boolean; draw: Draw }> = {
       r(BOWL, 4, 3, 8, 3);
       r(STEW, 6, 4, 2, 1);
       r(STEW, 9, 3, 1, 2);
+    },
+  },
+  // Scrubbing: the bubbles rise and shift between the two frames.
+  suds1: suds([[3, 7, 2], [7, 5, 3], [11, 7, 2], [9, 2, 2]]),
+  suds2: suds([[4, 5, 2], [8, 7, 2], [11, 4, 3], [6, 2, 2]]),
+  // A clean dish, shining.
+  sparkle: {
+    bubble: true,
+    draw: (r) => {
+      r(BOWL, 3, 8, 10, 3);
+      r(BOWL, 4, 11, 8, 2);
+      r(SUDS, 5, 9, 3, 1);
+      r(SHINE, 11, 2, 1, 5);
+      r(SHINE, 9, 4, 5, 1);
+      r(SHINE, 3, 3, 1, 3);
+      r(SHINE, 2, 4, 3, 1);
     },
   },
   dots: {
