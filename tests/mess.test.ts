@@ -4,12 +4,14 @@ import { Tavern, type Mess, type Station, type Target } from "../src/game/tavern
 // Two tables of three and a bar of three, like a small room.
 const TABLES = ["A", "A", "A", "B", "B", "B", "Bar", "Bar", "Bar"];
 const DUST_SPOTS = 20;
+const COBWEB_SPOTS = 7;
 const idle = { listeningTo: null, night: true };
 const station = (s: Station): Target => ({ kind: "station", station: s });
 const messAt = (m: Mess): Target => ({ kind: "mess", id: m.id });
+const bell: Target = { kind: "bell" };
 
 function tavern(): Tavern {
-  return new Tavern(TABLES.length, TABLES, DUST_SPOTS);
+  return new Tavern(TABLES.length, TABLES, DUST_SPOTS, COBWEB_SPOTS);
 }
 
 /** Plays a night out: serves everyone who sits down (or lets them walk out), then the morning comes. */
@@ -117,6 +119,20 @@ describe("the morning mess", () => {
     expect(new Set(t.messes.map((m) => m.id)).size).toBe(t.messes.length);
   });
 
+  it("a night opened dirty lets a spider back in, but one opened clean doesn't", () => {
+    const dirty = tavern();
+    playNight(dirty, true);
+    playNight(dirty, true); // Opened with last night's mess still about.
+    expect(dirty.messes.filter((m) => m.kind === "cobweb")).toHaveLength(1);
+    expect(dirty.takeMessages().some((line) => line.includes("spider"))).toBe(true);
+
+    const clean = tavern();
+    playNight(clean, true);
+    cleanEverything(clean);
+    playNight(clean, true);
+    expect(clean.messes.some((m) => m.kind === "cobweb")).toBe(false);
+  });
+
   it("is kept in the save, so loading the morning brings the mess back", () => {
     const t = tavern();
     playNight(t, true);
@@ -127,5 +143,74 @@ describe("the morning mess", () => {
     // Cleaning the loaded copy doesn't touch the save.
     for (const mess of [...loaded.messes]) loaded.interact(0, messAt(mess));
     expect(save.messes?.length).toBe(t.messes.length);
+  });
+});
+
+describe("the first morning in Grandma's tavern", () => {
+  function settled(): Tavern {
+    const t = tavern();
+    t.settleIn();
+    return t;
+  }
+
+  it("is full of cobwebs and dust, each on its own spot", () => {
+    const t = settled();
+    const webs = t.messes.filter((m) => m.kind === "cobweb");
+    const dust = t.messes.filter((m) => m.kind === "dust");
+    expect(webs).toHaveLength(5);
+    expect(dust).toHaveLength(6);
+    for (const kind of [webs, dust]) expect(new Set(kind.map((m) => m.spots[0])).size).toBe(kind.length);
+    expect(webs.every((m) => m.spots[0] < COBWEB_SPOTS)).toBe(true);
+    // The usual "the tavern is closed" line gives way to what to do.
+    const lines = t.takeMessages();
+    expect(lines[0]).toContain("Nobody has opened the place");
+    expect(lines.some((line) => line.includes("press E"))).toBe(true);
+  });
+
+  it("only happens on a new game's first morning, once", () => {
+    const t = settled();
+    const count = t.messes.length;
+    t.settleIn();
+    expect(t.messes).toHaveLength(count);
+
+    const later = tavern();
+    playNight(later, true);
+    cleanEverything(later);
+    later.settleIn();
+    expect(later.messes).toHaveLength(0);
+  });
+
+  it("won't let the bell ring until it's all cleaned, and walks her through it", () => {
+    const t = settled();
+    t.takeMessages();
+    expect(t.prompt(0, bell)?.actionable).toBe(false);
+    expect(t.prompt(0, bell)?.label).toContain("5 cobwebs and 6 patches of dust left");
+    t.open();
+    expect(t.phase).toBe("day");
+
+    const web = t.messes.find((m) => m.kind === "cobweb")!;
+    expect(t.prompt(0, messAt(web))?.label).toBe("Brush down the cobweb");
+    t.interact(0, messAt(web));
+    expect(t.takeMessages().at(-1)).toBe("Cobweb down. 4 cobwebs and 6 patches of dust left.");
+
+    cleanEverything(t);
+    expect(t.messes).toHaveLength(0);
+    expect(t.takeMessages().at(-1)).toContain("Ring the bell");
+    expect(t.prompt(0, bell)?.actionable).toBe(true);
+    t.interact(0, bell);
+    expect(t.phase).toBe("dusk");
+  });
+
+  it("still lets her into the house plans with cobwebs up", () => {
+    const t = settled();
+    expect(t.prompt(0, { kind: "desk" })?.actionable).toBe(true);
+  });
+
+  it("keeps its cobwebs in the save", () => {
+    const t = settled();
+    const loaded = tavern();
+    loaded.restore(t.snapshot());
+    expect(loaded.messes.filter((m) => m.kind === "cobweb")).toHaveLength(5);
+    expect(loaded.prompt(0, bell)?.actionable).toBe(false);
   });
 });

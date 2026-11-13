@@ -72,7 +72,7 @@ import { changeLabel, dayIcon, dayStory, statusLines, townTalk, type Standing } 
 import { StatusCard } from "./statuscard";
 import { DRINK_COLORS, Icon, type IconName } from "./icons";
 import type { Input } from "./input";
-import { findDustSpots, MessLayer } from "./mess";
+import { findCobwebSpots, findDustSpots, MessLayer } from "./mess";
 import { Outline, outlineMaterial } from "./outline";
 import { renderPortrait, renderThumbnail } from "./portraits";
 import {
@@ -178,6 +178,9 @@ const GUEST_RANGE = 1.7;
 const DISHES_RANGE = 1.3;
 const FLOOR_MESS_RANGE = 1.1;
 const FLOOR_MESS_ARROW_HEIGHT = 1.4;
+/** A cobweb is brushed down from the floor below it; the arrow floats there, under the web. */
+const COBWEB_RANGE = 1.2;
+const COBWEB_ARROW_HEIGHT = 2.6;
 const LISTEN_RANGE = 2.2;
 /** Talk about you can be made out from this close. Further off, it's only whispering. */
 const OVERHEAR_RANGE = 4.5;
@@ -719,9 +722,10 @@ export class Game {
     this.nav = this.applyPlan();
 
     const dustSpots = findDustSpots(world.colliders, ROOM);
-    this.tavern = new Tavern(world.seats.length, world.seats.map((seat) => seat.table), dustSpots.length);
+    const cobwebSpots = findCobwebSpots(world.colliders, ROOM);
+    this.tavern = new Tavern(world.seats.length, world.seats.map((seat) => seat.table), dustSpots.length, cobwebSpots.length);
     this.tavern.touchSettings = readTouchSettings();
-    this.messLayer = new MessLayer(world.seats, dustSpots);
+    this.messLayer = new MessLayer(world.seats, dustSpots, cobwebSpots);
     scene.add(this.messLayer.group);
     this.checkpoint = this.tavern.snapshot();
 
@@ -1256,13 +1260,13 @@ export class Game {
       const spots = this.messLayer.spots(mess.id);
       if (spots.length === 0) continue;
       const nearest = spots.reduce((a, b) => (a.distanceToSquared(position) <= b.distanceToSquared(position) ? a : b));
-      const onTable = mess.kind === "dishes";
-      consider(
-        { kind: "mess", id: mess.id },
-        nearest,
-        onTable ? STATION_ARROW_HEIGHT : FLOOR_MESS_ARROW_HEIGHT,
-        onTable ? DISHES_RANGE : FLOOR_MESS_RANGE,
-      );
+      const [height, range] =
+        mess.kind === "dishes"
+          ? [STATION_ARROW_HEIGHT, DISHES_RANGE]
+          : mess.kind === "cobweb"
+            ? [COBWEB_ARROW_HEIGHT, COBWEB_RANGE]
+            : [FLOOR_MESS_ARROW_HEIGHT, FLOOR_MESS_RANGE];
+      consider({ kind: "mess", id: mess.id }, nearest, height, range);
     }
     consider({ kind: "bell" }, BELL_SPOT, STATION_ARROW_HEIGHT, STATION_RANGE);
     consider({ kind: "bed" }, BED_SPOT, BED_ARROW_HEIGHT, BED_RANGE);
@@ -1559,6 +1563,7 @@ export class Game {
         heat: tavern.heat,
         heatMax: HEAT_MAX,
         messes: tavern.messes.length,
+        cobwebs: tavern.messes.filter((mess) => mess.kind === "cobweb").length,
       }),
       [{ label: "Begin the day", onPick: () => this.startDay() }],
     );
@@ -1772,6 +1777,8 @@ export class Game {
     // The tavern behind the dialog shows empty; the player appears as a sprite instead.
     this.siblings.forEach((sibling) => (sibling.root.visible = false));
     this.screen = "story";
+    // A new game: the tavern she walks into has stood shut since Grandma died.
+    this.tavern.settleIn();
     this.story.start(INTRO, () => this.fadeTo(() => this.enterTavern()));
   }
 

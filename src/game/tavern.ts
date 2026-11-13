@@ -146,8 +146,12 @@ const TAKE_CUES: Record<Item, Cue> = {
   stew: "takeStew",
   cask: "takeCask",
 };
-/** What a night leaves behind: dirty dishes on the tables, ale on the floor, and dust tracked in. */
-export type MessKind = "dishes" | "spill" | "dust";
+/**
+ * What a night leaves behind: dirty dishes on the tables, ale on the floor, and dust tracked in. Cobwebs hang
+ * high on the walls: the shut-up tavern is full of them on the first day, and spiders move back in after a
+ * night opened dirty.
+ */
+export type MessKind = "dishes" | "spill" | "dust" | "cobweb";
 export type UpgradeId = "quicktap" | "bigpot" | "cushions";
 export type EndingId = "arrested" | "overthrow" | "kept" | "lost";
 
@@ -189,6 +193,11 @@ const CUSHION_PATIENCE = 1.25;
 /** Patches of dust the night's crowd always tracks in, plus one more for every few guests. */
 const DUST_BASE = 3;
 const GUESTS_PER_DUST = 3;
+/** The first morning: nobody has opened the place since Grandma Wren died, so it's thick with cobwebs and dust. */
+const FIRST_DAY_COBWEBS = 5;
+const FIRST_DAY_DUST = 6;
+/** A night opened with mess still about lets a spider back in. It never gets more webs up than this. */
+const MOST_COBWEBS = 4;
 /** How much patience guests lose in a filthy room, and how many messes count as filthy. */
 const MESS_PATIENCE_LOSS = 0.3;
 const MESS_FOR_FULL_LOSS = 8;
@@ -711,7 +720,7 @@ export interface Mess {
   kind: MessKind;
   /**
    * Dishes: the seats at one table that were eaten at. A spill: the one seat it's under. Dust: which of
-   * the room's dust spots it lies on (the game decides where those are).
+   * the room's dust spots it lies on, and a cobweb which of its cobweb spots (the game decides where those are).
    */
   spots: number[];
   /** Dishes only: what was left at each of the spots, in the same order. Older saves have none. */
@@ -845,11 +854,30 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 const MESS_LABELS: Record<Exclude<MessKind, "dishes">, string> = {
   spill: "Mop up the spilt ale",
   dust: "Sweep up the dust",
+  cobweb: "Brush down the cobweb",
 };
 const MESS_DONE: Record<Exclude<MessKind, "dishes">, string> = {
   spill: "Floor mopped.",
   dust: "Swept.",
+  cobweb: "Cobweb down.",
 };
+
+/** "1 cobweb", "3 patches of dust": what's left of one kind of mess, in words. */
+const MESS_COUNT_WORDS: Record<MessKind, [string, string]> = {
+  dishes: ["pile of dishes", "piles of dishes"],
+  spill: ["puddle of ale", "puddles of ale"],
+  dust: ["patch of dust", "patches of dust"],
+  cobweb: ["cobweb", "cobwebs"],
+};
+
+/** "2 cobwebs and 1 patch of dust", for the messes given, cobwebs first. */
+function messesLeftWords(messes: readonly Mess[]): string {
+  const parts = (["cobweb", "dust", "spill", "dishes"] as const).flatMap((kind) => {
+    const n = messes.filter((m) => m.kind === kind).length;
+    return n === 0 ? [] : [`${n} ${MESS_COUNT_WORDS[kind][n === 1 ? 0 : 1]}`];
+  });
+  return parts.length <= 1 ? (parts[0] ?? "nothing") : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
+}
 
 /** The numbers 0 to count - 1 in an order that looks random but is always the same for a seed. */
 function shuffled(count: number, seed: number): number[] {
@@ -1053,14 +1081,45 @@ export class Tavern {
   private passiveCheck = 0;
   private readonly cues: Cue[] = [];
 
+  /** The night was opened with mess still about, which lets a spider back in by morning. */
+  private openedDirty = false;
+
   /** `seatTables` names the table each seat is at, so a party can sit together. "Bar" stools are not a table. */
   /** `dustSpots` is how many places in the room dust can settle; with none, nights leave no dust. */
+  /** `cobwebSpots` is how many places up on the walls a cobweb can hang; with none, there are never any. */
   constructor(
     private seatCount: number,
     private seatTables: readonly string[] = [],
     private readonly dustSpots = 0,
+    private readonly cobwebSpots = 0,
   ) {
     this.openDay();
+  }
+
+  /**
+   * A new game's first morning: the tavern has stood shut since Grandma Wren died, so there are cobwebs up in
+   * the corners and dust all over the floor. Cleaning them is how she learns to clean, and the bell won't ring
+   * until it's done. Only on the first day, and only once.
+   */
+  settleIn(): void {
+    if (this.nightIndex !== 0 || this.phase !== "day" || this.messes.length > 0) return;
+    const add = (kind: MessKind, spots: number[]) => this.messes.push({ id: this.nextMessId++, kind, spots });
+    for (const spot of shuffled(this.cobwebSpots, 17).slice(0, FIRST_DAY_COBWEBS)) add("cobweb", [spot]);
+    for (const spot of shuffled(this.dustSpots, 29).slice(0, FIRST_DAY_DUST)) add("dust", [spot]);
+    if (this.messes.length === 0) return;
+    // This morning's usual "the tavern is closed" line gives way to the one that says what to do.
+    this.messages.length = 0;
+    this.say(
+      "Day 1. Nobody has opened the place since Grandma died. Cobwebs hang high on the walls, and dust lies all over the floor.",
+    );
+    this.say(
+      "Clean it before you open. Walk up to a cobweb and press E to brush it down, then sweep the dust the same way. The bell on the bar rings once it's all done.",
+    );
+  }
+
+  /** The first morning's cleaning still isn't done: the bell waits for it. */
+  get settlingIn(): boolean {
+    return this.nightIndex === 0 && this.phase === "day" && this.messes.some((m) => m.kind === "cobweb" || m.kind === "dust");
   }
 
   /** Replaces the seats, after furniture has moved. Only safe with no guests in the room. */
@@ -1071,8 +1130,9 @@ export class Tavern {
 
   /** Rings the bell to open for the night. The night's guests start coming once night has fallen. */
   open(): void {
-    if (this.phase !== "day") return;
+    if (this.phase !== "day" || this.settlingIn) return;
     this.phase = "dusk";
+    this.openedDirty = this.messes.length > 0;
     this.say(
       this.messes.length > 0
         ? "You ring the bell and open up, mess and all. Guests won't wait as long in a dirty room."
@@ -2588,6 +2648,7 @@ export class Tavern {
 
   private action(sibling: number, target: Target): Action | null {
     if (target.kind === "bell") {
+      if (this.settlingIn) return { label: `Clean up before you open: ${messesLeftWords(this.messes)} left` };
       if (this.phase === "day") return { label: "Ring the bell to open for the night", run: () => this.open() };
       return this.phase === "dusk" ? { label: "The sun is going down..." } : null;
     }
@@ -2608,7 +2669,9 @@ export class Tavern {
     if (target.kind === "desk") {
       if (this.phase !== "day") return this.phase === "dusk" ? { label: "No time for plans now" } : null;
       // Dirty dishes and spills are tied to the seats they're at, so those have to go first.
-      if (this.messes.some((mess) => mess.kind !== "dust")) return { label: "Clear the dishes and spills before changing the room" };
+      if (this.messes.some((mess) => mess.kind === "dishes" || mess.kind === "spill")) {
+        return { label: "Clear the dishes and spills before changing the room" };
+      }
       return { label: "Open the house plans", run: () => undefined };
     }
     if (target.kind === "bed") {
@@ -2992,8 +3055,15 @@ export class Tavern {
 
   /** Mops or sweeps up one mess on the floor. */
   private clean(id: number, kind: Exclude<MessKind, "dishes">): void {
+    const firstMorning = this.settlingIn;
     this.messes.splice(this.messes.findIndex((m) => m.id === id), 1);
     this.cue("wipe");
+    if (firstMorning) {
+      // The first morning walks her through it: what's left, and the bell once it's done.
+      if (!this.settlingIn) this.say("The tavern is spotless, the way it was in Grandma's day. Ring the bell on the bar when you're ready to open.");
+      else this.say(`${MESS_DONE[kind]} ${messesLeftWords(this.messes)} left.`);
+      return;
+    }
     if (this.messes.length === 0 && this.tub.length === 0) this.say("The tavern is spotless.");
     else this.say(`${MESS_DONE[kind]} ${this.messes.length} more to clean.`);
   }
@@ -3014,6 +3084,13 @@ export class Tavern {
       const want = DUST_BASE + Math.floor(crowd / GUESTS_PER_DUST) - messes.filter((m) => m.kind === "dust").length;
       const free = shuffled(this.dustSpots, this.nightIndex * 7919 + crowd).filter((spot) => !has("dust", spot));
       for (const spot of free.slice(0, Math.max(0, want))) add("dust", [spot]);
+    }
+
+    // Opening with mess still about lets a spider back in, up in one of the corners.
+    const webs = messes.filter((m) => m.kind === "cobweb").length;
+    if (this.openedDirty && this.cobwebSpots > 0 && webs < MOST_COBWEBS) {
+      const free = shuffled(this.cobwebSpots, this.nightIndex * 4513 + 11).filter((spot) => !has("cobweb", spot));
+      if (free.length > 0) add("cobweb", [free[0]]);
     }
     return messes;
   }
@@ -3100,6 +3177,7 @@ export class Tavern {
     this.newPassives = [];
     this.messes.splice(0, this.messes.length, ...messes);
     this.nextMessId = Math.max(0, ...messes.map((m) => m.id)) + 1;
+    this.openedDirty = false;
     this.spiltAt.clear();
     // Dirty dishes still in hand get left in the tub overnight. Anything else not dirty is back on the shelf.
     for (const held of this.dirtyHeld) this.tub.push(...held.splice(0));
@@ -3154,5 +3232,8 @@ export class Tavern {
         ? `Day ${this.nightIndex + 1}. Last night left a mess: dirty dishes, spilt ale and dust. Clean up and get ready, then ring the bell on the bar.`
         : `Day ${this.nightIndex + 1}. The tavern is closed. Get ready, then ring the bell on the bar when you want the night to begin.`,
     );
+    if (messes.some((m) => m.kind === "cobweb")) {
+      this.say("Up on the wall, a spider has been busy. Mess left about overnight draws them back in.");
+    }
   }
 }

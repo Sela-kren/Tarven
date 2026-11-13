@@ -25,7 +25,7 @@ export interface SaveData {
 const isInt = (value: unknown, min: number, max: number): value is number =>
   Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
 
-const MESS_KINDS: readonly MessKind[] = ["dishes", "spill", "dust"];
+const MESS_KINDS: readonly MessKind[] = ["dishes", "spill", "dust", "cobweb"];
 const isWare = (value: unknown): value is Ware => value === "cup" || value === "dish";
 
 function isMess(raw: unknown): raw is Mess {

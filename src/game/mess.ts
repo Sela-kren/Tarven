@@ -1,12 +1,13 @@
 /**
  * What a night leaves behind, drawn in the room: dirty bowls and tipped cups on the tables, puddles of
- * ale on the floor, and patches of dust with little grey clumps. The tavern decides what there is; this
- * only draws it, finds where each one is, and shrinks each away when it's cleaned.
+ * ale on the floor, patches of dust with little grey clumps, and cobwebs high on the walls. The tavern
+ * decides what there is; this only draws it, finds where each one is, and shrinks each away when it's cleaned.
  *
  * Positions are in game space: +X east, -Z north, Y up, floor at 0.
  */
 import {
   BoxGeometry,
+  BufferGeometry,
   CanvasTexture,
   CircleGeometry,
   CylinderGeometry,
@@ -21,6 +22,7 @@ import {
   Vector2,
   Vector3,
 } from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Rect } from "./collision";
 import { solidRetroMaterial } from "./retro";
 import { messWares, type Mess, type Ware } from "./tavern";
@@ -41,6 +43,50 @@ const STACK_SHOWN = 5;
 const STACK_STEP = 0.06;
 const STACK_SCALE = 1.6;
 
+/** Cobwebs: how far off the wall they hang, and how big a web in a corner or mid-wall is. */
+const WEB_OFF_WALL = 0.07;
+const CORNER_WEB_RADIUS = 0.75;
+const WALL_WEB_RADIUS = 0.6;
+/** How thick each strand is: thick enough to read at a distance in the retro look. */
+const STRAND_WIDTH = 0.026;
+const STRAND_DEPTH = 0.01;
+/** The rings of a web, as shares of its spokes' length. */
+const WEB_RINGS = [0.28, 0.48, 0.68, 0.88];
+/** Where she stands below a web to reach it: how far out from the wall, and how clear of furniture. */
+const WEB_REACH = [0.75, 1.15];
+const WEB_STAND_CLEARANCE = 0.35;
+/** How far a corner web's standing place can be from its corner, along the wall. */
+const CORNER_STAND_ALONG = [0.45, 0.9];
+/**
+ * Places on the walls a cobweb can hang. Only the back (north) wall and the east wall by the bar are here,
+ * since those never move: bought floor can open up the west wall. `along` is x on the north wall and z on
+ * the east wall. A corner web spreads along the wall away from its corner (1 towards +x or +z, -1 the other
+ * way); 0 hangs both ways. Tops are low enough for the camera to see: it shows the back wall only up to
+ * about 2 m. None go behind the bar: its shelves cover the wall, and there's no floor to stand on.
+ */
+const WEB_PLACES: readonly { wall: "north" | "east"; along: number; spread: -1 | 0 | 1; top: number }[] = [
+  // Down low in the back wall's west corner, where the broom never reached.
+  { wall: "north", along: -7, spread: 1, top: 0.8 },
+  // Against the post between the window and the front door.
+  { wall: "north", along: -3.3, spread: 1, top: 1.95 },
+  // Up in the corners either side of the bedroom door's frame.
+  { wall: "east", along: -0.72, spread: -1, top: 2.3 },
+  { wall: "east", along: 0.72, spread: 1, top: 2.3 },
+  { wall: "east", along: 2.2, spread: 0, top: 2.5 },
+];
+
+/** A cobweb high on a wall: where it hangs, which way it faces, and where she stands to brush it down. */
+export interface CobwebSpot {
+  /** The top of the web, against the wall. */
+  anchor: Vector3;
+  /** The turn about Y that faces the web into the room. */
+  facing: number;
+  /** A corner web spreads one way along the wall from its corner (1 or -1, along the web's own x); 0 hangs both ways. */
+  spread: -1 | 0 | 1;
+  /** Open floor below it, where she stands to reach it. */
+  stand: Vector3;
+}
+
 const COLORS = {
   clay: 0x8a7a66,
   crust: 0x4e3018,
@@ -49,6 +95,8 @@ const COLORS = {
   ale: 0x5a3410,
   aleWet: 0x7a4a18,
   dust: 0x8c8474,
+  web: 0xd8d3c8,
+  spider: 0x1e1812,
 };
 
 /** A small random number generator, so the same mess always looks the same. */
@@ -70,6 +118,35 @@ export function findDustSpots(colliders: readonly Rect[], room: Rect): Vector3[]
     for (let z = room.minZ + DUST_WALL_INSET; z <= room.maxZ - DUST_WALL_INSET; z += DUST_GRID) {
       if (colliders.every((r) => distanceToRect(x, z, r) >= DUST_CLEARANCE)) spots.push(new Vector3(x, 0, z));
     }
+  }
+  return spots;
+}
+
+/**
+ * The places in the room a cobweb can hang, each with open floor below it to stand on. A place whose floor is
+ * taken up by furniture is left out.
+ */
+export function findCobwebSpots(colliders: readonly Rect[], room: Rect): CobwebSpot[] {
+  const spots: CobwebSpot[] = [];
+  const clear = (x: number, z: number) =>
+    x > room.minX + WEB_STAND_CLEARANCE &&
+    x < room.maxX - WEB_STAND_CLEARANCE &&
+    colliders.every((r) => distanceToRect(x, z, r) >= WEB_STAND_CLEARANCE);
+  for (const { wall, along, spread, top } of WEB_PLACES) {
+    // Where the wall's face is, the way along it (the web's own x), and the way into the room.
+    const north = wall === "north";
+    const face = north ? new Vector3(along, 0, room.minZ) : new Vector3(room.maxX, 0, along);
+    const tangent = north ? new Vector3(1, 0, 0) : new Vector3(0, 0, 1);
+    const inward = north ? new Vector3(0, 0, 1) : new Vector3(-1, 0, 0);
+    const anchor = face.clone().setY(top).addScaledVector(inward, WEB_OFF_WALL).addScaledVector(tangent, spread * WEB_OFF_WALL);
+    let stand: Vector3 | null = null;
+    for (const sideways of spread === 0 ? [0] : CORNER_STAND_ALONG) {
+      for (const reach of WEB_REACH) {
+        const at = face.clone().addScaledVector(inward, reach).addScaledVector(tangent, spread * sideways);
+        if (!stand && clear(at.x, at.z)) stand = at;
+      }
+    }
+    if (stand) spots.push({ anchor, facing: north ? 0 : -Math.PI / 2, spread, stand });
   }
   return spots;
 }
@@ -156,12 +233,17 @@ export class MessLayer {
     ale: solidRetroMaterial("Mess_Ale", COLORS.ale),
     aleWet: solidRetroMaterial("Mess_AleWet", COLORS.aleWet),
     dust: solidRetroMaterial("Mess_Dust", COLORS.dust),
+    web: solidRetroMaterial("Mess_Web", COLORS.web),
+    spider: solidRetroMaterial("Mess_Spider", COLORS.spider),
   };
+  private readonly spiderBody = new IcosahedronGeometry(0.035, 0);
+  private readonly spiderHead = new IcosahedronGeometry(0.022, 0);
   private readonly dustMaterial = solidRetroMaterial("Mess_DustPatch", 0xffffff);
 
   constructor(
     private readonly seats: readonly Seat[],
     private readonly dustSpots: readonly Vector3[],
+    private readonly cobwebSpots: readonly CobwebSpot[] = [],
   ) {
     this.group.name = "Messes";
     this.dustMaterial.map = dustTexture();
@@ -193,7 +275,7 @@ export class MessLayer {
       const existing = this.drawn.get(mess.id);
       // Dishes grow when a later night adds seats to the same table, so redraw them.
       if (existing && existing.vanishing === null && existing.spots.length === this.spotCount(mess)) continue;
-      if (existing) existing.root.removeFromParent();
+      if (existing) this.remove(existing);
       const drawn = this.draw(mess);
       this.drawn.set(mess.id, drawn);
       this.group.add(drawn.root);
@@ -203,7 +285,7 @@ export class MessLayer {
       drawn.vanishing ??= VANISH_SECONDS;
       drawn.vanishing -= dt;
       if (drawn.vanishing <= 0) {
-        drawn.root.removeFromParent();
+        this.remove(drawn);
         this.drawn.delete(id);
       } else {
         drawn.root.scale.setScalar(drawn.vanishing / VANISH_SECONDS);
@@ -211,11 +293,19 @@ export class MessLayer {
     }
   }
 
+  /** Takes a drawn mess out of the room, letting go of any geometry made just for it. */
+  private remove(drawn: Drawn): void {
+    drawn.root.removeFromParent();
+    drawn.root.traverse((object) => {
+      if (object instanceof Mesh && object.userData.ownGeometry) object.geometry.dispose();
+    });
+  }
+
   private spotCount(mess: Mess): number {
     return mess.kind === "dishes" ? mess.spots.length : 1;
   }
 
-  private mesh(geometry: CircleGeometry | LatheGeometry | CylinderGeometry | BoxGeometry | PlaneGeometry | IcosahedronGeometry, material: Material): Mesh {
+  private mesh(geometry: BufferGeometry, material: Material): Mesh {
     const mesh = new Mesh(geometry, material);
     mesh.castShadow = false; // Only the siblings cast shadows, to keep the frame rate up.
     mesh.receiveShadow = true;
@@ -255,6 +345,15 @@ export class MessLayer {
       root.position.copy(at);
       root.add(this.puddle(random));
       spots.push(at);
+    } else if (mess.kind === "cobweb") {
+      const spot = this.cobwebSpots[mess.spots[0] % Math.max(1, this.cobwebSpots.length)];
+      if (spot) {
+        // Centred on its top, so it shrinks away up into the corner.
+        root.position.copy(spot.anchor);
+        root.rotation.y = spot.facing;
+        root.add(this.cobweb(spot.spread, random));
+      }
+      spots.push(spot?.stand.clone() ?? new Vector3());
     } else {
       const at = this.dustSpots[mess.spots[0] % Math.max(1, this.dustSpots.length)]?.clone() ?? new Vector3();
       root.position.copy(at);
@@ -345,6 +444,72 @@ export class MessLayer {
     puddle.add(cup);
     puddle.position.y = DECAL_Y;
     return puddle;
+  }
+
+  /**
+   * A cobweb flat against the wall, hanging down from its top at the origin: spokes fanning out, sagging rings
+   * strung between them with a few torn through, and a loose strand or two. A corner web fans a quarter turn
+   * along the wall (`spread` 1 east, -1 west) and down the corner; one mid-wall hangs a half turn both ways.
+   * Built from thin strands merged into one mesh, so its outline follows the threads.
+   */
+  private cobweb(spread: -1 | 0 | 1, random: () => number): Object3D {
+    const web = new Group();
+    const corner = spread !== 0;
+    const radius = corner ? CORNER_WEB_RADIUS : WALL_WEB_RADIUS;
+    const spokes = corner ? 5 : 7;
+    // Angles in the wall's plane, x along the wall and y up: 0 runs along the top, -PI/2 straight down.
+    const span = corner ? Math.PI / 2 : Math.PI;
+    const side = corner ? spread : 1;
+    const ends = Array.from({ length: spokes }, (_, i) => {
+      const inner = i > 0 && i < spokes - 1;
+      const angle = -span * (i / (spokes - 1)) + (inner ? (random() - 0.5) * 0.16 : 0);
+      const length = radius * (inner ? 0.85 + random() * 0.15 : 1);
+      return new Vector2(Math.cos(angle) * length * side, Math.sin(angle) * length);
+    });
+
+    const strands: [Vector2, Vector2][] = ends.map((end) => [new Vector2(), end]);
+    for (const ring of WEB_RINGS) {
+      for (let i = 0; i + 1 < spokes; i++) {
+        // A few threads have torn, more often towards the edge.
+        if (random() < 0.06 + ring * 0.1) continue;
+        const a = ends[i].clone().multiplyScalar(ring);
+        const b = ends[i + 1].clone().multiplyScalar(ring);
+        const sag = a.clone().add(b).multiplyScalar(0.5 * 0.9);
+        strands.push([a, sag], [sag, b]);
+      }
+    }
+    // Loose strands hanging from the outer ring.
+    for (let i = 0; i < 1 + Math.floor(random() * 2); i++) {
+      const from = ends[1 + Math.floor(random() * (spokes - 2))].clone().multiplyScalar(WEB_RINGS[WEB_RINGS.length - 1]);
+      strands.push([from, from.clone().add(new Vector2((random() - 0.5) * 0.06, -(0.15 + random() * 0.2)))]);
+    }
+
+    const pieces: BufferGeometry[] = strands.map(([a, b]) => {
+      const length = a.distanceTo(b);
+      return new BoxGeometry(length + STRAND_WIDTH, STRAND_WIDTH, STRAND_DEPTH)
+        .rotateZ(Math.atan2(b.y - a.y, b.x - a.x))
+        .translate((a.x + b.x) / 2, (a.y + b.y) / 2, 0);
+    });
+    const merged = mergeGeometries(pieces);
+    for (const piece of pieces) piece.dispose();
+    if (merged) {
+      const strandsMesh = this.mesh(merged, this.materials.web);
+      // Every web has its own threads, so they're let go when it's brushed down.
+      strandsMesh.userData.ownGeometry = true;
+      web.add(strandsMesh);
+    }
+
+    // Now and then the spider is still at home.
+    if (random() < 0.5) {
+      const at = ends[1 + Math.floor(random() * (spokes - 2))].clone().multiplyScalar(WEB_RINGS[1 + Math.floor(random() * 2)]);
+      const body = this.mesh(this.spiderBody, this.materials.spider);
+      body.position.set(at.x, at.y, STRAND_DEPTH * 2);
+      body.scale.set(1, 1.2, 0.7);
+      const head = this.mesh(this.spiderHead, this.materials.spider);
+      head.position.set(at.x, at.y + 0.045, STRAND_DEPTH * 2);
+      web.add(body, head);
+    }
+    return web;
   }
 
   /** A patch of dust and grit, with a few grey clumps rolled up in it. */

@@ -87,6 +87,8 @@ export interface DayState {
   heatMax: number;
   /** Messes left on the floor from last night. */
   messes: number;
+  /** How many of those are cobwebs up on the walls. */
+  cobwebs?: number;
 }
 
 const OPENINGS = [
@@ -130,7 +132,16 @@ export function dayStory(s: DayState): string[] {
     lines.push("There's talk about the new keeper. Be careful what you say, and who you say it to.");
   }
 
-  if (s.messes > 0) lines.push("Last night left a mess on the floor. Clean it up before you ring the bell.");
+  const cobwebs = s.cobwebs ?? 0;
+  if (s.day === 0 && s.messes > 0) {
+    // The first morning: the place has stood shut since Grandma died, and cleaning it is the first lesson.
+    lines.push("The place has stood shut since Grandma died. Cobwebs hang in the corners and dust lies thick on the floor. Clean it all before you can ring the bell.");
+  } else if (s.messes > cobwebs) {
+    lines.push("Last night left a mess on the floor. Clean it up before you ring the bell.");
+    if (cobwebs > 0) lines.push("A spider has spun a web up on the wall, too.");
+  } else if (cobwebs > 0) {
+    lines.push("A spider has spun a web up on the wall. Brush it down before the guests see it.");
+  }
   return lines;
 }
 
