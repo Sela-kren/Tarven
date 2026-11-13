@@ -271,6 +271,30 @@ export const LEERING_CALLS: Record<GuestKind, readonly string[]> = {
     "Um. {Item}. And, the men at the ford said to... no. Never mind.",
     "{Item}, please. I've only a little coin. Is that... enough for...?",
   ],
+  adventurer: [
+    "{Item}, gorgeous! Heard you're the real treasure on this road!",
+    "{Item}, and come sit with the party. Plenty of lap to go round!",
+    "{Item}, sweetheart! We've a map, but we'd rather explore you.",
+    "Oi, lovely! {Item}, and is it true what the bards sing about you?",
+    "{Item}! Our cleric's blushing already. Lean over and finish the job.",
+    "{Item}, and a bed upstairs. Company optional. Hopefully not.",
+  ],
+  bandit: [
+    "{Item}, sweetheart. And whatever else you're selling.",
+    "Oi, pretty. {Item}, and sit where I can see you.",
+    "{Item}. Best thing on this road worth having, they say.",
+    "{Item}, and bring it slow. I like to case a place first.",
+    "{Item}, and name your price. I'm flush tonight. Don't ask why.",
+    "{Item}! Red scarf table! We're the ones whistling at you!",
+  ],
+  noble: [
+    "{Item}. I'm told the service here goes rather further.",
+    "{Item}, and come closer. I've heard such things about you.",
+    "{Item}. My servant says you entertain privately. Discreetly?",
+    "{Item}, and I'll pay for the private service. Handsomely.",
+    "{Item}. The Baroness's set talk of little else but you.",
+    "{Item}, and do bend properly. I'm paying for the view.",
+  ],
 };
 
 export const LEERING_THANKS: Record<GuestKind, readonly string[]> = {
@@ -305,5 +329,29 @@ export const LEERING_THANKS: Record<GuestKind, readonly string[]> = {
     "Thanks. I'm... I'm not looking. I am looking. Sorry.",
     "Oh. They weren't lying about you, then.",
     "Thank you. I'll... think about you. Not like that. Like that.",
+  ],
+  adventurer: [
+    "Ha! The songs didn't do you justice!",
+    "Cheers, lovely. Best view since the ruins.",
+    "Ta! I'd quest a long way for afters like you.",
+    "The warrior's still staring. Can't blame them.",
+    "Lovely. Any treasure to be had upstairs tonight?",
+    "Thanks! I'll put you in the story. The rude verses.",
+  ],
+  bandit: [
+    "Nice. Now turn round. Slowly.",
+    "Not bad. The rest of you looks worth the trip too.",
+    "Ta, sweetheart. I'll pay for the rest in silver. Fresh silver.",
+    "Lads were right. You're worth a detour.",
+    "Good. Now put yourself on my tab.",
+    "Cheers, pretty. Leave the back door open tonight, eh?",
+  ],
+  noble: [
+    "Charming. I've paid more for less in the lowlands.",
+    "Lovely. Do come up later. I'll make it worth your while.",
+    "Mm. Every bit as common as I was promised. Delightfully so.",
+    "Thank you. I'll have my servant ask your rate for the night.",
+    "Exquisite. And so very available, I hear.",
+    "Hm. The ale's coarse. The service is... promising.",
   ],
 };

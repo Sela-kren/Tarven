@@ -1,11 +1,15 @@
 # Last Call at Tarven: Story
 
 > The story design document. It replaces the story parts of GAME_CONCEPT.md (sections 1, 8.2, 9 and 11) once it is approved.
-> **Draft 2, 13 Nov 2026.** See the changelog at the bottom.
+> **Draft 2.11, 13 Nov 2026.** See the changelog at the bottom.
 
-**House rules stay in force.** Every character is an adult (18+), and the game says so. Every intimate beat is her choice, and pulling away always works. Sexual scenes stay as non-graphic 18+ cards.
+**House rules stay in force.** Every character is an adult (18+), and the game says so. Every intimate beat is her choice, and pulling away works until her own desire runs well past the touch (desire ≥ boldness − 1 + 3). Then it lands as **force**: she wants it too much to stop it. Force never happens when she or the guest is sloppy drunk. Sexual scenes stay as non-graphic 18+ cards.
 
 > **The main goal is popularity.** She starts with one cold tavern and a debt, and aims to make it **the most popular house on the pass**. She beats the rival taverns, buys them up, and decides whether to work with the bosses she beat, the Baron included. The red book is the story underneath. It explains why the Baron wants her tavern, and it is the leverage the top house gets to use.
+
+> **Fans drive the story, nights don't.** Every story beat, from the first rumour to the final Last Call, fires on her **fan count**. Nights keep passing and bring small things (section 7, "What nights do"), but no night count ever forces a beat or ends the run. A player who wants the ending can push for fans and reach it fast. A player who wants to explore can stay, try the other choices, and replay to see what else happens.
+
+> **Current scope: Chapter 1, Tarven.** Build and balance the village first: five houses to beat, Act 1 along the way, and the chapter ends when she is first in Tarven (section 7, "Tarven first"). The pass, Acts 2 and 3 and the Lantern come later.
 
 ---
 
@@ -53,7 +57,7 @@ The order is reversed: Father leaves first, and the split follows. Both parents 
 | 7 | You | So this is it. Grandma's tavern. |
 | 8 | You | **new** It's smaller than I remember. I was eight. Mother got us out in the night and never told me why. |
 | 9 | You | There's a letter waiting on the bar. It has the baron's seal on it. |
-| 10 | Narrator | Grandma owed the baron {debt} gold. Now you do. He collects in three nights, or the tavern is his. |
+| 10 | Narrator | Grandma owed the baron {debt} gold. Now you do. He'll send his man to collect once the tavern's on its feet. Until then, every night counts. |
 | 11 | You | **new** Behind the bar there's a clean square in the dust, where a book used to stand. |
 | 12 | You | **new** Grandma kept something here. Somebody's taken it. Or been looking for it. |
 | 13 | You | **new** Mother can't help. Father can't be found. It's just me now. |
@@ -131,8 +135,8 @@ The four first factions are in the game now. Three more arrive as the tavern cli
 | **Soldiers / knights** | From night 1 | Drunk, Angry, Lustful | Ale, a fight, attention | Good coin, lower heat | Ale, Fights | Rhea and the garrison |
 | **Smugglers** | From night 1 | Scheming | Discretion, a back room | Big tips, secrets | Secrets | Silas's salt |
 | **Fugitives** | From night 1 | Scared | Hiding, food without questions | Gratitude, rare info | Safety, Secrets | Ash and Father |
-| **Adventurers** (new) | 15 fans, once her name starts to travel | Happy, Drunk, Lustful | Ale, a map, a bed, a story to tell | Treasure coin, odd loot | Ale, Fights, Her | They can be hired: an escort, a break-in, or the road east to Father |
-| **Bandits** (new) | 25 fans, once her takings are worth robbing | Scheming, Angry | Protection money, a fence, a place to hide | Stolen goods, threats | Fights, Secrets | They rob the toll wagons for the Baron. Corran is a witness to the silver |
+| **Adventurers** (new) | 300 fans, once her name starts to travel | Happy, Drunk, Lustful | Ale, a map, a bed, a story to tell | Treasure coin, odd loot | Ale, Fights, Her | They can be hired: an escort, a break-in, or the road east to Father |
+| **Bandits** (new) | 500 fans, once her takings are worth robbing | Scheming, Angry | Protection money, a fence, a place to hide | Stolen goods, threats | Fights, Secrets | They rob the toll wagons for the Baron. Corran is a witness to the silver |
 | **Nobles** (new) | When she's 2nd or better on the Pass Ledger | Calm, Idolizing, Lustful | The best room, the best food, discretion | Big coin, favours, influence | Food, Safety, Her, Secrets | Baroness Varn's ambitions. The crown's auditor travels as one of them |
 
 **How the new factions play:**
@@ -142,9 +146,9 @@ The four first factions are in the game now. Three more arrive as the tavern cli
 
 **The second baron.** Baroness Varn rules the lowlands below the pass. She's the other side of "working with the boss": if Hesk falls, someone takes the keep, and she wants it to be her. The heroine can **partner with Hesk**, **back Varn against him**, or **give the book to the crown and back neither**. Backing Varn is a cleaner win than partnering with Hesk, but Varn will want the book too once she's in the keep.
 
-Minor named characters: **Garrick Thorne** (bounty hunter, night 2), **Wenna** (27, Ash's sister), and the Lantern's girls **Tamsin** (26), **Odile** (31) and **Bryn** (23).
+Minor named characters: **Garrick Thorne** (bounty hunter, the deserter beat), **Wenna** (27, Ash's sister), and the Lantern's girls **Tamsin** (26), **Odile** (31) and **Bryn** (23).
 
-The three rumours already in the game become one plot: Silas's salt (night 1) pays for Mara's meeting (night 3), and Ash (night 2) knows the garrison. Each betrayal at last call takes one piece off the board.
+The three rumours already in the game become one plot: Silas's salt (beat 1) pays for Mara's meeting (beat 3), and Ash (beat 2) knows the garrison. Each betrayal at last call takes one piece off the board.
 
 The widow Hesk already exists in table talk (`tabletalk.ts`), where a farmer courts her with turnips. That fits: she's the Baron's respectable face in the valley.
 
@@ -154,7 +158,7 @@ The widow Hesk already exists in table talk (`tabletalk.ts`), where a farmer cou
 
 | System | What it means in the story |
 |---|---|
-| **Gold and the debt** | Act 1's clock. After Act 1 the Baron doubles it, unless she promises him the book |
+| **Gold and the debt** | Paid when Pell comes to collect at a fan beat, never by date. After Act 1 the Baron doubles it, unless she promises him the book |
 | **Last call** | The main story choice of each night. Each night has its own trade-offs, and each choice sets a **story flag** that comes back later |
 | **Rumours** | Clues to the book and the cast. Hearing them needs her near the right table, so story and service pull on each other |
 | **Trust / Heat** | Whether the village stands with her, and how close the Baron is to kicking in the door |
@@ -187,25 +191,54 @@ The widow Hesk already exists in table talk (`tabletalk.ts`), where a farmer cou
 
 ### The story moves by fans, not by nights
 
-After Act 1, the acts and story beats are **measured in fans**. A beat fires at the start of the first night after she reaches its fan count. Beats fire in order, at most one a night, and each fires only once.
+The whole story, **Act 1 included**, is **measured in fans**. A beat fires at the start of the first night after she reaches its fan count. Beats fire in order, at most one a night, and each fires only once. So the fastest a player can go is one beat a night, and there is no slowest.
 
 | Stage | Fans | Goal |
 |---|---|---|
-| **Survive** (Act 1) | 0 → first fans | Three nights to pay the debt. This is the one fixed clock in the game, and it's the hook |
-| **Climb** (Act 2) | 10 → 60 | Win a name on the pass, collect the book, face the rivals |
-| **Top of the pass** (Act 3) | 60 → top house | Beat the rivals on the Ledger. The Baron and the auditor come to the top house |
+| **Chapter 1: Tarven** (Act 1 inside it) | 0 → 501 | **The current scope.** Beat the five houses in Tarven and become the first house in the village. Act 1 (the salt, the deserter, the meeting, Pell's price) plays along the way. See "Tarven first" below |
+| *Later:* **Climb the pass** (Act 2) | 501 → 1,500 | Win a name on the pass, collect the book, face the pass rivals |
+| **Top of the pass** (Act 3) | 1,500 → top house | Beat the rivals on the Ledger. The Baron and the auditor come to the top house |
 | **Expand** | After Last Call | Buy the beaten houses and run the pass's taverns (see "Winning" below) |
 
-**Waiting still costs her.** Nights keep passing between beats:
-- the rivals gain fans every night (Stag +2, Velvet +2, Rat +1),
-- the Baron's debt instalments fall due every 7 nights,
-- and Pell's patience shrinks.
+**The debt is paid at beats, not by date.** Pell collects when a beat brings him to the bar (section 9 finale, then the Act 2 beats), so a slow player is never foreclosed just for taking their time.
 
-A player who stalls drops down the Ledger, so the race keeps its pace without a night count.
+### What nights do (small, never the driver)
+
+Nights between beats are free service nights. They keep the tavern alive without pushing the plot:
+
+| Each night brings | Example |
+|---|---|
+| A **side rumour** from a shuffled pool | Who's courting the widow, a lost goat, a minor smuggling run. Selling or keeping it moves trust, heat and gold a little, never a story flag |
+| **Table talk and gossip** about who she has become | The existing gossip and banter, keyed to her stats |
+| A **minor visitor** now and then | Wenna, Garrick, Kestrel's party, a chapel brother. Small favours, no main flags |
+| **Slow rival growth** (on the pass, later) | Each pass rival gains at most +15 fans a night, so stalling slips her a little on the Ledger but never loses the game |
+| **Seasons and weather** | Snow on the pass thins the farmers and brings more fugitives. Flavour and guest mix only |
+| **Letters, building, the Lantern** | Letters unlock by milestones (section 10), and House Plans and Lantern nights run every night |
+
+**No night count can end the run.** The only fail states are heat maxed (Arrested), missed payments at beats (Foreclosed), and the story endings themselves.
+
+### Replay
+
+The story is short when pushed and wide when explored, so a second run should feel different:
+- **Choices branch:** each last call sets flags that change who comes back, which pieces of the book are on offer and which endings are open.
+- **Side nights shuffle:** side rumours, minor visitors and table talk are drawn from pools, so no two runs have the same in-between nights.
+- **The journal remembers across runs:** endings found, letters read and Ledger victims are kept in a **"What happened"** page, with blanks for the ones not seen yet. This tells the player there's more to find.
+- **Four kinds of heroine** (section 4) and three crowns (below) give each run a different shape.
 
 ### Every fan has a reason to come
 
-A guest who leaves happy may become a fan. Each one is tagged with what pleased them most that night:
+A guest who leaves happy may become a fan. Each one is tagged with what pleased them most that night.
+
+**How fans are earned** (per night, counted at dawn):
+
+| What happened | Fans |
+|---|---|
+| A guest leaves happy (they bring their household and friends) | +5 |
+| A guest leaves delighted (served fast, clean room, a good mood or better) | +10 |
+| A guest walks out | −5 |
+| The room was filthy at closing | −15 |
+
+A quiet early night gives about 25 fans, and a good busy night 40 to 75. The deserter beat (50 fans) can come as early as night 2.
 
 | Tag | Group |
 |---|---|
@@ -217,19 +250,77 @@ A guest who leaves happy may become a fan. Each one is tagged with what pleased 
 - **Losing them:** walkouts, a filthy room, and rivals beating her on their tag.
 - **Fear-fans:** at crooked corruption or above, new fans come out of fear. They tip more but desert her on the final night.
 
-### The three rivals
+### Tarven first: the Village Ledger (Chapter 1, the current scope)
+
+Before the pass, she has to win her own village. Tarven has **five houses** that already have their fans. She opens as the **6th of 6**, and beats them one by one, from the smallest to the biggest. When she passes the Copper Bell she is **first in Tarven**, and the chapter ends.
+
+Kept small on purpose, so it's easy to build and balance:
+- **The village houses don't grow.** Their fan counts are fixed, so each one is a clear target. Rival growth starts on the pass, later.
+- **A house falls when her fans pass its count.** Its boss comes in the next night, and that is the beat.
+- **Two choices per fallen house, no buying yet.** Buying and managing houses comes later with the pass.
+
+| # | House | Boss | Fans | Steals | Beat it fairly | Beat it dirty | What its boss gives up |
+|---|---|---|---|---|---|---|---|
+| 5th | **Hollin's Cider Barn** (farmers drink on credit in his barn) | **Hollin** (55), the seed lender | 100 | Ale | Cheaper ale, and let farmers run a tab | Tell Pell his cider is untaxed | His credit book: half the farmers owe him, and he owes the Baron |
+| 4th | **The Bakehouse** (pies and gossip at one long table) | **Goodwife Tansy** (44) | 200 | Food | Better bread and stew, a clean room | Spoil her flour | She knew Wren in the Lantern days: the first hint of what the house used to be |
+| 3rd | **The Watch Canteen** (the garrison's drinking room) | **Sergeant Pike** (42) | 300 | Fights, Ale | Win the brawl night against his soldiers | Tell Rhea that Pike sells the garrison's ale | His soldiers talk about the silver wagons (sets `heardSilver` if she missed it) |
+| 2nd | **The Toll-Gate Inn** (beds for travellers at the village gate) | **Agnes Crale** (58) | 400 | Safety | Keep travellers and fugitives safe | Tell her guests she reports them, and empty her rooms | She writes down every traveller for Pell. Proof that Pell has eyes everywhere |
+| 1st | **The Copper Bell** (the big tavern on the square) | **Jory Bell** (39), the Baron's friend | 500 | Secrets, Ale | Keep secrets better than he does, and win Silas's crew | Expose Pell's office in his back room | Pell's drafts of Wren's debt note: the first proof the debt is forged |
+
+### The five innkeepers (they need models)
+
+Each boss is a named character who stands behind their own bar on the Village Ledger card, and walks into her tavern when their house falls. Each one is a **preset look on the existing bodies** (`male.glb` / `female.glb`): sliders for build and age, a hairstyle, colours, plus **one signature outfit** of their own. They must read as five different people, not one body recoloured (the character-variety rule).
+
+| Innkeeper | Body | Build and age | Hair and face | Signature outfit | New pieces needed |
+|---|---|---|---|---|---|
+| **Hollin** (55) | Male | Heavy-set, a little stooped, short | Grey, thinning on top, full grey beard | Farmer's smock over a brown waistcoat, a credit book and pencil on a cord at his belt | Full beard, stoop posture, the smock outfit |
+| **Goodwife Tansy** (44) | Female | Round and strong, broad arms | Brown bun under a kerchief, rosy cheeks | Rolled sleeves, a flour-dusted apron over a russet dress | Kerchief, flour dusting on the apron, the baker outfit |
+| **Sergeant Pike** (42) | Male | Broad and tall, thick neck | Buzz cut, heavy moustache, a scar on one cheek | The garrison's colours and badge (knight kit faction, no helmet), sergeant's sash | Moustache, scar decal. Outfit from `knight_kit.py` |
+| **Agnes Crale** (58) | Female | Tall and thin, straight-backed | Iron-grey hair in a tight bun, spectacles | High-collared dark dress, a ring of keys and a traveller's register at her hip | Spectacles, the keys and register, the dress outfit |
+| **Jory Bell** (39) | Male | Slim, polished | Dark hair slicked back into a short tail, trimmed goatee | Burgundy waistcoat with a copper bell pin, white shirt, rings | Goatee, the bell pin, the waistcoat outfit |
+
+**Shared new pieces** (built once, reused by guests later too): beards and moustaches (full, moustache, goatee) as male hair meshes, spectacles, a kerchief, and a stoop posture. New outfits go in `tools/blender/build_world.py` as guest-only, like the faction outfits. Each innkeeper outfit only needs the body they use.
+
+**When a house falls,** its boss comes to her the next night:
+
+| Choice | What she gets | Price | The boss |
+|---|---|---|---|
+| **Partner** | A little gold every night, and the house sends her fans of its tag. She gets the clue above | Trust +1 | Stays friendly, and may help her later |
+| **Ruin** | The house closes, and half its fans come to her. She gets the clue above | Corruption, heat, and a Ledger entry with the boss as the victim | Holds a grudge, and may come back |
+
+### Chapter 1, beat by beat
+
+Every beat fires on fans, at most one a night, in this order:
+
+| Fans | Beat | Rank after |
+|---|---|---|
+| 0 | **The salt** (section 9) | 6th |
+| 50 | **The deserter** | 6th |
+| 101 | **Hollin's Cider Barn falls.** Hollin comes in | 5th |
+| 150 | **The meeting** | 5th |
+| 201 | **The Bakehouse falls.** Tansy comes in | 4th |
+| 250 | **Pell at dawn** (the Act 1 finale). The debt doubles to 300 unless she promises the book | 4th |
+| 301 | **The Watch Canteen falls.** A brawl night with Pike's soldiers. Pell collects the **first 100** | 3rd |
+| 401 | **The Toll-Gate Inn falls.** Agnes comes in. Pell collects the **second 100** | 2nd |
+| 501 | **The Copper Bell falls: first in Tarven.** Jory comes in. Pell collects the **last 100** and asks for the book again. Riders from the Gilded Stag hand out cards at the door: the pass has noticed her | 1st |
+
+If she promised Pell the book, he doesn't collect. He asks where it is instead, and his patience gets shorter each time.
+
+**How Chapter 1 ends (the current build):** at 501 fans, a **"First in Tarven"** card is read at dawn. It changes with her biggest fan group (Keeper or Network) and her Act 1 flags (Mara free, Ash hidden, Oden's chapel open). Then comes a "To be continued: the pass" teaser. **Arrested** (heat maxed) and **Foreclosed** (two of Pell's collections missed in a row) can still end the run early.
+
+### The pass rivals (later, after Tarven)
 
 | Rival | Steals | Starting fans | Beat it fairly | Beat it dirty |
 |---|---|---|---|---|
-| **The Gilded Stag** (respectable inn in the valley) | Food, Safety | 40 | Respect, good food, protecting guests | Poison its ale, expose its silver early |
-| **The Velvet House** (the brothel that rose when the Lantern closed) | Her, Girls | 30 | Better terms, girls who choose to move | Burn it, blackmail its clients |
-| **The Drowned Rat** (river dive) | Fights, Ale | 25 | Win brawls, win Silas's crew | Inform on Grig to the garrison |
+| **The Gilded Stag** (respectable inn in the valley) | Food, Safety | 1,200 | Respect, good food, protecting guests | Poison its ale, expose its silver early |
+| **The Velvet House** (the brothel that rose when the Lantern closed) | Her, Girls | 1,000 | Better terms, girls who choose to move | Burn it, blackmail its clients |
+| **The Drowned Rat** (river dive) | Fights, Ale | 800 | Win brawls, win Silas's crew | Inform on Grig to the garrison |
 
-Dirty tactics win fans faster, but each one raises corruption and heat and goes in the Ledger.
+All three start above the 501 fans that end Chapter 1, so she arrives on the pass in 4th place. Dirty tactics win fans faster, but each one raises corruption and heat and goes in the Ledger.
 
 ### The Pass Ledger
 
-The journal always shows the live ranking. A **Ledger card** is also read at dawn at three moments: when she reaches **40 fans**, when she reaches **60 fans** (end of Act 2), and after **Last Call** (final). On the final card, her largest group of fans decides which crown she wears:
+The journal always shows the live ranking. A **Ledger card** is also read at dawn at three moments: when she reaches **1,000 fans**, when she reaches **1,500 fans** (end of Act 2), and after **Last Call** (final). On the final card, her largest group of fans decides which crown she wears:
 
 - **Keeper's crown:** mostly Food, Ale and Safety fans.
 - **Lantern crown:** mostly Her and Girls fans.
@@ -286,7 +377,7 @@ Corruption measures how evil she has become, and the player is answerable for it
 
 | Deed | Victim | What comes back |
 |---|---|---|
-| Sold the salt (night 1) | Silas | He starts a brawl on night 2. His crew's bottle prices go up |
+| Sold the salt (beat 1) | Silas | He starts a brawl the next night. His crew's bottle prices go up |
 | Gave up Ash | Ash | His sister Wenna comes in at the midpoint (The poison) and asks whether you knew him |
 | Mara arrested | The farmers | A boycott: her Food fans move to the Stag |
 | Turned a beggar out into the snow | A stranger | Oden buries him and stops trusting her |
@@ -303,11 +394,20 @@ Corruption only goes down through acts that cost something. Never for free:
 
 ---
 
-## 9. Act 1: The Inheritance (nights 1–3, the current build)
+## 9. Act 1: The Inheritance (0 → 250 fans, inside Chapter 1)
 
-Act 1 keeps the three built nights. Speakers get names, each last call gets its own trade-offs, and the act ends on a twist instead of a plain ending.
+Act 1 keeps the three built nights as its first three **beats**. Speakers get names, each last call gets its own trade-offs, and the act ends on a twist instead of a plain ending.
 
-### Night 1: The salt
+| Fans | Beat |
+|---|---|
+| 0 (the first night) | The salt |
+| 50 | The deserter |
+| 150 | The meeting |
+| 250 | Act 1 finale: Pell at dawn |
+
+These are woven into Chapter 1 with the first two village houses (section 7, "Chapter 1, beat by beat"). A player who earns fans fast plays them on nights 1 to 6. A slower player gets side nights in between. "Next night" below means the next beat night.
+
+### Beat 1: The salt
 
 - **Who's in:** Mara Holt and a neighbour (the farmer table), Silas Crowe (the rumour guest), a soldier.
 - **Rumour:** Silas tells Mara the salt is safe *"under Oden's floor"*.
@@ -316,11 +416,11 @@ Act 1 keeps the three built nights. Speakers get names, each last call gets its 
 | Choice | Effect | What it changes later |
 |---|---|---|
 | Tell the truth: the chapel floor | +5 gold, Heat −2, Trust −3 | Oden is fined and the chapel is shut. He stops coming in. Silas's prices for bottles go up |
-| Lie: send him to the quarry | Heat +1, Trust +2 | Silas leaves a crate of salt: stew sells for more on night 2 |
-| Sell it | +25 gold, Trust −2 | Only three people knew. On night 2 Silas works out who talked and starts a **brawl** |
+| Lie: send him to the quarry | Heat +1, Trust +2 | Silas leaves a crate of salt: stew sells for more from the next night |
+| Sell it | +25 gold, Trust −2 | Only three people knew. On the next night Silas works out who talked and starts a **brawl** |
 | (didn't hear) Say nothing / make something up | as now | |
 
-### Night 2: The deserter
+### Beat 2: The deserter (50 fans)
 
 - **Who's in:** Ash and Silas at one table, two of Rhea's soldiers at another ("the Baron's short of silver" stays: it is the first clue).
 - **Rumour:** Ash whispers he deserted and crosses the border at dawn.
@@ -328,12 +428,12 @@ Act 1 keeps the three built nights. Speakers get names, each last call gets its 
 
 | Choice | Effect | What it changes later |
 |---|---|---|
-| Tell the truth: the border, at dawn | +10 gold (the bounty), Heat −2, Trust −2 | Ash is caught. On night 3 Rhea mentions he'll hang. The father thread goes through the cells instead |
+| Tell the truth: the border, at dawn | +10 gold (the bounty), Heat −2, Trust −2 | Ash is caught. At the meeting Rhea mentions he'll hang. The father thread goes through the cells instead |
 | Lie: send him down the valley | Heat +1, Trust +1 | Ash gets away. He may return in Act 2 |
-| **New: hide him in the cellar** (only if she protected someone on night 1, or Kindness ≥ 2) | Heat +2, Trust +2 | Ash stays in the cellar. At dawn he tells her he knew a man in the east with her face |
+| **New: hide him in the cellar** (only if she protected someone at the salt beat, or Kindness ≥ 2) | Heat +2, Trust +2 | Ash stays in the cellar. At dawn he tells her he knew a man in the east with her face |
 | Sell it | +25 gold, Trust −2 | Ash is caught |
 
-### Night 3: The meeting
+### Beat 3: The meeting (150 fans)
 
 - **Who's in:** Mara with an old farmer and Silas (if he's still friendly), and Rhea's soldiers ("half the garrison wouldn't lift a sword" stays).
 - **Rumour:** Mara is gathering the village at the mill the night after the debt falls due.
@@ -343,20 +443,25 @@ Act 1 keeps the three built nights. Speakers get names, each last call gets its 
 |---|---|---|
 | Tell the truth: the old mill | Heat −3, Trust −3 | Mara is arrested. **The Village Rises ending is closed for good** |
 | Lie: the north road ruins | Heat +2, Trust +2 | The garrison marches into the snow |
-| **New: tell Rhea where the Baron's silver goes** (only if she heard the soldiers' gossip on night 2) | Heat +1 | Rhea doesn't march. She leaves shaken. Rhea's route and the garrison's doubts begin |
+| **New: tell Rhea where the Baron's silver goes** (only if she heard the soldiers' gossip at the deserter beat) | Heat +1 | Rhea doesn't march. She leaves shaken. Rhea's route and the garrison's doubts begin |
 | Sell it | +25 gold, Trust −2 | Mara is arrested |
 
-### Act 1 finale: Pell at dawn
+### Act 1 finale: Pell at dawn (250 fans)
 
-Whatever happened with the gold, Pell comes in at dawn and names the real price:
+The debt falls due here, at 250 fans, not on a set night. Pell comes in at dawn to collect, and names the real price:
 
 > *"Keep your hundred and fifty. The Baron wants the book your grandmother kept. Bring it to him and the debt is forgotten. Hide it, and the debt doubles."*
+
+| She has | What happens |
+|---|---|
+| 150 gold or more | She can pay, and the Baron still wants the book. The debt doubles to 300 anyway unless she promises it |
+| Less than 150 | She promises the book (debt "forgotten" for now), or takes the doubled debt in instalments |
 
 Then she finds **Wren's first letter**, hidden in the hollow leg of the bar stool Wren always sat on:
 
 > *"If Pell is asking you about my book, then I'm already dead, and it wasn't my heart. Don't drink anything he pours."*
 
-**In the current 3-night build:** Arrested stays a real game over. The other endings play, then this scene plays as a "To be continued" teaser.
+**In the current build:** Arrested stays a real game over. Until Act 2 exists, the Act 1 finale ends the run: the old ending plays (Paid in Full, Foreclosed or The Village Rises), then this scene plays as a "To be continued" teaser.
 
 ---
 
@@ -392,22 +497,24 @@ Letters are the story's reward for playing the systems. Each one unlocks at a mi
 
 ---
 
-## 11. Act 2: The Red Book (10 → 60 fans)
+## 11. Act 2: The Red Book (later, after Tarven: 501 → 1,500 fans)
 
-The debt is 300, paid in instalments every 7 nights, or "forgotten" if she promises Pell the book. The rivals open their doors. Each beat carries a rumour about one piece of the book, won one of the four ways (section 6). Upstairs rooms open in House Plans. Nights between beats are free service nights, with the usual rumours and table talk.
+> **Later.** Not part of the current scope. Act 2 starts after Chapter 1 ends at 501 fans. The fan numbers below are from before the Tarven chapter and will be redone when we get there. Some of its beats may move into Tarven (Sabine's visit, Oden and the poison).
+
+The debt is 300, paid in three instalments of 100 that Pell collects in Chapter 1 (at the Watch Canteen, the Toll-Gate Inn and the Copper Bell), or "forgotten" if she promises Pell the book. Missing one raises heat and the next instalment. Missing two in a row is Foreclosed. The rivals open their doors. Each beat carries a rumour about one piece of the book, won one of the four ways (section 6). Upstairs rooms open in House Plans. Nights between beats are free service nights, with the usual rumours and table talk.
 
 | Fans | Beat | What happens |
 |---|---|---|
-| 10 | New terms | Pell's visit sets the terms. A runner from the Gilded Stag hands out cards for cheaper ale: the rivals arrive, and Fans appear on the HUD. Rumour: Oden's lock and key |
-| 20 | The velvet card | Sabine Marrow drinks at the bar and sizes her up. She offers to buy the tavern, or a partnership. She knew Wren, and it shows. Rumour: Mara's pages |
-| 30 | The poison | **Midpoint.** Oden tells her what he saw the night Wren died (Silas tells it if Oden was betrayed). New last-call choice: **pour Pell a drink of her own**. It removes Pell for good, the Baron comes sooner (heat jumps), and it goes in the Ledger |
-| 40 | The first Ledger | Grig's men come to break her furniture: a brawl night. Silas's piece is on offer to whoever holds the room. At dawn, the first Pass Ledger card |
-| 45 | The inspection | The widow Hesk inspects the tavern "on behalf of the innkeepers' guild". A clean, respectable house wins Food and Safety fans from the Stag |
-| 50 | The turn | Ash comes back, or a letter from the east arrives: Father is alive in the keep's cells. The Baron doubles the road toll, guests thin out everywhere, and every rival gets desperate |
+| 600 | New terms | Pell's visit sets the terms. A runner from the Gilded Stag hands out cards for cheaper ale: the rivals arrive, and Fans appear on the HUD. Rumour: Oden's lock and key |
+| 700 | The velvet card | Sabine Marrow drinks at the bar and sizes her up. She offers to buy the tavern, or a partnership. She knew Wren, and it shows. Rumour: Mara's pages |
+| 850 | The poison | **Midpoint.** Oden tells her what he saw the night Wren died (Silas tells it if Oden was betrayed). New last-call choice: **pour Pell a drink of her own**. It removes Pell for good, the Baron comes sooner (heat jumps), and it goes in the Ledger |
+| 1,000 | The first Ledger | Grig's men come to break her furniture: a brawl night. Silas's piece is on offer to whoever holds the room. At dawn, the first Pass Ledger card |
+| 1,150 | The inspection | The widow Hesk inspects the tavern "on behalf of the innkeepers' guild". A clean, respectable house wins Food and Safety fans from the Stag |
+| 1,300 | The turn | Ash comes back, or a letter from the east arrives: Father is alive in the keep's cells. The Baron doubles the road toll, guests thin out everywhere, and every rival gets desperate |
 
 **The lantern isn't on the fan track.** It is offered on the first night after its gate is met (mind stage 2 and the madam's last letter), at any point from Act 2 on. See section 12.
 
-At **60 fans**, Act 2 ends with the second Ledger card.
+At **1,500 fans**, Act 2 ends with the second Ledger card.
 
 **Story flags from Act 1 come back:** a shut chapel means Oden's piece must be bought from the Baron's men. A caught Ash means Father's trail runs through the keep's cells, reached through Rhea's route.
 
@@ -415,7 +522,9 @@ At **60 fans**, Act 2 ends with the second Ledger card.
 
 ## 12. The Lantern arc (the brothel path)
 
-**The gate changes** from "corruption 100" to **mind stage 2 or more (lewdness) plus finding the lantern**. Lust opens the path, and corruption decides what kind of madam she is.
+> **Later**, apart from the unlock, which is already built (lewdness 50 or corruption 50).
+
+**The gate changes** from "corruption 100" to **lewdness 50 or corruption 50**, whichever comes first. Lust or greed can open the path, and corruption decides what kind of madam she is. (Done in `tavern.ts` `unlockBrothel()`. Finding the lantern is still to add as the story moment that hangs it.)
 
 | Beat | What happens |
 |---|---|
@@ -564,13 +673,13 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 
 ---
 
-## 13. Act 3: Last Call (60 fans → top house)
+## 13. Act 3: Last Call (later: 1,500 fans → top house)
 
 | Fans | Beat | What happens |
 |---|---|---|
-| 60 | Father's trail | Getting the last pages means reaching Father in the cells. That needs Rhea's route, Silas's tunnels, Kestrel's adventurers (hired), or Pell's price |
-| 70 | The rival night | The showdown with whichever rival is closest to her on the Ledger: expose the Stag, take the Velvet House, or break the Rat |
-| 80 | The auditor | The crown's auditor arrives, travelling as a minor noble, and lodges at the top house. Baroness Varn arrives the same night to court him. If that isn't her tavern, she has to get him through her door some other way |
+| 1,500 | Father's trail | Getting the last pages means reaching Father in the cells. That needs Rhea's route, Silas's tunnels, Kestrel's adventurers (hired), or Pell's price |
+| 1,750 | The rival night | The showdown with whichever rival is closest to her on the Ledger: expose the Stag, take the Velvet House, or break the Rat |
+| 2,000 | The auditor | The crown's auditor arrives, travelling as a minor noble, and lodges at the top house. Baroness Varn arrives the same night to court him. If that isn't her tavern, she has to get him through her door some other way |
 | next night | The last offer | The Baron's final terms, through Pell if he's alive. If he isn't, the widow Hesk brings them. If she is the top house and holds enough of the book, the offer is a **partnership** instead of a threat (section 7) |
 | next night | Last call | A normal service night with Baron Hesk at the back table. Every guest in the room is someone her choices sent there: fans, Rhea's soldiers, Silas's crew, Mara's farmers, her girls. At last call the Baron asks for the book. The final Pass Ledger is read at dawn |
 
@@ -592,7 +701,7 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 | **Lovers' endings** (one per route) | A lover's route finished | Their faction stands with her at the climax |
 | **Paid in Full** | Gold ≥ debt, no book | The tavern is hers, and the Baron is still watching |
 | **Lost to the Night** | Mind stage 3, low respect, gold and fans, no lantern | A cautionary epilogue: the room owns her name, not her |
-| **Foreclosed** | Gold short, no book | She walks down the mountain |
+| **Foreclosed** | Two of Pell's collections missed in a row, no book promised | She walks down the mountain |
 | **Arrested** | Heat maxed | Irons |
 
 ---
@@ -601,15 +710,15 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 
 **Fixes to existing code:**
 1. **Mind stage reads lewdness only.** `src/game/lewd.ts` `mindStage()` uses `max(corruption, lewdness × 1.5)`, so a greedy informant becomes "filthy".
-2. **The brothel gate.** `tavern.ts` unlocks the brothel at corruption 100 (in `shift()`). Change it to mind stage 2 or more plus the lantern.
+2. **The brothel gate.** Done: `tavern.ts` `unlockBrothel()` opens the brothel at lewdness 50 or corruption 50, checked as corruption shifts and as passives are earned.
 3. **The intro.** Use the rewritten script in section 2 in `story.ts` `INTRO`.
-4. **Names and clashes.** Name the speakers in `tavern.ts` `NIGHTS`, make the night 3 captain Rhea, and turn gossip lines like "Wren kept a respectable house for forty years" (`gossip.ts`) into sly hints about the Lantern.
+4. **Names and clashes.** Name the speakers in `tavern.ts` `NIGHTS`, make the meeting beat's captain Rhea, and turn gossip lines like "Wren kept a respectable house for forty years" (`gossip.ts`) into sly hints about the Lantern.
 
 **New for Act 1:**
 
 5. **`src/game/plot.ts`:** story flags (`odenShut`, `silasAngry`, `silasOwes`, `ashCaught`, `ashHidden`, `maraArrested`, `rheaDoubts`, `heardSilver`) and Wren's letters with their unlock checks. Saved in `save.ts`.
 6. **`NIGHTS`:** the rewritten rumours, a last call per night with its own numbers, the two new conditional choices, and the flag each choice sets.
-7. **Flags change the next night:** Silas's brawl on night 2, Oden gone, Ash in the cellar, bottle and stew prices.
+7. **Flags change the next night:** Silas's brawl, Oden gone, Ash in the cellar, bottle and stew prices.
 8. **`story.ts`:** the Act 1 finale scene with Pell and Wren's first letter.
 9. **Dawn and journal:** a found letter shows on the morning card. The journal gets Letters and Ledger tabs.
 10. **Endings:** The Village Rises needs Mara free. Kept, Lost and Overthrow end on the "To be continued" teaser.
@@ -617,23 +726,26 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 **New for Act 2 and later:**
 
 11. **The Ledger:** corruption tiers, and each corrupt act stored with a victim id.
-12. **Fans and rivals:** a fans count with tags, rival counts that grow every night, the Pass Ledger card at 40 fans, 60 fans and after Last Call, and story beats triggered by fan count instead of night number (a beat queue in `plot.ts`).
+12. **Fans and rivals:** a fans count with tags, rival counts that grow a little every night on the pass (at most +15), the Pass Ledger card at 1,000 fans, 1,500 fans and after Last Call, and **every** story beat, Act 1 included, triggered by fan count instead of night number (a beat queue in `plot.ts`). `NIGHTS` becomes the beat nights, and side nights draw from a shuffled pool. The run no longer ends on "last night". It ends at an ending.
+12a. **Chapter 1 first (the current scope):** the five innkeeper models (preset looks plus their outfits and the shared beards, spectacles, kerchief and stoop, section 7), the Village Ledger with the five Tarven houses at fixed fan counts (100 / 200 / 300 / 400 / 500), the Chapter 1 beat list (section 7), the partner-or-ruin card when a house falls, Pell's three collections, and the "First in Tarven" card plus teaser as the end of the build. Build this before anything on the pass.
+12b. **Replay:** a cross-run "What happened" journal page (endings found, letters read, victims) saved outside the run slots.
 13. **Owned houses:** a list of houses she owns, each with a manager (bought) or a partner boss (with loyalty), whose fans add to hers.
 14. **The Baron partnership:** a last-call choice on The last offer, plus the Master of the Pass and Baron's Partner endings.
 15. **Expand mode (later):** play continues after Last Call with new houses to win.
 16. **The Lantern (brothel setup):** extend `houseMode` with a lit/dark choice each evening, and add Lantern builds to House Plans (rooms, parlour, Red Room, bathhouse, doorman). Also: a staff list in `save.ts` (appeal, charm, stamina, loyalty, knack, corruption, resolve, records), each girl's lewdness worked out from her own records (reuse `lewdnessOf` and `mindStage` from `passives.ts` and `lewd.ts`), a small set of girl passives, the nightly corruption drift toward the madam's (managers and partner bosses too), tier behaviours for the girls (purse-lifting, selling secrets, skimming, walking out), house rules, a booking card, a door-lamp timer per room, Lantern trouble events, and a Lantern line on the dawn report.
-17. **New guest factions:** add `adventurer`, `bandit` and `noble` to the guest kinds, each with its own looks (see the character-variety rule), moods, orders and table talk. They unlock by night or by Ledger rank (section 5).
+17. **New guest factions:** add `adventurer`, `bandit` and `noble` to the guest kinds, each with its own looks (see the character-variety rule), moods, orders and table talk. They unlock by fans or by Ledger rank (section 5).
 
 ---
 
 ## 16. Open questions
 
-1. Are the fan milestones right (10 / 60 / top house, about 80)? They set how long the game runs, and need playtesting against the rivals' growth.
-1b. Should Act 1 also move by fans, or keep its fixed 3-night debt clock as the hook?
+1. Are the fan milestones right (501 to finish Tarven, 1,500 to finish Act 2, about 2,000 for the top house)? They set how long the game runs, and need playtesting against the rivals' growth.
+1b. ~~Should Act 1 also move by fans?~~ **Decided: yes.** Fans drive every beat, and nights are never the driver.
+1c. How fast do fans come? The rule in section 7 ("How fans are earned") gives about 40 to 75 on a good night, so Tarven takes about 8 to 12 good nights. Needs playtesting.
 2. Is Father alive in the cells, or is it only his pages that are?
 3. Should the player see the corruption number, or only the tier word?
 4. Three rivals, or two to keep the scope down?
-5. The force and resist-fail touch texts (`touchtalk-force-addiotions.ts`) conflict with the house rule that pulling away always works. Keep the rule, or change it?
+5. ~~Force vs. "pulling away always works"?~~ **Decided: keep force.** It lands like a touch she lets happen (pay, desire, records), with its own lines from `touchtalk-force-addiotions.ts` where written (waist, smack, tugTie, lap, thigh, cheekKiss) and the plain "let it happen" line otherwise. `resistFail` texts are written but not used yet.
 6. The lantern gate is mind stage 2, but the letter that reveals the lantern unlocks at mind stage 3 (section 10). Which one moves?
 7. Does she run owned houses herself (walk to another map), or only through managers on a menu?
 8. Can she partner with the Baron and still get The Village Rises, if she uses the partnership to protect the village?
@@ -644,6 +756,11 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 
 | Date | Draft | Changes |
 |---|---|---|
+| 13 Nov 2026 | 2.11 | Each Tarven innkeeper gets a model: preset looks on the existing bodies, one signature outfit each, and shared new pieces (beards, moustache, goatee, spectacles, kerchief, stoop) |
+| 13 Nov 2026 | 2.10 | Village counted in hundreds: Tarven houses at 100 / 200 / 300 / 400 / 500, Chapter 1 ends at 501. Act 1 beats at 0 / 50 / 150 / 250. Fans earned ×5 (+5 happy, +10 delighted, −5 walkout, −15 filthy). Later stages scaled to match: pass rivals 1,200 / 1,000 / 800, Act 2 to 1,500, Act 3 to about 2,000 |
+| 13 Nov 2026 | 2.9 | Fan targets raised about 5×. Tarven houses at 20 / 40 / 60 / 90 / 125, so Chapter 1 ends at 126. Act 1 beats at 0 / 10 / 30 / 50. Pass rivals at 275 / 225 / 175, Act 2 to 300, Act 3 to about 400. Added "How fans are earned" (+1 happy, +2 delighted, −1 walkout, −3 filthy room) |
+| 13 Nov 2026 | 2.8 | **Chapter 1: Tarven** is now the current scope. Five village houses (Hollin's Cider Barn, the Bakehouse, the Watch Canteen, the Toll-Gate Inn, the Copper Bell) with fixed fans 4 / 8 / 12 / 18 / 25. She starts 6th, beats them one by one, and the chapter ends first in Tarven at 26 fans. Partner or ruin when a house falls. Pell's three 100-gold collections moved into the chapter. Pass rivals now start at 55 / 45 / 35. Acts 2 and 3 and the Lantern arc are marked later |
+| 13 Nov 2026 | 2.7 | Fans drive the whole story, Act 1 included (beats at 0 / 3 / 6 / 10 fans). Nights only bring small things: side rumours, minor visitors, slow rival growth, weather. The debt is collected at fan beats, never by date. Added a Replay section and a cross-run "What happened" journal page |
 | 13 Nov 2026 | 2.6 | Each girl has her own lewdness (slut level), worked out from her own records like the heroine's, with mind stages and a small set of girl passives. The madam's house tone shapes it without forcing it. Four kinds of girl from lewdness × corruption |
 | 13 Nov 2026 | 2.5 | Corruption spreads: each girl has her own corruption and resolve, drifting toward the madam's every lit night. Greedy rules push it faster. Girls act by tier (honest to rotten), and managers and partner bosses in owned houses drift too |
 | 13 Nov 2026 | 2.4 | Renamed Regulars to **Fans**. Acts 2 and 3 now move by fan milestones instead of night numbers (beats at 10–50 fans, Act 3 from 60). Ledger cards at 40, 60 and after Last Call. Rivals grow every night and the debt is paid in instalments, so waiting still costs her. New factions unlock by fans |

@@ -19,6 +19,7 @@ function openForNight(t: Tavern): void {
 /** A tavern on its first night, open and service started. */
 function opened(): Tavern {
   const t = new Tavern(SEATS);
+  t.rollRandom = () => 0.5; // Every guest gets their type's own numbers.
   openForNight(t);
   return t;
 }

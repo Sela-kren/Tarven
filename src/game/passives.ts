@@ -14,6 +14,7 @@
  * always say no.
  */
 import { CUM_SPOTS, type CumSpot } from "./cum";
+import { GUEST_KIND_LIST } from "./guestroles";
 import type { GuestKind } from "./tavern";
 import type { TouchRegion } from "./touchtalk";
 import type { SkillId, StatId } from "./skills";
@@ -1855,7 +1856,7 @@ export interface ProgressSave {
 
 const DUEL_MOVES: readonly DuelMove[] = ["kiss", "caress", "tease", "undress", "hands", "mouth", "tits", "ride", "anal", "hold", "stop"];
 const num = (raw: unknown, max = 1e6) => (typeof raw === "number" && Number.isFinite(raw) ? Math.min(max, Math.max(0, raw)) : 0);
-const KINDS: readonly GuestKind[] = ["farmer", "smuggler", "soldier", "fugitive"];
+const KINDS: readonly GuestKind[] = GUEST_KIND_LIST;
 const kindList = (raw: unknown): GuestKind[] =>
   Array.isArray(raw) ? [...new Set(raw.filter((k): k is GuestKind => KINDS.includes(k as GuestKind)))] : [];
 

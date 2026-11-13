@@ -8,7 +8,9 @@ import {
   readTouchMemory,
   touchAnswers,
   touchesFor,
+  touchLands,
   touchOutcome,
+  FORCE_DESIRE_MARGIN,
   type NerveFacts,
 } from "../src/game/touch";
 import { TOUCHES } from "../src/game/touchtalk";
@@ -94,8 +96,18 @@ describe("her answers", () => {
     expect(touchAnswers(kiss, { desire: 10, sloppy: false, guestSloppy: true })).toEqual(["slap", "pull"]);
   });
 
-  it("end with pulling away, so leaving is always the safe answer", () => {
-    expect(touchAnswers(kiss, { desire: 10, sloppy: false, guestSloppy: false }).at(-1)).toBe("pull");
+  it("end with pulling away until her desire runs well past the touch", () => {
+    const facts = { sloppy: false, guestSloppy: false };
+    const justUnder = desireNeeded(kiss.level) + FORCE_DESIRE_MARGIN - 0.5;
+    expect(touchAnswers(kiss, { ...facts, desire: justUnder }).at(-1)).toBe("pull");
+  });
+
+  it("can't pull away once her desire runs well past the touch, and it lands", () => {
+    const facts = { sloppy: false, guestSloppy: false };
+    expect(touchAnswers(kiss, { ...facts, desire: desireNeeded(kiss.level) + FORCE_DESIRE_MARGIN })).toEqual(["force"]);
+    expect(touchLands("force")).toBe(true);
+    expect(touchLands("pull")).toBe(false);
+    expect(touchOutcome(kiss, "force").gold).toBeGreaterThan(0);
   });
 
   it("pay and cost more the bolder the touch and the further she goes", () => {
@@ -165,19 +177,38 @@ describe("in the tavern", () => {
     expect(served("Male").inConversation).toBe(false);
   });
 
+  /** The boldness of the touch the guest reaches with, which is the same whatever her desire. */
+  const reachLevel = (): number => served("Female").touchChatPublic!.touch.level;
+
   it("pays her, makes her bolder and plays out on screen when she lets it happen", () => {
-    const t = served("Female", 10);
+    // Ready for it, but not so far past it that she can't pull away.
+    const t = served("Female", desireNeeded(reachLevel()) + 1);
     const gold = t.gold;
+    const before = Math.max(...METERS.map((m) => t.meters[m]));
     const allow = t.talkChoices.findIndex((c) => c.label === "Let it happen" || c.label === "Let them take it");
     expect(allow).toBeGreaterThanOrEqual(0);
     t.chooseTalk(allow);
     expect(t.gold).toBeGreaterThan(gold);
-    expect(Math.max(...METERS.map((m) => t.meters[m]))).toBeGreaterThanOrEqual(100);
+    expect(Math.max(...METERS.map((m) => t.meters[m]))).toBeGreaterThan(before);
     expect(t.takeTouchMoment()?.answer).toBe("allow");
     expect(t.takeTouchMoment()).toBeNull();
     expect(t.talkChoices.map((c) => c.label)).toEqual(["Get back to work"]);
     t.chooseTalk(0);
     expect(t.inConversation).toBe(false);
+  });
+
+  it("lands the touch, and counts it as let happen, when she wants it too much to pull away", () => {
+    expect(desireNeeded(reachLevel()) + FORCE_DESIRE_MARGIN).toBeLessThanOrEqual(10);
+    const t = served("Female", 10);
+    const gold = t.gold;
+    const pulled = t.records.pulled;
+    expect(t.talkChoices.map((c) => c.label)).toHaveLength(1);
+    t.chooseTalk(0);
+    expect(t.gold).toBeGreaterThan(gold);
+    expect(t.records.pulled).toBe(pulled);
+    expect(Object.values(t.touchMemory.lets).reduce((a, n) => a + (n ?? 0), 0)).toBe(1);
+    expect(t.takeTouchMoment()?.answer).toBe("force");
+    expect(t.talkChoices.map((c) => c.label)).toEqual(["Get back to work"]);
   });
 
   it("keeps what she's let happen across a save, and forgets tonight's desire by morning", () => {

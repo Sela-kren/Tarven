@@ -1,4 +1,5 @@
 import type { Mood } from "./mood";
+import { statsOf, type GuestRole, type RoleStats } from "./guestroles";
 import type { GuestKind } from "./tavern";
 import { CONFIDENT, FIRSTS, TOUCHES, type TouchDef, type TouchRegion } from "./touchtalk";
 
@@ -17,11 +18,14 @@ export type { TouchDef, TouchRegion } from "./touchtalk";
 
 export type TouchAnswer = "allow" | "lean" | "slap" | "pull" | "force";
 
+/** Whether the touch lands: she lets it, leans in, or wants it too much to stop it. A slap or a pull stops it. */
+export function touchLands(answer: TouchAnswer): boolean {
+  return answer === "allow" || answer === "lean" || answer === "force";
+}
+
 export const MAX_LEVEL = 10;
 export const MAX_DESIRE = 10;
 
-/** How bold each kind of guest starts out, before lust and drink. */
-const NERVE_BASE: Record<GuestKind, number> = { farmer: 1, fugitive: 1, smuggler: 2, soldier: 3 };
 /** Nerve for each point of a guest's lust, out of 10. */
 const NERVE_PER_LUST = 0.6;
 const NERVE_FROM_MOOD: Partial<Record<Mood, number>> = { lust: 1.5, drunk: 1.5, angry: 0.5, scheming: 0.5, idolize: -1, gloomy: -1, scared: -2 };
@@ -53,6 +57,10 @@ const CONFIDENT_AFTER = 3;
 
 export interface NerveFacts {
   kind: GuestKind;
+  /** Their type in the group; how bold they start out comes from it. */
+  role?: GuestRole;
+  /** Their own rolled numbers, when known; these win over the type's. */
+  stats?: RoleStats;
   /** The guest's lust, 0 to 10. */
   lust: number;
   mood: Mood;
@@ -72,7 +80,7 @@ export interface NerveFacts {
 
 /** How bold a guest will be, from 0 to 10. */
 export function nerve(f: NerveFacts): number {
-  let n = NERVE_BASE[f.kind] + f.lust * NERVE_PER_LUST + (NERVE_FROM_MOOD[f.mood] ?? 0) + f.allowed * NERVE_PER_ALLOWED;
+  let n = (f.stats ?? statsOf(f.kind, f.role)).nerve + f.lust * NERVE_PER_LUST + (NERVE_FROM_MOOD[f.mood] ?? 0) + f.allowed * NERVE_PER_ALLOWED;
   if (f.respect <= f.lowRespect) n += NERVE_DISRESPECTED;
   if (f.respect >= f.highRespect) n += NERVE_RESPECTED;
   if (f.slapped) n += NERVE_AFTER_SLAP;
@@ -234,7 +242,7 @@ export function answerLabel(touch: TouchDef, answer: TouchAnswer): string {
     case "lean":
       return touch.strip ? "Help them with it" : "Lean into it";
     case "force":
-      return "…"; // or "They don't stop" — UI can auto-resolve instead of showing a button
+      return touch.strip ? "You can't stop them" : "You can't pull away";
     case "slap":
       return "Slap them";
     case "pull":

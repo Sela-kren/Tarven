@@ -6,7 +6,7 @@
  * and it changes through the night with how they're treated. Kept apart from the rules so it can be tested.
  */
 import type { BanterContext } from "./banter";
-import type { GuestKind } from "./tavern";
+import { statsOf } from "./guestroles";
 
 export type Mood = "calm" | "happy" | "angry" | "lust" | "idolize" | "drunk" | "gloomy" | "scared" | "scheming";
 
@@ -58,28 +58,18 @@ const FORGIVES_ABOVE = 0.45;
 const FAME_TO_IDOLIZE = 12;
 const IDOLIZE_PER_FAME = 1.2;
 
-/** What each kind of guest tends to come in feeling, before the innkeeper's reputation is counted. */
-const LEANINGS: Record<GuestKind, Partial<Record<Mood, number>>> = {
-  farmer: { happy: 14, gloomy: 20, drunk: 6, angry: 4 },
-  soldier: { happy: 6, drunk: 22, angry: 10, lust: 4 },
-  smuggler: { scheming: 32, happy: 4, drunk: 4, lust: 3 },
-  fugitive: { scared: 42, gloomy: 12, happy: 2 },
-};
-
 /** At or below this respect, guests start thinking the worst of you; at or above the other, they mind their manners. */
 export const LOW_RESPECT = -3;
 export const HIGH_RESPECT = 4;
 /** At this much lust or longing (out of 10), it comes out in what someone says. */
 export const STRONG_LUST = 6;
 export const STRONG_DESIRE = 6;
-/** How high lust and desires can roll for each kind of guest, before your reputation is counted. */
-const LUST_CEILING: Record<GuestKind, number> = { farmer: 4, soldier: 7, smuggler: 6, fugitive: 3 };
-const DESIRE_CEILING: Record<GuestKind, number> = { farmer: 8, soldier: 7, smuggler: 9, fugitive: 10 };
 
 /** How much lust and longing someone walks in with, from 0 to 10. A flirty or disrespected innkeeper stirs up more lust. */
 export function arrivalFeelings(c: BanterContext, random: () => number): { lust: number; desires: number } {
-  const lustCeiling = Math.min(10, LUST_CEILING[c.kind] + c.persona.flirt * 0.6 + Math.max(0, -c.persona.respect) * 0.5);
-  return { lust: Math.floor(random() * (lustCeiling + 1)), desires: Math.floor(random() * (DESIRE_CEILING[c.kind] + 1)) };
+  const stats = (c.stats ?? statsOf(c.kind, c.role));
+  const lustCeiling = Math.min(10, stats.lustCeiling + c.persona.flirt * 0.6 + Math.max(0, -c.persona.respect) * 0.5);
+  return { lust: Math.floor(random() * (lustCeiling + 1)), desires: Math.floor(random() * (stats.desireCeiling + 1)) };
 }
 
 /** The mood that shows: strong lust comes through in someone with no other mood on them. */
@@ -92,10 +82,10 @@ export function feltMood(guest: { mood: Mood; lust: number }): Mood {
  * and `lust` is how much of it they came in with.
  */
 export function moodWeights(c: BanterContext, filth: number, lust = 0): [Mood, number][] {
-  const lean = LEANINGS[c.kind];
+  const lean = (c.stats ?? statsOf(c.kind, c.role)).leanings;
   const local = c.kind === "farmer" || c.kind === "fugitive";
   const betrayed = local ? c.persona.sold + c.persona.informed : 0;
-  const hiding = c.kind === "fugitive" || c.kind === "smuggler";
+  const hiding = c.kind === "fugitive" || c.kind === "smuggler" || c.kind === "bandit";
   return [
     ["calm", 34],
     ["happy", (lean.happy ?? 0) + (local ? Math.max(0, c.trust) * 1.5 : 0) + Math.max(0, c.persona.kindness)],

@@ -34,6 +34,7 @@ import {
   readTouchMemory,
   thoughtTier,
   touchAnswers,
+  touchLands,
   touchOutcome,
   type TouchAnswer,
   type TouchDef,
@@ -41,6 +42,7 @@ import {
   type TouchRegion,
 } from "./touch";
 import { GUEST_TOO_DRUNK, PULLS, SLAPS, TOO_DRUNK_TO_ALLOW, WAVERED, WORN_THIN } from "./touchtalk";
+import { FORCE_TEXTS } from "./touchtalk-force-addiotions";
 import { Fight, type FighterStats, type FightMove, type FightOutcome } from "./fight";
 import { ROLE_PLAYS, type RolePlay } from "./duellines";
 import { coatStages, loadOf, type CoatSection, type CumSpot } from "./cum";
@@ -95,6 +97,7 @@ import {
   type Records,
   type UpstairsAct,
 } from "./passives";
+import { guestFemale, GUEST_KIND_LIST, ROLES, ROLES_OF, roleLabel, rollStats, type GuestRole, type RoleStats } from "./guestroles";
 import { ALLOW_WILL, DRINK_WILL, LEAN_WILL, maxWillpower, NAP_RESTORE, refuseCost, STEADY_WILL } from "./willpower";
 
 /**
@@ -105,7 +108,7 @@ import { ALLOW_WILL, DRINK_WILL, LEAN_WILL, maxWillpower, NAP_RESTORE, refuseCos
 /** The drinks bought by the bottle and poured at the shelf behind the bar, on top of the ale on tap. */
 export type Bottle = "wine" | "mead" | "vodka";
 export type Item = "ale" | Bottle | "bread" | "stew" | "cask";
-export type GuestKind = "farmer" | "smuggler" | "soldier" | "fugitive";
+export type GuestKind = "farmer" | "smuggler" | "soldier" | "fugitive" | "adventurer" | "bandit" | "noble";
 export type Station = "tap" | "shelf" | "bread" | "pot" | "barrel" | "bin" | "wash";
 /** What food and drink are served on. The tavern owns a set number of each, and they have to be washed to be used again. */
 export type Ware = "cup" | "dish";
@@ -226,7 +229,6 @@ export const BOTTLES: Record<Bottle, { name: string; cost: number; extraPay: num
     detail: "Soldiers and fugitives ask for it. 4 gold more a cup, and it gets them drunk.",
   },
 };
-const FAVOURITE: Record<GuestKind, Bottle> = { farmer: "mead", smuggler: "wine", soldier: "vodka", fugitive: "vodka" };
 /** How often a guest who'd have had ale asks for their favourite instead, when there's some on the shelf. */
 const ASKS_FOR_BOTTLE = 0.5;
 /** Mead warms a guest's lust by this much; vodka gets a guest drunk this often. */
@@ -260,6 +262,9 @@ const ALL_HIGH = 60;
 const HIGH_RESPECT_NIGHT = 8;
 /** Guests start asking her upstairs once she's this lewd. */
 const INVITES_AT = 25;
+/** The house can become a brothel once she's this lewd, or this corrupt. Either one is enough. */
+const BROTHEL_AT_LEWDNESS = 50;
+const BROTHEL_AT_CORRUPTION = 50;
 /** A test partner's starting pleasure and stamina, from the test panel; null stamina is full. */
 export function applyTestPartner(partner: Partner, setup: { pleasure: number; stamina: number | null } | undefined): void {
   if (!setup) return;
@@ -343,21 +348,6 @@ export function drunkLabel(level: number): string {
 /** Serving with more than this share of patience left earns the tip. */
 const TIP_THRESHOLD = 0.5;
 
-interface KindRules {
-  patience: number;
-  pay: number;
-  tip: number;
-  trust: number;
-  walkoutHeat: number;
-}
-
-export const GUEST_KINDS: Record<GuestKind, KindRules> = {
-  farmer: { patience: 55, pay: 4, tip: 2, trust: 1, walkoutHeat: 0 },
-  smuggler: { patience: 40, pay: 9, tip: 4, trust: 0, walkoutHeat: 0 },
-  soldier: { patience: 30, pay: 6, tip: 1, trust: 0, walkoutHeat: 2 },
-  fugitive: { patience: 45, pay: 5, tip: 3, trust: 1, walkoutHeat: 0 },
-};
-
 export const UPGRADES: Record<UpgradeId, { name: string; detail: string }> = {
   quicktap: { name: "Better tap", detail: "Ale pours almost twice as fast." },
   bigpot: { name: "Bigger pot", detail: "Each pot makes 5 bowls instead of 3." },
@@ -387,6 +377,8 @@ interface Arrival {
   rumor?: boolean;
   /** Guests with the same party come in together, sit at one table, and talk. An index into the night's parties. */
   party?: number;
+  /** Their type in the group; left out, the group's types take turns (a party gets one of each). */
+  role?: GuestRole;
 }
 
 /** A group of guests who come in together and talk over a table. */
@@ -408,12 +400,13 @@ export interface NightPlan {
   lastCall: LastCall;
 }
 
-const arrive = (at: number, kind: GuestKind, order: Item, rumor = false, party?: number): Arrival => ({
+const arrive = (at: number, kind: GuestKind, order: Item, rumor = false, party?: number, role?: GuestRole): Arrival => ({
   at,
   kind,
   order,
   rumor,
   party,
+  role,
 });
 
 export const NIGHTS: NightPlan[] = [
@@ -477,6 +470,10 @@ export const NIGHTS: NightPlan[] = [
       arrive(29, "soldier", "bread", false, 1),
       arrive(35, "farmer", "ale"),
       arrive(41, "smuggler", "bread"),
+      arrive(45, "adventurer", "ale", false, 2),
+      arrive(45, "adventurer", "stew", false, 2),
+      arrive(45, "adventurer", "bread", false, 2),
+      arrive(45, "adventurer", "ale", false, 2),
       arrive(48, "soldier", "stew"),
     ],
     parties: [
@@ -518,6 +515,26 @@ export const NIGHTS: NightPlan[] = [
         offer: "The soldier bangs a cup down in front of you. \"To the baron! May he choke on it.\"",
         gossip: "\"Word is the baron's short of silver himself. That's why he's squeezing every inn on the road.\"",
       },
+      {
+        chat: [
+          "Warrior: \"Four ales! No, three ales and whatever the mage drinks!\"",
+          "Mage: \"Stew. And a table that isn't moving, if you have one.\"",
+          "Archer: \"Ruins on the north road by noon tomorrow. Kestrel says so.\"",
+          "Cleric: \"Innkeeper, sit with us. You look like you've been fighting all night.\"",
+        ],
+        overheard: [
+          "Archer: \"How many steps down did Kestrel say?\"",
+          "Warrior: \"A hundred. Or a thousand. She was drunk.\"",
+          "Mage: \"The map says forty. The map was drawn by a man who died there.\"",
+          "Cleric: \"Then we go down thirty-nine and see how we feel.\"",
+          "Warrior: \"I'll go first. I always go first.\"",
+          "Archer: \"You always go first because you can't read the map.\"",
+          "Mage: \"Nobody can read the map. That's why the gold is still there.\"",
+          "Cleric: \"Drink up. Tomorrow we're rich, or we're a song.\"",
+        ],
+        offer: "The warrior thumps a cup down in front of you. \"To the gold under the hill, and whoever's mad enough to fetch it!\"",
+        gossip: "\"Kestrel's been east, you know. Says there's a prisoner in the salt mines out there who swears he's from Tarven.\"",
+      },
     ],
     lastCall: {
       visitor: "A bounty hunter",
@@ -546,11 +563,15 @@ export const NIGHTS: NightPlan[] = [
       arrive(20, "soldier", "stew"),
       arrive(24, "fugitive", "ale"),
       arrive(29, "smuggler", "stew"),
+      arrive(31, "bandit", "ale", false, 2),
+      arrive(31, "bandit", "ale", false, 2),
       arrive(34, "farmer", "ale"),
       arrive(38, "soldier", "bread", false, 1),
       arrive(38, "soldier", "ale", false, 1),
       arrive(43, "fugitive", "stew"),
       arrive(48, "farmer", "bread"),
+      arrive(50, "noble", "stew", false, 3),
+      arrive(50, "noble", "bread", false, 3),
       arrive(54, "smuggler", "ale"),
     ],
     parties: [
@@ -592,6 +613,44 @@ export const NIGHTS: NightPlan[] = [
         offer: "\"Go on, it's the baron's coin.\" The soldier tops your cup up twice.",
         gossip: "\"Half the garrison wouldn't lift a sword if the village came for the baron. Don't tell the captain I said so.\"",
       },
+      {
+        chat: [
+          "Brute: \"Two ales. Big ones.\"",
+          "Rogue: \"Nice place. Be a shame if it caught a chill.\"",
+          "Brute: \"Corran says hello. Corran says a lot of things.\"",
+          "Rogue: \"Sit down, innkeeper. We're friends here. Aren't we friends?\"",
+        ],
+        overheard: [
+          "Rogue: \"The wagon was light. Lighter than they said.\"",
+          "Brute: \"Corran'll want to know why.\"",
+          "Rogue: \"Corran knows why. Somebody up at the keep skimmed it first.\"",
+          "Brute: \"Then who are we robbing?\"",
+          "Rogue: \"Whoever we're told to, and we keep our mouths shut.\"",
+          "Brute: \"I like this ale. We should protect this place.\"",
+          "Rogue: \"We should charge it for the privilege.\"",
+        ],
+        offer: "The rogue pushes a cup at you, red scarf loose at the throat. \"Drink with us. Friends drink together.\"",
+        gossip: "\"Funny thing about the toll wagons. We take them, and the baron never sends anyone after us. Never once.\"",
+      },
+      {
+        chat: [
+          "Noble: \"The table is sticky. Have it wiped, and bring the stew.\"",
+          "Servant: \"Bread for me, please. Only if it's no trouble.\"",
+          "Noble: \"The Baroness sends her regards. She hears your name even in the lowlands.\"",
+          "Noble: \"Do sit, innkeeper. I want to know what a pass tavern hears.\"",
+        ],
+        overheard: [
+          "Noble: \"Hesk's road is a disgrace. Ruts like graves.\"",
+          "Servant: \"Yes, my lord.\"",
+          "Noble: \"When the Baroness holds the keep, the toll will mean something.\"",
+          "Servant: \"And if he won't give it up?\"",
+          "Noble: \"Men like Hesk always give it up. It's only a question of the price.\"",
+          "Servant: \"The stew's good, my lord.\"",
+          "Noble: \"It's adequate. Don't tell them. They'll put the price up.\"",
+        ],
+        offer: "The noble's servant pours for you, and the noble lifts a cup a finger's width. \"To better roads.\"",
+        gossip: "\"The crown has an auditor on the road this season. Hesk's books won't survive a careful reader.\"",
+      },
     ],
     lastCall: {
       visitor: "The baron's captain",
@@ -631,7 +690,12 @@ export const ENDINGS: Record<EndingId, { title: string; text: string }> = {
 
 export interface Guest {
   id: number;
+  /** Their group, which decides how they talk. */
   kind: GuestKind;
+  /** Their type in the group, which decides their numbers: patience, purse, drink, nerve, fists (guestroles.ts). */
+  role: GuestRole;
+  /** Their own numbers, rolled in their type's range as they walk in, so no two are quite alike. */
+  stats: RoleStats;
   order: Item;
   seat: number;
   status: GuestStatus;
@@ -734,7 +798,7 @@ export interface TavernSave {
 }
 
 /** A moment that wants an 18+ card: a guest she's agreed to take upstairs, or being overwhelmed. */
-export type AdultScene = { kind: "upstairs"; guestId: number; guestKind: GuestKind } | { kind: "overwhelmed" };
+export type AdultScene = { kind: "upstairs"; guestId: number; guestKind: GuestKind; guestStats?: RoleStats } | { kind: "overwhelmed" };
 
 /** A guest reaching for you as you serve them, waiting on your answer. */
 interface TouchChat {
@@ -912,7 +976,9 @@ export class Tavern {
   /** Whether the duel going on is a test one, which counts for nothing. */
   private testDuel = false;
   /** Guests she let touch her tonight who weren't drunk: one of them might linger after closing. */
-  private admirers: GuestKind[] = [];
+  private admirers: { kind: GuestKind; stats: RoleStats }[] = [];
+  /** Whose turn it is in each group's roster, so a group's types take turns through the door. */
+  private roleTurn: Partial<Record<GuestKind, number>> = {};
   private duelTonight = false;
   /** Brawls tonight, and drinks she's had tonight. */
   private fightsTonight = 0;
@@ -929,6 +995,11 @@ export class Tavern {
   playerUnder: { bra?: string; briefs?: string } = {};
   /** Where chance comes from: which guests offer a drink, and what they say. Tests replace it. */
   random: () => number = Math.random;
+  /**
+   * Where each guest's own numbers are rolled from, in their type's range, as they walk in. Kept apart from
+   * `random` so the rolls don't shift what else chance decides. Tests pin it at 0.5, which gives the type's own.
+   */
+  rollRandom: () => number = Math.random;
   /** The player's reputation, which changes what guests say. It lasts from night to night. */
   persona: Persona = newPersona();
   /** Lines guests have already said, so they say something new next time. */
@@ -1035,14 +1106,15 @@ export class Tavern {
    */
   private awardPassives(): void {
     const earned = newlyEarned(this.passives, this.passiveFacts());
-    if (earned.length === 0) return;
     for (const def of earned) {
       this.passives.add(def.id);
       this.corruption += def.corruption ?? 0;
       this.newPassives.push(def);
       this.unlocks.push(def);
     }
-    this.effects = effectsOf(this.passives);
+    if (earned.length > 0) this.effects = effectsOf(this.passives);
+    // Tonight's records count toward her lewdness even when no new passive came with them.
+    this.unlockBrothel();
   }
 
   /** Passives earned since the game last asked, for the log. Reading them empties the queue. */
@@ -1150,18 +1222,22 @@ export class Tavern {
       if (seat === null) return; // Tries again next tick, once someone leaves.
       this.nextArrival++;
       const { kind, rumor, party } = next;
-      const order = this.chooseOrder(kind, next.order);
+      const role = next.role ?? this.nextRole(kind, party);
+      const stats = rollStats(role, this.rollRandom);
+      const order = this.chooseOrder(role, next.order);
       const maxPatience =
-        GUEST_KINDS[kind].patience *
+        stats.patience *
         (this.upgrades.has("cushions") ? CUSHION_PATIENCE : 1) *
-        this.messPatience *
+        this.messPatienceFor(stats.fussy) *
         (1 + this.effects.patience + charmBonus(this.level("charm")).patience);
-      const context = this.banterContext(kind);
+      const context = this.banterContext(kind, undefined, role, stats);
       const { lust, desires } = arrivalFeelings(context, this.random);
       const filth = Math.min(1, this.messes.length / MESS_FOR_FULL_LOSS);
       this.guests.push({
         id: this.nextGuestId++,
         kind,
+        role,
+        stats,
         order,
         seat,
         status: "arriving",
@@ -1180,11 +1256,27 @@ export class Tavern {
   }
 
   /**
+   * The type a guest of this group comes as: a party gets one of each before any doubles up (archer, warrior,
+   * mage, cleric), and guests on their own take turns through the roster.
+   */
+  private nextRole(kind: GuestKind, party?: number): GuestRole {
+    const roster = ROLES_OF[kind];
+    if (party !== undefined) {
+      const taken = new Set(this.guests.filter((g) => g.party === party && g.kind === kind).map((g) => g.role));
+      const open = roster.find((r) => !taken.has(r));
+      if (open) return open;
+    }
+    const turn = this.roleTurn[kind] ?? 0;
+    this.roleTurn[kind] = turn + 1;
+    return roster[turn % roster.length];
+  }
+
+  /**
    * What a guest asks for. Ale drinkers sometimes want their favourite bottle instead, if it's on the shelf.
    */
-  private chooseOrder(kind: GuestKind, planned: Item): Item {
+  private chooseOrder(role: GuestRole, planned: Item): Item {
     if (planned !== "ale") return planned;
-    const favourite = FAVOURITE[kind];
+    const favourite = ROLES[role].favourite;
     if (!this.bottles.has(favourite)) return planned;
     return this.random() < ASKS_FOR_BOTTLE + this.effects.bottleAsk ? favourite : planned;
   }
@@ -1345,8 +1437,8 @@ export class Tavern {
     this.shift({ fame: FAME_WALKOUT });
     // They knock their cup over on the way out.
     this.spiltAt.add(guest.seat);
-    this.adjust(0, -1, GUEST_KINDS[guest.kind].walkoutHeat);
-    this.say(`A ${guest.kind} walked out without paying.`);
+    this.adjust(0, -1, guest.stats.walkoutHeat);
+    this.say(`A ${this.nameOf(guest).toLowerCase()} walked out without paying.`);
     this.cue("walkOut");
   }
 
@@ -1391,7 +1483,7 @@ export class Tavern {
   }
 
   private serve(guest: Guest, sibling: number): void {
-    const rules = GUEST_KINDS[guest.kind];
+    const rules = guest.stats;
     const left = guest.patience / guest.maxPatience;
     const behaviour = MOOD_BEHAVIOUR[guest.mood];
     const tipped = left > TIP_THRESHOLD && behaviour.tips;
@@ -1411,8 +1503,8 @@ export class Tavern {
     const idolized = guest.mood === "idolize";
     guest.mood = moodWhenServed(guest.mood, left);
     if (bottle === "mead") guest.lust = Math.min(10, guest.lust + MEAD_LUST);
-    if (bottle === "vodka" && this.random() < VODKA_DRUNK_CHANCE) guest.mood = "drunk";
-    this.shift({ fame: FAME_SERVED + (tipped ? FAME_TIPPED : 0) + (idolized ? FAME_IDOLIZED : 0) });
+    if (bottle === "vodka" && this.random() < VODKA_DRUNK_CHANCE * rules.lightweight) guest.mood = "drunk";
+    this.shift({ fame: FAME_SERVED + (tipped ? FAME_TIPPED + rules.fame : 0) + (idolized ? FAME_IDOLIZED : 0) });
     this.takeOne(sibling);
     guest.status = "eating";
     this.served++;
@@ -1423,7 +1515,7 @@ export class Tavern {
     if (tipped && this.random() < TIP_CHAT_CHANCE) this.startTipChat(guest);
     if (!this.tipChat) this.maybeReach(guest);
     const [least, most] = guest.party === null ? EAT_ALONE : EAT_IN_PARTY;
-    guest.eatLeft = (least + this.random() * (most - least)) * behaviour.stay + (guest.rumor ? RUMOR_EXTRA_EAT : 0);
+    guest.eatLeft = (least + this.random() * (most - least)) * behaviour.stay * rules.stay + (guest.rumor ? RUMOR_EXTRA_EAT : 0);
   }
 
   /** A pleased guest buys you a drink, and with the drink in them, flatters you or asks a favor. */
@@ -1433,7 +1525,7 @@ export class Tavern {
       pickLine(lines, context, this.saidLines, this.random);
     // The conversation shows what state they're in.
     const label = MOOD_LABELS[feltMood(guest)];
-    const speaker = label ? `${SPEAKERS[guest.kind]} (${label})` : SPEAKERS[guest.kind];
+    const speaker = label ? `${this.nameOf(guest)} (${label})` : this.nameOf(guest);
     const line = (text: string): TalkLine => ({ speaker, text, guestId: guest.id });
 
     const lines = [line(pick(OFFERS)?.text ?? "\"Have one on me!\"")];
@@ -1518,7 +1610,7 @@ export class Tavern {
   }
 
   /** What guests can know and notice about the player, for choosing what they say. */
-  banterContext(kind: GuestKind, guest?: Guest): BanterContext {
+  banterContext(kind: GuestKind, guest?: Guest, role?: GuestRole, stats?: RoleStats): BanterContext {
     return {
       body: this.playerBody,
       persona: this.persona,
@@ -1529,6 +1621,8 @@ export class Tavern {
       night: this.nightIndex,
       drunk: this.drunk,
       kind,
+      role: guest?.role ?? role,
+      stats: guest?.stats ?? stats,
       mood: guest && feltMood(guest),
       lust: guest?.lust,
       desires: guest?.desires,
@@ -1608,9 +1702,9 @@ export class Tavern {
     this.say(`+${gold} gold. The bar waited for you, not happily.`);
     const where = UPSTAIRS_CUM[act];
     if (where) {
-      const ml = loadOf(scene.guestKind, this.random);
+      const ml = loadOf(scene.guestKind, this.random, scene.guestStats);
       this.addCum({ [where]: ml }, 1);
-      this.say(`The ${scene.guestKind} finishes ${CUM_WHERE[where]}. +${ml} ml.`);
+      this.say(`The ${(scene.guestStats?.label ?? scene.guestKind).toLowerCase()} finishes ${CUM_WHERE[where]}. +${ml} ml.`);
     }
     this.cue("tip");
     return def.line;
@@ -1693,11 +1787,20 @@ export class Tavern {
       const tag = this.corruption >= 150 ? " (rotten)" : this.corruption >= 80 ? " (crooked)" : "";
       this.say(`Corruption +${Math.round(gain)}${tag}`);
     }
-    if (this.corruption >= 100 && !this.houseMode.unlocked.has("brothel")) {
-      this.houseMode.unlocked.add("brothel");
-      this.houseMode.brothel = 1;
-      this.say("The house can now become a brothel.");
-    }
+    this.unlockBrothel();
+  }
+
+  /**
+   * Opens the brothel once she's lewd enough or corrupt enough. Checked whenever either can rise: as corruption
+   * shifts, and as passives are earned (her lewdness is worked out from her passives and records). Quiet when a
+   * save is loaded, so she isn't told again.
+   */
+  private unlockBrothel(quiet = false): void {
+    if (this.houseMode.unlocked.has("brothel")) return;
+    if (this.lewdness < BROTHEL_AT_LEWDNESS && this.corruption < BROTHEL_AT_CORRUPTION) return;
+    this.houseMode.unlocked.add("brothel");
+    this.houseMode.brothel = 1;
+    if (!quiet) this.say("The house can now become a brothel.");
   }
 
   /** What passives read about her right now. */
@@ -1760,18 +1863,18 @@ export class Tavern {
   /** A brawl with nobody in the room, from the B key in development, to try the fight screen. */
   startTestFight(): void {
     if (this.fight) return;
-    const kinds = Object.keys(GUEST_KINDS) as GuestKind[];
-    const kind = kinds[Math.floor(this.random() * kinds.length) % kinds.length];
-    this.fight = new Fight(-1, kind, false, this.fighterStats(), this.random);
+    const kind = GUEST_KIND_LIST[Math.floor(this.random() * GUEST_KIND_LIST.length) % GUEST_KIND_LIST.length];
+    const roster = ROLES_OF[kind];
+    this.fight = new Fight(-1, kind, false, this.fighterStats(), this.random, rollStats(roster[Math.floor(this.random() * roster.length) % roster.length], this.rollRandom));
   }
 
   /** Starts a brawl with a guest. Whoever's playing deals with it. */
   startFight(guestId: number): void {
     const guest = this.guests.find((g) => g.id === guestId);
     if (!guest || this.fight) return;
-    this.fight = new Fight(guest.id, guest.kind, guest.mood === "drunk", this.fighterStats(), this.random);
+    this.fight = new Fight(guest.id, guest.kind, guest.mood === "drunk", this.fighterStats(), this.random, guest.stats);
     this.fightsTonight++;
-    this.say(`A ${guest.kind} is starting trouble!`);
+    this.say(`A ${this.nameOf(guest).toLowerCase()} is starting trouble!`);
     this.cue("walkOut");
   }
 
@@ -1847,7 +1950,7 @@ export class Tavern {
   duelOffer(): GuestKind | null {
     if (this.phase !== "bedtime" || this.playerBody !== "Female" || this.duelTonight || this.duel) return null;
     if (this.lewdness < INVITES_AT && !this.passives.has("upstairsCurious")) return null;
-    return this.admirers[this.admirers.length - 1] ?? null;
+    return this.admirers[this.admirers.length - 1]?.kind ?? null;
   }
 
   /** Why she can't play tonight, if she can't: she's had too much to drink. */
@@ -1873,7 +1976,8 @@ export class Tavern {
     if (areas.some((a) => !ready.has(a)) || stake < 0 || stake > this.gold) return false;
     this.duelTonight = true;
     if (!this.rolePlays().some((p) => p.id === scene && p.ready)) return false;
-    this.duel = new Duel(kind, new Set(areas), stake, this.duelistStats(), this.random, [{ kind, female: false }], scene);
+    const stats = this.admirers[this.admirers.length - 1]?.stats;
+    this.duel = new Duel(kind, new Set(areas), stake, this.duelistStats(), this.random, [{ kind, female: false, stats }], scene);
     return true;
   }
 
@@ -2023,6 +2127,7 @@ export class Tavern {
     const history = this.touchHistory.get(guest.id) ?? { allowed: 0, slapped: false };
     const guestNerve = nerve({
       kind: guest.kind,
+      stats: guest.stats,
       lust: guest.lust,
       mood: feltMood(guest),
       respect: this.persona.respect,
@@ -2078,7 +2183,8 @@ export class Tavern {
     chat.answered = true;
     const guest = this.guests.find((g) => g.id === chat.guestId);
     const e = this.effects;
-    const took = answer === "allow" || answer === "lean";
+    // A forced touch lands like one she lets happen: she wanted it too much to stop it.
+    const took = touchLands(answer);
     const r = this.records;
     let gold = out.gold;
     let respect = out.respect;
@@ -2140,15 +2246,15 @@ export class Tavern {
 
     const pick = <T>(lines: readonly T[]) => lines[Math.floor(this.random() * lines.length) % lines.length];
     this.touchesTonight.reached++;
-    if (answer === "allow" || answer === "lean") {
+    if (took) {
       history.allowed++;
       this.touchesTonight.allowed++;
-      if (guest && guest.mood !== "drunk") this.admirers.push(guest.kind);
+      if (guest && guest.mood !== "drunk") this.admirers.push({ kind: guest.kind, stats: guest.stats });
       this.touchesTonight.boldest = Math.max(this.touchesTonight.boldest, touch.level);
       const before = this.touchMemory.lets[touch.region] ?? 0;
       this.touchMemory.lets[touch.region] = before + 1;
       const tip = gold > 0 ? ` (+${gold} gold)` : "";
-      let line = fill(answer === "allow" ? touch.allow : touch.lean);
+      let line = fill(answer === "lean" ? touch.lean : answer === "force" ? (FORCE_TEXTS[touch.id]?.force ?? touch.allow) : touch.allow);
       line = mindStage(this.corruption, this.lewdness) >= 2
         ? bodyLine(touch.region, mindStage(this.corruption, this.lewdness), false)
         : flavorLine(line, this.corruption, this.lewdness, touch.region, false);
@@ -2161,7 +2267,7 @@ export class Tavern {
       }
       else this.cue("tip");
       if (touch.region === "invite" && guest) {
-        this.adultScene = { kind: "upstairs", guestId: guest.id, guestKind: guest.kind };
+        this.adultScene = { kind: "upstairs", guestId: guest.id, guestKind: guest.kind, guestStats: guest.stats };
       } else if (this.pleasure >= PLEASURE_MAX) {
         this.pleasure = 0;
         r.overwhelmed++;
@@ -2512,7 +2618,9 @@ export class Tavern {
       let id = speakers.get(name);
       if (id === undefined) {
         const lower = name.toLowerCase();
-        const index = Math.max(0, unmatched.findIndex((g) => lower.includes(SPEAKERS[g.kind].toLowerCase())));
+        // By their type first ("Archer"), then their group ("Farmer").
+        const byType = unmatched.findIndex((g) => lower.includes(this.nameOf(g).toLowerCase()));
+        const index = Math.max(0, byType >= 0 ? byType : unmatched.findIndex((g) => lower.includes(SPEAKERS[g.kind].toLowerCase())));
         id = (unmatched.splice(index, 1)[0] ?? members[0]).id;
         speakers.set(name, id);
       }
@@ -2531,7 +2639,7 @@ export class Tavern {
     const moody = members.find((g) => feltMood(g) !== "calm") ?? members[0];
     const face = faceLine(feltMood(moody), this.banterContext(moody.kind, moody), this.saidLines, this.random);
     if (face) {
-      const name = opening.find((l) => l.guestId === moody.id)?.speaker ?? SPEAKERS[moody.kind];
+      const name = opening.find((l) => l.guestId === moody.id)?.speaker ?? this.nameOf(moody);
       opening.splice(opening.length - 1, 0, { speaker: name, text: face, guestId: moody.id });
     }
     this.talkOpening = opening;
@@ -2629,7 +2737,7 @@ export class Tavern {
         // Drinking with people loosens their tongues. Village folk trust you more for it,
         // and soldiers who've drunk with you speak well of you to the garrison.
         this.talkReply = [you("\"Don't mind if I do.\""), this.partySays(plan.offer), this.partySays(plan.gossip)];
-        if (members.some((g) => GUEST_KINDS[g.kind].trust > 0)) {
+        if (members.some((g) => g.stats.trust > 0)) {
           this.adjust(0, 1, 0);
           this.talkReply.push(narrate("They like an innkeeper who drinks with them. (+1 trust)"));
         }
@@ -2795,7 +2903,17 @@ export class Tavern {
 
   /** How long guests will wait, as a share of usual, given how dirty the room is. */
   get messPatience(): number {
-    return 1 - MESS_PATIENCE_LOSS * Math.min(1, this.messes.length / MESS_FOR_FULL_LOSS);
+    return this.messPatienceFor(1);
+  }
+
+  /** The same for someone who minds dirt this much: 1 is usual, 0 doesn't notice, 2 and up can barely sit down. */
+  messPatienceFor(fussy: number): number {
+    return Math.max(0.2, 1 - MESS_PATIENCE_LOSS * fussy * Math.min(1, this.messes.length / MESS_FOR_FULL_LOSS));
+  }
+
+  /** What a guest is called: their type (a maid or footman for a servant, by body). */
+  nameOf(guest: Guest): string {
+    return roleLabel(guest.role, guestFemale(guest.id));
   }
 
   /** Mops or sweeps up one mess on the floor. */
@@ -2870,6 +2988,9 @@ export class Tavern {
     this.passives.clear();
     for (const id of progress.passives) this.passives.add(id);
     this.effects = effectsOf(this.passives);
+    // The brothel isn't saved: it opens again from what she's become.
+    this.houseMode = { current: "tavern", unlocked: new Set(["tavern"]), brothel: 0 };
+    this.unlockBrothel(true);
     this.eased = progress.eased ?? false;
     this.xp = readExperience(progress.xp);
     this.fight = null;

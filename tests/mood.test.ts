@@ -1,3 +1,4 @@
+import { defaultRole, ROLES } from "../src/game/guestroles";
 import { describe, expect, it } from "vitest";
 import { newPersona, type BanterContext, type Persona } from "../src/game/banter";
 import { Chatter } from "../src/game/chatter";
@@ -26,6 +27,8 @@ const weight = (c: BanterContext, mood: Mood, filth = 0) => moodWeights(c, filth
 const guest = (id: number, kind: GuestKind, mood: Mood): Guest => ({
   id,
   kind,
+  role: defaultRole(kind),
+  stats: ROLES[defaultRole(kind)],
   order: "ale",
   seat: id,
   status: "eating",

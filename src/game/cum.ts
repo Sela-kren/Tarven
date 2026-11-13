@@ -6,6 +6,7 @@
  * pussy only if it was in play, in her mouth only if her mouth was. With no part of her in play it lands on her
  * body (or her face, when her mouth is in play).
  */
+import { statsOf, type RoleStats } from "./guestroles";
 import type { GuestKind } from "./tavern";
 
 export type CumSpot = "mouth" | "face" | "breasts" | "pussy" | "ass" | "body";
@@ -21,17 +22,9 @@ export const CUM_NAMES: Record<CumSpot, string> = {
   body: "Body",
 };
 
-/** Each kind of guest's usual load, in ml. A game's numbers, not a doctor's. */
-const LOAD: Record<GuestKind, number> = {
-  farmer: 9,
-  fugitive: 7,
-  smuggler: 8,
-  soldier: 12,
-};
-
 /** One load: some way either side of the guest's usual. */
-export function loadOf(kind: GuestKind, random: () => number): number {
-  return Math.max(1, Math.round(LOAD[kind] * (0.7 + random() * 0.6)));
+export function loadOf(kind: GuestKind, random: () => number, who?: RoleStats): number {
+  return Math.max(1, Math.round((who ?? statsOf(kind)).load * (0.7 + random() * 0.6)));
 }
 
 /** Of a load in her mouth, the share of times he pulls out and finishes on her face instead. */

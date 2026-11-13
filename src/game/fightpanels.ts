@@ -6,9 +6,9 @@
 import { CUM_NAMES, CUM_SPOTS } from "./cum";
 import { AREA_NAMES, DUEL_AREAS, MAX_PARTNERS, STATE_NAMES, type Duel, type DuelArea, type DuelLogEntry, type DuelTest, type Partner } from "./duel";
 import { ROLE_PLAYS, type RolePlay } from "./duellines";
-import { PARTNERS } from "./duelmoves";
+import { GUEST_KIND_LIST, statsOf } from "./guestroles";
 import type { Button, Game } from "./game";
-import { GUEST_KINDS, type AdultScene, type GuestKind } from "./tavern";
+import type { AdultScene } from "./tavern";
 import { willLabel } from "./willpower";
 
 /** One bar on a fight screen: who, a track filled to how much they have left, and the number. */
@@ -129,13 +129,13 @@ export function showFight(game: Game): void {
       showFight(game);
     },
   }));
-  game.openPanel(`Brawl with a ${fight.kind}`, [], buttons);
+  game.openPanel(`Brawl with a ${fight.name}`, [], buttons);
   game.panelEl.classList.add("fight-open", "battle-open");
   const off = tavern.strippedPieces.length;
   game.showBattle("brawl", "You · Brawl", 0, false, [
     { label: "Stamina", value: `${fight.stamina}/${fight.maxStamina}`, tone: fight.stamina < fight.maxStamina / 2 ? "hurt" : undefined },
     { label: "Willpower", value: `${fight.will}/${fight.maxWill} · ${willLabel(fight.will, fight.maxWill)}` },
-    { label: `The ${fight.kind}`, value: `${fight.foeStamina}/${fight.foeMax}` },
+    { label: `The ${fight.name}`, value: `${fight.foeStamina}/${fight.foeMax}` },
     { label: "Clothes", value: off === 0 ? "Dressed" : `${off} ${off === 1 ? "piece" : "pieces"} off` },
   ]);
   const box = game.panelEl.querySelector(".box");
@@ -145,7 +145,7 @@ export function showFight(game: Game): void {
   bars.append(
     statBar("You", fight.stamina, fight.maxStamina, "you"),
     statBar("Willpower", fight.will, fight.maxWill, "will"),
-    statBar(`The ${fight.kind}${fight.drunk ? " (drunk)" : ""}`, fight.foeStamina, fight.foeMax, "foe"),
+    statBar(`The ${fight.name}${fight.drunk ? " (drunk)" : ""}`, fight.foeStamina, fight.foeMax, "foe"),
   );
   const log = fightLog(fight.log);
   box.insertBefore(log, box.querySelector(".menu"));
@@ -668,7 +668,7 @@ function testSidebar(game: Game, duel: Duel): HTMLElement {
   }
   field("In play", areas);
 
-  const kinds = (Object.keys(GUEST_KINDS) as GuestKind[]).map((k) => ({ value: k, label: k[0].toUpperCase() + k.slice(1) }));
+  const kinds = GUEST_KIND_LIST.map((k) => ({ value: k, label: k[0].toUpperCase() + k.slice(1) }));
   duel.partners.forEach((partner, index) => {
     heading(`${duel.nameOf(partner)}${partner.done ? " (gave in)" : ""}`);
     const setup = () => (test.partners[index] ??= { kind: partner.kind, female: partner.female, pleasure: 0, stamina: null });
@@ -676,7 +676,7 @@ function testSidebar(game: Game, duel: Duel): HTMLElement {
       "Kind",
       pick(kinds, partner.kind, (kind) => {
         partner.kind = setup().kind = kind;
-        partner.maxStamina = PARTNERS[kind].stamina;
+        partner.maxStamina = statsOf(kind).partner.stamina;
         partner.stamina = Math.min(partner.stamina, partner.maxStamina);
       }),
     );

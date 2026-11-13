@@ -15,9 +15,9 @@ function atBedtime(): Tavern {
   t.playerBody = "Female";
   t.gold = 50;
   t.passives.add("upstairsCurious");
-  const inner = t as unknown as { phase: string; admirers: string[] };
+  const inner = t as unknown as { phase: string; admirers: { kind: string }[] };
   inner.phase = "bedtime";
-  inner.admirers = ["farmer"];
+  inner.admirers = [{ kind: "farmer" }];
   return t;
 }
 
@@ -82,11 +82,11 @@ describe("after hours in the tavern", () => {
     expect(t.duelOffer()).toBe("farmer");
     const shy = new Tavern(SEATS);
     shy.playerBody = "Female";
-    (shy as unknown as { phase: string; admirers: string[] }).phase = "bedtime";
-    (shy as unknown as { admirers: string[] }).admirers = ["farmer"];
+    (shy as unknown as { phase: string }).phase = "bedtime";
+    (shy as unknown as { admirers: { kind: string }[] }).admirers = [{ kind: "farmer" }];
     expect(shy.duelOffer()).toBeNull();
     const nobody = atBedtime();
-    (nobody as unknown as { admirers: string[] }).admirers = [];
+    (nobody as unknown as { admirers: unknown[] }).admirers = [];
     expect(nobody.duelOffer()).toBeNull();
   });
 

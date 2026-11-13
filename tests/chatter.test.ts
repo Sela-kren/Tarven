@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { assignSpeakers, Chatter, lineDuration, unquote } from "../src/game/chatter";
+import { defaultRole, ROLES } from "../src/game/guestroles";
 import type { Guest, GuestKind, PartyPlan } from "../src/game/tavern";
 
 const guest = (id: number, kind: GuestKind, changes: Partial<Guest> = {}): Guest => ({
   id,
   kind,
+  role: defaultRole(kind),
+  stats: ROLES[defaultRole(kind)],
   order: "ale",
   seat: id,
   status: "waiting",

@@ -10,6 +10,7 @@
  * Kept apart from the rules so the writing is easy to change.
  */
 import { HIGH_RESPECT, LOW_RESPECT, type Mood } from "./mood";
+import type { GuestRole, RoleStats } from "./guestroles";
 import type { GuestKind } from "./tavern";
 
 /** Which body the player chose, so compliments fit who they're flirting with. */
@@ -91,8 +92,11 @@ export interface BanterContext {
   night: number;
   /** How drunk you are, from 0 to 1. */
   drunk: number;
-  /** Who's speaking. */
+  /** Who's speaking: their group, and their type in it when it's one guest. */
   kind: GuestKind;
+  role?: GuestRole;
+  /** That guest's own rolled numbers, when it's one guest. */
+  stats?: RoleStats;
   /** The state the speaker is in, and how much lust and longing they carry, when it's one guest talking. */
   mood?: Mood;
   lust?: number;
@@ -161,6 +165,9 @@ export const SPEAKERS: Record<GuestKind, string> = {
   smuggler: "Smuggler",
   soldier: "Soldier",
   fugitive: "Stranger",
+  adventurer: "Adventurer",
+  bandit: "Bandit",
+  noble: "Noble",
 };
 
 // How flirty your reputation is: shy, warm, or bold.

@@ -13,6 +13,7 @@ function run(t: Tavern, seconds: number, context: Parameters<Tavern["tick"]>[1] 
 
 function opened(): Tavern {
   const t = new Tavern(TABLES.length, TABLES);
+  t.rollRandom = () => 0.5; // Every guest gets their type's own numbers.
   t.open();
   t.tick(0, idle);
   return t;

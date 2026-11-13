@@ -4,7 +4,6 @@
  * Edit moves here; the rules that use them are in duel.ts.
  */
 import type { DuelArea, DuelMove } from "./duel";
-import type { GuestKind } from "./tavern";
 import type { Meter } from "./passives";
 import type { SkillId, StatId } from "./skills";
 
@@ -156,29 +155,6 @@ export const THEIR_MOVES: Record<
     meter: "pussy",
     line: "Their fingers slide between your thighs and start working you open.",
   },
-};
-
-/**
- * Partner archetypes.
- * resist  → multiplies how hard it is to push them over the edge
- * skill   → multiplies the pleasure they deal to her
- * stamina → how much pleasure they can take before finishing
- */
-export const PARTNERS: Record<
-  GuestKind,
-  { resist: number; skill: number; stamina: number }
-> = {
-  farmer:   { resist: 1.15, skill: 0.85, stamina: 22 },
-  fugitive: { resist: 1.00, skill: 1.00, stamina: 24 },
-  smuggler: { resist: 0.90, skill: 1.10, stamina: 25 },
-  soldier:  { resist: 0.80, skill: 1.25, stamina: 30 },
-};
-/** The part of her each kind of guest goes for first, when it's in play and free (like Karryn's enemy types). */
-export const PREFERS: Record<GuestKind, DuelArea> = {
-  farmer: "hands",
-  fugitive: "mouth",
-  smuggler: "butt",
-  soldier: "pussy",
 };
 
 /**

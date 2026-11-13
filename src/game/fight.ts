@@ -7,6 +7,7 @@
  * till and storm off, and she's left on the floor with her pride hurt. That's all losing ever costs: a fight never
  * leads to anything else.
  */
+import { statsOf, type RoleStats } from "./guestroles";
 import type { GuestKind } from "./tavern";
 import type { StatId } from "./skills";
 import { flavor } from "./flavor";
@@ -14,14 +15,6 @@ import { HIT_WILL, maxWillpower, STARE_WILL, STEEL_STAMINA, STEEL_WILL } from ".
 
 export type FightMove = "strike" | "shove" | "dodge" | "talk" | "stare" | "steel" | "throw";
 export type FightOutcome = "won" | "talked" | "lost";
-
-/** How tough each kind of guest is in a brawl. */
-const FOES: Record<GuestKind, { stamina: number; attack: number; accuracy: number }> = {
-  farmer: { stamina: 14, attack: 3, accuracy: 0.55 },
-  fugitive: { stamina: 16, attack: 4, accuracy: 0.6 },
-  smuggler: { stamina: 18, attack: 4, accuracy: 0.65 },
-  soldier: { stamina: 24, attack: 6, accuracy: 0.7 },
-};
 
 const BASE_STAMINA = 20;
 /** Worn down to this share of their stamina, and they can be thrown out. */
@@ -62,6 +55,8 @@ export class Fight {
   /** The event behind each log line (see say), for the comic panel. */
   readonly events: string[] = [];
   outcome: FightOutcome | null = null;
+  /** What the foe is called: their type, as in "the brute". */
+  readonly name: string;
   /** Experience earned in the fight, for the tavern to hand out at the end. */
   readonly xp: Partial<Record<StatId, number>> = {};
   /** Dodges that worked, for the records. */
@@ -76,15 +71,19 @@ export class Fight {
     readonly drunk: boolean,
     private readonly stats: FighterStats,
     private readonly random: () => number,
+    /** Their own numbers, rolled from their type: a brute hits harder than a mage, and lasts longer. */
+    rolled?: RoleStats,
   ) {
-    const foe = FOES[kind];
+    const who = rolled ?? statsOf(kind);
+    const foe = who.fight;
+    const name = (this.name = who.label.toLowerCase());
     this.maxStamina = this.stamina = BASE_STAMINA + (stats.levels.endurance - 1) * 4;
     this.foeMax = this.foeStamina = foe.stamina;
     this.foeAttack = foe.attack + (drunk ? 1 : 0);
     this.foeAccuracy = foe.accuracy - (drunk ? 0.15 : 0);
     this.maxWill = stats.maxWill ?? maxWillpower(stats.levels.mind);
     this.will = Math.max(0, Math.min(this.maxWill, stats.will ?? this.maxWill));
-    this.say("start", drunk ? `The ${kind} is roaring drunk and wants a fight.` : `The ${kind} squares up to you.`);
+    this.say("start", drunk ? `The ${name} is roaring drunk and wants a fight.` : `The ${name} squares up to you.`);
   }
 
   /** What happened, then, if the AI has written one, a line of colour for it. */

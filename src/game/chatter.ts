@@ -13,6 +13,7 @@ import { SPEAKERS, type BanterContext } from "./banter";
 import { ABOUT_YOU, LEERING_CALLS, LEERING_THANKS, SMUTTY_GOSSIP } from "./gossip";
 import { feltMood, LOW_RESPECT, STRONG_DESIRE, type Mood } from "./mood";
 import { CLASHES, DESIRE_TALKS, DESIRE_THANKS, MOOD_LINES, MOOD_TALKS } from "./moodtalk";
+import { guestFemale, roleLabel } from "./guestroles";
 import { ANYONE, EXCHANGES, type Exchange } from "./tabletalk";
 import type { Guest, GuestKind, Item, PartyPlan } from "./tavern";
 
@@ -68,6 +69,17 @@ const CALLS: Record<GuestKind, string[]> = {
   soldier: ["Innkeeper! {Item}, and be quick.", "Oi! {Item} for the baron's man!", "{Item}. Now."],
   smuggler: ["{Item}. No hurry. Quietly.", "Innkeeper. {Item}, if you would.", "{Item} over here, friend."],
   fugitive: ["Could I... have {item}, please?", "Excuse me. {Item}?", "{Item}, please. Just {item}."],
+  adventurer: [
+    "Innkeeper! {Item} for the heroes of the north road!",
+    "{Item} over here! Ruins at dawn, ale tonight!",
+    "{Item}, innkeeper! And keep 'em coming, we're paid up front!",
+  ],
+  bandit: ["{Item}. And don't make me ask nice.", "Oi. {Item}. Red scarf table, can't miss us.", "{Item}, innkeeper. On the house, I reckon."],
+  noble: [
+    "Innkeeper. {Item}, in a clean cup, if such a thing exists.",
+    "{Item}, if you please. The best you have.",
+    "You there. {Item}. And wipe the table first.",
+  ],
 };
 
 /** Calling again, once half their patience has gone. */
@@ -76,6 +88,9 @@ const NUDGES: Record<GuestKind, string[]> = {
   soldier: ["Where's my {name}?!", "I said {item}! Are you deaf?"],
   smuggler: ["My {name}. Today, ideally.", "I don't like waiting, innkeeper."],
   fugitive: ["Sorry... is my {name} coming?", "I can't sit here long..."],
+  adventurer: ["Oi! My {name}! I've fought trolls faster than this!", "Innkeeper? The {name}? We march at dawn!"],
+  bandit: ["My {name}. Or I start breaking things.", "Corran doesn't like waiting. Nor do I."],
+  noble: ["Is my {name} being brewed from scratch?", "I am not accustomed to waiting, innkeeper."],
 };
 
 /** About to give up. */
@@ -84,6 +99,9 @@ const LAST_WARNINGS: Record<GuestKind, string[]> = {
   soldier: ["Last chance, innkeeper!"],
   smuggler: ["One more minute. Then I'm gone."],
   fugitive: ["I really can't stay much longer..."],
+  adventurer: ["We'll drink in the ruins if we have to!"],
+  bandit: ["Last chance before I help myself."],
+  noble: ["One more moment and I'm calling for my carriage."],
 };
 
 const THANKS: Record<GuestKind, string[]> = {
@@ -91,6 +109,9 @@ const THANKS: Record<GuestKind, string[]> = {
   soldier: ["About time.", "Hah! That'll do.", "For the baron. And me."],
   smuggler: ["Much obliged.", "Good. Quick, too.", "Fine service."],
   fugitive: ["Thank you. Truly.", "You're very kind.", "Thank you..."],
+  adventurer: ["Ha! Fuel for the road!", "Now that's a reward worth the quest!", "Cheers! To loot and long life!"],
+  bandit: ["That'll do.", "Good. Quick learner.", "Smart. Keep it that way."],
+  noble: ["Adequate.", "Hm. Passable, for the mountains.", "Thank you. Do take your thumbprint off the cup."],
 };
 
 const WALKOUTS: Record<GuestKind, string[]> = {
@@ -98,6 +119,9 @@ const WALKOUTS: Record<GuestKind, string[]> = {
   soldier: ["The captain will hear of this!"],
   smuggler: ["Waste of my evening."],
   fugitive: ["I can't wait any longer..."],
+  adventurer: ["Forget it! The ruins have better service!"],
+  bandit: ["You'll regret that, innkeeper."],
+  noble: ["Appalling. The Baroness will hear of this."],
 };
 
 const FAREWELLS: Record<GuestKind, string[]> = {
@@ -105,6 +129,9 @@ const FAREWELLS: Record<GuestKind, string[]> = {
   soldier: ["Back to the fort, then.", "On your feet, lads."],
   smuggler: ["You never saw me.", "Until next time."],
   fugitive: ["Thank you for the warmth.", "Goodnight..."],
+  adventurer: ["To the north road! Wish us luck!", "Keep a bed warm. We'll be back rich!"],
+  bandit: ["Nice place. Be a shame if it burned.", "See you next week. Have the coin ready."],
+  noble: ["Bring the carriage round. Quickly.", "Charming, in a rustic sort of way."],
 };
 
 
@@ -178,7 +205,9 @@ export function assignSpeakers(chat: readonly string[], members: readonly Guest[
     let id = speakers.get(name);
     if (id === undefined) {
       const lower = name.toLowerCase();
-      const index = Math.max(0, unmatched.findIndex((g) => lower.includes(SPEAKERS[g.kind].toLowerCase())));
+      // By their type first ("Archer"), then their group ("Farmer").
+      const byType = unmatched.findIndex((g) => lower.includes(roleLabel(g.role, guestFemale(g.id)).toLowerCase()));
+      const index = Math.max(0, byType >= 0 ? byType : unmatched.findIndex((g) => lower.includes(SPEAKERS[g.kind].toLowerCase())));
       id = (unmatched.splice(index, 1)[0] ?? members[0]).id;
       speakers.set(name, id);
     }

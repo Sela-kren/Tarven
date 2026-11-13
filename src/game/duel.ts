@@ -14,10 +14,11 @@
  * Lines that hold: they never do anything outside the rules she set, Stop always ends it at once with nothing
  * lost, and nobody plays too drunk. The moves and their lines are in duelmoves.ts.
  */
+import { statsOf, type RoleStats } from "./guestroles";
 import type { GuestKind } from "./tavern";
 import type { Meter } from "./passives";
 import type { SkillId, StatId } from "./skills";
-import { HER_MOVES, HER_MOVES_ON_WOMEN, PARTNERS, PREFERS, THEIR_MOVES, THEIR_MOVES_WOMEN, type HerMove } from "./duelmoves";
+import { HER_MOVES, HER_MOVES_ON_WOMEN, THEIR_MOVES, THEIR_MOVES_WOMEN, type HerMove } from "./duelmoves";
 import { fill, SCENES, type RolePlay } from "./duellines";
 import { flavor } from "./flavor";
 import { CUM_LINES, loadOf, spotFor, type CumSpot } from "./cum";
@@ -109,11 +110,14 @@ export interface DuelistStats {
 export interface PartnerSetup {
   kind: GuestKind;
   female: boolean;
+  /** Their own numbers, rolled from their type: how they last, how hard to push over, what they go for. */
+  stats?: RoleStats;
 }
 
 export interface Partner {
   readonly id: number;
   kind: GuestKind;
+  stats?: RoleStats;
   female: boolean;
   pleasure: number;
   stamina: number;
@@ -283,7 +287,7 @@ export class Duel {
   /** Someone else joins the game (the test panel adds them mid-game). */
   addPartner(setup: PartnerSetup): Partner | null {
     if (this.partners.length >= MAX_PARTNERS) return null;
-    const max = PARTNERS[setup.kind].stamina;
+    const max = (setup.stats ?? statsOf(setup.kind)).partner.stamina;
     const partner: Partner = { id: this.nextId++, ...setup, pleasure: 0, stamina: max, maxStamina: max, area: null, done: false, teased: false, held: 0, last: null };
     this.partners.push(partner);
     this.fitStamina();
@@ -328,10 +332,11 @@ export class Duel {
     return this.partners.filter((p) => !p.done);
   }
 
-  /** What a partner is called: their kind, numbered when there's more than one of that kind. */
+  /** What a partner is called: their type (or kind), numbered when there's more than one called that. */
   nameOf(partner: Partner): string {
-    const same = this.partners.filter((p) => p.kind === partner.kind);
-    return capital(partner.kind) + (same.length > 1 ? ` ${same.indexOf(partner) + 1}` : "");
+    const called = (p: Partner) => p.stats?.label ?? capital(p.kind);
+    const same = this.partners.filter((p) => called(p) === called(partner));
+    return called(partner) + (same.length > 1 ? ` ${same.indexOf(partner) + 1}` : "");
   }
 
   get state(): DuelState {
@@ -359,7 +364,7 @@ export class Duel {
     const charm = move === "tease" ? (this.stats.level("charm") - 1) * 1.5 : 0;
     const bare = 1 + this.undressed * (UNDRESS_BONUS + this.stats.undress);
     const spread = this.spreads(move) && this.active.length > 1 ? SPREAD : 1;
-    return Math.round((def.power + charm) * skill * bare * this.stateBoost() * (1 + this.stats.power) * PARTNERS[partner.kind].resist * spread);
+    return Math.round((def.power + charm) * skill * bare * this.stateBoost() * (1 + this.stats.power) * (partner.stats ?? statsOf(partner.kind)).partner.resist * spread);
   }
 
   /** Moves that work on everyone at once, like Karryn's Flaunt. */
@@ -609,7 +614,7 @@ export class Duel {
     if (partner.area && !this.areas.has(partner.area)) partner.area = null;
     if (!partner.area && this.random() < TAKE_CHANCE) {
       const free = [...this.areas].filter((a) => this.room(a, partner));
-      const liked = PREFERS[partner.kind];
+      const liked = (partner.stats ?? statsOf(partner.kind)).prefers;
       if (free.length > 0) {
         partner.area = free.includes(liked) && this.random() < PREFER_CHANCE ? liked : free[Math.floor(this.random() * free.length) % free.length];
         partner.held = 0;
@@ -632,7 +637,7 @@ export class Duel {
     const n = Math.max(
       1,
       Math.round(
-        def.power * PARTNERS[partner.kind].skill * (1 + this.stats.sens[def.meter]) * Math.max(0.2, 1 - this.stats.resist) * slowed * group * STAGE_POWER[stage] * spent,
+        def.power * (partner.stats ?? statsOf(partner.kind)).partner.skill * (1 + this.stats.sens[def.meter]) * Math.max(0.2, 1 - this.stats.resist) * slowed * group * STAGE_POWER[stage] * spent,
       ),
     );
     this.pleasure = Math.min(PLEASURE_MAX, this.pleasure + n);
@@ -682,7 +687,7 @@ export class Duel {
   private finish(partner: Partner): void {
     if (partner.female) return;
     const spot = spotFor(partner.last ?? partner.area, this.areas.has("mouth"), this.random);
-    const ml = loadOf(partner.kind, this.random);
+    const ml = loadOf(partner.kind, this.random, partner.stats);
     this.cum[spot] = (this.cum[spot] ?? 0) + ml;
     this.loads++;
     const who = this.nameOf(partner);

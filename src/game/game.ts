@@ -27,7 +27,6 @@ import {
   GUEST_LOOKS,
   guestOutfitColors,
   OUTFIT_COLORS,
-  type GuestOutfit,
   randomLook,
   storeLooks,
   type BodyName,
@@ -65,6 +64,7 @@ import {
 } from "./furnishings";
 import { BuildMode, type Supply } from "./buildmode";
 import { GuestActor, Walker } from "./guests";
+import { guestFemale, statsOf, type GuestRole } from "./guestroles";
 import { cloneLayout, emptyLayout, footprint, HousePlan, seatSpecs, type FurnitureKind, type HouseLayout, type Placed } from "./house";
 import { HouseView } from "./houseview";
 import { COIN, FLAME, StatsHud, VILLAGERS } from "./hud";
@@ -92,6 +92,7 @@ import { PASSIVE_ICONS } from "./passiveicons";
 import { saveBadges } from "./saveicons";
 import { SkyDial } from "./skydial";
 import { TouchComic } from "./touchcomic";
+import { touchLands } from "./touch";
 import { arousalOf, easeArousal } from "./nipples";
 import { easeOpening } from "./vulva";
 import { METER_MAX } from "./passives";
@@ -208,6 +209,8 @@ const SELECT_LIGHT_INTENSITY = 9;
  */
 const CUSTOMIZE_BODY_SHOT = { side: 0.5, height: 0.95, distance: 3.9 };
 const CUSTOMIZE_FACE_SHOT = { side: 0.17, distance: 1.35 };
+/** The close shot of the groin "?groin" gives the body tab in development: the groin at this share of the height. */
+const CUSTOMIZE_GROIN_SHOT = { side: 0.14, share: 0.5, distance: 1.3 };
 /** How fast the camera eases between customise shots, per second. */
 const CUSTOMIZE_CAMERA_RATE = 6;
 /** How far the character turns per pixel dragged, in radians. */
@@ -275,6 +278,7 @@ const TOUCH_ANSWER_TEXT: Record<TouchMoment["answer"], string> = {
   lean: "She leans into it, wanting more.",
   slap: "She slaps their hand away.",
   pull: "She pulls away from them.",
+  force: "She means to pull away, but she wants it too much to stop them.",
 };
 /** How far past the room's walls the follow camera has to reach for the room to fill the screen. */
 const CAMERA_INSET_X = 6.5;
@@ -297,16 +301,14 @@ const OUTFITS: Record<GuestKind | "visitor", { top: number; legs: number; hair: 
   smuggler: { top: 0x24242e, legs: 0x18181e, hair: 0x101012 },
   soldier: { top: 0x8c2020, legs: 0x3a3a40, hair: 0x2b2018 },
   fugitive: { top: 0xbcb4a2, legs: 0x6a6252, hair: 0x9a8c7a },
+  // The groups below come in their types' own outfits (guestroles.ts); only their hair is taken from here.
+  adventurer: { top: 0x5a6a3a, legs: 0x4a3a2a, hair: 0x8a5a2a },
+  bandit: { top: 0x6a1818, legs: 0x2a2420, hair: 0x1a1410 },
+  noble: { top: 0x3a2a5a, legs: 0x22202a, hair: 0xc8b07a },
   // Whoever comes in at last call, dressed unlike any guest so nobody takes them for one who stayed behind.
   visitor: { top: 0x2f5590, legs: 0x1c1c22, hair: 0x2b2018 },
 };
 
-/**
- * The kinds of guest who come in outfits of their own, in colours of their own; only their hair is taken from
- * OUTFITS. A kind with several outfits comes in each of them in turn. The adventuring party's kits
- * (ADVENTURER_OUTFITS) and the noble's clothes are ready for the factions to come (STORY.md, section 5).
- */
-const GUEST_OUTFIT: Partial<Record<GuestKind, readonly GuestOutfit[]>> = { smuggler: ["pirate"] };
 
 /** Who the player can be, by sibling index: the male body, then the female one. */
 const PLAYER_LABELS = ["Male", "Female"];
@@ -314,7 +316,7 @@ const PLAYER_LABELS = ["Male", "Female"];
  * Which siblings the player may pick, by index. For now only the female: the male stays loaded but is kept
  * off the select screen and out of play. Put 0 back in to offer him again.
  */
-const PLAYABLE: readonly number[] = [1];
+const PLAYABLE: readonly number[] = devFlag("male") ? [0, 1] : [1];
 const isPlayable = (index: number): boolean => PLAYABLE.includes(index);
 
 /** Seconds each moment of a brawl turn shows before the next. */
@@ -393,6 +395,14 @@ const DUEL_CUM_SHOTS: Record<CumSpot, DuelShot> = {
   ass: { id: "grab", region: "rear" },
   body: { id: "hip", region: "waist" },
 };
+
+/**
+ * In development, whether the page was opened with this switch: "?male" offers the male on the select screen, and
+ * "?groin" frames the body tab close on the groin. Always false in a build.
+ */
+function devFlag(name: string): boolean {
+  return import.meta.env.DEV && typeof location !== "undefined" && new URLSearchParams(location.search).has(name);
+}
 
 /**
  * In development, shows her at set stages to look at without playing for it: "?coat=2" puts every part of her at
@@ -990,13 +1000,16 @@ export class Game {
   }
 
   /** Which colours of a guest's outfit they come in, so guests of one kind don't all look alike. */
-  private guestLook(guest: { id: number; kind: GuestKind }): number {
+  private guestLook(guest: { id: number; kind: GuestKind; role: GuestRole }): number {
     // The id's lowest bit already picks the body, so the rest of it picks the colours.
-    const outfits = GUEST_OUTFIT[guest.kind];
-    return outfits ? Math.floor(guest.id / 2) % (GUEST_LOOKS * outfits.length) : 0;
+    return statsOf(guest.kind, guest.role).outfit ? Math.floor(guest.id / 2) % GUEST_LOOKS : 0;
   }
 
-  private makeGuestBody(kind: GuestKind | "visitor", female: boolean, look = 0): Body {
+  /**
+   * A guest's body: their group's plain clothes, or the outfit their type wears (an archer's kit, a brute's
+   * scarf, a maid's apron), in one of its colourings.
+   */
+  private makeGuestBody(kind: GuestKind | "visitor", female: boolean, look = 0, role?: GuestRole): Body {
     const body: BodyName = female ? "Female" : "Male";
     const model = cloneSkinned(female ? this.guestModels.female : this.guestModels.male);
     const outfit = OUTFITS[kind];
@@ -1007,11 +1020,9 @@ export class Game {
       // Only the siblings cast shadows, to keep the frame rate up.
       if (object instanceof Mesh) object.castShadow = false;
     });
-    const outfits = kind === "visitor" ? undefined : GUEST_OUTFIT[kind];
-    if (outfits) {
-      // The look picks which of the kind's outfits, then which colours of it.
-      const own = outfits[look % outfits.length];
-      const colors = guestOutfitColors(body, own, Math.floor(look / outfits.length));
+    const own = kind === "visitor" ? null : statsOf(kind, role).outfit;
+    if (own) {
+      const colors = guestOutfitColors(body, own, look);
       dressColors(model, body, { ...colors, [slots.hair]: hex(outfit.hair) }, own);
     } else {
       dressColors(model, body, { [slots.top]: hex(outfit.top), [slots.legs]: hex(outfit.legs), [slots.hair]: hex(outfit.hair) });
@@ -1083,6 +1094,12 @@ export class Game {
       const head = top - 0.14;
       target.set(at.x + CUSTOMIZE_FACE_SHOT.side, head, at.z);
       eye.set(at.x + CUSTOMIZE_FACE_SHOT.side, head + 0.05, at.z + CUSTOMIZE_FACE_SHOT.distance);
+    } else if (tab === "body" && devFlag("groin")) {
+      const top = this.hitBox.setFromObject(this.siblings[this.chosen].root).max.y;
+      const { side, share, distance } = CUSTOMIZE_GROIN_SHOT;
+      const groin = top * share;
+      target.set(at.x + side, groin, at.z);
+      eye.set(at.x + side, groin + 0.05, at.z + distance);
     } else {
       const { side, height, distance } = CUSTOMIZE_BODY_SHOT;
       target.set(at.x + side, height, at.z);
@@ -1121,7 +1138,7 @@ export class Game {
         const wait = this.doorQueue;
         this.doorQueue += ENTRY_GAP_SECONDS;
         actor = new GuestActor(
-          this.makeGuestBody(guest.kind, guest.id % 2 === 0, this.guestLook(guest)),
+          this.makeGuestBody(guest.kind, guestFemale(guest.id), this.guestLook(guest), guest.role),
           guest,
           this.world.seats[guest.seat],
           this.nav,
@@ -2045,9 +2062,9 @@ export class Game {
       if (scene) {
         if (scene.kind === "upstairs") {
           this.narrator.moment(
-            `She agrees to take a ${scene.guestKind} upstairs to her bed, and the room watches them go.`,
+            `She agrees to take the ${(scene.guestStats?.label ?? scene.guestKind).toLowerCase()} upstairs to her bed, and the room watches them go.`,
             `upstairs:${scene.guestKind}`,
-            scene.guestKind,
+            (scene.guestStats?.label ?? scene.guestKind).toLowerCase(),
           );
         } else this.narrator.moment("Her pleasure boils over and she is overwhelmed in front of the whole room.", "overwhelmed");
         playAdultScene(this, scene);
@@ -2080,12 +2097,12 @@ export class Game {
     const guest = this.tavern.talkGuests.find((g) => g.id === line.guestId) ?? this.tavern.talkGuests[0];
     if (!guest) return null;
     // Guests are drawn standing, fresh from a body of the same kind, rather than as they sit.
-    const female = guest.id % 2 === 0;
+    const female = guestFemale(guest.id);
     const look = this.guestLook(guest);
-    const key = `${guest.kind}:${female}:${look}`;
+    const key = `${guest.role}:${female}:${look}`;
     let portrait = this.guestPortraits.get(key);
     if (!portrait) {
-      const body = this.makeGuestBody(guest.kind, female, look);
+      const body = this.makeGuestBody(guest.kind, female, look, guest.role);
       body.pose(0, 0);
       portrait = renderPortrait(this.renderer, body.root, SPRITE_TURN);
       this.guestPortraits.set(key, portrait);
@@ -2361,7 +2378,7 @@ export class Game {
       moment.kind,
     );
     const sibling = this.siblings[this.active];
-    const took = moment.answer === "allow" || moment.answer === "lean";
+    const took = touchLands(moment.answer);
     const soft: SoftPart | null = !took ? null : moment.region === "chest" ? "Bust" : moment.region === "rear" || moment.region === "lap" ? "Glute" : null;
     const reaction: Reaction = !took ? "recoil" : moment.answer === "lean" ? "melt" : "jolt";
     sibling.react(reaction, soft, moment.id === "smack" ? 0.9 : 0.6);

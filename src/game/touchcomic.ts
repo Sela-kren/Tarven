@@ -23,7 +23,7 @@ import type { Effect } from "./audio";
 import { PANEL_SHAPE } from "./comic";
 import { Jiggle } from "./jiggle";
 import { chestOverHips } from "./player";
-import type { TouchAnswer, TouchRegion } from "./touch";
+import { touchLands, type TouchAnswer, type TouchRegion } from "./touch";
 import type { GuestKind } from "./tavern";
 
 /**
@@ -489,7 +489,7 @@ export class TouchComic {
     const { answer, region } = this.show;
     if (t >= T.contact && !this.played.has("contact")) {
       this.played.add("contact");
-      if (answer === "allow" || answer === "lean") {
+      if (touchLands(answer)) {
         const kick = region === "rear" ? 0.9 : 0.6;
         for (const jiggle of this.jiggles) jiggle.kick(new Vector3(0, kick, kick * 0.4));
         this.sound(region === "rear" ? "putDown" : "cloth");
@@ -541,7 +541,8 @@ export class TouchComic {
     }
     switch (show.answer) {
       case "allow":
-      case "lean": {
+      case "lean":
+      case "force": {
         const kiss = show.region === "lips" || show.region === "neck" || show.region === "face";
         const words: Record<Gesture, string> = {
           rest: "...",
@@ -558,7 +559,7 @@ export class TouchComic {
         // A kiss is a kiss, whatever the guest's hand is doing meanwhile.
         const word = show.region === "lips" && show.id !== "feed" ? "mwah" : words[this.shot.gesture];
         letter(word, "hit", after, after + 0.9);
-        letter(show.answer === "lean" ? "mmh~" : "eep!", "voice", after + 0.35, T.popOut);
+        letter(show.answer === "lean" ? "mmh~" : show.answer === "force" ? "nn—!" : "eep!", "voice", after + 0.35, T.popOut);
         if (show.answer === "lean") letter("♥", "heart", after + 0.6, T.popOut);
         break;
       }
@@ -590,8 +591,8 @@ export class TouchComic {
     let elbow = 0.25;
     const landed = span(t, T.contact, T.contact + 0.12);
     const fade = 1 - ease(span(t, T.release, T.popOut));
-    if (answer === "allow") {
-      // A jolt as it lands, then still, head ducked shyly.
+    if (answer === "allow" || answer === "force") {
+      // A jolt as it lands, then still, head ducked shyly. Forced or let, it lands the same.
       const jolt = Math.sin(Math.PI * span(t, T.contact, T.contact + 0.35));
       torsoX -= jolt * 0.14;
       headX += ease(landed) * 0.12 * fade;
@@ -652,7 +653,7 @@ export class TouchComic {
     if (!hand) return;
     const scale = hand.scale.x;
     const gesture = this.shot.gesture;
-    const took = answer === "allow" || answer === "lean";
+    const took = touchLands(answer);
     const n = this.normal;
     // A palm sits just off the skin; a tap or a press lands on the fingertips.
     const tips = gesture === "tap" || gesture === "press";
@@ -783,11 +784,14 @@ export class TouchComic {
     return { x: ((p.x + 1) / 2) * WIDTH, y: ((1 - p.y) / 2) * HEIGHT };
   }
 
-  /** How pink her cheeks are: none for a slap, a little for a pull, more for letting it, most for leaning in. */
+  /**
+   * How pink her cheeks are: none for a slap, a little for a pull, more for letting it, flushed when she can't
+   * hold back, most for leaning in.
+   */
   private blush(): number {
     if (!this.show || this.show.words) return 0;
     const grow = ease(span(this.time, T.contact, T.contact + 0.6));
-    const amount = { allow: 0.55, lean: 0.85, pull: 0.25, slap: 0 }[this.show.answer];
+    const amount = { allow: 0.55, lean: 0.85, force: 0.7, pull: 0.25, slap: 0 }[this.show.answer];
     return grow * amount;
   }
 
