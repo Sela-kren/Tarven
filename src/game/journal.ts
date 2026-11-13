@@ -375,6 +375,9 @@ export function recordsBook(state: RecordsState): HTMLElement {
   left.append(row("Pulled away", String(r.pulled)));
   left.append(row("Slapped", String(r.slapped)));
   left.append(row("Got rough", String(r.rough)));
+  // The Consent-off check: which side of her won out (her sub side, her dom side).
+  left.append(row("Gave in (sub)", String(r.subWins)));
+  left.append(row("Faced them down (dom)", String(r.domWins)));
   left.append(row("Clothes lost", String(r.clothesLost)));
   left.append(row("Nights bared", String(r.bareNights)));
   left.append(row("Nights untouched", String(r.chasteNights)));

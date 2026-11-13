@@ -135,6 +135,12 @@ const SHOT_BY_TOUCH: Record<string, Partial<Shot>> = {
   stolenKiss: { offset: SIDE_OF_FACE, distance: 0.7, gesture: "hold", sideOfFace: true },
   deepKiss: { offset: SIDE_OF_FACE, distance: 0.7, gesture: "hold", sideOfFace: true },
   bothHands: { gesture: "squeeze" },
+  // A brawl's own touches.
+  scuffleSpank: { gesture: "smack" },
+  scuffleMouth: { gesture: "stroke" },
+  scuffleNeck: { offset: [-0.08, 0.12, 0], gesture: "none" },
+  scuffleThigh: { gesture: "strokeUp" },
+  scuffleKiss: { offset: SIDE_OF_FACE, distance: 0.7, gesture: "hold", sideOfFace: true },
 };
 
 function shotFor(id: string, region: TouchRegion): Shot {
@@ -557,7 +563,7 @@ export class TouchComic {
           none: "...",
         };
         // A kiss is a kiss, whatever the guest's hand is doing meanwhile.
-        const word = show.region === "lips" && show.id !== "feed" ? "mwah" : words[this.shot.gesture];
+        const word = show.region === "lips" && show.id !== "feed" && show.id !== "scuffleMouth" ? "mwah" : words[this.shot.gesture];
         letter(word, "hit", after, after + 0.9);
         letter(show.answer === "lean" ? "mmh~" : show.answer === "givein" ? "ah~" : "eep!", "voice", after + 0.35, T.popOut);
         if (show.answer === "lean") letter("♥", "heart", after + 0.6, T.popOut);

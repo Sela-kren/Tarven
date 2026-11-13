@@ -86,7 +86,7 @@ import { Chatter } from "./chatter";
 import { DrinkComic } from "./comic";
 import { showJournal } from "./journalpanel";
 import { showBedChoice, showDuelTest, showFight, playAdultScene } from "./fightpanels";
-import { confirmMenu, showLoadMenu, showSaveMenu, showSettingsMenu } from "./menus";
+import { confirmMenu, showDevPanel, showLoadMenu, showSaveMenu, showSettingsMenu } from "./menus";
 import { mindStage, mindStageName } from "./lewd";
 import { PASSIVE_ICONS } from "./passiveicons";
 import { saveBadges } from "./saveicons";
@@ -366,6 +366,24 @@ const FIGHT_SHOTS: Record<string, Omit<TouchShow, "kind">> = {
   "their:miss": { id: "smack", region: "face", answer: "pull", fist: true, words: { hit: "WHOOSH", voice: "missed!" } },
   "their:dodged": { id: "smack", region: "face", answer: "pull", fist: true, words: { hit: "WHOOSH", voice: "too slow!" } },
   lost: { id: "smack", region: "face", answer: "allow", fist: true, words: { hit: "WHAM!", voice: "ow..." } },
+  // Grapples, hers and theirs: fighting, like the rest.
+  "grab:hit": { id: "grab", region: "shoulder", answer: "slap", words: { hit: "GOTCHA!", voice: "stay put!" } },
+  "grab:miss": { id: "grab", region: "shoulder", answer: "allow", words: { hit: "WHIFF", voice: "slippery..." } },
+  "headlock:hit": { id: "grab", region: "neck", answer: "slap", words: { hit: "SQUEEZE!", voice: "give up!" } },
+  "headlock:miss": { id: "grab", region: "neck", answer: "allow", words: { hit: "...", voice: "tch!" } },
+  "hairpull:hit": { id: "grab", region: "hair", answer: "slap", words: { hit: "YANK!", voice: "how's that?" } },
+  "hairpull:miss": { id: "gaze", region: "face", answer: "allow", noHand: true, words: { hit: "WHIFF", voice: "hold still!" } },
+  "tackle:hit": { id: "grab", region: "waist", answer: "slap", words: { hit: "CRASH!", voice: "down you go!" } },
+  "tackle:miss": { id: "gaze", region: "face", answer: "allow", noHand: true, words: { hit: "THUD", voice: "ow..." } },
+  "their:grab": { id: "grab", region: "shoulder", answer: "allow", words: { hit: "GRAB!", voice: "let go!" } },
+  "their:headlock": { id: "grab", region: "neck", answer: "allow", words: { hit: "SQUEEZE", voice: "gk—!" } },
+  "their:hairpull": { id: "grab", region: "hair", answer: "allow", words: { hit: "YANK!", voice: "ow!" } },
+  "their:tackle": { id: "smack", region: "face", answer: "allow", fist: true, words: { hit: "CRASH!", voice: "oof!" } },
+  "their:bearhug": { id: "behind", region: "waist", answer: "allow", words: { hit: "CRUSH!", voice: "can't— breathe—" } },
+  "their:armtwist": { id: "wrist", region: "hand", answer: "allow", words: { hit: "TWIST!", voice: "ow, ow, ow!" } },
+  "their:pin": { id: "grab", region: "shoulder", answer: "allow", words: { hit: "SLAM!", voice: "get off me!" } },
+  "their:sweep": { id: "smack", region: "face", answer: "allow", fist: true, words: { hit: "THUD!", voice: "my legs—!" } },
+  "their:collar": { id: "collar", region: "shoulder", answer: "allow", words: { hit: "SHAKE!", voice: "put me down!" } },
 };
 
 /** A duel moment's comic shot: which touch it looks like (for the framing and the hand), and on what part of her. */
@@ -1966,6 +1984,26 @@ export class Game {
    * A conversation, with a party at their table or a guest who tipped you a drink: their lines play out in
    * the dialog box, then you choose. Time stands still meanwhile. `lines` defaults to the whole conversation.
    */
+  /** A foe reached for her mid-brawl: the fight board steps aside for the touch screen, and comes back after. */
+  showBrawlReach(): void {
+    this.closePanel();
+    this.brawlReachOpen = true;
+    this.showTalk();
+  }
+
+  /** Whether the touch screen open now is a reach in the middle of a brawl. */
+  private brawlReachOpen = false;
+
+  /** Clears the room at once: the night's over early, and nobody's left to walk out. */
+  dismissGuests(): void {
+    for (const [id, actor] of this.actors) {
+      this.guestLayer.remove(actor.group);
+      this.tavern.guestLeft(id);
+    }
+    this.actors.clear();
+    this.highlight(null);
+  }
+
   private showTalk(lines = this.tavern.talkLines): void {
     this.clearTarget();
     this.screen = "talk";
@@ -2109,6 +2147,13 @@ export class Game {
       this.dialogue.close();
       this.screen = "play";
       document.getElementById("touch-force")?.classList.remove("visible", "high", "extreme", "fast");
+      // A reach mid-brawl, answered: back to the fight (or how it ended).
+      if (this.brawlReachOpen) {
+        this.brawlReachOpen = false;
+        this.pendingAdult = null;
+        showFight(this);
+        return;
+      }
       const scene = this.pendingAdult;
       this.pendingAdult = null;
       if (scene) {
@@ -2336,6 +2381,15 @@ export class Game {
     if (import.meta.env.DEV && input.pressed("KeyP")) {
       this.clearTarget();
       showDuelTest(this);
+      return;
+    }
+    // ] opens the dev panel: the Consent check, her side and the last guest's, in development only.
+    if (import.meta.env.DEV && input.pressed("BracketRight")) {
+      this.clearTarget();
+      showDevPanel(this, () => {
+        this.closePanel();
+        this.screen = "play";
+      });
       return;
     }
     // B starts a test brawl with a random kind of guest, in development only.

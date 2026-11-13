@@ -1,7 +1,7 @@
 import { cloneLayout, type HouseLayout } from "./house";
 import { bodyLine, flavorLine, mindStage, wildSensitivity } from "./lewd";
 import { faceLine } from "./facetalk";
-import { arrivalFeelings, arrivalMood, feltMood, HIGH_RESPECT, LOW_RESPECT, MOOD_LABELS, moodAfterDrink, moodAfterReply, moodWhenServed, moodWhileWaiting, MOOD_BEHAVIOUR, type Mood } from "./mood";
+import { arrivalFeelings, arrivalMood, feltMood, HIGH_RESPECT, LOW_RESPECT, MOOD_LABELS, STRONG_LUST, moodAfterDrink, moodAfterReply, moodWhenServed, moodWhileWaiting, MOOD_BEHAVIOUR, type Mood } from "./mood";
 import {
   complimentReplies,
   COMPLIMENTS,
@@ -44,7 +44,23 @@ import {
 } from "./touch";
 import { GUEST_TOO_DRUNK, PULLS, SLAPS, TOO_DRUNK_TO_ALLOW, WAVERED, WORN_THIN } from "./touchtalk";
 import { GIVE_IN_TEXTS, IMPULSE_LINES } from "./touchtalk-givein";
-import { autoTouchFits, defaultTouchSettings, impulsive, type TouchSettings } from "./touchsettings";
+import { KINK_TALK, kinkOf, type Kink } from "./kinktalk";
+
+/** One line of a set, by a roll from 0 to 1. */
+function oneOf(lines: readonly string[], roll: number): string {
+  return lines[Math.floor(roll * lines.length) % lines.length];
+}
+import { DESIRE_STRONG, HORNY_AT, wet } from "./desire";
+import {
+  autoTouchFits,
+  defaultTouchSettings,
+  GROUPS_OF_REGION,
+  impulseCheck,
+  impulsive,
+  type ImpulseCheck,
+  type ImpulseFacts,
+  type TouchSettings,
+} from "./touchsettings";
 import { Fight, TROUBLE_SHOUTS, type FighterStats, type FightMove, type FightOutcome } from "./fight";
 import { ROLE_PLAYS, type RolePlay } from "./duellines";
 import { coatStages, loadOf, type CoatSection, type CumSpot } from "./cum";
@@ -80,6 +96,7 @@ import {
   lewdnessOf,
   METER_MAX,
   METER_NAMES,
+  INTIMATE_REGIONS,
   METER_OF,
   METERS,
   newlyEarned,
@@ -186,6 +203,20 @@ const FAME_DEEDS = [-6, 8, -3];
 const RESPECT_DEEDS = [-2, 2, -1];
 /** This drunk in front of the customers, and they stop taking you seriously. */
 const SLOPPY_DRUNK = 0.6;
+/**
+ * A foe reaching mid-brawl is bolder than they'd be at the table, Karryn-style: this much more nerve for what they
+ * go for (never for whether it lands unasked: that still goes by their own nerve).
+ */
+const BRAWL_BOLDER = 2;
+/** Mid-brawl, a foe's hands go for the part of her their type likes: these parts, this much more often. */
+const BRAWL_PREFER_PULL = 2;
+const REGIONS_OF_AREA: Record<DuelArea, readonly TouchRegion[]> = {
+  hands: ["hand", "waist"],
+  mouth: ["lips", "neck", "face"],
+  breasts: ["chest"],
+  butt: ["rear"],
+  pussy: ["thigh", "intimate"],
+};
 /** How often a guest full of lust flatters you rather than asking a favor. */
 const LUSTY_COMPLIMENT_SHARE = 0.9;
 const CUSHION_PATIENCE = 1.25;
@@ -823,6 +854,25 @@ export interface TavernSave {
 /** A moment that wants an 18+ card: a guest she's agreed to take upstairs, or being overwhelmed. */
 export type AdultScene = { kind: "upstairs"; guestId: number; guestKind: GuestKind; guestStats?: RoleStats } | { kind: "overwhelmed" };
 
+/** The last Consent-off check: who reached, for what, both sides' numbers, and what came of it. */
+export interface ImpulseRecord {
+  guest: string;
+  kind: GuestKind;
+  prefers: DuelArea;
+  touch: string;
+  region: TouchRegion;
+  brawl: boolean;
+  /** Impulsive (lustful and bold), or a worked-up brawler. */
+  eager: boolean;
+  /** A touch the switch can cover: she could say yes, within the boldness, not clothes or upstairs. */
+  covered: boolean;
+  consentOff: boolean;
+  facts: ImpulseFacts;
+  check: ImpulseCheck;
+  /** It played out without asking. */
+  landed: boolean;
+}
+
 /** A guest reaching for you as you serve them, waiting on your answer. */
 interface TouchChat {
   guestId: number;
@@ -840,6 +890,23 @@ interface TouchChat {
   offerAuto: boolean;
   /** It landed without the question, because the player said impulsive guests may: the Force bar fills fast. */
   impulse: boolean;
+  /**
+   * A reach in the middle of a brawl: never a garment or an invitation, and the fight picks up after. Asked like any
+   * other reach, unless Consent is switched off in Settings: then it may land on its own.
+   */
+  brawl?: boolean;
+}
+
+/**
+ * After she's lost a brawl, the one who won asks her (GAME_PATH.MD, "Brawl loss"). Hers to answer: going on takes
+ * her to the After Hours rules (her parts, her stop), and stopping costs nothing past the loss itself. Either way
+ * the night ends.
+ */
+export interface BrawlOffer {
+  kind: GuestKind;
+  stats: RoleStats;
+  /** They were roaring drunk: too drunk to say yes to. */
+  drunk: boolean;
 }
 
 /** A touch that's just been answered, for the game to play out on screen. */
@@ -972,6 +1039,8 @@ export class Tavern {
   private tipChat: TipChat | null = null;
   /** A guest reaching for you, waiting on your answer, or null. */
   private touchChat: TouchChat | null = null;
+  /** The last Consent-off check, whether or not it counted, for the dev panel (the ] key). */
+  lastImpulse: ImpulseRecord | null = null;
   /**
    * The touch she has just said yes to, for the intensity (Force) bar: its boldness and her answer. Null before she
    * answers, and after a slap or a pull, so the bar never shows while she's still choosing.
@@ -1030,13 +1099,19 @@ export class Tavern {
   fight: Fight | null = null;
   /** How the last brawl ended, for the game to show once. */
   lastFight: { outcome: FightOutcome; text: string } | null = null;
+  /** What the winner of a brawl she lost is asking, until she answers. */
+  brawlOffer: BrawlOffer | null = null;
   /** An after-hours game in progress, or null; and how the last one ended, for the game to show once. */
   duel: Duel | null = null;
-  lastDuel: { outcome: DuelOutcome; text: string; line: string; gold: number; test?: boolean } | null = null;
+  lastDuel: { outcome: DuelOutcome; text: string; line: string; gold: number; test?: boolean; brawl?: boolean } | null = null;
   /** Whether the duel going on is a test one, which counts for nothing. */
   private testDuel = false;
+  /** Whether the duel going on is the one she agreed to after losing a brawl: the night ends after it. */
+  private brawlDuel = false;
   /** Guests she let touch her tonight who weren't drunk: one of them might linger after closing. */
   private admirers: { kind: GuestKind; stats: RoleStats }[] = [];
+  /** Sober guests she talked out of a brawl tonight: one of them might linger after closing too. */
+  private peacemade: { kind: GuestKind; stats: RoleStats }[] = [];
   /** Whose turn it is in each group's roster, so a group's types take turns through the door. */
   private roleTurn: Partial<Record<GuestKind, number>> = {};
   private duelTonight = false;
@@ -1785,8 +1860,13 @@ export class Tavern {
     return UPSTAIRS_ACTS.map((act) => ({
       act,
       label: UPSTAIRS[act].label,
-      ready: this.meters[UPSTAIRS[act].meter] >= UPSTAIRS[act].need,
+      ready: this.meters[UPSTAIRS[act].meter] >= UPSTAIRS[act].need && (!UPSTAIRS[act].wet || this.wet),
     }));
+  }
+
+  /** Wet: pleasure enough, sooner the higher her Pussy desire (desire.ts). */
+  get wet(): boolean {
+    return wet(this.meters.pussy, this.pleasure);
   }
 
   /**
@@ -1875,8 +1955,10 @@ export class Tavern {
     if (delta >= 1) {
       const name = METER_NAMES[meter];
       this.say(wildSensitivity(name, delta, this.corruption, this.lewdness, this.houseMode.current === "brothel"));
-      if (this.meters[meter] >= 50 && prev < 50) this.say(`${name} is getting sensitive — future touches there will hit harder`);
-      if (this.meters[meter] >= 80 && prev < 80) this.say(`${name} is very sensitive now`);
+      // Both true now (desire.ts): from 50 it gets in her way in a brawl, from 80 twice as much.
+      if (this.meters[meter] >= DESIRE_STRONG && prev < DESIRE_STRONG)
+        this.say(`${name} desire is getting strong: bolder touches there are on the table, and it'll get in your way in a brawl`);
+      if (this.meters[meter] >= HORNY_AT && prev < HORNY_AT) this.say(`${name} desire is burning. You're horny.`);
     }
   }
 
@@ -2035,7 +2117,13 @@ export class Tavern {
     const guest = this.guests.find((g) => g.id === guestId);
     if (!guest || this.fight) return;
     this.trouble = null;
-    this.fight = new Fight(guest.id, guest.kind, guest.mood === "drunk", this.fighterStats(), this.random, guest.stats);
+    // Came in worked up: now and then they'll reach for her mid-fight, and she's asked on the touch screen.
+    const female = this.playerBody === "Female";
+    const workedUp = female && guest.lust >= STRONG_LUST;
+    // Her desire comes into the fight with her (desire.ts): it gets in her way, their grapples stir it, and her
+    // Cock desire opens up what she can do with her hands and mouth.
+    const desire = female ? { desire: { ...this.meters }, sens: { ...this.effects.sens }, pleasure: this.pleasure, prefers: guest.stats.prefers } : {};
+    this.fight = new Fight(guest.id, guest.kind, guest.mood === "drunk", { ...this.fighterStats(), workedUp, ...desire }, this.random, guest.stats);
     this.fightsTonight++;
     this.say(`Brawl! The ${this.nameOf(guest).toLowerCase()} is right in your face.`);
     this.cue("walkOut");
@@ -2060,18 +2148,57 @@ export class Tavern {
     const fight = this.fight;
     if (!fight) return;
     fight.act(move);
+    if (fight.reaching) this.brawlReach(fight);
     if (fight.outcome) this.finishFight(fight);
+  }
+
+  /**
+   * A worked-up foe reaches for her mid-brawl: the fight waits, and she's asked on the usual touch screen, every
+   * answer there (Pull away included). If there's nothing to ask about, she just twists clear.
+   */
+  private brawlReach(fight: Fight): void {
+    const guest = this.guests.find((g) => g.id === fight.guestId);
+    // What she has left after the blows so far is what she answers with.
+    this.settleWill(fight.will);
+    this.settleDesire(fight);
+    if (!guest || !this.maybeReach(guest, true)) fight.afterReach("pull", this.willpower);
+  }
+
+  /** She comes out of the fight (or into the touch screen mid-fight) with the desire and pleasure it left her. */
+  private settleDesire(fight: Fight): void {
+    if (!fight.desire) return;
+    for (const m of METERS) {
+      this.meters[m] = clamp(fight.desire[m], 0, METER_MAX);
+      this.peak[m] = Math.max(this.peak[m], this.meters[m]);
+    }
+    this.pleasure = fight.pleasure;
   }
 
   private finishFight(fight: Fight): void {
     this.settleWill(fight.will);
+    this.settleDesire(fight);
+    // What she did with her hands and mouth counts like it would upstairs (riding them, like the bed).
+    for (const [move, n] of Object.entries(fight.acts)) {
+      const act: UpstairsAct = move === "ride" ? "bed" : (move as UpstairsAct);
+      this.records.acts[act] = (this.records.acts[act] ?? 0) + (n ?? 0);
+      if (fight.desire) this.gainXp(ACT_SKILL_OF[act], UPSTAIRS_XP * (n ?? 0));
+    }
     for (const [stat, n] of Object.entries(fight.xp)) this.gainXp(stat as StatId, n ?? 0);
     this.gainXp("endurance", 3);
     const r = this.records;
     r.dodges += fight.dodges;
     const guest = this.guests.find((g) => g.id === fight.guestId);
     let text: string;
-    if (fight.outcome === "won") {
+    if (fight.outcome === "won" && fight.spent) {
+      // Worn out by her hands, mouth or the rest: the room talks about it, if not with respect.
+      r.fightsWon++;
+      if (guest) {
+        guest.mood = "idolize";
+        this.sendOff(guest);
+      }
+      this.shift({ fame: 3, flirt: 1, respect: -1 });
+      text = "Spent. They stagger out grinning, and the room won't stop talking about it.";
+    } else if (fight.outcome === "won") {
       r.fightsWon++;
       if (guest) this.sendOff(guest);
       this.shift({ respect: 2, fame: 3 });
@@ -2081,6 +2208,8 @@ export class Tavern {
     } else if (fight.outcome === "talked") {
       r.talkedDown++;
       if (guest) guest.mood = "calm";
+      // Sober, and talked round rather than beaten: they might linger after closing and ask for a game.
+      if (guest && !fight.drunk) this.peacemade.push({ kind: guest.kind, stats: guest.stats });
       this.shift({ respect: 1 });
       this.adjust(0, 1, 0);
       text = "Talked down. They're back in their seat, and the village likes a peacemaker. (+1 trust)";
@@ -2090,7 +2219,9 @@ export class Tavern {
       this.adjust(-taken, 0, 0);
       if (guest) this.sendOff(guest);
       this.shift({ respect: -2 });
-      text = `Knocked down. They grab ${taken} gold from the till on their way out.`;
+      text = `Knocked down. They grab ${taken} gold from the till.`;
+      // The one who won asks her. Hers to answer; the night ends either way (see BrawlOffer).
+      if (guest && this.playerBody === "Female") this.brawlOffer = { kind: guest.kind, stats: guest.stats, drunk: fight.drunk };
     }
     this.lastFight = { outcome: fight.outcome!, text };
     this.say(text);
@@ -2111,14 +2242,59 @@ export class Tavern {
    * someone sober touch her tonight, she's lewd enough to be asked, and she hasn't played tonight already.
    */
   duelOffer(): GuestKind | null {
-    if (this.phase !== "bedtime" || this.playerBody !== "Female" || this.duelTonight || this.duel) return null;
+    if (this.duel) return null;
+    // The winner of a brawl she lost asks at once, whatever the hour.
+    if (this.brawlOffer) return this.brawlOffer.kind;
+    if (this.phase !== "bedtime" || this.playerBody !== "Female" || this.duelTonight) return null;
     if (this.lewdness < INVITES_AT && !this.passives.has("upstairsCurious")) return null;
-    return this.admirers[this.admirers.length - 1]?.kind ?? null;
+    return this.duelPartner()?.kind ?? null;
   }
 
-  /** Why she can't play tonight, if she can't: she's had too much to drink. */
+  /** Who's asking at bedtime: someone she let touch her tonight, or else someone she talked out of a brawl. */
+  private duelPartner(): { kind: GuestKind; stats: RoleStats } | null {
+    return this.admirers[this.admirers.length - 1] ?? this.peacemade[this.peacemade.length - 1] ?? null;
+  }
+
+  /** Why tonight's offer is being made: "brawl" after a loss, "talked" by someone she talked down, else "admirer". */
+  get duelOfferFrom(): "brawl" | "talked" | "admirer" | null {
+    if (!this.duelOffer()) return null;
+    if (this.brawlOffer) return "brawl";
+    return this.admirers.length === 0 && this.peacemade.length > 0 ? "talked" : "admirer";
+  }
+
+  /** Why she can't say yes tonight, if she can't: too much to drink, on her side or theirs. */
   get duelBlocked(): string | null {
-    return this.drunk >= SLOPPY_DRUNK ? "You've had too much to drink to play tonight." : null;
+    if (this.drunk >= SLOPPY_DRUNK) return "You've had too much to drink to play tonight.";
+    if (this.brawlOffer?.drunk) return "They're too drunk to know what they're doing.";
+    return null;
+  }
+
+  /**
+   * She says no to the brawl winner. That's the end of it: they go, and so does the night, with nothing lost
+   * past what the fight already cost.
+   */
+  declineBrawlOffer(): void {
+    if (!this.brawlOffer) return;
+    this.brawlOffer = null;
+    this.say("You send them off. Nothing more comes of it.");
+    this.closeEarly();
+  }
+
+  /**
+   * After a brawl she lost, the night is over: everyone goes, nobody else comes in, and it's straight to bed (no
+   * last call). `sleep` works from here.
+   */
+  private closeEarly(): void {
+    if (this.phase !== "service") return;
+    for (const guest of this.guests) if (guest.status !== "leaving") this.sendOff(guest);
+    this.trouble = null;
+    this.talkingTo = null;
+    this.tipChat = null;
+    this.touchChat = null;
+    this.nextArrival = this.plan.guests.length;
+    this.phase = "bedtime";
+    this.eased = false;
+    this.say("The room empties out early. You bar the door and call it a night.");
   }
 
   /** Each part of her she could put in play, and whether she's warm enough there tonight. */
@@ -2137,9 +2313,11 @@ export class Tavern {
     if (!kind || this.duelBlocked) return false;
     const ready = new Set(this.duelAreas().filter((a) => a.ready).map((a) => a.id));
     if (areas.some((a) => !ready.has(a)) || stake < 0 || stake > this.gold) return false;
-    this.duelTonight = true;
     if (!this.rolePlays().some((p) => p.id === scene && p.ready)) return false;
-    const stats = this.admirers[this.admirers.length - 1]?.stats;
+    this.duelTonight = true;
+    const stats = this.brawlOffer?.stats ?? this.duelPartner()?.stats;
+    this.brawlDuel = this.brawlOffer !== null;
+    this.brawlOffer = null;
     this.duel = new Duel(kind, new Set(areas), stake, this.duelistStats(), this.random, [{ kind, female: false, stats }], scene);
     return true;
   }
@@ -2255,13 +2433,19 @@ export class Tavern {
     }
     const ml = Object.values(duel.cum).reduce((n, v) => n + (v ?? 0), 0);
     if (ml > 0) text += ` ${duel.loads === 1 ? "One load" : `${duel.loads} loads`}, ${ml} ml of cum.`;
-    this.lastDuel = { outcome: duel.outcome!, text, line, gold: change };
+    const brawl = this.brawlDuel;
+    this.lastDuel = { outcome: duel.outcome!, text, line, gold: change, brawl };
     this.say(text);
     this.duel = null;
+    // The game after a lost brawl: played out or called off, the night ends with it.
+    if (brawl) {
+      this.brawlDuel = false;
+      this.closeEarly();
+    }
   }
 
   /** How the last after-hours game ended, once. */
-  takeDuelResult(): { outcome: DuelOutcome; text: string; line: string; gold: number; test?: boolean } | null {
+  takeDuelResult(): { outcome: DuelOutcome; text: string; line: string; gold: number; test?: boolean; brawl?: boolean } | null {
     const result = this.lastDuel;
     this.lastDuel = null;
     this.endedTest = null;
@@ -2285,8 +2469,13 @@ export class Tavern {
    * Whether the guest you've just served reaches for you, and if so, for what. Their nerve decides how bold
    * they'll be; your desire decides what you can let them do. Only the innkeeper sister is reached for, for now.
    */
-  private maybeReach(guest: Guest): void {
-    if (this.playerBody !== "Female" || this.inConversation) return;
+  /**
+   * `brawl`: a foe reaching mid-fight. The fight has already decided they reach, so there's no roll; it's never a
+   * garment or an invitation upstairs, and it's always asked (the Eager guests setting doesn't cover a fight).
+   * Returns whether there's a touch to answer.
+   */
+  private maybeReach(guest: Guest, brawl = false): boolean {
+    if (this.playerBody !== "Female" || this.inConversation) return false;
     const history = this.touchHistory.get(guest.id) ?? { allowed: 0, slapped: false };
     const guestNerve = nerve({
       kind: guest.kind,
@@ -2300,15 +2489,19 @@ export class Tavern {
       bonus: this.nerveBonus,
       slapStops: this.effects.slapStops,
     });
-    if (this.random() >= reachChance(guestNerve) * Math.max(0, 1 + this.effects.reach)) return;
+    if (!brawl && this.random() >= reachChance(guestNerve) * Math.max(0, 1 + this.effects.reach)) return false;
     const piece = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder)[this.stripped]?.label ?? null;
-    const touch = pickTouch(guest.kind, guestNerve, this.random, {
-      canStrip: piece !== null,
+    // Mid-brawl, their hands go bolder, and for the part of her their type likes.
+    const pull = { ...this.effects.pull };
+    if (brawl) for (const region of REGIONS_OF_AREA[guest.stats.prefers] ?? []) pull[region] = (pull[region] ?? 0) + BRAWL_PREFER_PULL;
+    const touch = pickTouch(guest.kind, brawl ? Math.min(10, guestNerve + BRAWL_BOLDER) : guestNerve, this.random, {
+      canStrip: !brawl && piece !== null,
       seen: this.touchSeen,
-      invites: this.lewdness >= INVITES_AT || this.passives.has("upstairsCurious"),
-      pull: this.effects.pull,
+      invites: !brawl && (this.lewdness >= INVITES_AT || this.passives.has("upstairsCurious")),
+      pull,
+      brawl,
     });
-    if (!touch) return;
+    if (!touch) return false;
     this.touchSeen.add(touch.id);
 
     const sloppy = this.drunk >= SLOPPY_DRUNK;
@@ -2329,7 +2522,27 @@ export class Tavern {
     const answers = touchAnswers(touch, { desire, sloppy, guestSloppy, leanMargin });
     // An impulsive guest, on a touch she could say yes to anyway: covered by the player's setting, or asked about.
     const s = this.touchSettings;
-    const covered = s.autoTouch && impulsive(feltMood(guest), guestNerve) && autoTouchFits(s, touch, answers);
+    // The same Consent switch covers a brawl: a foe who reaches mid-fight came in worked up, so counts as impulsive.
+    const eager = brawl || impulsive(feltMood(guest), guestNerve);
+    // Only ever a touch within their own nerve (GAME_PATH.MD), not the bolder reach a brawl stirs up.
+    const covered = s.autoTouch && eager && touch.level <= guestNerve && autoTouchFits(s, touch, answers);
+    // Consent off: weigh them against her. Worked out every time, so the dev panel can show it either way.
+    const facts = this.impulseFacts(guest, guestNerve, touch);
+    const check = impulseCheck(facts);
+    this.lastImpulse = {
+      guest: guest.stats.label ?? guest.kind,
+      kind: guest.kind,
+      prefers: guest.stats.prefers,
+      touch: touch.id,
+      region: touch.region,
+      brawl,
+      eager,
+      covered,
+      consentOff: s.autoTouch && s.agreed,
+      facts,
+      check,
+      landed: false,
+    };
     const chat: TouchChat = {
       guestId: guest.id,
       touch,
@@ -2341,15 +2554,65 @@ export class Tavern {
       reply: [],
       offerAuto: covered && !s.agreed,
       impulse: false,
+      brawl,
     };
     this.touchChat = chat;
-    // Already agreed to, and only some of the time: it lands without the question, as a yes she gave in advance.
-    if (covered && s.agreed && this.random() < s.chance) {
+    // Consent off, and they push past her hold: it lands without the question, as a yes she gave in advance.
+    // If her hold stands, she's asked like any other time.
+    const who = (guest.stats.label ?? guest.kind).toLowerCase();
+    const talk = KINK_TALK[this.kink];
+    if (covered && s.agreed && check.lands) {
       chat.lines = [{ ...narrate(fill(touch.reach)), guestId: guest.id }];
       chat.impulse = true;
+      this.lastImpulse.landed = true;
+      // Her sub side: giving in counts toward masochism, and her talk follows her kink from there.
+      this.records.subWins++;
       this.answerTouch(chat, "allow");
-      chat.reply.unshift(narrate(IMPULSE_LINES[Math.floor(this.random() * IMPULSE_LINES.length) % IMPULSE_LINES.length]));
+      // The guest crows about it, then her sub talk: she gives in, in her own voice. Both in the log too, and both
+      // in the style of her kink (kinktalk.ts).
+      const crow = oneOf(talk.guestWin, this.random()).replaceAll("{guest}", who);
+      const sub = oneOf(talk.sub, this.random()).replaceAll("{guest}", who);
+      chat.reply.unshift(narrate(oneOf(IMPULSE_LINES, this.random())), this.guestSays(guest, crow), you(sub));
+      this.say(`${this.nameOf(guest)}: "${crow}" You: ${sub} (push ${check.push} vs hold ${check.hold})`);
+    } else if (covered && s.agreed) {
+      // Dom talk: consent off, but their push fell short of her hold. She mocks them for trying, they're left
+      // sheepish, and they have to ask after all. Both in the log too. Her dom side: it counts toward sadism.
+      this.records.domWins++;
+      const mock = oneOf(talk.dom, this.random()).replaceAll("{guest}", who);
+      const sulk = oneOf(talk.guestFail, this.random()).replaceAll("{guest}", who);
+      chat.lines.splice(1, 0, narrate(mock), this.guestSays(guest, sulk));
+      this.say(`${mock} ${this.nameOf(guest)}: "${sulk}" (push ${check.push} vs hold ${check.hold})`);
     }
+    return true;
+  }
+
+  /** Her kink, from her passives: how she (and the guest) talk after the Consent-off check (kinktalk.ts). */
+  get kink(): Kink {
+    return kinkOf(this.passives);
+  }
+
+  /** A guest saying something out loud in a conversation, under their own name, so the game shows them. */
+  private guestSays(guest: Guest, text: string): TalkLine {
+    return { speaker: this.nameOf(guest), text: `"${text}"`, guestId: guest.id };
+  }
+
+  /** Both sides of the Consent-off check for a touch: her desire, exposure, passives and practice; their nerve and taste. */
+  impulseFacts(guest: Guest, guestNerve: number, touch: TouchDef): ImpulseFacts {
+    const groups = GROUPS_OF_REGION[touch.region];
+    const owned = [...this.passives].map((id) => PASSIVE_BY_ID.get(id)?.group);
+    const preferred = DUEL_AREAS.find((a) => a.id === guest.stats.prefers)?.meter;
+    return {
+      level: touch.level,
+      desire: Math.floor(this.meters[METER_OF[touch.region]]),
+      exposed: this.strippedPieces.length,
+      exhibition: owned.filter((g) => g === "exhibition").length,
+      passives: owned.filter((g) => g !== undefined && groups.includes(g)).length,
+      lets: this.touchMemory.lets[touch.region] ?? 0,
+      skill: this.level(SKILL_OF_REGION[touch.region]),
+      nerve: guestNerve,
+      prefers: preferred === METER_OF[touch.region],
+      strip: touch.strip === true,
+    };
   }
 
   /** You answer a guest who reached for you. */
@@ -2389,7 +2652,9 @@ export class Tavern {
       // Tonight's desire: the meter for where it landed most, the rest of her a little; more the more practised.
       const own = TOUCH_DESIRE * (answer === "lean" ? LEAN_DESIRE : 1) * (1 + practised.sens);
       const meter = METER_OF[touch.region];
-      for (const m of METERS) this.raise(m, m === meter ? own : own / 3);
+      // A lap, a hand between her thighs, an invitation: she wants to be intimate too, as much as the part touched.
+      const intimate = INTIMATE_REGIONS.has(touch.region);
+      for (const m of METERS) this.raise(m, m === meter || (intimate && m === "cock") ? own : own / 3);
       // The intensity bar: a bold touch she said yes to tips a little more and warms her a little more.
       const intensity = intensityBonus(touch.level);
       gold += intensity.gold;
@@ -2457,7 +2722,7 @@ export class Tavern {
       else this.cue("tip");
       if (touch.region === "invite" && guest) {
         this.adultScene = { kind: "upstairs", guestId: guest.id, guestKind: guest.kind, guestStats: guest.stats };
-      } else if (this.pleasure >= PLEASURE_MAX) {
+      } else if (this.pleasure >= PLEASURE_MAX && !chat.brawl) {
         this.pleasure = 0;
         r.overwhelmed++;
         this.raiseAll(OVERWHELM_DESIRE + e.overwhelmBoost);
@@ -2473,11 +2738,23 @@ export class Tavern {
     }
     this.touchHistory.set(chat.guestId, history);
     this.touchMoment = { id: touch.id, region: touch.region, level: touch.level, answer, kind: guest?.kind ?? "farmer" };
+    // A reach mid-brawl: her answer goes back to the fight, with the willpower she has left after it.
+    const fight = this.fight;
+    if (chat.brawl && fight?.reaching) {
+      // And the desire and pleasure the touch left her with.
+      fight.setDesire(this.meters, this.pleasure);
+      fight.afterReach(took ? "yes" : answer === "slap" ? "slap" : "pull", this.willpower);
+      chat.reply.push(narrate(fight.log[fight.log.length - 1]));
+      if (fight.outcome) this.finishFight(fight);
+    }
   }
 
   /** Your answers to a guest reaching for you, then getting back to work once you've given one. */
   private touchOptions(chat: TouchChat): (TalkChoice & { run: () => void })[] {
-    if (chat.answered) return [{ label: "Get back to work", disabled: false, run: () => (this.touchChat = null) }];
+    if (chat.answered) {
+      const label = !chat.brawl ? "Get back to work" : this.fight ? "Back to the fight" : "See how it ended";
+      return [{ label, disabled: false, run: () => (this.touchChat = null) }];
+    }
     const cost = refuseCost(chat.tier, chat.touch.level);
     const willNote = (answer: TouchAnswer): string => {
       if ((answer !== "slap" && answer !== "pull") || cost === 0) return "";
@@ -2492,10 +2769,9 @@ export class Tavern {
     // Every usual answer stays, Slap and Pull away included, and "Always ask me" keeps things as they are.
     if (chat.offerAuto) {
       const s = this.touchSettings;
-      const chance = Math.round(s.chance * 100);
       options.unshift(
         {
-          label: `${answerLabel(chat.touch, "allow")}, and let eager guests skip asking (${chance}% of the time)`,
+          label: `${answerLabel(chat.touch, "allow")}, and let eager guests skip asking (Consent off)`,
           disabled: false,
           run: () => {
             s.agreed = true;
@@ -3227,6 +3503,8 @@ export class Tavern {
     this.xp = readExperience(progress.xp);
     this.fight = null;
     this.lastFight = null;
+    this.brawlOffer = null;
+    this.brawlDuel = false;
     this.duel = null;
     this.lastDuel = null;
     this.testDuel = false;
@@ -3306,6 +3584,9 @@ export class Tavern {
     this.lastDuel = null;
     this.testDuel = false;
     this.admirers = [];
+    this.peacemade = [];
+    this.brawlOffer = null;
+    this.brawlDuel = false;
     this.duelTonight = false;
     this.partyState.clear();
     this.say(

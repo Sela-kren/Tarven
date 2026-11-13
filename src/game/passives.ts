@@ -20,9 +20,15 @@ import type { TouchRegion } from "./touchtalk";
 import type { SkillId, StatId } from "./skills";
 import type { DuelMove } from "./duel";
 
-export type Meter = "body" | "mouth" | "breasts" | "butt" | "pussy";
-export const METERS: readonly Meter[] = ["body", "mouth", "breasts", "butt", "pussy"];
-export const METER_NAMES: Record<Meter, string> = { body: "Body", mouth: "Mouth", breasts: "Breasts", butt: "Butt", pussy: "Pussy" };
+/**
+ * Her desires. `cock` is her wanting to be intimate with someone: it fills when the bold touches land (a lap, a
+ * hand between her thighs, an invitation), and it's what the invitation upstairs needs.
+ */
+export type Meter = "body" | "mouth" | "breasts" | "butt" | "pussy" | "cock";
+export const METERS: readonly Meter[] = ["body", "mouth", "breasts", "butt", "pussy", "cock"];
+export const METER_NAMES: Record<Meter, string> = { body: "Body", mouth: "Mouth", breasts: "Breasts", butt: "Butt", pussy: "Pussy", cock: "Cock" };
+/** Touches that stir her wanting to be intimate, on top of their own meter. */
+export const INTIMATE_REGIONS: ReadonlySet<TouchRegion> = new Set(["thigh", "lap", "intimate", "invite"]);
 export const METER_MAX = 100;
 export type Meters = Record<Meter, number>;
 
@@ -41,11 +47,12 @@ export const METER_OF: Record<TouchRegion, Meter> = {
   thigh: "pussy",
   lap: "pussy",
   intimate: "pussy",
-  invite: "pussy",
+  // Going upstairs with someone is wanting to be intimate with them.
+  invite: "cock",
 };
 
 export function emptyMeters(): Meters {
-  return { body: 0, mouth: 0, breasts: 0, butt: 0, pussy: 0 };
+  return { body: 0, mouth: 0, breasts: 0, butt: 0, pussy: 0, cock: 0 };
 }
 
 /** What happens upstairs, once she's taken a guest up. Each is a placeholder 18+ card for now. */
@@ -56,7 +63,7 @@ export const UPSTAIRS_ACTS: readonly UpstairsAct[] = ["kiss", "hands", "mouth", 
  * Each thing she can do upstairs: its choice, the one line its card shows (never more than that), the meter
  * she has to be warm enough on to choose it, and what the guest leaves on the pillow.
  */
-export const UPSTAIRS: Record<UpstairsAct, { label: string; line: string; meter: Meter; need: number; gold: number }> = {
+export const UPSTAIRS: Record<UpstairsAct, { label: string; line: string; meter: Meter; need: number; gold: number; wet?: boolean }> = {
   kiss: {
     label: "Kiss and hold each other",
     line: "The door shuts behind you. For a long while there's only the two of you, and the candle.",
@@ -67,14 +74,15 @@ export const UPSTAIRS: Record<UpstairsAct, { label: string; line: string; meter:
   hands: {
     label: "Use your hands on them",
     line: "You take your time with them, and learn exactly what they like.",
-    meter: "body",
+    // What she does with her own hands and mouth takes Cock desire (desire.ts).
+    meter: "cock",
     need: 40,
     gold: 12,
   },
   mouth: {
     label: "Use your mouth on them",
     line: "You sink to your knees, and for a while the little room is very quiet.",
-    meter: "mouth",
+    meter: "cock",
     need: 60,
     gold: 16,
   },
@@ -84,6 +92,8 @@ export const UPSTAIRS: Record<UpstairsAct, { label: string; line: string; meter:
     meter: "pussy",
     need: 80,
     gold: 20,
+    // Pussy desire isn't enough on its own: she has to be wet too.
+    wet: true,
   },
   behind: {
     label: "Let them take you from behind",
@@ -103,6 +113,12 @@ export interface Records {
   slapped: number;
   /** Rough touches she let happen: a smack, being carried off, a tie pulled with teeth. */
   rough: number;
+  /**
+   * The Consent-off check (touchsettings.ts): times their push won and she gave in (her sub side, toward
+   * masochism), and times her hold stood and she mocked them for trying (her dom side, toward sadism).
+   */
+  subWins: number;
+  domWins: number;
   /** Nights each meter reached the top. */
   maxed: Partial<Record<Meter, number>>;
   /** Nights every meter reached 60. */
@@ -150,6 +166,8 @@ export function newRecords(): Records {
     pulled: 0,
     slapped: 0,
     rough: 0,
+    subWins: 0,
+    domWins: 0,
     maxed: {},
     allHigh: 0,
     clothesLost: 0,
@@ -183,7 +201,19 @@ export function newRecords(): Records {
 }
 
 /** Touches that count as rough, for masochism. */
-export const ROUGH_TOUCHES: ReadonlySet<string> = new Set(["smack", "grab", "carry", "teeth", "bothHands", "holdLap", "wall"]);
+export const ROUGH_TOUCHES: ReadonlySet<string> = new Set([
+  "smack",
+  "grab",
+  "carry",
+  "teeth",
+  "bothHands",
+  "holdLap",
+  "wall",
+  "scuffleSpank",
+  "scuffleGrope",
+  "scuffleChest",
+  "scuffleKiss",
+]);
 
 // ---------- Effects ----------
 
@@ -845,8 +875,11 @@ export const PASSIVES: readonly PassiveDef[] = [
     group: "cock",
     need: "Use your hands on a guest upstairs",
     progress: (f) => count(acts(f, "hands"), 1),
-    benefit: "Body desire starts each night at +5",
-    effect: (e) => (e.start.body += 5),
+    benefit: "Body and Cock desire start each night at +5",
+    effect: (e) => {
+      e.start.body += 5;
+      e.start.cock += 5;
+    },
     lewd: 6,
     thought: "(I did that. With my own hands.)",
   },
@@ -867,8 +900,11 @@ export const PASSIVES: readonly PassiveDef[] = [
     group: "cock",
     need: "Use your mouth on a guest upstairs",
     progress: (f) => count(acts(f, "mouth"), 1),
-    benefit: "Mouth desire starts each night at +5",
-    effect: (e) => (e.start.mouth += 5),
+    benefit: "Mouth and Cock desire start each night at +5",
+    effect: (e) => {
+      e.start.mouth += 5;
+      e.start.cock += 5;
+    },
     lewd: 8,
     thought: "(I didn't think I'd ever... and then I wanted to.)",
   },
@@ -1019,8 +1055,8 @@ export const PASSIVES: readonly PassiveDef[] = [
     id: "firmHand",
     name: "Firm Hand",
     group: "sadism",
-    need: "Slap 5 guests who got too free",
-    progress: (f) => count(f.records.slapped, 5),
+    need: "Slap 5 guests who got too free (or face them down with Consent off)",
+    progress: (f) => count(f.records.slapped + f.records.domWins, 5),
     benefit: "A guest you slap won't reach for you again that night; +1 respect a slap",
     effect: (e) => {
       e.slapStops = true;
@@ -1032,8 +1068,8 @@ export const PASSIVES: readonly PassiveDef[] = [
     id: "sharpPalm",
     name: "Sharp Palm",
     group: "sadism",
-    need: "Slap 15 guests",
-    progress: (f) => count(f.records.slapped, 15),
+    need: "Slap or face down 15 guests",
+    progress: (f) => count(f.records.slapped + f.records.domWins, 15),
     benefit: "The room loves a good slap: +2 fame each",
     effect: (e) => (e.slapFame += 2),
     thought: "(The whole room cheers when I do it now.)",
@@ -1042,8 +1078,8 @@ export const PASSIVES: readonly PassiveDef[] = [
     id: "enjoysIt",
     name: "Enjoys It",
     group: "sadism",
-    need: "Slap 30 guests, with lewdness 20 or more",
-    progress: (f) => count(f.records.slapped, 30),
+    need: "Slap or face down 30 guests, with lewdness 20 or more",
+    progress: (f) => count(f.records.slapped + f.records.domWins, 30),
     also: (f) => f.lewdness >= 20,
     benefit: "A slap adds +5 to your Body desire",
     cost: "Slapped guests sulk all the more",
@@ -1055,8 +1091,8 @@ export const PASSIVES: readonly PassiveDef[] = [
     id: "mistressOfTheBar",
     name: "Mistress of the Bar",
     group: "sadism",
-    need: "Slap 60 guests",
-    progress: (f) => count(f.records.slapped, 60),
+    need: "Slap or face down 60 guests",
+    progress: (f) => count(f.records.slapped + f.records.domWins, 60),
     benefit: "Slaps don't anger guests: they come back for more",
     effect: (e) => (e.slapCalm = true),
     lewd: 4,
@@ -1068,8 +1104,8 @@ export const PASSIVES: readonly PassiveDef[] = [
     id: "stingingCheeks",
     name: "Stinging Cheeks",
     group: "masochism",
-    need: "Let guests get rough with you 3 times",
-    progress: (f) => count(f.records.rough, 3),
+    need: "Let guests get rough with you (or give in to them with Consent off) 3 times",
+    progress: (f) => count(f.records.rough + f.records.subWins, 3),
     benefit: "Butt desire fills 20% faster",
     effect: (e) => (e.sens.butt += 0.2),
     lewd: 4,
@@ -1079,8 +1115,8 @@ export const PASSIVES: readonly PassiveDef[] = [
     id: "likesItRough",
     name: "Likes It Rough",
     group: "masochism",
-    need: "Let guests get rough with you 10 times",
-    progress: (f) => count(f.records.rough, 10),
+    need: "Let guests get rough with you (or give in to them with Consent off) 10 times",
+    progress: (f) => count(f.records.rough + f.records.subWins, 10),
     benefit: "Every rough touch you allow adds +5 to every desire",
     cost: "Guests are bolder (+1 nerve)",
     effect: (e) => {
@@ -1094,8 +1130,8 @@ export const PASSIVES: readonly PassiveDef[] = [
     id: "toughLove",
     name: "Tough Love",
     group: "masochism",
-    need: "Let guests get rough with you 25 times",
-    progress: (f) => count(f.records.rough, 25),
+    need: "Let guests get rough with you (or give in to them with Consent off) 25 times",
+    progress: (f) => count(f.records.rough + f.records.subWins, 25),
     benefit: "Pleasure builds 25% faster",
     effect: (e) => (e.pleasure += 0.25),
     lewd: 10,
@@ -1878,6 +1914,8 @@ export function readProgress(raw: unknown): ProgressSave {
       "pulled",
       "slapped",
       "rough",
+      "subWins",
+      "domWins",
       "allHigh",
       "clothesLost",
       "bareNights",

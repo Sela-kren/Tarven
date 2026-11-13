@@ -10,6 +10,19 @@ import { GUEST_KIND_LIST, statsOf } from "./guestroles";
 import type { Button, Game } from "./game";
 import type { AdultScene } from "./tavern";
 import { willLabel } from "./willpower";
+import { DESIRE_STRONG } from "./desire";
+import { METER_NAMES, METERS } from "./passives";
+import type { Fight } from "./fight";
+
+/** Her desire in a brawl, in a line: horny or wet first, then each desire past 50 that's getting in her way. */
+function desireSummary(fight: Fight): string {
+  const desire = fight.desire;
+  if (!desire) return "";
+  const strong = METERS.filter((m) => desire[m] >= DESIRE_STRONG).map((m) => `${METER_NAMES[m]} ${Math.floor(desire[m])}`);
+  const state = [fight.horny ? "Horny" : null, fight.wet ? "Wet" : null].filter(Boolean);
+  const parts = [...state, ...strong];
+  return parts.length ? parts.join(" · ") : `Cool-headed · Cock ${Math.floor(desire.cock)}`;
+}
 
 /** One bar on a fight screen: who, a track filled to how much they have left, and the number. */
 function statBar(who: string, now: number, max: number, tone: string): HTMLElement {
@@ -96,6 +109,49 @@ export function playAdultScene(game: Game, scene: AdultScene): void {
   game.panelBack = back;
 }
 
+/** Brawl events where a blow lands on her, and where one of hers lands on them (fight.ts). */
+const HURTS_HER = new Set(["their:hit", "their:grab", "their:headlock", "their:hairpull", "their:tackle", "lost"]);
+const HURTS_THEM = new Set(["strike:hit", "shove:hit", "grab:hit", "headlock:hit", "hairpull:hit", "tackle:hit", "throw"]);
+
+/** Ends the night straight from the brawl: everyone gone, and to bed. */
+function closeTheNight(game: Game): void {
+  game.panelEl.classList.remove("adult-open");
+  game.closePanel();
+  game.dismissGuests();
+  game.tavern.sleep();
+  game.goToSleep();
+}
+
+/**
+ * After a lost brawl, the one who won asks her (GAME_PATH.MD, "Brawl loss"). Two plain answers: go on, to the
+ * After Hours rules (her parts, her stake, and stop any time), or stop here. Stopping costs nothing past the
+ * fight itself. Too drunk on either side, and going on isn't offered. The night ends either way.
+ */
+export function showBrawlOffer(game: Game, lost = ""): void {
+  const { tavern } = game;
+  const offer = tavern.brawlOffer;
+  if (!offer) {
+    closeTheNight(game);
+    return;
+  }
+  const blocked = tavern.duelBlocked;
+  const who = (offer.stats.label ?? offer.kind).toLowerCase();
+  const stop = () => {
+    tavern.declineBrawlOffer();
+    closeTheNight(game);
+  };
+  const line = `${lost ? `${lost} ` : ""}The fight's gone out of the ${who}. They offer you a hand up and hold your eye a moment too long. "No hard feelings. Stay up a while with me?"`;
+  showAdultCard(game, "Knocked down", line, "door", [
+    {
+      label: blocked ? `Go on (18+) (${blocked.toLowerCase().replace(/\.$/, "")})` : "Go on (18+): set your rules",
+      disabled: Boolean(blocked),
+      onPick: () => showDuelRules(game, new Set(), 0),
+    },
+    { label: "Stop: send them off, and end the night", onPick: stop },
+  ]);
+  game.panelBack = stop;
+}
+
 /**
  * A brawl, turn by turn: both sides' stamina, what just happened, and her moves with the chance each has.
  * When it's over, how it went, and back to work.
@@ -106,6 +162,11 @@ export function showFight(game: Game): void {
   if (!fight) {
     game.hideDuelMoment();
     const result = tavern.takeFightResult();
+    // Lost, and the one who won is asking: hers to answer.
+    if (result?.outcome === "lost" && tavern.brawlOffer) {
+      showBrawlOffer(game, result.text);
+      return;
+    }
     const back = () => {
       game.closePanel();
       game.screen = "play";
@@ -124,9 +185,14 @@ export function showFight(game: Game): void {
       // The turn's moments play in the comic panel, and a blow that lands on her shows in the big picture.
       const events = fight.events.slice(before);
       game.showFightMoments(events, fight.kind);
-      if (events.some((e) => e === "their:hit" || e === "lost")) game.battleHit(true);
-      if (events.some((e) => e === "strike:hit" || e === "shove:hit" || e === "throw")) game.foeHit(0);
+      if (events.some((e) => HURTS_HER.has(e))) game.battleHit(true);
+      if (events.some((e) => HURTS_THEM.has(e))) game.foeHit(0);
       game.audio.play(fight.outcome === "lost" ? "walkOut" : "cloth");
+      // They reached for her instead of swinging: she's asked on the touch screen, and the fight waits.
+      if (tavern.inConversation) {
+        game.showBrawlReach();
+        return;
+      }
       showFight(game);
     },
   }));
@@ -137,6 +203,8 @@ export function showFight(game: Game): void {
     { label: "Stamina", value: `${fight.stamina}/${fight.maxStamina}`, tone: fight.stamina < fight.maxStamina / 2 ? "hurt" : undefined },
     { label: "Willpower", value: `${fight.will}/${fight.maxWill} · ${willLabel(fight.will, fight.maxWill)}` },
     { label: "Clothes", value: off === 0 ? "Dressed" : `${off} ${off === 1 ? "piece" : "pieces"} off` },
+    // Her desire, Karryn-style (desire.ts): the strongest ones, and whether she's horny or wet.
+    ...(fight.desire ? [{ label: "Desire", value: desireSummary(fight), tone: fight.horny ? ("hurt" as const) : undefined }] : []),
   ], [
     {
       guestId: fight.guestId,
@@ -180,7 +248,11 @@ export function showBedChoice(game: Game): void {
   const buttons: Button[] = [];
   const offer = tavern.duelOffer();
   if (offer) {
-    paragraphs.push(`A ${offer} you warmed to tonight is lingering at the door. "One more game before bed? Loser pays."`);
+    paragraphs.push(
+      tavern.duelOfferFrom === "talked"
+        ? `The ${offer} you talked down earlier is lingering at the door, sheepish. "About before... let me make it up to you? One game before bed. Loser pays."`
+        : `A ${offer} you warmed to tonight is lingering at the door. "One more game before bed? Loser pays."`,
+    );
     const blocked = tavern.duelBlocked;
     buttons.push({
       label: blocked ? `Play after hours (18+) (${blocked.toLowerCase().replace(/\.$/, "")})` : "Play after hours (18+)",
@@ -253,7 +325,9 @@ export function showDuelRules(game: Game, areas: Set<DuelArea>, stake: number, s
       if (tavern.startDuel([...areas], stake, scene)) showDuel(game);
     },
   });
-  buttons.push({ label: "Back", onPick: () => showBedChoice(game) });
+  // Back to whoever asked: the brawl winner's offer, or the bedside.
+  const back = () => (tavern.brawlOffer ? showBrawlOffer(game) : showBedChoice(game));
+  buttons.push({ label: "Back", onPick: back });
   game.openPanel(
     "Your rules",
     [
@@ -262,7 +336,7 @@ export function showDuelRules(game: Game, areas: Set<DuelArea>, stake: number, s
     ],
     buttons,
   );
-  game.panelBack = () => showBedChoice(game);
+  game.panelBack = back;
 }
 
 /** Entries shown in the duel log; older ones scroll up out of sight. */
@@ -395,6 +469,13 @@ export function showDuel(game: Game): void {
       game.panelBack = back;
       return;
     }
+    // After a lost brawl the night is over, however the game went.
+    if (result?.brawl && result.outcome === "stopped") {
+      const toBed = () => closeTheNight(game);
+      game.openPanel("Called off", [result.text, "The night's over. You bar the door behind them."], [{ label: "Go to bed", onPick: toBed }]);
+      game.panelBack = toBed;
+      return;
+    }
     if (!result || result.outcome === "stopped") {
       const back = () => {
         game.closePanel();
@@ -404,12 +485,14 @@ export function showDuel(game: Game): void {
       game.panelBack = back;
       return;
     }
-    const sleep = () => {
-      game.panelEl.classList.remove("adult-open");
-      game.closePanel();
-      tavern.sleep();
-      game.goToSleep();
-    };
+    const sleep = result.brawl
+      ? () => closeTheNight(game)
+      : () => {
+          game.panelEl.classList.remove("adult-open");
+          game.closePanel();
+          tavern.sleep();
+          game.goToSleep();
+        };
     showAdultCard(game, result.outcome === "won" ? `You win · +${result.gold} gold` : `You lose · ${result.gold} gold`, result.line, "bed", [
       { label: "Sleep", onPick: sleep },
     ]);

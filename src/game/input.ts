@@ -2,7 +2,7 @@ const GAME_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD",
   "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
   "ShiftLeft", "ShiftRight",
-  "KeyB", "KeyE", "KeyO", "KeyM", "KeyP", "KeyR", "KeyX", "Delete", "Enter", "Space", "Escape", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9",
+  "BracketRight", "KeyB", "KeyE", "KeyO", "KeyM", "KeyP", "KeyR", "KeyX", "Delete", "Enter", "Space", "Escape", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9",
 ]);
 
 /** Whether a key went to a field you type into, rather than to the game. */

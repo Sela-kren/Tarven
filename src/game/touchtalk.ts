@@ -45,6 +45,11 @@ export interface TouchDef {
   strip?: boolean;
   /** Only a lover asks this; nobody reaches for it in the room yet. */
   romance?: boolean;
+  /**
+   * Only in a brawl: a foe's hands, up close in the scuffle. Asked on the touch screen like any reach, with Pull
+   * away always there (GAME_PATH.MD, "Brawl notes").
+   */
+  brawl?: boolean;
 }
 
 const ANY: readonly GuestKind[] = [];
@@ -621,6 +626,96 @@ export const TOUCHES: readonly TouchDef[] = [
     thoughts: ["(I don't know how. I don't know anything.)", "(Yes. Yes, I think so.)", "(Yes.)"],
     allow: "\"Yes,\" you whisper.",
     lean: "You answer with another kiss.",
+  },
+
+  // In a brawl: up close in the scuffle, Karryn-style, their hands go places a fist doesn't. Anyone's.
+  {
+    id: "scuffleSpank",
+    level: 3,
+    region: "rear",
+    kinds: ANY,
+    brawl: true,
+    reach: "You twist out of their grip, and their hand comes round and cracks down on your backside.",
+    thoughts: ["(In the middle of a fight?!)", "(That stung. Why is my face so hot?)", "(Do that again and see what happens.)"],
+    allow: "SMACK. You yelp, and the room roars. You round on them, rubbing it, flushed to the ears.",
+    lean: "SMACK. You throw them a look over your shoulder. \"Is that how you fight?\"",
+  },
+  {
+    id: "scuffleHips",
+    level: 3,
+    region: "waist",
+    kinds: ANY,
+    brawl: true,
+    reach: "They catch you by the hips and haul you back hard against them.",
+    thoughts: ["(Let go! This is a fight!)", "(They're so warm. Focus. FOCUS.)", "(Hold on, then.)"],
+    allow: "For a breath you stay there, caught, their hands on your hips.",
+    lean: "You settle back against them, just for a breath. They forget to swing.",
+  },
+  {
+    id: "scuffleMouth",
+    level: 4,
+    region: "lips",
+    kinds: ANY,
+    brawl: true,
+    reach: "In the clinch, their thumb comes up and drags slow across your lips.",
+    thoughts: ["(Get your hand off my mouth!)", "(My lips are tingling. Mid-brawl. Why.)", "(Mm.)"],
+    allow: "You go still, lips parted, and let their thumb take its time.",
+    lean: "You catch their thumb between your lips, just for a moment. They stare.",
+  },
+  {
+    id: "scuffleNeck",
+    level: 4,
+    region: "neck",
+    kinds: ANY,
+    brawl: true,
+    reach: "Locked up close, they put their mouth by your ear and breathe hot down your neck.",
+    thoughts: ["(Too close— get back—)", "(My knees nearly went.)", "(Closer.)"],
+    allow: "You shiver, and don't pull away as fast as you meant to.",
+    lean: "You tip your head aside. Their lips brush your neck, and the room whistles.",
+  },
+  {
+    id: "scuffleGrope",
+    level: 5,
+    region: "rear",
+    kinds: ANY,
+    brawl: true,
+    reach: "In the scramble their hand lands on your backside, and stays there, squeezing.",
+    thoughts: ["(That is NOT a fair hold!)", "(They're not letting go. I'm not making them.)", "(Harder.)"],
+    allow: "You squirm, red-faced, and let them keep their handful a moment.",
+    lean: "You push back into their hand. The fight goes right out of them.",
+  },
+  {
+    id: "scuffleThigh",
+    level: 5,
+    region: "thigh",
+    kinds: ANY,
+    brawl: true,
+    reach: "Pinned over a table, you feel a hand slide up the back of your thigh.",
+    thoughts: ["(Off! Get OFF—)", "(Everyone can see. My legs won't kick.)", "(Higher.)"],
+    allow: "You hold still over the table and let the hand stay, breathing hard.",
+    lean: "You shift your legs apart, just a little. The hand stops dead, then doesn't.",
+  },
+  {
+    id: "scuffleChest",
+    level: 6,
+    region: "chest",
+    kinds: ANY,
+    brawl: true,
+    reach: "Their arm round your middle slides up and up, until it's under your breasts, and squeezes.",
+    thoughts: ["(That's not a hold! That's—)", "(I can't get my breath, and it isn't the squeeze.)", "(Don't stop there.)"],
+    allow: "You gasp, and let them hold you like that, chest heaving.",
+    lean: "You arch into their hands. The whole room goes quiet.",
+  },
+  {
+    id: "scuffleKiss",
+    level: 7,
+    region: "lips",
+    kinds: ANY,
+    brawl: true,
+    reach: "They yank you in by the collar and kiss you hard, right in the middle of the fight.",
+    thoughts: ["(Mmph— what are they—)", "(I should bite. I'm not biting.)", "(Finally.)"],
+    allow: "You let them kiss you, fists still balled in their shirt.",
+    lean: "You kiss them back harder, and the tavern erupts.",
   },
 ];
 

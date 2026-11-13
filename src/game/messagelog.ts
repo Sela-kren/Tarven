@@ -8,9 +8,9 @@ import type { TalkLine } from "./tavern";
 export type LogKind = "info" | "talk" | "choice" | "passive" | "ai";
 
 /** Lines kept on screen at once; older ones drop off the top. */
-const MAX_LINES = 9;
+const MAX_LINES = 16;
 /** How long each kind of line stays, in seconds. */
-const LIFE: Record<LogKind, number> = { info: 6, talk: 8, choice: 8, passive: 14, ai: 12 };
+const LIFE: Record<LogKind, number> = { info: 12, talk: 16, choice: 14, passive: 24, ai: 20 };
 /** The last seconds of a line's life, spent fading out. */
 const FADE_SECONDS = 1.2;
 

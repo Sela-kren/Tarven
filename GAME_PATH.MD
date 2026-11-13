@@ -1,44 +1,49 @@
+# Tarven – Karryn-inspired guest types, preferences & systems
+
 ## Consent rule (always — for any agent or implementation)
-Player is asked first. All four answers stay available.
-Pull away always works. Too-drunk blocks yes.
-No text or code may show a touch landing after a refusal
-or remove the player’s ability to stop.
-Force / intensity bars are feedback only after a yes.
-A yes given in advance counts as asking first: the "Eager guests" setting (section 7b) is offered once, does nothing until the player agrees, and can be switched off any time.
+Normal service touches: player is asked first. All four answers stay available.
+Pull away always works on later reaches. Too-drunk blocks yes.
+Force / intensity bars are feedback only after a yes or after a Horny direct touch.
 
-## Horny direct touch (optional random)
+Horny / high-Nerve exception (Karryn-style challenge):
+When a guest is Horny or has high Nerve, they may touch without the choice screen.
+This is intentional difficulty. The player can still Slap or Pull away on the next reach.
+See “Horny direct touch” below.
 
-When a guest is in the Horny state and their Nerve is high:
-- There is a small random chance (example: 15–25 %) that they skip the choice screen and the touch lands immediately.
+Brawl loss is a separate exception: a sexual scene may be offered after defeat, with a final continue/stop choice.
+
+## Horny direct touch (Karryn-style challenge)
+When a guest is in the Horny state or has high Nerve (example: Nerve 5+):
+- They may skip the choice screen and the touch lands immediately.
 - This only happens on touches at or below their current Nerve.
+- Chance can be fixed or scale with how Horny / high Nerve they are (example: 25–50 %).
 - After it lands, the player can still Slap or Pull away on the next reach.
 - The Force bar appears and fills faster during these direct touches.
-- The text should show the guest acting on impulse, not the player being unable to refuse forever.
+- The text should show the guest acting on impulse. The player is challenged to manage the situation, not locked forever.
 
-All other touches still freeze and show the four choices.
+All other (non-Horny, lower-Nerve) touches still freeze and show the four choices.
 Pull away still works on every later reach.
+Too-drunk still blocks yes from either side.
 
-## Brawl grab / grope animations do not need a yes/no prompt.
-
-They are combat actions inside the turn-based brawl (same category as Strike or Shove).
-They are not the sexual touch system.
-The four-choice screen (Let / Lean / Slap / Pull away) is only for service touches.
-Losing a brawl still never leads to sexual content or sexual records.
+## Brawl notes
+- Non-sexual grapples (grabs, headlocks, hair-pulls, tackles, bear hugs, arm twists, pins against the wall, leg sweeps, collar hauls) are combat actions and do not need a yes/no prompt. Each guest kind has favourite grapples (bandits crush and pin, smugglers trip and twist, nobles haul by the collar). Code: `FOE_GRAPPLES` in `src/game/fight.ts`.
+- Mid-brawl sexual reaches go through the normal four-choice touch screen (Let / Lean / Slap / Pull away). Pull away always works.
+- Mid-brawl reaches are Karryn-style: bolder than at the table (+2 Nerve for what they go for), aimed at the part their type likes, and they can use brawl-only touches open to any kind: spank, hips hauled back, thumb across the lips, breath on the neck, a grope, a hand up the thigh, a squeeze under the breasts, a kiss mid-fight (`brawl: true` in `touchtalk.ts`). A touch can only land unasked (Consent off) when it is within their own Nerve, without the brawl's +2.
+- A talked-down brawl can later lead to an After Hours invite, which the player can accept or refuse.
 
 ## Brawl loss (Karryn-style)
-
 When she loses a brawl:
 - The fight ends immediately.
-- A sexual content scene plays (18+ card or short scene).
-- The night ends after the scene.
-- She still has a final choice at the start of the scene (continue / stop), or the scene can be set to play automatically — pick one.
-- Desire meters and records can rise from the scene if she continues.
-- Gold and respect are still lost as normal.
+- A sexual content scene is offered (18+ card or short scene).
+- She gets a final choice at the start of the scene: continue or stop.
+- If she continues, desire meters and records can rise, then the night ends.
+- If she stops, the night still ends and she only loses the normal gold and respect.
+- Gold and respect are lost either way.
+- Winning or talking them down does not trigger this.
 
-Winning or talking them down does not trigger this.
+---
 
-# Tarven – Karryn-inspired guest types, preferences & systems
-*(Hard lines remain: all intimate acts require explicit player choice. Pull away always works. Too-drunk blocks yes. Force bar is intensity feedback only.)*
+*(Normal service touches require explicit player choice. Pull away always works on later reaches. Too-drunk blocks yes. Force bar is intensity feedback. Horny / high-Nerve guests may touch without asking as a challenge. Brawl loss may offer a sexual scene with a final continue/stop choice.)*
 
 Status tags: **[built]** is in the game now, **[planned]** is design only.
 
@@ -82,7 +87,7 @@ These are each type's own numbers, before the random roll. The code is in `src/g
 | Noble | 40 | 16 | 8 | Wine | 1.2× | 2.5 | +3 | 1 |
 | Servant | 70 | 3 | 2 | Mead | 0.8× | 1.5 | 0 | 0 |
 
-- **Dirt b/thers them:** how much a messy room cuts their patience. 0 doesn't notice, 2.5 can barely sit down.
+- **Dirt bothers them:** how much a messy room cuts their patience. 0 doesn't notice, 2.5 can barely sit down.
 - **Fame if happy:** extra fame when they're served in time and tip, because they talk about the place on the road.
 - **Trust:** farmers and strangers give +1 village trust when served, the servant +1, the cleric +2.
 
@@ -242,25 +247,67 @@ Name prefixes (Great, Bold, Fat, Quiet, etc.) can apply small buffs/debuffs **on
 - **Bonus once a yes lands:** level 6+ gives +1 gold and +25% extra rise on that body part's meter. Level 9+ gives +2 gold and +50% (`intensityBonus`).
 - [planned] When a guest is Horny or touches their preferred meter, the bar can flash or show a small icon.
 
-## 7b. Eager guests: touching without asking [built]
-A lustful guest with the nerve for it (Nerve 5+) is **impulsive**. Some of the time, their touch lands without the choice screen, because the player has said yes to that in advance.
+## 7b. Consent switch: touching without asking [built]
+A lustful guest with the nerve for it (Nerve 5+) is **impulsive**; so is a worked-up foe who reaches mid-brawl. With Consent switched off, a check decides whether their touch plays out without the choice screen.
 
-| Setting (Settings › Eager guests) | Default | Meaning |
+| Setting (Settings › Consent) | Default | Meaning |
 |---|---|---|
-| Touch without asking | On, but **ask me the first time** | Nothing lands without asking until the player agrees |
-| Up to boldness | 5 | The boldest touch it covers (1–9) |
-| How often | 20% | The chance an impulsive guest's touch skips the question. Not every time |
+| Consent | **On** (always ask me) | On: every touch asks, at the bar and in a brawl. Off: impulsive guests' touches go to the check below |
+| Up to boldness | 5 | The boldest touch the check covers (1–9) |
 
-- **The first time** an impulsive guest reaches, the touch freezes as usual with two extra answers on top: *"Let it happen, and let eager guests skip asking (20% of the time)"* and *"Always ask me first"*. Every usual answer stays, Slap and Pull away included. Switching it on in Settings also counts as agreeing.
-- **It only covers touches she could already say yes to:** her desire is high enough for *Let it happen*, nobody is too drunk, the touch is within the boldness chosen, it's not a garment, and it's not the invitation upstairs.
-- **When it lands:** the guest's reach, an impulse line (the guest acting on impulse, her letting it be), the touch's own *Let it happen* line, and *Get back to work*. It counts as *Let it happen* for pay, desire and records. The comic panel plays, and the Force bar rushes up (`fast`).
-- **Every other reach still asks**, and Pull away works on every one of them.
-- The settings live in the browser (`tarven.touch`), not in a save. The code is in `src/game/touchsettings.ts`, `tavern.ts` (`maybeReach`, `touchOptions`), `menus.ts` and the lines in `touchtalk-givein.ts` (`IMPULSE_LINES`). The tests are in `tests/touchsettings.test.ts`.
+**The check (Consent off): their push against her hold** (`impulseCheck`, `src/game/touchsettings.ts`):
+
+| Their push (enemy) | Her hold (player) |
+|---|---|
+| their Nerve | 6 + the touch's boldness |
+| +2 if their type goes for that part (`prefers`) | − desire for that part ÷ 20 (0–5) |
+| +1 per piece of clothing off her | − her passives for that part (up to 3) |
+| | − times she's let that part be touched ÷ 5 (up to 3) |
+| | − body skill practice (up to 3) |
+| | − Exhibition passives, once something's off (up to 2) |
+
+- **Push at or past her hold:** it plays out as *Let it happen*: the guest's reach, an impulse line, the touch's own line, and *Get back to work* (or *Back to the fight*). The comic panel plays, and the Force bar rushes up (`fast`).
+- **Her hold stands:** she's asked like any other time.
+- **The first time** an impulsive guest reaches with Consent still on, the touch freezes as usual with two extra answers on top: *"Let it happen, and let eager guests skip asking (Consent off)"* and *"Always ask me first"*. Every usual answer stays.
+- **It only covers touches she could already say yes to:** desire high enough for *Let it happen*, nobody too drunk, within the boldness chosen, never a garment, never the invitation upstairs. Pull away still works on the next reach.
+- The dev panel (**]**, dev builds only) shows both sides of the last check and why it played out or asked.
+- The settings live in the browser (`tarven.touch`), not in a save. The code is in `src/game/touchsettings.ts`, `tavern.ts` (`maybeReach`, `impulseFacts`, `touchOptions`), `menus.ts` (`showSettingsMenu`, `showDevPanel`) and `touchtalk-givein.ts` (`IMPULSE_LINES`). The tests are in `tests/touchsettings.test.ts`.
+
+## 7c. Desire, Karryn-style [built]
+Six desires, 0–100, reset each night to what her passives start them at: **Body, Mouth, Breasts, Butt, Pussy, Cock**. Cock desire is her wanting to be intimate with someone. The rules are in `src/game/desire.ts`; the tests are in `tests/desire.test.ts`.
+
+**What raises them**
+- A touch she lets land: that part's desire +8, every other +⅓ of that. Thigh, lap, intimate and invitation touches raise Cock desire fully too. Lean in ×1.5; body skill practice adds more; boldness 6+ adds 25%, 9+ adds 50% on that part.
+- A drink with a guest: all +6. Being overwhelmed: all +20. An upstairs act: +20 on its desire. After Hours: their moves raise the part they use.
+- In a brawl: each grapple of theirs (grab, headlock, hair-pull, tackle) raises the desire for the part their type goes for by 5, and Body by 2. Her own intimate moves raise Cock and their part.
+- Passives raise starting desire and how fast each fills (sensitivity).
+
+**What they do**
+- **Touches:** *Let it happen* on a touch needs that part's desire ≥ (boldness − 1) × 10; *Lean in* 20 more; *Give in* 30 more. The invitation upstairs needs Cock desire.
+- **Upstairs:** kiss (Mouth 0), hands (Cock 40), mouth (Cock 60), behind (Butt 60), bed (Pussy 80 **and wet**).
+- **Wet:** pleasure ≥ 50 − Pussy desire ÷ 4 (50 with none, 25 at 100).
+- **Horny:** any desire at 80+.
+- **In a brawl** (her brawls only), each desire at 50+ costs her something, twice as much at 80+:
+
+| Desire | 50+ | 80+ |
+|---|---|---|
+| Mouth | her attacks −8% | −16% |
+| Breasts | her dodge −10% | −20% |
+| Pussy | talk and stare −8% | −16% |
+| Body | her blows −1 damage | −2 |
+| Butt | their grapples +10% | +20% |
+| Cock | a worked-up foe reaches +10% | +20%, and at 80+ any foe may reach |
+
+**Her brawl moves for desire**
+- **Suppress desire (Mind):** everything but Cock comes down by 15 (+3 per Mind level above 1). Costs 4 willpower, 6 while horny.
+- **Suppress Cock desire (Mind):** Cock alone, the same amount. Costs 6 willpower, 9 while horny.
+- **Use your hands on them** (Cock 40): −5 their stamina. **Use your mouth on them** (Cock 60): −8. **Ride them** (Cock 70, wet): −12. Each raises her pleasure (never to 100 mid-fight) and her desire, and counts toward upstairs records and skills (riding counts as the bed).
+- Wearing them out this way is a win, but a different one: **"Spent"**: they leave besotted, fame +3, flirt +1, respect −1.
+- The brawl screen shows a **Desire** line: Horny, Wet, and each desire past 50.
 
 ## 8. Player side (already present, reinforced)
-- Five desire meters (Body, Mouth, Breasts, Butt, Pussy) work exactly as designed.
-- Pussy meter is the direct analogue of Karryn's genital desire.
-- Passives for each meter stay; preferred-guest interactions can count toward the relevant group faster.
+- Six desire meters (section 7c). Pussy is the direct analogue of Karryn's genital desire; Cock of her cock desire.
+- Passives for each meter stay; the Cock passives (Curious Hands, Eager Mouth) also start Cock desire at +5.
 - After Hours duels remain fully consensual and only use parts the player put in play. Each partner uses their own rolled sheet (section 2, "Upstairs and after hours").
 
 ## 9. Optional expansions (still hard-line)

@@ -105,13 +105,22 @@ export interface PickOptions {
   invites?: boolean;
   /** How much more often guests go for each kind of touch, as a fraction. */
   pull?: Partial<Record<TouchRegion, number>>;
+  /** A foe reaching mid-brawl: the scuffle's own touches open up, and come up more often than the room's. */
+  brawl?: boolean;
 }
 
-/** The touches a guest of this kind with this much nerve might go for. Invitations only once she's ready for them. */
+/** How much likelier a brawl's own touches are than the room's, mid-fight. */
+const BRAWL_TOUCH_WEIGHT = 3;
+
+/**
+ * The touches a guest of this kind with this much nerve might go for. Invitations only once she's ready for them;
+ * the scuffle's own touches only in a brawl.
+ */
 export function touchesFor(kind: GuestKind, guestNerve: number, options: PickOptions): TouchDef[] {
   return TOUCHES.filter(
     (t) =>
       (!t.romance || options.invites === true) &&
+      (!t.brawl || options.brawl === true) &&
       t.level <= guestNerve &&
       (t.kinds.length === 0 || t.kinds.includes(kind)) &&
       (!t.strip || options.canStrip),
@@ -127,7 +136,10 @@ export function pickTouch(kind: GuestKind, guestNerve: number, random: () => num
   if (choices.length === 0) return null;
   const weights = choices.map(
     (t) =>
-      Math.exp(-BOLD_PULL * (guestNerve - t.level)) * (options.seen.has(t.id) ? SEEN_WEIGHT : 1) * (1 + (options.pull?.[t.region] ?? 0)),
+      Math.exp(-BOLD_PULL * (guestNerve - t.level)) *
+      (options.seen.has(t.id) ? SEEN_WEIGHT : 1) *
+      (1 + (options.pull?.[t.region] ?? 0)) *
+      (t.brawl ? BRAWL_TOUCH_WEIGHT : 1),
   );
   let roll = random() * weights.reduce((a, b) => a + b, 0);
   for (let i = 0; i < choices.length; i++) {

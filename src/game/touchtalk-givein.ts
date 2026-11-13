@@ -69,3 +69,5 @@ export const IMPULSE_LINES: readonly string[] = [
   "They act before they think, the way some do after a few. You let them.",
   "No asking, no warning, just an eager hand. You'd said you didn't mind, and tonight you don't.",
 ];
+
+// The talk after the Consent-off check (sub talk, dom talk, and the guest's side) lives in kinktalk.ts.

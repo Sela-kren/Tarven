@@ -77,6 +77,15 @@ describe("what a guest reaches for", () => {
     expect(touchesFor("soldier", 10, none).some((t) => t.strip)).toBe(true);
   });
 
+  it("keeps a brawl's own touches for brawls, where any kind of foe may go for them", () => {
+    expect(touchesFor("soldier", 10, none).some((t) => t.brawl)).toBe(false);
+    const scuffle = touchesFor("bandit", 10, { ...none, brawl: true }).filter((t) => t.brawl);
+    expect(scuffle.map((t) => t.id)).toEqual(expect.arrayContaining(["scuffleSpank", "scuffleMouth", "scuffleKiss"]));
+    expect(new Set(scuffle.map((t) => t.region)).size).toBeGreaterThanOrEqual(5);
+    // Still never past their nerve.
+    expect(touchesFor("bandit", 3, { ...none, brawl: true }).every((t) => t.level <= 3)).toBe(true);
+  });
+
   it("is nothing at all without the nerve for the gentlest touch", () => {
     expect(pickTouch("farmer", 0.5, () => 0, none)).toBeNull();
   });
