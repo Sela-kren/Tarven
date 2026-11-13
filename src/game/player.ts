@@ -18,6 +18,13 @@ const SOFT_PARTS: Record<string, SpringSettings> = {
   Glute_L: { frequency: 2.1, damping: 0.22, gain: 0.0022, axes: [0.3, 1, 0.25], limit: 0.018 },
   Glute_R: { frequency: 2.1, damping: 0.22, gain: 0.0022, axes: [0.3, 1, 0.25], limit: 0.018 },
   Belly: { frequency: 2.8, damping: 0.3, gain: 0.0012, axes: [0.2, 1, 0.4], limit: 0.01 },
+  // The flesh of the thighs: firmer than the rear and quicker, and it takes under half the skin's weight.
+  ThighSoft_L: { frequency: 2.6, damping: 0.26, gain: 0.0018, axes: [0.35, 1, 0.35], limit: 0.012 },
+  ThighSoft_R: { frequency: 2.6, damping: 0.26, gain: 0.0018, axes: [0.35, 1, 0.35], limit: 0.012 },
+  // Her hair: what hangs from her head, and what falls down her back. Slower and looser than flesh, and it swings
+  // across and back more than it bobs; the long ends on her back swing furthest.
+  HairSoft: { frequency: 1.6, damping: 0.18, gain: 0.004, axes: [1, 0.5, 1], limit: 0.025 },
+  HairTail: { frequency: 1.3, damping: 0.15, gain: 0.006, axes: [1, 0.4, 1], limit: 0.045 },
 };
 
 /**

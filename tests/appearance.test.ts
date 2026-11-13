@@ -22,6 +22,8 @@ import {
   dyeColor,
   hairMeshFor,
   legwearOf,
+  legwearSlot,
+  shoeMeshFor,
   LOOK_OPTIONS,
   nearestStop,
   newLook,
@@ -328,6 +330,73 @@ describe("hairstyles", () => {
   });
 });
 
+describe("shoes", () => {
+  /** The rig with her own shoes, standing on the floor, and stilettos whose heel reaches 9 cm below it. */
+  function shoeRig() {
+    const parts = rig();
+    const make = (name: string, y: number, material = "T_leather") => {
+      const geometry = new BufferGeometry();
+      geometry.setAttribute("position", new Float32BufferAttribute([-0.1, y, 0], 3));
+      geometry.setAttribute("skinIndex", new Uint16BufferAttribute([2, 0, 0, 0], 4));
+      geometry.setAttribute("skinWeight", new Float32BufferAttribute([1, 0, 0, 0], 4));
+      const shoe = new SkinnedMesh(geometry, new MeshLambertMaterial({ name: material }));
+      shoe.name = name;
+      parts.root.add(shoe);
+      shoe.bind(parts.mesh.skeleton);
+      return shoe;
+    };
+    return {
+      ...parts,
+      own: make("Female_Shoes", 0),
+      stiletto: make("Female_ShoesStiletto", -0.09),
+      instep: make("Female_ShoesStiletto", -0.09, "T_instep"),
+    };
+  }
+
+  it("shows only the pair she has on, starting with her own", () => {
+    const { model, own, stiletto } = shoeRig();
+    const dresser = new Dresser(model, "Female");
+    dresser.apply(newLook());
+    expect([own.visible, stiletto.visible]).toEqual([true, false]);
+    dresser.apply({ ...newLook(), shoes: "stiletto" });
+    expect([own.visible, stiletto.visible]).toEqual([false, true]);
+  });
+
+  it("lifts her onto her heels, and back down out of them", () => {
+    const { model, hips } = shoeRig();
+    const dresser = new Dresser(model, "Female");
+    dresser.apply({ ...newLook(), shoes: "stiletto" });
+    expect(hips.position.y).toBeCloseTo(0.86 + 0.09);
+    dresser.apply(newLook());
+    expect(hips.position.y).toBeCloseTo(0.86);
+  });
+
+  it("gives guests their own shoes only", () => {
+    const { model, own, stiletto } = shoeRig();
+    dressColors(model, "Female", {});
+    expect([own.visible, stiletto.visible]).toEqual([true, false]);
+  });
+
+  it("shows the top of her foot in her stockings only where they reach the ankle", () => {
+    const legwear = (id: string) => LOOK_OPTIONS.Female.legwear.find((style) => style.id === id)!;
+    expect(legwearSlot(legwear("tights"), "Shoes", "T_instep")).toBeNull();
+    expect(legwearSlot(legwear("tights"), "Shoes", "T_instep", true)).toBe("skin");
+    expect(legwearSlot(legwear("leggings"), "Shoes", "T_instep")).toBe("skin");
+    expect(legwearSlot(legwear("noshow"), "Shoes", "T_instep")).toBe("skin");
+    expect(legwearSlot(null, "Shoes", "T_instep")).toBe("skin");
+  });
+
+  it("keeps only known styles, and the men have no others", () => {
+    expect(shoeMeshFor("Female", { shoes: "thighboot" })).toBe("Thighboot");
+    expect(shoeMeshFor("Female", {})).toBe("");
+    expect(readLook({ shoes: "pump" }, "Female")!.shoes).toBe("pump");
+    expect(readLook({ shoes: "shoes" }, "Female")!.shoes).toBeUndefined();
+    expect(readLook({ shoes: "clogs" }, "Female")!.shoes).toBeUndefined();
+    expect(LOOK_OPTIONS.Male.shoes).toEqual([]);
+    expect(copyLook({ ...newLook(), shoes: "wedge" }).shoes).toBe("wedge");
+  });
+});
+
 describe("a fuller bust", () => {
   it("drops and comes forwards as it grows, but not as it shrinks", () => {
     const bigger = activeTerms("Female", { bust: 1 }).get("Bust")![0];
@@ -388,6 +457,32 @@ describe("a fuller bust", () => {
     expect(reshape([{ ...term, midline: -0.065 }], new Vector3(-0.0325, 0, 0), out).x).toBeCloseTo(-0.04875);
     // Shrinking draws it away from the middle as before.
     expect(reshape([{ grow: [-0.5, 0, 0] as [number, number, number], midline: 0.065 }], new Vector3(0.04, 0, 0), out).x).toBeCloseTo(0.02);
+  });
+
+  it("lifts her bust and draws it together while something holds it, within the sliders' ends", () => {
+    const lift = (sliders: Record<string, number>, held: number) =>
+      (activeTerms("Female", sliders, undefined, held).get("Bust") ?? []).reduce((sum, t) => sum + (t.shift?.[1] ?? 0), 0);
+    // Bare, only her own sliders count; in her breast band the bust comes up.
+    expect(lift({}, 0)).toBe(0);
+    expect(lift({}, 1)).toBeGreaterThan(0);
+    expect(lift({}, 1)).toBeGreaterThan(lift({}, 0.6));
+    // Already lifted all the way, a band can't lift it past the slider's end.
+    expect(lift({ bustLift: 1 }, 1)).toBeCloseTo(lift({ bustLift: 1 }, 0));
+    // Drawn together: each side moves towards the middle.
+    const apart = activeTerms("Female", {}, undefined, 1).get("Bust")!.reduce((sum, t) => sum + (t.apart ?? 0), 0);
+    expect(apart).toBeLessThan(0);
+  });
+
+  it("grows her hands about the wrist, leaving the forearm alone", () => {
+    const hand = activeTerms("Female", { hands: 1 }).get("ForeArm_L")!;
+    const out = new Vector3();
+    // The wrist stays where it is; a fingertip 15 cm below it, 1 cm out, goes a quarter further on both.
+    expect(reshape(hand, new Vector3(-0.06, -0.2, 0.005), out).distanceTo(new Vector3(-0.06, -0.2, 0.005))).toBeCloseTo(0);
+    reshape(hand, new Vector3(-0.07, -0.35, 0.005), out);
+    expect(out.y).toBeCloseTo(-0.3875);
+    expect(out.x).toBeCloseTo(-0.0725);
+    // Up the forearm, nothing changes.
+    expect(reshape(hand, new Vector3(-0.03, -0.1, 0), out).y).toBeCloseTo(-0.1);
   });
 
   it("stretches the neck by raising the head while the neck's base stays in the shoulders", () => {

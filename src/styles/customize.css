@@ -56,21 +56,20 @@
 }
 
 #customize .view .random {
-  padding: 7px 14px;
+  padding: 7px 8px;
 }
 
 #customize .view .clothes {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-end;
+  gap: 3px;
 }
 
-#customize .view .clothes input {
-  width: 18px;
-  height: 18px;
-  margin: 0;
-  accent-color: var(--gold);
+#customize .view .clothes button {
+  padding: 6px 5px;
+  white-space: nowrap;
 }
 
 #customize .tabs {
@@ -84,7 +83,8 @@
   padding: 7px 0;
 }
 
-#customize .tabs button.on {
+#customize .tabs button.on,
+#customize .view .clothes button.on {
   color: var(--gold);
   background: var(--wood-hover);
   border-color: var(--gold);

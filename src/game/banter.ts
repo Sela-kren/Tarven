@@ -571,6 +571,12 @@ export const DARES: Record<string, Omit<StripPiece, "id">> = {
     say: "\"The belt stays on. I've some dignity left.\"",
     result: "Down to your braies and boots. The room howls and slaps the table.",
   },
+  bra: {
+    dare: "\"The band next! Let's see what it's been holding up all night.\" A hand tugs at the knot behind your back.",
+    accept: "Untie your breast band",
+    say: "\"Mind the knot. It's tied at the back.\"",
+    result: "The band loosens and falls away. The room roars, and coins clatter onto the table.",
+  },
   smalls: {
     dare: "\"All of it, innkeeper! Every last stitch!\" The whole room is on its feet, banging their cups.",
     accept: "Take off your smallclothes",

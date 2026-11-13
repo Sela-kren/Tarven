@@ -794,7 +794,7 @@ export class Game {
       done: () => this.closeCustomizer(),
       builtColor: (id) => this.builtColor(id),
       random: (body) => randomLook(body),
-      undress: (undressed) => this.chosen !== null && this.dressers[this.chosen].setUndressed(undressed),
+      dress: (dressing) => this.chosen !== null && this.dressers[this.chosen].setDressing(dressing),
     });
 
     this.spawnPoints = [this.siblings[0].position.clone(), this.siblings[1].position.clone()];
@@ -858,8 +858,9 @@ export class Game {
 
     // The story and the first day start on a bright morning.
     clock.setTime(0, MORNING_HOUR);
-    // Asked once per visit: quitting to the title reloads the page, and that shouldn't ask again.
-    if (ageConfirmed()) this.showTitle();
+    // Asked once per visit: quitting to the title reloads the page, and that shouldn't ask again. The dev server
+    // skips it, so testing goes straight to the title; every built copy of the game still asks.
+    if (import.meta.env.DEV || ageConfirmed()) this.showTitle();
     else this.showAgeGate();
   }
 

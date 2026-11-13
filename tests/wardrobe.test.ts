@@ -6,9 +6,9 @@ import { piecesOff, stripLadder, stripStages, WARDROBE, type WardrobeBody } from
 const BODIES: WardrobeBody[] = ["Female", "Male"];
 
 describe("the wardrobe", () => {
-  it("strips her in eight looks, from dressed down to nothing", () => {
-    expect(stripLadder("Female").map((g) => g.id)).toEqual(["apron", "belt", "bodice", "skirt", "stockings", "blouse", "smalls"]);
-    expect(stripStages("Female")).toBe(8);
+  it("strips her in nine looks, from dressed down to nothing", () => {
+    expect(stripLadder("Female").map((g) => g.id)).toEqual(["apron", "belt", "bodice", "skirt", "stockings", "blouse", "bra", "smalls"]);
+    expect(stripStages("Female")).toBe(9);
   });
 
   it("strips him in four looks, keeping his belt on", () => {
@@ -52,11 +52,11 @@ describe("the wardrobe", () => {
   });
 
   it("strips each of her outfits in its own order, keeping the jewellery on", () => {
-    expect(stripLadder("Female", "dirndl").map((g) => g.id)).toEqual(["apron", "ribbons", "bodice", "skirt", "blouse", "smalls"]);
-    expect(stripLadder("Female", "priestess").map((g) => g.id)).toEqual(["sleeves", "top", "drapes", "girdle", "smalls"]);
+    expect(stripLadder("Female", "dirndl").map((g) => g.id)).toEqual(["apron", "ribbons", "bodice", "skirt", "blouse", "bra", "smalls"]);
+    expect(stripLadder("Female", "priestess").map((g) => g.id)).toEqual(["sleeves", "top", "drapes", "girdle", "bra", "smalls"]);
     expect(stripLadder("Female", "tavern")).toEqual(stripLadder("Female"));
     expect(piecesOff("Female", 2, "priestess")).toEqual(["sleeves", "top"]);
-    expect(stripStages("Female", "priestess")).toBe(6);
+    expect(stripStages("Female", "priestess")).toBe(7);
   });
 
   it("only goes for what the outfit has", () => {
@@ -70,7 +70,7 @@ describe("the wardrobe", () => {
   it("rolls the stockings down only when the legwear shows on her legs", () => {
     expect(stripLadder("Female", undefined, "noshow").map((g) => g.id)).not.toContain("stockings");
     expect(stripLadder("Female", "dirndl", "thighhigh").map((g) => g.id)).toEqual(
-      ["apron", "ribbons", "bodice", "skirt", "stockings", "blouse", "smalls"],
+      ["apron", "ribbons", "bodice", "skirt", "stockings", "blouse", "bra", "smalls"],
     );
     expect(piecesOff("Female", 5, undefined, "garter")).toContain("stockings");
   });
@@ -78,6 +78,6 @@ describe("the wardrobe", () => {
   it("lists what's off at each stage", () => {
     expect(piecesOff("Female", 0)).toEqual([]);
     expect(piecesOff("Female", 3)).toEqual(["apron", "belt", "bodice"]);
-    expect(piecesOff("Female", 99)).toHaveLength(7);
+    expect(piecesOff("Female", 99)).toHaveLength(8);
   });
 });

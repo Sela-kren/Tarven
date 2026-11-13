@@ -7,7 +7,8 @@
  *   2. outer          the main clothes: bodice, skirt, tunic, trousers (and shoes, which never come off)
  *   3. legwear        stockings and hose
  *   4. under          the shirt against the skin: the chemise
- *   5. smallclothes   painted on the body: braies, and for her a breast band. Always the last to come off.
+ *   5. smallclothes   painted on the body: braies, and for her a breast band, her top half before the braies.
+ *                     Always the last to come off.
  *
  * Garments come off outermost layer first. Within a layer, top half before bottom half, waist before
  * either, and then in the order they're listed. A garment with `keep` set never comes off, for the reason given.
@@ -60,8 +61,10 @@ export const WARDROBE: Record<WardrobeBody, readonly Garment[]> = {
     { id: "bodice", label: "bodice", layer: "outer", region: "top" },
     { id: "skirt", label: "skirt", layer: "outer", region: "bottom" },
     { id: "shoes", label: "shoes", layer: "outer", region: "feet", keep: "the body has no feet modelled under them" },
+    { id: "soles", label: "soles", layer: "outer", region: "feet", keep: "they're part of her shoes, which never come off" },
     { id: "stockings", label: "stockings", layer: "legwear", region: "legs" },
     { id: "blouse", label: "chemise", layer: "under", region: "top" },
+    { id: "bra", label: "breast band", layer: "smallclothes", region: "top" },
     { id: "smalls", label: "smallclothes", layer: "smallclothes", region: "bottom" },
     // The dirndl's and the priestess's own. Drapes come off before the girdle they hang from.
     { id: "ribbons", label: "arm ribbons", layer: "accessory", region: "top" },

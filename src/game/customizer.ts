@@ -24,9 +24,13 @@ export interface CustomizerHooks {
   builtColor(id: string): string;
   /** A new random look for this body. */
   random(body: BodyName): Look;
-  /** Takes the clothes off to see the body (true), or puts them back on. Only for the preview. */
-  undress(undressed: boolean): void;
+  /** Dresses the preview as she is, down to her smallclothes, or bare, to see the body while shaping it. */
+  dress(dressing: Dressing): void;
 }
+
+/** How the preview is dressed while shaping: her clothes on, down to her smallclothes, or bare. */
+export type Dressing = "dressed" | "underwear" | "nude";
+const DRESSINGS: readonly [Dressing, string][] = [["dressed", "Dressed"], ["underwear", "Underwear"], ["nude", "Nude"]];
 
 function make<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = ""): HTMLElementTagNameMap[K] {
   const element = document.createElement(tag);
@@ -43,7 +47,7 @@ export class Customizer {
   private readonly titleEl = make("h2");
   private readonly tabsEl = make("div", "tabs");
   private readonly paneEl = make("div", "pane");
-  private readonly clothesEl = make("input");
+  private readonly clothesEl = make("div", "clothes");
 
   constructor(private readonly el: HTMLElement, private readonly hooks: CustomizerHooks) {
     const box = make("div", "box");
@@ -68,12 +72,16 @@ export class Customizer {
       this.changed();
       this.show(this.current);
     });
-    const clothes = make("label", "clothes");
-    this.clothesEl.type = "checkbox";
-    this.clothesEl.checked = true;
-    this.clothesEl.addEventListener("change", () => this.hooks.undress(!this.clothesEl.checked));
-    clothes.append(this.clothesEl, make("span", "", "Clothes on"));
-    view.append(random, clothes);
+    this.clothesEl.setAttribute("role", "group");
+    this.clothesEl.setAttribute("aria-label", "Preview dressed as");
+    for (const [dressing, label] of DRESSINGS) {
+      const button = make("button", "", label);
+      button.type = "button";
+      button.dataset.dressing = dressing;
+      button.addEventListener("click", () => this.dress(dressing));
+      this.clothesEl.append(button);
+    }
+    view.append(random, this.clothesEl);
 
     box.append(this.titleEl, view, this.tabsEl, this.paneEl, actions, hint);
     this.el.replaceChildren(box);
@@ -91,9 +99,22 @@ export class Customizer {
     this.body = body;
     this.look = copyLook(look);
     this.titleEl.textContent = `Customize: ${label}`;
-    this.clothesEl.checked = true;
+    this.markDressing("dressed");
     this.el.classList.add("open");
     this.show("body");
+  }
+
+  private dress(dressing: Dressing): void {
+    this.markDressing(dressing);
+    this.hooks.dress(dressing);
+  }
+
+  private markDressing(dressing: Dressing): void {
+    for (const button of this.clothesEl.querySelectorAll("button")) {
+      const on = button.dataset.dressing === dressing;
+      button.classList.toggle("on", on);
+      button.setAttribute("aria-pressed", String(on));
+    }
   }
 
   close(): void {
@@ -109,6 +130,7 @@ export class Customizer {
       this.look.hidden = [];
       delete this.look.outfit;
       delete this.look.legwear;
+      delete this.look.shoes;
     }
     if (tab === null || tab === "hair") delete this.look.hairstyle;
     if (tab === null || tab === "body") {
@@ -141,6 +163,14 @@ export class Customizer {
     if (tab === "hair") rows.push(this.hairstyleRow());
     if (tab === "clothes" && playerOutfits(this.body).length > 1) rows.push(this.outfitRow());
     if (tab === "clothes" && legwearOf(this.body, this.look)) rows.push(this.legwearRow());
+    if (tab === "clothes" && options.shoes.length > 1) {
+      rows.push(
+        this.choiceRow("Shoes", options.shoes, () => this.look.shoes, (id) => {
+          if (id) this.look.shoes = id;
+          else delete this.look.shoes;
+        }),
+      );
+    }
     let group: string | undefined;
     for (const def of options.sliders) {
       if (def.tab !== tab) continue;

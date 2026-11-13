@@ -627,6 +627,7 @@ FEMALE = {
     # "modern": the original white tee, red track pants and white sneakers, kept for later.
     "outfit": "medieval",
     "jiggle": True,  # spring bones for the bust, belly, glutes and skirt hem
+    "shoe_styles": True,  # her other shoes, heels and boots (SHOE_STYLES), each its own mesh
     "nipples": True,  # discs the game shapes into her areolae and nipples
     "pubes": True,  # a patch over her mound the game draws her pubic hair's style on
     "name": "Female", "tunic": "tee_white", "hair": "hair_f", "skin": "skin_f", "pants": "pants_red",
@@ -731,6 +732,239 @@ def upper_ring(y, w, top, cx, scale):
             (cx, y, top + 0.008 * scale), (cx - w * 0.75, y, top), (cx - w * 1.05, y, mid)]
 
 
+# ---------------------------------------------------------------- her other shoes
+#
+# Each style is its own mesh, "<Body>_Shoes<mesh>", which the game shows instead of her own shoes. Nothing is under
+# a shoe, so a heel is built downwards: the ankle stays where it is, the foot pitches forwards and down from just in
+# front of it, and the toes and the heel's tip reach `heel` below her own shoes' floor. The game lifts her by as much
+# (it keeps the lowest point of what she has on on the floor), so heels make her taller and never sink.
+#
+#   heel      how far the heel's tip, and the toes, reach below her own shoes (metres)
+#   platform  how much of that is a thick sole under the toes rather than the foot tipping down
+#   kind      the heel's shape, from HEEL_SHAPES, or "wedge" to fill in under the arch
+#   toe       round, almond, pointed or square
+#   cut       "low" shows the top and upper sides of her foot from the ankle to `vamp` (in her skin, or her stockings
+#             where they reach the ankle); "closed" covers it
+#   straps    across the instep, at these places along the foot; `ankle` round the ankle; `tstrap` from the instep
+#             strap up to the ankle strap
+#   shaft     a boot's height: the leg covered from inside the shoe up to here (world height); `laces` up its front
+SHOE_STYLES = [
+    {"mesh": "Barefoot", "bare": True},
+    {"mesh": "Ballet", "toe": "round", "cut": "low", "vamp": 0.08},
+    {"mesh": "Loafer", "heel": 0.02, "kind": "block", "toe": "square", "straps": [0.07]},
+    {"mesh": "Kitten", "heel": 0.035, "kind": "kitten", "toe": "pointed", "cut": "low", "vamp": 0.08},
+    {"mesh": "Pump", "heel": 0.07, "kind": "taper", "toe": "almond", "cut": "low", "vamp": 0.08},
+    {"mesh": "Stiletto", "heel": 0.095, "kind": "stiletto", "toe": "pointed", "cut": "low", "vamp": 0.08},
+    {"mesh": "Block", "heel": 0.06, "kind": "block", "toe": "round", "cut": "low", "vamp": 0.08},
+    {"mesh": "Cone", "heel": 0.075, "kind": "cone", "toe": "almond", "cut": "low", "vamp": 0.08},
+    {"mesh": "Spool", "heel": 0.065, "kind": "spool", "toe": "round", "cut": "low", "vamp": 0.08},
+    {"mesh": "Wedge", "heel": 0.07, "kind": "wedge", "toe": "round", "cut": "low", "vamp": 0.08},
+    {"mesh": "Platform", "heel": 0.12, "platform": 0.035, "kind": "chunky", "toe": "round", "cut": "low", "vamp": 0.08},
+    {"mesh": "Maryjane", "heel": 0.05, "kind": "block", "toe": "round", "cut": "low", "vamp": 0.08, "straps": [0.02]},
+    {"mesh": "Doublestrap", "heel": 0.08, "kind": "stiletto", "toe": "almond", "cut": "low", "vamp": 0.08,
+     "straps": [0.0, 0.05]},
+    {"mesh": "Anklestrap", "heel": 0.09, "kind": "stiletto", "toe": "pointed", "cut": "low", "vamp": 0.08, "ankle": True},
+    {"mesh": "Tstrap", "heel": 0.065, "kind": "taper", "toe": "round", "cut": "low", "vamp": 0.08, "ankle": True,
+     "tstrap": True},
+    {"mesh": "Bootie", "heel": 0.05, "kind": "chunky", "toe": "round", "shaft": 0.2},
+    {"mesh": "Laceup", "heel": 0.085, "kind": "stiletto", "toe": "pointed", "shaft": 0.24, "laces": True},
+    {"mesh": "Riding", "heel": 0.025, "kind": "block", "toe": "round", "shaft": 0.42},
+    {"mesh": "Kneeboot", "heel": 0.08, "kind": "taper", "toe": "almond", "shaft": 0.42},
+    {"mesh": "Thighboot", "heel": 0.09, "kind": "stiletto", "toe": "pointed", "shaft": 0.64},
+]
+# The foot tips down between these places along it (as SHOE_SOLE's y): flat behind, all the way down in front.
+BALL_FROM, BALL_TO = -0.01, 0.115
+# Where a low cut starts showing her foot, just in front of the ankle.
+OPEN_FROM = -0.02
+# Heel shapes as cross-sections from the top (0) to the tip (1): (share of the way down, centre along the foot as
+# SHOE_SOLE's y, half width, half depth). Widths are in metres at a foot_scale of 1.
+HEEL_SHAPES = {
+    "taper": [(0, -0.062, 0.026, 0.024), (1, -0.07, 0.01, 0.01)],
+    "stiletto": [(0, -0.06, 0.024, 0.026), (0.35, -0.068, 0.012, 0.012), (1, -0.072, 0.0055, 0.0055)],
+    "kitten": [(0, -0.058, 0.022, 0.024), (0.6, -0.058, 0.01, 0.01), (1, -0.052, 0.008, 0.008)],
+    "block": [(0, -0.058, 0.03, 0.028), (1, -0.06, 0.027, 0.025)],
+    "chunky": [(0, -0.055, 0.036, 0.034), (1, -0.058, 0.032, 0.03)],
+    "cone": [(0, -0.058, 0.03, 0.03), (1, -0.064, 0.007, 0.007)],
+    "spool": [(0, -0.058, 0.028, 0.028), (0.25, -0.059, 0.016, 0.016), (0.5, -0.06, 0.011, 0.011),
+              (0.75, -0.061, 0.015, 0.015), (1, -0.062, 0.024, 0.024)],
+}
+# Her bare foot, heel to toe, as SHOE_UPPER: (y, half width, height of the top). Its ankle rises up inside the leg,
+# so the leg's open end is never seen; the sole is flat on her own shoes' floor, so she isn't lifted.
+FOOT = [(-0.085, 0.026, 0.05), (-0.07, 0.036, 0.1), (-0.05, 0.044, 0.15), (-0.02, 0.045, 0.16), (0.01, 0.045, 0.15),
+        (0.04, 0.044, 0.1), (0.08, 0.046, 0.065), (0.12, 0.048, 0.042), (0.155, 0.046, 0.032), (0.18, 0.038, 0.026),
+        (0.198, 0.022, 0.018)]
+STRAP_WIDTH = 0.007  # half the width of a strap along the foot
+ANKLE_STRAP = (0.124, 0.138)  # bottom and top of the ankle strap
+BOOT_GROW = 0.011  # how far a boot's shaft stands off the leg, clear of her legwear
+
+
+def shoe_tables(toe):
+    """(sole, upper) cross-sections for a toe shape: SHOE_SOLE and SHOE_UPPER with their toe ends changed."""
+    sole, upper = list(SHOE_SOLE[:-2]), list(SHOE_UPPER[:-2])
+    if toe == "pointed":
+        return (sole + [(0.175, 0.045, 0.0), (0.205, 0.026, 0.0), (0.232, 0.008, 0.0)],
+                upper + [(0.17, 0.044, 0.046), (0.2, 0.024, 0.032), (0.226, 0.006, 0.022)])
+    if toe == "almond":
+        return (sole + [(0.18, 0.048, 0.0), (0.212, 0.022, 0.0)],
+                upper + [(0.175, 0.045, 0.045), (0.206, 0.02, 0.03)])
+    if toe == "square":
+        return (sole + [(0.185, 0.054, 0.0), (0.2, 0.05, 0.0)],
+                upper + [(0.178, 0.052, 0.045), (0.194, 0.048, 0.038)])
+    return list(SHOE_SOLE), list(SHOE_UPPER)
+
+
+def table_at(table, y):
+    """A cross-section table's (width, height) at y, in between its rows."""
+    if y <= table[0][0]:
+        return table[0][1:]
+    for (y0, *a), (y1, *b) in zip(table, table[1:]):
+        if y0 <= y <= y1:
+            t = (y - y0) / (y1 - y0)
+            return tuple(p + (q - p) * t for p, q in zip(a, b))
+    return table[-1][1:]
+
+
+def grown(points, cx, by):
+    """A ring's points pushed out from its middle (at x = cx) by `by`, in its own plane."""
+    cz = sum(p[2] for p in points) / len(points)
+    out = []
+    for x, y, z in points:
+        dx, dz = x - cx, z - cz
+        length = math.hypot(dx, dz) or 1.0
+        out.append((x + dx / length * by, y, z + dz / length * by))
+    return out
+
+
+def shin_at(spec, z):
+    """(half width, front, back) of the shin at height z, from the spec's shin loops."""
+    rows = spec["shin"]
+    if z <= rows[0][0]:
+        return rows[0][1:]
+    for (z0, *a), (z1, *b) in zip(rows, rows[1:]):
+        if z0 <= z <= z1:
+            t = (z - z0) / (z1 - z0)
+            return tuple(p + (q - p) * t for p, q in zip(a, b))
+    return rows[-1][1:]
+
+
+def build_shoe_style(part, style, leg_x, sx, scale, m, spec):
+    """One shoe of a style, on the leg at leg_x, in the same place and space as her own shoe."""
+    if style.get("bare"):
+        # All in the instep's material, so the game shows it in her skin, or in her stockings where they reach.
+        rings = []
+        for y, w, top in FOOT:
+            cx, ys, ws, top = leg_x + sx * y * TOE_OUT, y * scale, w * scale, top * scale
+            mid = top * 0.45
+            rings.append([(cx - ws * 0.9, ys, 0.0), (cx + ws * 0.9, ys, 0.0), (cx + ws, ys, mid), (cx + ws * 0.7, ys, top),
+                          (cx, ys, top + 0.004), (cx - ws * 0.7, ys, top), (cx - ws, ys, mid)])
+        part.loft(rings, m["instep"])
+        return
+    sole_rows, upper_rows = shoe_tables(style.get("toe", "round"))
+    heel = style.get("heel", 0.0)
+    platform = style.get("platform", 0.0)
+    tip_down = heel - platform
+
+    def tipped(y):
+        """How far along the foot's tip down this place is, from 0 behind the ball to 1 in front of it."""
+        t = min(1.0, max(0.0, (y - BALL_FROM) / (BALL_TO - BALL_FROM)))
+        return t * t * (3 - 2 * t) if heel > 0 else 0.0
+
+    drop = lambda y: tip_down * tipped(y)
+    centre = lambda y: leg_x + sx * y * TOE_OUT
+    lower = lambda points, by: [(x, y, z - by) for x, y, z in points]
+    leather, sole, instep = m["leather"], m["sole_dark"], m["instep"]
+
+    # The sole, tipping down with the foot, and thickening into the platform under the toes.
+    rings = []
+    for y, w, lift in sole_rows:
+        t = tipped(y)
+        top = SOLE_TOP * scale - drop(y)
+        bottom = lift * scale * (1 - t) - drop(y) - platform * t
+        mid = bottom + (top - bottom) * 0.6
+        cx, ys, ws = centre(y), y * scale, w * scale
+        rings.append([(cx - ws * 0.92, ys, bottom), (cx + ws * 0.92, ys, bottom), (cx + ws, ys, mid),
+                      (cx + ws * 0.98, ys, top), (cx - ws * 0.98, ys, top), (cx - ws, ys, mid)])
+    part.loft(rings, sole)
+
+    # The upper. A low cut shows her foot over the top and the upper sides, between the ankle and the vamp.
+    rings = [lower(upper_ring(y, w, top, centre(y), scale), drop(y)) for y, w, top in upper_rows]
+    low, vamp = style.get("cut") == "low", style.get("vamp", 0.08)
+
+    def upper_mat(j, i):
+        y0, y1 = upper_rows[j][0], upper_rows[j + 1][0]
+        if low and y0 >= OPEN_FROM and y1 <= vamp + 1e-6 and i in (2, 3, 4, 5):
+            return instep
+        return leather
+
+    part.loft(rings, upper_mat)
+
+    # The heel, from inside the sole down to the floor.
+    kind = style.get("kind")
+    if kind == "wedge":
+        rings = []
+        for y in (-0.084, -0.06, -0.02, 0.02, 0.06, 0.09, 0.105):
+            w = table_at(sole_rows, y)[0] * scale * 0.94
+            cx, ys, top = centre(y), y * scale, 0.004 - drop(y)
+            rings.append([(cx - w, ys, -heel), (cx + w, ys, -heel), (cx + w, ys, top), (cx - w, ys, top)])
+        part.loft(rings, sole)
+    elif kind and heel > 0:
+        top = 0.006
+        part.loft([ring(top - share * (heel + top), hx * scale, hy * scale, hy * scale, y * scale, centre(y))
+                   for share, y, hx, hy in HEEL_SHAPES[kind]], sole)
+
+    # Straps over the instep, round the ankle, and one joining them.
+    for y in style.get("straps", []):
+        straps = []
+        for along in (y - STRAP_WIDTH, y + STRAP_WIDTH):
+            w, top = table_at(upper_rows, along)
+            points = lower(upper_ring(along, w, top, centre(along), scale), drop(along))
+            straps.append(grown(points, centre(along), 0.003))
+        part.loft(straps, leather)
+    if style.get("ankle"):
+        part.loft([ring(z, *(a + 0.007 for a in shin_at(spec, z)), cx=leg_x) for z in ANKLE_STRAP], leather)
+    if style.get("tstrap"):
+        start = style["straps"][0] if style.get("straps") else 0.03
+        path = []
+        for y in (0.07, 0.05, start + 0.005):
+            w, top = table_at(upper_rows, y)
+            path.append((centre(y), y * scale, (top + 0.008 + 0.004) * scale - drop(y)))
+        front = shin_at(spec, ANKLE_STRAP[1])[1] + 0.008
+        path.append((leg_x, front, ANKLE_STRAP[1]))
+        part.loft([[(x - 0.005, y, z - 0.002), (x + 0.005, y, z - 0.002), (x + 0.005, y, z + 0.002),
+                    (x - 0.005, y, z + 0.002)] for x, y, z in path], leather)
+
+
+def boot_shaft(extra, spec, style, m):
+    """A boot's shaft round each leg, from inside the shoe up to its top, bending at the knee with the skin, and
+    crossed laces up its front for a laced style. Added to `extra`, a Skin, in world space."""
+    top = style["shaft"]
+    leather, laces = m["leather"], m["sole_dark"]
+    rows = [z for z in (0.07, 0.1, 0.15, 0.204, 0.264, 0.34, 0.412, 0.45, 0.484, 0.52, 0.582) if z < top - 0.02]
+    heights = rows + [top]
+    for side, sx in (("L", -1), ("R", 1)):
+        weights = lambda co, side=side: leg_weights(spec, co[2], side)
+        # Tucked into the shoe at the bottom, standing off the leg above it, flaring a touch at the top.
+        grow = lambda z: (0.005 if z < 0.09 else BOOT_GROW) + (0.003 if z >= top else 0.0)
+        outside = [leg_ring(spec, z, grow(z), sx) for z in heights]
+        inside = [leg_ring(spec, z, grow(z) - 0.004, sx) for z in reversed(heights)]
+        add_band(extra, f"shaft{side}", outside + inside, weights, leather)
+        if not style.get("laces"):
+            continue
+        z = 0.12
+        k = 0
+        while z + 0.024 < top - 0.012:
+            ring_points = leg_ring(spec, z + 0.012, BOOT_GROW, sx)
+            front = max(p[1] for p in ring_points) + 0.0015
+            fronts = sorted(ring_points, key=lambda p: -p[1])[:2]
+            x = (fronts[0][0] + fronts[1][0]) / 2
+            for d in (-1, 1):
+                corners = [(x - 0.011 * d, front, z), (x - 0.011 * d, front, z + 0.004),
+                           (x + 0.011 * d, front, z + 0.024), (x + 0.011 * d, front, z + 0.02)]
+                add_slab(extra, f"lace{side}{k}_{d}", corners, (0.0, 0.003, 0.0), weights, laces)
+            z += 0.024
+            k += 1
+
+
 class Facet(Part):
     """A body part with its origin on a joint, drawn with hard-edged triangles."""
 
@@ -740,17 +974,25 @@ class Facet(Part):
         self.keep_quads = False
 
     def loft(self, rings, mats):
+        """Bands between rings, capped at both ends. `mats` is one material, one per band, or a function of
+        (band, side) giving each face its own."""
         bands = len(rings) - 1
-        slots = [self._slot(mat) for mat in (mats if isinstance(mats, list) else [mats] * bands)]
+        if callable(mats):
+            face_slot = lambda j, i: self._slot(mats(j, i))
+            caps = (self._slot(mats(0, 0)), self._slot(mats(bands - 1, 0)))
+        else:
+            slots = [self._slot(mat) for mat in (mats if isinstance(mats, list) else [mats] * bands)]
+            face_slot = lambda j, i: slots[j]
+            caps = (slots[0], slots[-1])
         px, py, pz = self.pivot
         loops = [[self.bm.verts.new((x - px, y - py, z - pz)) for x, y, z in r] for r in rings]
         for j in range(bands):
             low, high = loops[j], loops[j + 1]
             for i in range(len(low)):
                 k = (i + 1) % len(low)
-                self.bm.faces.new((low[i], low[k], high[k], high[i])).material_index = slots[j]
-        self.bm.faces.new(loops[0]).material_index = slots[0]
-        self.bm.faces.new(loops[-1]).material_index = slots[-1]
+                self.bm.faces.new((low[i], low[k], high[k], high[i])).material_index = face_slot(j, i)
+        self.bm.faces.new(loops[0]).material_index = caps[0]
+        self.bm.faces.new(loops[-1]).material_index = caps[1]
         return self
 
     def solid(self, points, faces, mat):
@@ -1493,7 +1735,8 @@ def build_character(c, m, spec):
     midriff = spec.get("midriff_bands", 0)
     torso = body(part("Torso", torso_at), stack("torso", 12),
                  [skin] * midriff + [tunic] * (len(spec["torso"]) - 1 - midriff))
-    if spec.get("necklace"):
+    if spec.get("necklace") and not skinned:
+        # A skinned body gets hers laid on the finished skin instead (build_necklace).
         for sx in (-1, 1):
             add_strand(torso, [(sx * 0.055, 0.035, 1.355, 0.003), (sx * 0.03, 0.065, 1.31, 0.003),
                                (0, 0.08, 1.265, 0.003)], m["pewter"])
@@ -1580,6 +1823,11 @@ def build_character(c, m, spec):
                      0.006, 0.024 * scale, 0.024 * scale, m["pants_red"], fit=True)
         # Cancels the thigh's outward angle so the feet stay flat on the floor.
         shin.finish(thigh_obj, hip_at).rotation_euler[1] = sx * spec["leg_splay"]
+        # Her other shoes, each placed just as her own are.
+        for style in SHOE_STYLES if spec.get("shoe_styles") else []:
+            shoe = part(f"Shoes{style['mesh']}_{side}", knee_at)
+            build_shoe_style(shoe, style, leg_x, sx, scale, m, spec)
+            shoe.finish(thigh_obj, hip_at).rotation_euler[1] = sx * spec["leg_splay"]
     if skinned:
         skin_character(c, m, spec, root)
     return root
@@ -2161,6 +2409,10 @@ def character_joints(spec):
     if spec.get("jiggle"):
         for label, (parent, head, *_rest) in JIGGLE_REGIONS.items():
             joints[label] = (parent, head)
+        # Her hair's springs sit on the joints of the bones they hang from, so whatever reshapes those reshapes
+        # the hair on the springs alike (see hair_spring_weights).
+        joints["HairSoft"] = ("Head", (0.0, 0.0, spec["neck_z"]))
+        joints["HairTail"] = ("Torso", (0.0, 0.0, spec["torso_z"]))
     if spec.get("outfit") == "medieval":
         # The long skirt hangs from panels round the hips, each one jointed at the knee. The game swings
         # them out of the legs' way, so the legs never pass through the cloth.
@@ -2173,12 +2425,18 @@ def character_joints(spec):
 # ---------------------------------------------------------------- secondary motion
 
 # Soft parts the game moves on springs. Each bone takes part of the weight of the skin and cloth around it:
-# bone: (parent, centre, radii of the region, most weight it takes, side: 1 front only, -1 back only).
+# bone: (parent, centre, radii of the region, most weight it takes, side: 1 front only, -1 back only, 0 all round).
 JIGGLE_REGIONS = {
     "Bust": ("Torso", (0.0, 0.075, 1.15), (0.14, 0.1, 0.095), 1.0, 1),
     "Belly": ("Hips", (0.0, 0.06, 0.99), (0.11, 0.09, 0.08), 0.75, 1),
     "Glute_L": ("Hips", (-0.065, -0.08, 0.83), (0.09, 0.09, 0.11), 0.9, -1),
     "Glute_R": ("Hips", (0.065, -0.08, 0.83), (0.09, 0.09, 0.11), 0.9, -1),
+    # The flesh of each thigh, all round, on the thigh's own line halfway to the knee. It takes only part of the
+    # weight, so the leg keeps its shape and the softness rides on it. All round, the region is a cylinder: any
+    # point within 10 cm of the line, so the other thigh and the crotch between them are left out, weighted by
+    # height alone, full halfway down and fading out towards the hip and the knee.
+    "ThighSoft_L": ("Thigh_L", (-0.105, 0.0, 0.65), (0.1, 0.1, 0.17), 0.45, 0),
+    "ThighSoft_R": ("Thigh_R", (0.105, 0.0, 0.65), (0.1, 0.1, 0.17), 0.45, 0),
 }
 
 
@@ -2212,6 +2470,28 @@ REFINE_AGAIN = [
 REFINE_SMOOTH = 0.6
 # Long hair blends from the head onto the back over this height below the neck.
 HAIR_ONTO_BACK = 0.08
+# Her hair's springs. What hangs from the head, from about the tops of her ears down to the ends of a bob or a
+# tail, rides partly on the head's spring (HairSoft): none at the crown, the most where it ends. Long hair on her
+# back rides on the torso's (HairTail), more of it the further down her back it falls.
+HAIR_SOFT = {"from": 0.09, "over": 0.1, "most": 0.55}   # above the chin, metres; the most share it takes
+HAIR_TAIL = {"from": 0.03, "over": 0.15, "most": 0.7}   # below the neck
+
+
+def hair_spring_weights(spec, name, hairs):
+    """Hands part of each hair point's weight to the hair's springs, by how far it hangs (see HAIR_SOFT)."""
+    def ease(t):
+        t = min(1.0, max(0.0, t))
+        return t * t * (3 - 2 * t)
+
+    soft_top = spec["chin_z"] + HAIR_SOFT["from"]
+    tail_top = spec["neck_z"] - HAIR_TAIL["from"]
+    for obj in hairs:
+        for v in obj.data.vertices:
+            z = v.co.z
+            if z > spec["neck_z"] - 0.01:
+                move_weight(obj, v.index, f"{name}_HairSoft", HAIR_SOFT["most"] * ease((soft_top - z) / HAIR_SOFT["over"]))
+            else:
+                move_weight(obj, v.index, f"{name}_HairTail", HAIR_TAIL["most"] * ease((tail_top - z) / HAIR_TAIL["over"]))
 
 
 def refine_soft_parts(obj, name, regions=REFINE_REGIONS):
@@ -2394,10 +2674,15 @@ def add_jiggle_weights(name, layers):
         for v in obj.data.vertices:
             x, y, z = v.co
             for label, (_, centre, radii, most, side) in JIGGLE_REGIONS.items():
-                if side * y <= 0.02:
+                if side and side * y <= 0.02:
                     continue
                 centres, (rx, ry, rz) = JIGGLE_LOBES.get(label, ([centre], radii))
-                d2 = min(((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 + ((z - cz) / rz) ** 2 for cx, cy, cz in centres)
+                if not side:
+                    # All round: a cylinder up the limb, weighted by height alone.
+                    cx, cy, cz = centre
+                    d2 = ((z - cz) / rz) ** 2 if ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 < 1 else 1.0
+                else:
+                    d2 = min(((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 + ((z - cz) / rz) ** 2 for cx, cy, cz in centres)
                 if d2 < 1:
                     # Full weight through the middle of the mass, fading smoothly to nothing at its edge.
                     t = 1 - math.sqrt(d2)
@@ -2417,7 +2702,13 @@ MEDIEVAL_COLOURS = (("linen", (0.86, 0.8, 0.68)), ("bodice", (0.36, 0.08, 0.09))
                     # The rest of the legwear: the bands of the legs below the seat, the leg warmers and the garter belt.
                     ("hose_thigh", (0.2, 0.15, 0.13)), ("hose_over", (0.2, 0.15, 0.13)), ("hose_knee", (0.2, 0.15, 0.13)),
                     ("hose_calf", (0.2, 0.15, 0.13)), ("hose_shin", (0.2, 0.15, 0.13)), ("hose_low", (0.2, 0.15, 0.13)),
-                    ("hose_ankle", (0.2, 0.15, 0.13)), ("warmer", (0.2, 0.15, 0.13)), ("garter", (0.2, 0.15, 0.13)))
+                    ("hose_ankle", (0.2, 0.15, 0.13)), ("warmer", (0.2, 0.15, 0.13)), ("garter", (0.2, 0.15, 0.13)),
+                    # Her breast band, its own piece over the smallclothes' braies, in the same cloth. Last in the list,
+                    # so the textures before it keep their grain.
+                    ("bra", (0.74, 0.68, 0.58)),
+                    # The top of her foot where a low-cut shoe shows it. The game paints it in her skin, or in her
+                    # stockings where they reach the ankle. Last, likewise.
+                    ("instep", (0.2, 0.15, 0.13)))
 BODICE = (0.955, 1.17)  # bottom and top of the laced bodice
 # A tavern wench's chemise: a wide neckline worn off the shoulders, sleeves pushed up to the elbow.
 NECKLINE = (1.21, 1.25)  # where the chemise stops at the front and at the back
@@ -2445,12 +2736,12 @@ def profile_at(spec, z):
 
 def smallclothes(spec, skin):
     """
-    Which faces of the bare body the smallclothes cover, painted on so the last layer can never come off:
-    braies from below the navel to the tops of the thighs, and for her a band over the bust.
+    Which faces of the bare body the smallclothes cover, painted on: braies from below the navel to the tops of the
+    thighs, and for her a band over the bust, as two sets, so the band is its own piece that comes off by itself.
     """
     top, leg = spec["braies"]
     band = spec.get("breast_band")
-    covered = set()
+    covered, banded = set(), set()
     for index, (f, _) in enumerate(skin.faces):
         weights = {}
         for i in f:
@@ -2463,8 +2754,8 @@ def smallclothes(spec, skin):
         elif bone in ("Hips", "Torso") and cz < top:
             covered.add(index)
         elif band and bone in ("Hips", "Torso") and band[0] < cz < band[1]:
-            covered.add(index)
-    return covered
+            banded.add(index)
+    return covered, banded
 
 
 def medieval_cloth(spec, m, skin):
@@ -2961,8 +3252,8 @@ def build_dirndl_extra(spec, m):
             corners = [(sx * 0.022, y, z - 0.004), (sx * 0.022, y, z + 0.002), (-sx * 0.022, y, z + 0.022), (-sx * 0.022, y, z + 0.016)]
             add_slab(extra, f"lace{i}_{j}", corners, (0.0, 0.003, 0.0), trunk, m["ribbon"])
 
-    # A green gem hanging from the necklace's pendant.
-    facing(extra, "gem", (0.0, 0.097, 1.245), (0.008, 0.01), (0.0, 1.0), lambda co: {"Torso": 1.0}, m["gem"])
+    # A green gem hanging from the necklace's pendant, set into its front.
+    facing(extra, "gem", (0.0, spec.get("pendant_front", 0.094) + 0.003, 1.245), (0.008, 0.01), (0.0, 1.0), lambda co: {"Torso": 1.0}, m["gem"])
     return extra
 
 
@@ -3413,6 +3704,76 @@ class CoatSurface:
         return {self.groups[g]: w / total for g, w in out.items() if w / total > 0.001}
 
 
+# Her necklace: a cord all the way round the base of her neck, dipping to a V at the front, with a drop pendant at
+# its point. Guides on one side from the back to the front, (x, y, z); each is moved onto her skin, so the cord
+# lies on it rather than standing off it.
+NECKLACE_PATH = [(0.0, -0.056, 1.35), (0.034, -0.048, 1.348), (0.056, -0.022, 1.344), (0.062, 0.008, 1.338),
+                 (0.054, 0.034, 1.326), (0.04, 0.052, 1.31), (0.025, 0.064, 1.292), (0.011, 0.072, 1.277),
+                 (0.0, 0.075, 1.268)]
+NECKLACE_CORD = 0.0028  # half the cord's thickness
+NECKLACE_LIFT = 0.0006  # clear of the skin under it
+# The pendant: (height, half width, half depth) at its tip and where the cord holds it.
+NECKLACE_PENDANT = [(1.24, 0.008, 0.004), (1.265, 0.003, 0.003)]
+
+
+def build_necklace(c, m, name, body_obj):
+    """
+    The necklace on the finished body, each point weighted as the skin under it, so it moves with her neck, chest
+    and bust and never lifts off. Returns the object and how far forward the pendant's front is at its tip.
+    """
+    surface = CoatSurface(body_obj)
+    piece = Skin()
+
+    def weights(point):
+        return {g[len(name) + 1:]: w for g, w in surface.weights_at(point).items()}
+
+    # The loop: front, round her right to the back, round her left to the front again. Each stretch is cut in
+    # three, so the cord follows the skin between the guides too.
+    front_to_back = list(reversed(NECKLACE_PATH))
+    guides = [Vector(p) for p in front_to_back + [(-x, y, z) for x, y, z in NECKLACE_PATH[1:-1]]]
+    points = []
+    for i, a in enumerate(guides):
+        b = guides[(i + 1) % len(guides)]
+        points += [a.lerp(b, t / 3) for t in range(3)]
+    lying = []
+    for p in points:
+        loc, normal = surface.nearest(p)
+        lying.append((loc + normal * (NECKLACE_CORD + NECKLACE_LIFT), normal))
+
+    # A four-sided cord, one side always against the skin.
+    count = len(lying)
+    for i, (p, normal) in enumerate(lying):
+        along = (lying[(i + 1) % count][0] - lying[i - 1][0]).normalized()
+        out = (normal - along * normal.dot(along)).normalized()
+        side = along.cross(out)
+        for k, d in enumerate((out, side, -out, -side)):
+            co = p + d * NECKLACE_CORD
+            piece.add(f"cord{i}_{k}", 0, tuple(co), weights(co))
+    for i in range(count):
+        j = (i + 1) % count
+        for k in range(4):
+            q = (k + 1) % 4
+            piece.face((f"cord{i}_{k}", f"cord{j}_{k}", f"cord{j}_{q}", f"cord{i}_{q}"), 0, m["pewter"])
+
+    # The pendant hangs flat against her breastbone from the cord's point.
+    rings = []
+    for z, w, d in NECKLACE_PENDANT:
+        loc, _ = surface.landed(1, 0.0, z)
+        rings.append(ring(z, w, d, d, loc.y + d + NECKLACE_LIFT, n=4))
+    for r, points_of_ring in enumerate(rings):
+        for k, co in enumerate(points_of_ring):
+            piece.add(f"pendant{r}_{k}", 0, co, weights(Vector(co)))
+    for k in range(4):
+        q = (k + 1) % 4
+        piece.face((f"pendant0_{k}", f"pendant0_{q}", f"pendant1_{q}", f"pendant1_{k}"), 0, m["pewter"])
+    for r in range(2):
+        piece.face([f"pendant{r}_{k}" for k in range(4)], 0, m["pewter"])
+    front = max(co[1] for co in rings[0])
+
+    mesh, kept = piece.mesh(f"{name}_Necklace", piece.faces)
+    return piece.link(c, mesh, kept, name, f"{name}_Necklace"), front
+
+
 def build_coat(c, m, name, body_obj, clothes=()):
     """
     Builds every section's stages on the finished body, weighted like the skin under them, and the same splats on
@@ -3560,8 +3921,9 @@ def skin_character(c, m, spec, root):
     fit = hat_fit(spec, [parts[f"{name}_Head"], parts[f"{name}_Hair"]])
 
     # The whole body in skin, so clothes can come off or change without leaving holes; only the smallclothes stay.
-    smalls = smallclothes(spec, bare_skin)
-    body, kept = bare_skin.mesh(f"{name}_Body", [(f, m["smalls"] if i in smalls else bare) for i, (f, _) in enumerate(bare_skin.faces)])
+    smalls, band = smallclothes(spec, bare_skin)
+    painted = [(f, m["smalls"] if i in smalls else m["bra"] if i in band else bare) for i, (f, _) in enumerate(bare_skin.faces)]
+    body, kept = bare_skin.mesh(f"{name}_Body", painted)
     body_obj = bare_skin.link(c, body, kept, name, f"{name}_Body")
 
     # The clothes are pushed out along the normals of their own closed surface.
@@ -3616,6 +3978,9 @@ def skin_character(c, m, spec, root):
     for key in limbs:
         bind(parts[label(key)], label(key))
     join(body_obj, [parts[label(key)] for key in ["Head", "Torso"] + limbs])
+    if spec.get("necklace"):
+        necklace, spec["pendant_front"] = build_necklace(c, m, name, body_obj)
+        join(body_obj, [necklace])
     if medieval:
         # The track pants' drawstring goes; the skirt, apron, belt and laces take its place.
         bpy.data.objects.remove(parts[label("Hips")])
@@ -3650,6 +4015,22 @@ def skin_character(c, m, spec, root):
             if mat and mat.name in swap:
                 shoes.data.materials[i] = swap[mat.name]
 
+    # Her other shoes: both feet of each style as one mesh on the shins, and a boot's shaft on the legs above.
+    shoe_styles = []
+    for style in SHOE_STYLES if spec.get("shoe_styles") else []:
+        key = f"Shoes{style['mesh']}"
+        obj = parts[label(f"{key}_R")]
+        obj.name = obj.data.name = label(key)
+        bind(obj, label("Shin_R"))
+        bind(parts[label(f"{key}_L")], label("Shin_L"))
+        pieces = [parts[label(f"{key}_L")]]
+        if style.get("shaft"):
+            extra = Skin()
+            boot_shaft(extra, spec, style, m)
+            mesh, kept = extra.mesh(label(f"{key}Shaft"), extra.faces)
+            pieces.append(extra.link(c, mesh, kept, name, label(f"{key}Shaft")))
+        shoe_styles.append(join(obj, pieces))
+
     # Loose strands stay fixed at the root and hang more freely towards the tips.
     locks = [parts[label(f"Strand_{side}")] for side in "LR" if label(f"Strand_{side}") in parts]
     for strand, side in zip(locks, "LR"):
@@ -3679,6 +4060,8 @@ def skin_character(c, m, spec, root):
                 head_group.add([vertex.index], 1 - t, "REPLACE")
             if t > 0:
                 torso_group.add([vertex.index], t, "REPLACE")
+    if spec.get("jiggle"):
+        hair_spring_weights(spec, name, [hair, *styles])
 
     if spec.get("jiggle"):
         # The soft parts get more faces, so the game can grow and drop them and they stay round.
@@ -3716,7 +4099,7 @@ def skin_character(c, m, spec, root):
             armature.edit_bones[bone_name].parent = armature.edit_bones[parent]
     bpy.ops.object.mode_set(mode="OBJECT")
 
-    for layer in (body_obj, cloth_obj, *outfits, shoes, hair, *styles, *coat):
+    for layer in (body_obj, cloth_obj, *outfits, shoes, *shoe_styles, hair, *styles, *coat):
         layer.parent = rig
         layer.modifiers.new("Bones", "ARMATURE").object = rig
 
