@@ -616,8 +616,9 @@ export const DARES: Record<string, Omit<StripPiece, "id">> = {
 };
 
 /** The lines for a garment: its own if it has them, otherwise ones made from what it's called. */
-export function stripPiece(garment: { id: string; label: string }): StripPiece {
-  const written = DARES[garment.id];
+export function stripPiece(garment: { id: string; label: string; styled?: boolean }): StripPiece {
+  // Her band's and braies' own lines don't fit a thong or a bodysuit worn in their place.
+  const written = garment.styled ? undefined : DARES[garment.id];
   if (written) return { id: garment.id, ...written };
   const { label } = garment;
   return {

@@ -630,6 +630,8 @@ FEMALE = {
     "shoe_styles": True,  # her other shoes, heels and boots (SHOE_STYLES), each its own mesh
     "nipples": True,  # discs the game shapes into her areolae and nipples
     "pubes": True,  # a patch over her mound the game draws her pubic hair's style on
+    "lingerie": True,  # a patch over her trunk the game draws her underwear styles on
+    "navel": 0.962,  # the height of her navel, a small pit pressed into the bare belly
     "name": "Female", "tunic": "tee_white", "hair": "hair_f", "skin": "skin_f", "pants": "pants_red",
     "belt": "waistband", "shoe": "shoe_w", "sole": "sole_w", "splay": 0.28, "leg_splay": 0.05,
     "arm_sides": 8, "cuff_bands": 0, "midriff_bands": 2, "bare_arm_bands": 2, "bare_forearm": True,
@@ -2475,13 +2477,40 @@ HAIR_ONTO_BACK = 0.08
 # back rides on the torso's (HairTail), more of it the further down her back it falls.
 HAIR_SOFT = {"from": 0.09, "over": 0.1, "most": 0.55}   # above the chin, metres; the most share it takes
 HAIR_TAIL = {"from": 0.03, "over": 0.15, "most": 0.7}   # below the neck
+# How far the head's spring can swing, as SOFT_PARTS.HairSoft.limit in player.ts says: keep the two the same. The
+# locks hanging by her face swing every way with it, so each point rides it only as far as it stands clear of her
+# skin and clothes, less this much; a lock lying on her cheek stays put. (The tail's spring never swings forwards
+# into her back, which player.ts sees to, so the long hair lying on it still swings away freely.)
+HAIR_SOFT_REACH = 0.025
+HAIR_CLEAR = 0.002
 
 
-def hair_spring_weights(spec, name, hairs):
-    """Hands part of each hair point's weight to the hair's springs, by how far it hangs (see HAIR_SOFT)."""
+def hair_spring_weights(spec, name, hairs, clear_of=()):
+    """
+    Hands part of each hair point's weight to the hair's springs, by how far it hangs (see HAIR_SOFT), and on the
+    head's spring no more than it can swing without going into what's under it (`clear_of`, meshes in world space).
+    """
     def ease(t):
         t = min(1.0, max(0.0, t))
         return t * t * (3 - 2 * t)
+
+    trees = []
+    for obj in clear_of:
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        bm.transform(obj.matrix_world)
+        trees.append((bm, BVHTree.FromBMesh(bm)))
+
+    def clearance(point):
+        """How far out of the nearest skin or cloth a point is: negative inside it."""
+        best = None
+        for _, tree in trees:
+            loc, normal, _, distance = tree.find_nearest(point)
+            if loc is None:
+                continue
+            signed = distance if (point - loc).dot(normal) >= 0 else -distance
+            best = signed if best is None or abs(signed) < abs(best) else best
+        return 1.0 if best is None else best
 
     soft_top = spec["chin_z"] + HAIR_SOFT["from"]
     tail_top = spec["neck_z"] - HAIR_TAIL["from"]
@@ -2489,9 +2518,15 @@ def hair_spring_weights(spec, name, hairs):
         for v in obj.data.vertices:
             z = v.co.z
             if z > spec["neck_z"] - 0.01:
-                move_weight(obj, v.index, f"{name}_HairSoft", HAIR_SOFT["most"] * ease((soft_top - z) / HAIR_SOFT["over"]))
+                share = HAIR_SOFT["most"] * ease((soft_top - z) / HAIR_SOFT["over"])
+                if share > 0 and trees:
+                    room = clearance(obj.matrix_world @ v.co) - HAIR_CLEAR
+                    share = min(share, max(0.0, room) / HAIR_SOFT_REACH)
+                move_weight(obj, v.index, f"{name}_HairSoft", share)
             else:
                 move_weight(obj, v.index, f"{name}_HairTail", HAIR_TAIL["most"] * ease((tail_top - z) / HAIR_TAIL["over"]))
+    for bm, _ in trees:
+        bm.free()
 
 
 def refine_soft_parts(obj, name, regions=REFINE_REGIONS):
@@ -2602,6 +2637,65 @@ def add_nipples(m, name, body_obj):
     mesh.update()
 
 
+# ---------------------------------------------------------------- navel
+
+# Her navel is a small upright oval pit pressed into the skin of her belly, so the light shades it whatever her
+# skin tone and it moves with her belly. The belly is built in faces several centimetres across, so the skin
+# around it is split finer first, on every layer at once so the clothes over it keep their place; each pass
+# splits a smaller patch. Only the bare body is pressed in: the clothes and the coat lie smooth over it.
+NAVEL_REFINE = [0.05, 0.03, 0.018, 0.011]  # each pass's reach around the navel, metres
+NAVEL_SIZE = (0.0065, 0.0105)  # half its width and height
+NAVEL_DEPTH = 0.0065
+# The upper rim folds over a little (a hood), so the pit's deepest point sits below its middle.
+NAVEL_LOW = 0.003
+# The faces this deep into the pit, as a share of its depth, wear the navel's darker skin (T_navel), which the
+# game tones along with her skin; the light alone is too soft to show so small a pit at the game's resolution.
+NAVEL_SHADE = 0.3
+
+
+def navel_regions(spec, reach):
+    return [([(0.0, 0.08, spec["navel"])], (reach, reach, reach), 1)]
+
+
+def press_navel(spec, m, body_obj):
+    """Presses the pit into the bare skin where a ray from inside her meets her belly, its inside darker."""
+    mesh = body_obj.data
+    if "T_navel" not in [mat.name for mat in mesh.materials]:
+        mesh.materials.append(m["navel"])
+    slot = [mat.name for mat in mesh.materials].index("T_navel")
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    tree = BVHTree.FromBMesh(bm)
+    hit, normal, _, _ = tree.ray_cast(Vector((0.0, 0.0, spec["navel"])), Vector((0.0, 1.0, 0.0)))
+    if normal.y < 0:
+        normal = -normal
+    across = Vector((1.0, 0.0, 0.0))
+    up = normal.cross(across).normalized()
+    if up.z < 0:
+        up = -up
+    centre = hit - up * NAVEL_LOW
+    rx, rz = NAVEL_SIZE
+    depth = {}
+    for v in bm.verts:
+        offset = v.co - hit
+        if offset.dot(normal) < -0.02 or offset.length > 0.03:
+            continue
+        u = offset.dot(across) / rx
+        # Measured from the low point below and from the middle above, so the top edge stays where it is.
+        w = (v.co - centre).dot(up)
+        w = w / (rz + NAVEL_LOW) if w > 0 else w / (rz - NAVEL_LOW)
+        e = u * u + w * w
+        if e < 1:
+            depth[v] = (1 - e) ** 2
+            v.co -= normal * NAVEL_DEPTH * depth[v]
+    for f in bm.faces:
+        if all(v in depth for v in f.verts) and sum(depth[v] for v in f.verts) / len(f.verts) > NAVEL_SHADE:
+            f.material_index = slot
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.update()
+
+
 # ---------------------------------------------------------------- pubic hair
 
 # The skin over her mound, copied a hair's breadth out into its own material. The game draws the hair's style on it
@@ -2647,6 +2741,67 @@ def add_pubes(m, name, body_obj):
         for loop in new.loops:
             co = loop.vert.co
             loop[uv].uv = (0.5 + co.x / (2 * PUBES_HALF), (co.z - PUBES_BOTTOM) / (PUBES_TOP - PUBES_BOTTOM))
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.update()
+
+
+# ---------------------------------------------------------------- underwear styles
+
+# Her trunk's skin, from the tops of her thighs to her shoulders, copied a little way out into its own material. The
+# game draws the underwear style she has on over it as a cut-out (lingerie.ts): bras, briefs and one-pieces, from a
+# thong's string to a bodysuit, without a mesh of their own. Its UVs are two flat frames, the front seen from the
+# front in the left half and the back seen from behind in the right: u across her from -LINGERIE_HALF to
+# LINGERIE_HALF (her own x, as the front sees it), v up her from LINGERIE_BOTTOM to LINGERIE_TOP. Each face goes in
+# the frame its middle faces. The faces are the skin's own, so the patch bends exactly as she does.
+LINGERIE_HALF = 0.208
+LINGERIE_BOTTOM = 0.6
+LINGERIE_TOP = 1.4
+# Over the pubic patch (PUBES_LIFT), under the coat (COAT_LIFT), so what lands on her lies over her underwear too.
+LINGERIE_LIFT = 0.0012
+# The skin materials it copies, and the bones whose skin it leaves out: her arms, hands and head.
+LINGERIE_SKINS = ("T_skin_f", "T_bra", "T_smalls", "T_navel")
+LINGERIE_SKIPS = ("UpperArm", "ForeArm", "Hand", "Head")
+
+
+def add_lingerie(m, name, body_obj):
+    """Lays the patch on the finished body: every trunk face in the frame, copied out along the skin's normals."""
+    mesh = body_obj.data
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    deform = bm.verts.layers.deform.active
+    uv = bm.loops.layers.uv.active
+    names = [mat.name if mat else "" for mat in mesh.materials]
+    if "T_lingerie" not in names:
+        mesh.materials.append(m["lingerie"])
+        names.append("T_lingerie")
+    slot = names.index("T_lingerie")
+    skins = {i for i, n in enumerate(names) if n in LINGERIE_SKINS}
+    skipped = {g.index for g in body_obj.vertex_groups if any(f"{name}_{s}" in g.name for s in LINGERIE_SKIPS)}
+
+    def limb(v):
+        return sum(w for g, w in v[deform].items() if g in skipped) > 0.5
+
+    faces = [f for f in bm.faces if f.material_index in skins
+             and LINGERIE_BOTTOM < f.calc_center_median().z < LINGERIE_TOP and not any(limb(v) for v in f.verts)]
+    copies = {}
+    for f in faces:
+        for v in f.verts:
+            if v in copies:
+                continue
+            out = bm.verts.new(v.co + v.normal * LINGERIE_LIFT)
+            for group, share in v[deform].items():
+                out[deform][group] = share
+            copies[v] = out
+    for f in faces:
+        back = f.calc_center_median().y < 0
+        new = bm.faces.new([copies[v] for v in f.verts])
+        new.material_index = slot
+        new.smooth = f.smooth
+        for loop in new.loops:
+            co = loop.vert.co
+            u = 0.5 + co.x / (2 * LINGERIE_HALF)
+            loop[uv].uv = ((u + (1 if back else 0)) / 2, (co.z - LINGERIE_BOTTOM) / (LINGERIE_TOP - LINGERIE_BOTTOM))
     bm.to_mesh(mesh)
     bm.free()
     mesh.update()
@@ -4061,13 +4216,16 @@ def skin_character(c, m, spec, root):
             if t > 0:
                 torso_group.add([vertex.index], t, "REPLACE")
     if spec.get("jiggle"):
-        hair_spring_weights(spec, name, [hair, *styles])
+        hair_spring_weights(spec, name, [hair, *styles], (body_obj, cloth_obj, *outfits))
 
     if spec.get("jiggle"):
         # The soft parts get more faces, so the game can grow and drop them and they stay round.
         for layer in (body_obj, cloth_obj, *outfits):
             refine_soft_parts(layer, name)
             refine_soft_parts(layer, name, REFINE_AGAIN)
+            if spec.get("navel"):
+                for reach in NAVEL_REFINE:
+                    refine_soft_parts(layer, name, navel_regions(spec, reach))
         add_jiggle_weights(name, (body_obj, cloth_obj, *outfits))
     for dress in dresses:
         join(dress, [build_garter(c, m, name, dress)])
@@ -4079,8 +4237,14 @@ def skin_character(c, m, spec, root):
     if spec.get("nipples"):
         # After the coat, so what lands on her breasts lies over them instead of copying them.
         add_nipples(m, name, body_obj)
+    if spec.get("navel"):
+        # Before the pubic patch, which copies the skin it lies over as it is.
+        press_navel(spec, m, body_obj)
     if spec.get("pubes"):
         add_pubes(m, name, body_obj)
+    if spec.get("lingerie"):
+        # Last, so it copies only the finished skin, never the pubic patch or the nipple discs.
+        add_lingerie(m, name, body_obj)
 
     armature = bpy.data.armatures.new(f"{name}_Bones")
     rig = bpy.data.objects.new(f"{name}_Armature", armature)
@@ -4218,6 +4382,14 @@ def main():
     # Her pubic hair, likewise: one flat colour, her hair's own, so it follows her hair's dye. The game draws its style.
     random_state = rng.bit_generator.state
     mats["pubic"] = material("T_pubic", tex_flat("T_pubic", (0.075, 0.06, 0.06), variation=0.02))
+    rng.bit_generator.state = random_state
+    # The inside of her navel, likewise: her skin (skin_f) in shadow. The game tones it along with her skin.
+    random_state = rng.bit_generator.state
+    mats["navel"] = material("T_navel", tex_flat("T_navel", (0.52, 0.33, 0.26), variation=0.02))
+    rng.bit_generator.state = random_state
+    # Her underwear styles' patch, likewise: plain white, which the game draws each style on in its own colours.
+    random_state = rng.bit_generator.state
+    mats["lingerie"] = material("T_lingerie", tex_flat("T_lingerie", (1.0, 1.0, 1.0), variation=0.0))
     rng.bit_generator.state = random_state
     for spec, blender_x in ((MALE, -0.6), (FEMALE, 0.6)):
         coll = bpy.data.collections.new(spec["name"] + "Rig")

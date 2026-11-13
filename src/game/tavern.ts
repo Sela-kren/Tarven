@@ -925,6 +925,8 @@ export class Tavern {
   playerOutfit: string | undefined = undefined;
   /** The style of legwear she has on, by id; the outfit's own when undefined. */
   playerLegwear: string | undefined = undefined;
+  /** Her bra (or one-piece) and briefs, by style id; her band and braies when unset. */
+  playerUnder: { bra?: string; briefs?: string } = {};
   /** Where chance comes from: which guests offer a drink, and what they say. Tests replace it. */
   random: () => number = Math.random;
   /** The player's reputation, which changes what guests say. It lasts from night to night. */
@@ -1012,7 +1014,7 @@ export class Tavern {
     for (const m of METERS) if (this.peak[m] >= METER_MAX) r.maxed[m] = (r.maxed[m] ?? 0) + 1;
     if (METERS.every((m) => this.peak[m] >= ALL_HIGH)) r.allHigh++;
     if (this.playerBody === "Female") {
-      const ladder = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear).length;
+      const ladder = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder).length;
       r.clothesLost += this.stripped;
       if (ladder > 0 && this.stripped >= ladder) r.bareNights++;
       if (this.touchesTonight.reached > 0 && this.touchesTonight.allowed === 0) r.chasteNights++;
@@ -1470,13 +1472,13 @@ export class Tavern {
 
   /** The next piece of clothing guests would go for, or null once there's nothing left you'd lose. */
   get nextStripPiece(): StripPiece | null {
-    const garment = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear)[this.stripped];
+    const garment = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder)[this.stripped];
     return garment ? stripPiece(garment) : null;
   }
 
   /** The ids of the clothes guests have got off you tonight, for the game to take off the model. */
   get strippedPieces(): string[] {
-    return piecesOff(this.playerBody, this.stripped, this.playerOutfit, this.playerLegwear);
+    return piecesOff(this.playerBody, this.stripped, this.playerOutfit, this.playerLegwear, this.playerUnder);
   }
 
   /**
@@ -1487,7 +1489,7 @@ export class Tavern {
     const off = this.strippedPieces;
     const undressed = Math.max(this.duel?.undressed ?? 0, this.endedTest?.undressed ?? 0, this.undressedTonight);
     if (undressed === 0) return off;
-    const ladder = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear);
+    const ladder = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder);
     const more = undressed >= 2 ? ladder : ladder.filter((g) => g.layer !== "under" && g.layer !== "smallclothes");
     return [...new Set([...off, ...more.map((g) => g.id)])];
   }
@@ -2031,7 +2033,7 @@ export class Tavern {
       slapStops: this.effects.slapStops,
     });
     if (this.random() >= reachChance(guestNerve) * Math.max(0, 1 + this.effects.reach)) return;
-    const piece = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear)[this.stripped]?.label ?? null;
+    const piece = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder)[this.stripped]?.label ?? null;
     const touch = pickTouch(guest.kind, guestNerve, this.random, {
       canStrip: piece !== null,
       seen: this.touchSeen,
@@ -2071,7 +2073,7 @@ export class Tavern {
   private answerTouch(chat: TouchChat, answer: TouchAnswer): void {
     const { touch } = chat;
     const out = touchOutcome(touch, answer);
-    const piece = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear)[this.stripped]?.label ?? null;
+    const piece = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder)[this.stripped]?.label ?? null;
     const fill = (text: string) => fillPiece(text, piece);
     chat.answered = true;
     const guest = this.guests.find((g) => g.id === chat.guestId);

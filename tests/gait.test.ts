@@ -138,3 +138,47 @@ describe("reshaping a body", () => {
     expect(body.hasSkirt).toBe(true);
   });
 });
+
+describe("back arch", () => {
+  const stand = (name: string, arch = 0, sit = 0, chest = 0) => {
+    const root = skeleton(name);
+    const body = new Body(root, name);
+    body.refreshRest(undefined, 0, { arch, chest });
+    body.pose(0, 0, 0, sit);
+    const bone = (label: string) => root.getObjectByName(`${name}_${label}`)!;
+    return { hips: bone("Hips"), torso: bone("Torso"), head: bone("Head"), thigh: bone("Thigh_R"), arm: bone("UpperArm_L") };
+  };
+
+  it("tips her pelvis forwards under an upright torso, keeping the legs and head straight", () => {
+    const { hips, torso, head, thigh } = stand("Female");
+    expect(hips.rotation.x).toBeLessThan(-0.05);
+    const chest = hips.rotation.x + torso.rotation.x;
+    expect(chest).toBeGreaterThanOrEqual(0);
+    expect(chest).toBeLessThan(0.03);
+    expect(hips.rotation.x + thigh.rotation.x).toBeCloseTo(0, 6);
+    expect(Math.abs(chest + head.rotation.x)).toBeLessThan(0.02);
+  });
+
+  it("follows the Back arch slider, never bending the other way, and is gone sitting or on the brother", () => {
+    const base = stand("Female").hips.rotation.x;
+    expect(stand("Female", 0.1).hips.rotation.x).toBeLessThan(base);
+    expect(stand("Female", -1).hips.rotation.x).toBeCloseTo(0, 6);
+    expect(stand("Female", 0, 1).hips.rotation.x).toBeCloseTo(0, 6);
+    expect(stand("Male", 0.1).hips.rotation.x).toBeCloseTo(0, 6);
+  });
+
+  it("leans her ribcage back or rounds it forwards with the Upper back arch, head level and arms hanging", () => {
+    const chest = (b: ReturnType<typeof stand>) => b.hips.rotation.x + b.torso.rotation.x;
+    const upright = stand("Female");
+    const back = stand("Female", 0, 0, 0.18);
+    const round = stand("Female", 0, 0, -0.12);
+    expect(chest(back) - chest(upright)).toBeCloseTo(0.18, 6);
+    expect(chest(round) - chest(upright)).toBeCloseTo(-0.12, 6);
+    for (const b of [back, round]) {
+      expect(Math.abs(chest(b) + b.head.rotation.x)).toBeLessThan(0.03);
+      expect(chest(b) + b.arm.rotation.x).toBeCloseTo(chest(upright) + upright.arm.rotation.x, 6);
+    }
+    // Sitting, she sits as she always does.
+    expect(chest(stand("Female", 0, 1, 0.18))).toBeCloseTo(chest(stand("Female", 0, 1)), 6);
+  });
+});

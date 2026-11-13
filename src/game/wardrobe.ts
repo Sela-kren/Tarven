@@ -22,7 +22,7 @@
  * no-show socks, isn't a step: there's nothing to roll down.
  */
 
-import { legwearOf, outfitOf } from "./appearance";
+import { legwearOf, outfitOf, underOf, type Look } from "./appearance";
 
 /** Which body, as the models and saves call it. */
 export type WardrobeBody = "Female" | "Male";
@@ -43,6 +43,8 @@ export interface Garment {
   region: Region;
   /** Why it never comes off, if it doesn't. */
   keep?: string;
+  /** Set when it goes by the name of the style she chose (a thong, pasties), so the lines written for it don't fit. */
+  styled?: boolean;
 }
 
 /** The pirate's rig that both bodies have. The hat keeps its braid and feather, so it stays on with them. */
@@ -101,25 +103,36 @@ export const WARDROBE: Record<WardrobeBody, readonly Garment[]> = {
  * The garments that can come off an outfit (the character's own when left out), in the order they come off.
  * `legwear` is the style of stockings she has on, the outfit's own when left out.
  */
-export function stripLadder(body: WardrobeBody, outfit?: string, legwear?: string): Garment[] {
+export function stripLadder(body: WardrobeBody, outfit?: string, legwear?: string, under?: Pick<Look, "bra" | "briefs">): Garment[] {
   const legs = legwearOf(body, { outfit, legwear });
-  const worn = outfitOf(body, { outfit }).colors.filter((id) => id !== "stockings" || !legs || legs.bands.length > 0);
+  const styles = under ? underOf(body, under) : null;
+  const worn = outfitOf(body, { outfit }).colors.filter(
+    // A one-piece comes off whole, as her top: there are no briefs left to take off after it.
+    (id) => (id !== "stockings" || !legs || legs.bands.length > 0) && (id !== "smalls" || !styles || styles.bottom !== null),
+  );
   const rank = (g: Garment) => LAYERS.indexOf(g.layer) * 100 + REGIONS.indexOf(g.region) * 10;
   return WARDROBE[body]
     .filter((g) => !g.keep && worn.includes(g.id))
     .map((g, index) => ({ g, index }))
     .sort((a, b) => rank(a.g) - rank(b.g) || a.index - b.index)
-    .map(({ g }) => g);
+    .map(({ g }) => styled(g, styles));
+}
+
+/** Her bra and briefs go by their styles' names, unless they're the band and braies painted on her. */
+function styled(g: Garment, styles: ReturnType<typeof underOf>): Garment {
+  const style = g.id === "bra" ? styles?.top : g.id === "smalls" ? styles?.bottom : null;
+  if (!style || !style.front) return g;
+  return { ...g, label: style.garment, styled: true };
 }
 
 /** How many looks a body goes through: fully dressed, then one more for each garment that comes off. */
-export function stripStages(body: WardrobeBody, outfit?: string, legwear?: string): number {
-  return stripLadder(body, outfit, legwear).length + 1;
+export function stripStages(body: WardrobeBody, outfit?: string, legwear?: string, under?: Pick<Look, "bra" | "briefs">): number {
+  return stripLadder(body, outfit, legwear, under).length + 1;
 }
 
 /** The ids of what's off at a stage: 0 is fully dressed. */
-export function piecesOff(body: WardrobeBody, stage: number, outfit?: string, legwear?: string): string[] {
-  return stripLadder(body, outfit, legwear)
+export function piecesOff(body: WardrobeBody, stage: number, outfit?: string, legwear?: string, under?: Pick<Look, "bra" | "briefs">): string[] {
+  return stripLadder(body, outfit, legwear, under)
     .slice(0, Math.max(0, stage))
     .map((g) => g.id);
 }

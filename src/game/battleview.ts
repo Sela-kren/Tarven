@@ -12,6 +12,7 @@ import {
   WebGLRenderTarget,
 } from "three";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
+import { chestOverHips } from "./player";
 
 /**
  * The big picture of her during a fight, the way Karryn's Prison shows Karryn the whole time she battles: her
@@ -201,7 +202,7 @@ export class BattleView {
     const breath = Math.sin(t * rate) * (0.02 + heat * 0.03);
     const tremble = this.edge ? Math.sin(t * 41) * 0.012 + Math.sin(t * 29) * 0.008 : 0;
     const f = this.flinch * this.flinch;
-    if (bones.torso) bones.torso.rotation.set(breath - f * (this.flinchHard ? 0.25 : 0.12), tremble, 0);
+    if (bones.torso) bones.torso.rotation.set(chestOverHips(bones.torso) + breath - f * (this.flinchHard ? 0.25 : 0.12), tremble, 0);
     if (bones.head) {
       // Head tips back a little as she gets hotter; snaps aside when hit.
       bones.head.rotation.set(-heat * 0.12 + f * 0.1, (this.flinchHard ? f * 0.45 : 0) + tremble * 2, heat * 0.08);

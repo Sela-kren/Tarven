@@ -1007,7 +1007,7 @@ export class Game {
   private applyLook(index: number): void {
     this.dressers[index].apply(this.looks[BODY_NAMES[index]]);
     const dresser = this.dressers[index];
-    this.siblings[index].refreshBody(dresser.legSize(), dresser.armSpread());
+    this.siblings[index].refreshBody(dresser.legSize(), dresser.armSpread(), dresser.posture());
     this.playerPortrait = null;
   }
 
@@ -1751,6 +1751,8 @@ export class Game {
     this.tavern.playerBody = this.active === 1 ? "Female" : "Male";
     this.tavern.playerOutfit = this.looks[this.tavern.playerBody].outfit;
     this.tavern.playerLegwear = this.looks[this.tavern.playerBody].legwear;
+    const { bra, briefs } = this.looks[this.tavern.playerBody];
+    this.tavern.playerUnder = { bra, briefs };
     document.body.classList.remove("staging");
     // Only the character the player picked works the night; the other stays out of the game.
     this.siblings.forEach((sibling, index) => {

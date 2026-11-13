@@ -12,6 +12,11 @@ export interface SpringSettings {
   axes: readonly [number, number, number];
   /** The furthest it moves from rest, in metres. */
   limit: number;
+  /**
+   * The furthest it moves each way along x, y and z, [least, most] in metres, for a part lying against the body
+   * that can swing away from it but not into it: it comes to rest there, as against the body.
+   */
+  range?: readonly [readonly [number, number], readonly [number, number], readonly [number, number]];
 }
 
 /** Snaps such as sitting down or swapping siblings would otherwise fling the parts. */
@@ -77,6 +82,16 @@ export class Jiggle {
     if (this.offset.length() > limit) {
       this.offset.setLength(limit);
       this.speed.multiplyScalar(0.5);
+    }
+    if (this.settings.range) {
+      for (let i = 0; i < 3; i++) {
+        const [least, most] = this.settings.range[i];
+        const x = this.offset.getComponent(i);
+        if (x < least || x > most) {
+          this.offset.setComponent(i, Math.min(most, Math.max(least, x)));
+          this.speed.setComponent(i, 0);
+        }
+      }
     }
     this.bone.position.copy(this.rest).add(this.offset);
   }

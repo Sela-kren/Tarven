@@ -47,4 +47,25 @@ describe("Jiggle", () => {
     }
     expect(bone.position.y).toBe(1);
   });
+
+  it("swings away from the body but never into it, within its range", () => {
+    const parent = new Object3D();
+    const bone = new Object3D();
+    bone.position.set(0, 1, 0);
+    parent.add(bone);
+    // Like her long hair on her back: free to swing back (+z), not forwards into her (-z).
+    const jiggle = new Jiggle(bone, { ...SETTINGS, range: [[-0.01, 0.01], [-0.02, 0.02], [0, 0.02]] });
+    const dt = 1 / 60;
+    let most = 0, least = 0;
+    // Back and forth, hard, so it would swing both ways if it could.
+    for (let frame = 0; frame < 240; frame++) {
+      parent.position.z = 0.15 * Math.sin(frame * dt * 2 * Math.PI * 2);
+      jiggle.update(dt);
+      most = Math.max(most, bone.position.z);
+      least = Math.min(least, bone.position.z);
+    }
+    expect(least).toBe(0);
+    expect(most).toBeGreaterThan(0.005);
+    expect(most).toBeLessThanOrEqual(0.02);
+  });
 });

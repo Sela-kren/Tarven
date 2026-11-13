@@ -17,6 +17,7 @@ import {
 } from "three";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import type { Effect } from "./audio";
+import { chestOverHips } from "./player";
 
 /**
  * A panel that bursts open over the tavern when you take a drink with a guest, cut on the slant like a comic panel:
@@ -349,7 +350,7 @@ export class DrinkComic {
   private reach(pose: Pose, offset: Vector3): Pose {
     const { model, bones } = this;
     if (!model || !bones) return pose;
-    bones.torso.rotation.set(pose.torso, 0, 0);
+    bones.torso.rotation.set(pose.torso + chestOverHips(bones.torso), 0, 0);
     bones.head.rotation.set(pose.head, 0, 0);
     model.updateMatrixWorld(true);
     const goal = bones.head.localToWorld(MOUTH.clone().add(offset));
@@ -396,7 +397,7 @@ export class DrinkComic {
     const p = poseAt(t, this.lips, this.bottomsUp);
     // Once it's down, a drunk sways a little where they stand.
     const sway = t > T.glugEnd ? Math.sin(t * 3.2) * 0.07 * (0.4 + this.drunk) : 0;
-    bones.torso.rotation.set(p.torso, 0, sway);
+    bones.torso.rotation.set(p.torso + chestOverHips(bones.torso), 0, sway);
     bones.head.rotation.set(p.head, 0, -sway * 0.6);
     bones.upper.rotation.set(p.upper, p.twist, p.across);
     bones.fore.rotation.set(p.elbow, 0, 0);

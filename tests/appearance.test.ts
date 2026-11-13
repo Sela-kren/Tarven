@@ -118,12 +118,36 @@ describe("reshaping", () => {
   });
 
   it("only gives bones terms for sliders that are set", () => {
-    expect(activeTerms("Female", {}).size).toBe(0);
-    const terms = activeTerms("Female", { bust: 1, nonsense: 1 });
+    // Her back's curve is the one shape she has at 0 (see "the small of her back"); -1 takes it away.
+    expect(activeTerms("Female", { arch: -1 }).size).toBe(0);
+    const terms = activeTerms("Female", { bust: 1, nonsense: 1, arch: -1 });
     expect([...terms.keys()]).toEqual(["Bust"]);
     expect(terms.get("Bust")![0].grow).toEqual([2.52, 2.07, 3.55]);
     // Shrinking has its own, smaller amounts.
     expect(activeTerms("Female", { bust: -1 }).get("Bust")![0].grow).toEqual([-0.2, -0.25, -0.7]);
+  });
+});
+
+describe("the small of her back", () => {
+  const moved = (sliders: Record<string, number>, bone: string, d: Vector3) =>
+    reshape(activeTerms("Female", sliders).get(bone) ?? [], d, new Vector3()).sub(d);
+
+  it("draws in at the back only, some at 0, more with the Back arch slider, none at -1", () => {
+    // The small of her back, 4 cm above the torso's joint and 4 cm behind it; and her belly in front of it.
+    const back = new Vector3(0, 0.04, 0.04);
+    const belly = new Vector3(0, 0.04, -0.07);
+    const rest = moved({}, "Torso", back).z;
+    expect(rest).toBeLessThan(-0.005);
+    expect(moved({ arch: 1 }, "Torso", back).z).toBeLessThan(rest);
+    expect(moved({ arch: -1 }, "Torso", back).length()).toBe(0);
+    expect(moved({ arch: 1 }, "Torso", belly).length()).toBe(0);
+    // The hips' share of the same skin moves alike, so the curve is smooth across the bones.
+    expect(moved({}, "Hips", back.clone().add(new Vector3(0, 0.12, 0))).z).toBeCloseTo(rest, 6);
+  });
+
+  it("leaves her shoulder blades and her rear alone", () => {
+    expect(moved({ arch: 1 }, "Torso", new Vector3(0, 0.25, 0.05)).length()).toBe(0);
+    expect(moved({ arch: 1 }, "Hips", new Vector3(0, 0.0, 0.09)).length()).toBe(0);
   });
 });
 
@@ -580,7 +604,7 @@ describe("bust shape and height", () => {
     expect(shapes.map((s) => s.id)).toEqual(["teardrop", "round", "bell", "eastwest", "athletic", "relaxed", "sideset", "slender"]);
     expect(shapeAmount(-1)).toBeLessThan(shapeAmount(0));
     expect(shapeAmount(1)).toBeGreaterThan(shapeAmount(0));
-    expect(activeTerms("Female", {}, "teardrop").size).toBe(0);
+    expect(activeTerms("Female", { arch: -1 }, "teardrop").size).toBe(0);
     expect(activeTerms("Female", {}, "athletic").get("Bust")).toHaveLength(1);
   });
 

@@ -1,5 +1,5 @@
 import {
-  copyLook, legwearOf, LOOK_OPTIONS, nearestStop, outfitOf, playerOutfits, stopValue, wearOutfit,
+  copyLook, legwearOf, LOOK_OPTIONS, nearestStop, outfitOf, playerOutfits, stopValue, underOf, wearOutfit,
   type BodyName, type Look, type LookTab, type SliderStops,
 } from "./appearance";
 
@@ -170,6 +170,26 @@ export class Customizer {
           else delete this.look.shoes;
         }),
       );
+    }
+    // Her underwear's styles, for an outfit she wears it under. A one-piece takes the place of her briefs, so their
+    // row goes while she has one on.
+    if (tab === "clothes" && options.tops.length && outfitOf(this.body, this.look).colors.includes("bra")) {
+      rows.push(
+        this.choiceRow("Bra", options.tops, () => this.look.bra, (id) => {
+          const wasWhole = underOf(this.body, this.look)?.bottom === null;
+          if (id) this.look.bra = id;
+          else delete this.look.bra;
+          if ((underOf(this.body, this.look)?.bottom === null) !== wasWhole) queueMicrotask(() => this.show(this.current));
+        }),
+      );
+      if (underOf(this.body, this.look)?.bottom !== null) {
+        rows.push(
+          this.choiceRow("Underwear", options.bottoms, () => this.look.briefs, (id) => {
+            if (id) this.look.briefs = id;
+            else delete this.look.briefs;
+          }),
+        );
+      }
     }
     let group: string | undefined;
     for (const def of options.sliders) {

@@ -22,6 +22,7 @@ import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import type { Effect } from "./audio";
 import { PANEL_SHAPE } from "./comic";
 import { Jiggle } from "./jiggle";
+import { chestOverHips } from "./player";
 import type { TouchAnswer, TouchRegion } from "./touch";
 import type { GuestKind } from "./tavern";
 
@@ -621,7 +622,7 @@ export class TouchComic {
     }
     // Caught from behind, she looks back over her shoulder.
     if (region === "rear") headY -= ease(span(t, T.contact, T.contact + 0.4)) * 0.75 * fade;
-    bones.torso.rotation.set(torsoX, torsoY, 0);
+    bones.torso.rotation.set(torsoX + chestOverHips(bones.torso), torsoY, 0);
     bones.head.rotation.set(headX, headY, headZ);
     bones.upper.rotation.set(upper, 0, across);
     bones.fore.rotation.set(elbow, 0, 0);

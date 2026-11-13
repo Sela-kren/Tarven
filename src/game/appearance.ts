@@ -2,6 +2,9 @@ import { Color, Material, Matrix4, MeshLambertMaterial, Object3D, Quaternion, Sk
 import {
   DISC_MATERIAL, NIPPLE_TYPES, nippleProfile, readDiscs, shapeDisc, skinUnder, tentHeight, type Disc, type NippleType,
 } from "./nipples";
+import {
+  BRIEF_STYLES, LINGERIE_MATERIAL, TOP_STYLES, bottomStyle, coversNipples, lingerieTexture, topStyle, type Rgb, type UnderStyle,
+} from "./lingerie";
 import { PUBIC_MATERIAL, PUBIC_STYLES, pubicStyle, pubicTexture, type PubicStyle } from "./pubes";
 import { coatRetroMaterial, coverCoat, solidRetroMaterial, stainRetroMaterial } from "./retro";
 import type { LegSize } from "./skirt";
@@ -38,6 +41,10 @@ export interface Look {
   pubes?: string;
   /** The shoe style's id. Missing means the character's own shoes, the first in their list. */
   shoes?: string;
+  /** Her bra's style's id, or a one-piece's, worn instead of her briefs too. Missing means her breast band. */
+  bra?: string;
+  /** Her briefs' style's id. Missing means her braies. */
+  briefs?: string;
 }
 
 export function newLook(): Look {
@@ -53,6 +60,8 @@ export function copyLook(look: Look): Look {
   if (look.bustShape) copy.bustShape = look.bustShape;
   if (look.pubes) copy.pubes = look.pubes;
   if (look.shoes) copy.shoes = look.shoes;
+  if (look.bra) copy.bra = look.bra;
+  if (look.briefs) copy.briefs = look.briefs;
   return copy;
 }
 
@@ -76,6 +85,11 @@ interface BoneTerm {
    * last, from the top down, so a calf or an ankle can swell with the knee and the foot left alone.
    */
   band?: readonly [number, number, number, number];
+  /**
+   * Only the back changes: nothing in front of the first depth behind the joint, all of it past the second,
+   * along a smooth curve, as the small of the back curves in while the belly stays as it is.
+   */
+  back?: readonly [number, number];
   /** Lengthwise growth is measured from this height above the joint instead of from the joint itself. */
   pivot?: number;
   /**
@@ -126,6 +140,11 @@ export interface SliderDef {
   roll?: number;
   /** Reshapes the body as built, before the other sliders, so their growth carries its change along with it. */
   early?: boolean;
+  /**
+   * How much of its terms the slider already applies at 0, for a shape she has as she stands: -1 takes it away
+   * entirely and 1 gives all of it.
+   */
+  rest?: number;
 }
 
 /** Where on the slider a named step sits. */
@@ -233,6 +252,12 @@ export interface LookOptions {
   pubes: PubicStyle[];
   /** Pairs of shoes; the first is the character's own, which the look starts with. Empty for one with no others. */
   shoes: ShoeStyleDef[];
+  /**
+   * Underwear drawn on the body built with a patch for it (lingerie.ts): bras and one-pieces, and briefs. The first
+   * of each is the one painted on the body itself. Empty for one without.
+   */
+  tops: UnderStyle[];
+  bottoms: UnderStyle[];
 }
 
 /** A shape of bust: terms on top of the cup size, as strong as shapeAmount says for the cup. */
@@ -272,6 +297,24 @@ const glutes = (grow: BoneTerm["grow"], extra: Omit<BoneTerm, "bone" | "grow"> =
 ];
 const terms = (bones: string[], grow: BoneTerm["grow"], extra: Omit<BoneTerm, "bone" | "grow"> = {}): BoneTerm[] =>
   bones.map((bone) => ({ bone, grow, ...extra }));
+/** How much of the Back arch slider's curve in the small of her back she has at 0 (see SliderDef.rest). */
+const ARCH_REST = 0.4;
+/** Her hips' and torso's joints, metres above the floor, which the lumbar band's heights are measured from. */
+const HIPS_AT = 0.86;
+const TORSO_AT = 0.98;
+/**
+ * The small of her back, drawn in by `depth` metres: most between her waist and the top of her hips, easing out
+ * up to her shoulder blades and down onto her rear, and only on her back, easing in from her sides. Given on both
+ * bones the skin there shares, at the same heights, so it moves alike whichever holds it.
+ */
+const lumbar = (depth: number): BoneTerm[] =>
+  ([["Hips", HIPS_AT], ["Torso", TORSO_AT]] as const).map(([bone, at]) => ({
+    bone,
+    grow: [0, 0, 0],
+    shift: [0, 0, depth],
+    band: [1.15 - at, 1.06 - at, 0.99 - at, 0.91 - at],
+    back: [0, 0.03],
+  }));
 
 const SKIN_TONES = ["#f6d5be", "#eab594", "#dba07f", "#c68a64", "#a86f4c", "#8a5536", "#6b3f27", "#4a2a1a"];
 const HAIR_COLORS = ["#130f0f", "#3b2416", "#6b4226", "#a0663a", "#8c2f1c", "#c9a066", "#e3cf9c", "#9a948a", "#e8e4dc"];
@@ -486,6 +529,15 @@ const FEMALE_SLIDERS: SliderDef[] = [
     id: "rearLower", label: "Lower fullness", tab: "body", group: "Rear",
     terms: glutes([0, 0, 0], { shift: [0, -0.004, 0.018], band: [0.01, -0.03, -0.05, -0.1] }),
   },
+  // How much the small of her back curves in. Partly a pose (see postureFor): her pelvis tips forwards as she
+  // stands and walks. And partly her shape: the skin over the small of her back draws in, between her shoulder
+  // blades and her rear, and only at the back, so her belly stays as it is. She has some of it at 0.
+  {
+    id: "arch", label: "Lower back arch", tab: "body", group: "Posture", roll: 0.5, rest: ARCH_REST,
+    terms: lumbar(-0.022),
+  },
+  // Her ribcage leaning back over her waist, chest lifted, or rounding forwards: only a pose (see postureFor).
+  { id: "upperArch", label: "Upper back arch", tab: "body", group: "Posture", roll: 0.4, terms: [] },
   { id: "head", label: "Head size", tab: "face", terms: terms(["Head"], [0.12, 0.12, 0.12]) },
   { id: "faceWidth", label: "Face width", tab: "face", terms: terms(["Head"], [0.12, 0, 0.04]) },
   { id: "faceLength", label: "Face length", tab: "face", terms: terms(["Head"], [0, 0.1, 0]) },
@@ -654,7 +706,7 @@ const FEMALE_COLORS: ColorDef[] = [
   {
     id: "skin", label: "Skin tone", tab: "skin", mode: "tone", palette: SKIN_TONES,
     parts: [
-      ["Body", "T_skin_f"], ["Body", "T_face_skin"], ["Body", "T_face_mid"], ["Body", "T_face_cool"],
+      ["Body", "T_skin_f"], ["Body", "T_navel"], ["Body", "T_face_skin"], ["Body", "T_face_mid"], ["Body", "T_face_cool"],
       ["Body", "T_face_lit"], ["Body", "T_face_white"], ["Body", "T_face_blush"], ["Body", "T_face_pink"],
     ],
   },
@@ -773,6 +825,8 @@ export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
     bustShapes: BUST_SHAPES,
     pubes: PUBIC_STYLES,
     shoes: FEMALE_SHOES,
+    tops: TOP_STYLES,
+    bottoms: BRIEF_STYLES,
   },
   Male: {
     sliders: MALE_SLIDERS,
@@ -802,8 +856,20 @@ export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
     bustShapes: [],
     pubes: [],
     shoes: [],
+    tops: [],
+    bottoms: [],
   },
 };
+
+/**
+ * The underwear a look has on: its top (a bra, or a one-piece worn instead of both), and its briefs, null under a
+ * one-piece. Null altogether for a body without the styles.
+ */
+export function underOf(body: BodyName, look: Pick<Look, "bra" | "briefs">): { top: UnderStyle; bottom: UnderStyle | null } | null {
+  if (!LOOK_OPTIONS[body].tops.length) return null;
+  const top = topStyle(look.bra);
+  return { top, bottom: top.kind === "whole" ? null : bottomStyle(look.briefs) };
+}
 
 /** Which colours a guest's outfit paints, by body. */
 export const OUTFIT_COLORS: Record<BodyName, { top: string; legs: string; hair: string }> = {
@@ -912,6 +978,28 @@ export function pubicMaterial(worn: Material, style: PubicStyle, size: number): 
     material.polygonOffsetFactor = 0;
     material.polygonOffsetUnits = -4;
     pubicMaterials.set(key, material);
+  }
+  return material;
+}
+
+const lingerieMaterials = new Map<string, MeshLambertMaterial>();
+
+/**
+ * Her underwear as she wears it: what's drawn of her top and her briefs (null for neither) in the colours their
+ * swatches give them, cut out of the patch over her skin. Drawn a little in front of it, like the pubic patch.
+ */
+export function lingerieMaterial(top: UnderStyle | null, bottom: UnderStyle | null, topColor: Color, bottomColor: Color): MeshLambertMaterial {
+  const rgb = (c: Color): Rgb => [c.r, c.g, c.b];
+  const map = lingerieTexture(top, bottom, rgb(topColor), rgb(bottomColor));
+  let material = lingerieMaterials.get(map.uuid);
+  if (!material) {
+    material = solidRetroMaterial(LINGERIE_MATERIAL, 0xffffff);
+    material.map = map;
+    material.alphaTest = 0.5;
+    material.polygonOffset = true;
+    material.polygonOffsetFactor = 0;
+    material.polygonOffsetUnits = -6;
+    lingerieMaterials.set(map.uuid, material);
   }
   return material;
 }
@@ -1132,6 +1220,8 @@ export function dressColors(
     if (slot.part === "Body" && slot.original.name === DISC_MATERIAL && band) slot.mesh.material = band;
     // ...and their pubic hair stays under them.
     if (slot.part === "Body" && slot.original.name === PUBIC_MATERIAL) slot.mesh.visible = false;
+    // They wear the band and braies painted on their bodies; the patch for other styles stays empty.
+    if (slot.part === "Body" && slot.original.name === LINGERIE_MATERIAL) slot.mesh.visible = false;
     if (slot.part === "Hair") slot.mesh.visible = hairMeshOf(slot.mesh, body) === "";
     // Their own shoes too: guests aren't lifted onto heels, which would sink into the floor.
     if (slot.part === "Shoes") slot.mesh.visible = shoeMeshOf(slot.mesh, body) === "";
@@ -1153,6 +1243,7 @@ interface ActiveTerm {
   span?: readonly [number, number];
   fade?: readonly [number, number];
   band?: readonly [number, number, number, number];
+  back?: readonly [number, number];
   pivot?: number;
   lobes?: readonly [number, number, number];
   /** How round the inner side of each breast fills, -1..1, from the inner fullness slider; only for `lobes` terms. */
@@ -1193,6 +1284,10 @@ export function reshape(active: readonly ActiveTerm[], d: Vector3, out: Vector3,
       weight = t * t * (3 - 2 * t);
     }
     if (term.band) weight *= bandWeight(term.band, d.y);
+    if (term.back) {
+      const t = Math.min(1, Math.max(0, (d.z - term.back[0]) / (term.back[1] - term.back[0])));
+      weight *= t * t * (3 - 2 * t);
+    }
     if (weight === 0) continue;
     // A term that reaches past the bone's weight moves the point as if the bone held more of it.
     const reach = term.reach !== undefined && skin > 0 ? skin ** (term.reach - 1) : 1;
@@ -1267,6 +1362,7 @@ export function activeTerms(
       span: term.span,
       fade: term.fade,
       band: term.band,
+      back: term.back,
       pivot: term.pivot,
       lobes: term.lobes,
       about: term.about,
@@ -1280,7 +1376,8 @@ export function activeTerms(
   };
   const defs = LOOK_OPTIONS[body].sliders;
   for (const def of [...defs.filter((d) => d.early), ...defs.filter((d) => !d.early)]) {
-    const value = clampSlider(sliders[def.id]);
+    const raw = clampSlider(sliders[def.id]);
+    const value = def.rest === undefined ? raw : raw >= 0 ? def.rest + (1 - def.rest) * raw : def.rest * (1 + raw);
     if (value === 0) continue;
     for (const term of def.terms) add(term, value);
   }
@@ -1472,6 +1569,12 @@ export class Dresser {
       // Too close to the skin to shadow it cleanly, like the coat.
       pubicSlot.mesh.castShadow = false;
     }
+    // Her underwear's patch, likewise.
+    const lingerieSlot = this.slots.find((slot) => slot.part === "Body" && slot.original.name === LINGERIE_MATERIAL);
+    if (lingerieSlot) {
+      bodyPoints.fill(1e6, lingerieSlot.bodyStart * 3, (lingerieSlot.bodyStart + lingerieSlot.bind.length / 3) * 3);
+      lingerieSlot.mesh.castShadow = false;
+    }
     for (const slot of this.slots) {
       if (FOLLOWING_PARTS.includes(slot.part) && bodyCount >= FOLLOW_POINTS) slot.follow = nearestBody(slot.bind, bodyPoints);
     }
@@ -1526,6 +1629,11 @@ export class Dresser {
     return armSpreadFor(this.look.sliders);
   }
 
+  /** How her back arches, beyond her walk style's own posture. */
+  posture(): Posture {
+    return postureFor(this.look.sliders);
+  }
+
   legSize(): LegSize {
     const active = activeTerms(this.body, this.look.sliders);
     const size = (label: string) => {
@@ -1566,7 +1674,9 @@ export class Dresser {
       const color = LOOK_OPTIONS[this.body].colors.find((c) => c.id === id);
       if (!color || !wearing.includes(id)) continue;
       const off = color.parts.every(([part, name]) => covers(this.stripped, part, name) || (this.underwear && part !== "Body"));
-      if (!off) most = Math.max(most, hold);
+      // Her bra holds as firmly as its style does: pasties not at all, a balconette as her band.
+      const style = id === "bra" ? underOf(this.body, this.look)?.top : undefined;
+      if (!off) most = Math.max(most, hold * (style?.hold ?? 1));
     }
     return most;
   }
@@ -1837,11 +1947,29 @@ export class Dresser {
    */
   private discMaterial(slot: MeshSlot): Material {
     const band = this.slots.find((s) => s.part === "Body" && s.original.name === BAND_MATERIAL);
-    const bandOff = this.undressed || covers(this.stripped, "Body", BAND_MATERIAL);
-    if (band && !bandOff) return band.worn;
+    // Under a bra that covers them they wear its colour too; pasties are drawn over them, so they do as well.
+    if (band && this.underwearOn().nipplesCovered) return band.worn;
     const flush = Math.round(this.arousal * 5) / 5;
     if (flush === 0) return slot.worn;
     return paint(slot.original, averageColor(slot.worn).clone().lerp(FLUSHED, 0.22 * flush));
+  }
+
+  /**
+   * Her underwear as it is now: whether her top and her briefs are on (a one-piece is on or off as one), which of
+   * them are drawn on the patch rather than painted on her body, and whether her nipples are covered.
+   */
+  private underwearOn(): { topOn: boolean; bottomOn: boolean; top: UnderStyle | null; bottom: UnderStyle | null; whole: boolean; nipplesCovered: boolean } {
+    const topOn = !this.undressed && !covers(this.stripped, "Body", BAND_MATERIAL);
+    const under = underOf(this.body, this.look);
+    if (!under) {
+      const bottomOn = !this.undressed && !covers(this.stripped, "Body", "T_smalls");
+      return { topOn, bottomOn, top: null, bottom: null, whole: false, nipplesCovered: topOn };
+    }
+    const whole = under.bottom === null;
+    const bottomOn = whole ? topOn : !this.undressed && !covers(this.stripped, "Body", "T_smalls");
+    const top = under.top.front ? under.top : null;
+    const bottom = under.bottom?.front ? under.bottom : null;
+    return { topOn, bottomOn, top, bottom, whole, nipplesCovered: topOn && (!top || coversNipples(top)) };
   }
 
   /**
@@ -1863,6 +1991,7 @@ export class Dresser {
     // Undressed or down to her smallclothes, her stockings are off too, feet and all.
     const stockingsOff = this.undressed || this.underwear || covers(this.stripped, "Cloth", HOSE_BANDS[0]);
     const shoes = shoeMeshFor(this.body, this.look);
+    const under = this.underwearOn();
     for (const slot of this.slots) {
       if (slot.part === "Cum") continue;
       // Only the shoes she has on; never undressed, as nothing is modelled under them.
@@ -1886,13 +2015,28 @@ export class Dresser {
       if (slot.part === "Body" && slot.original.name === PUBIC_MATERIAL) {
         // Only bare: under her smallclothes, or with none to show, it stays hidden.
         const style = pubicStyle(this.look.pubes);
-        const smallsOff = this.undressed || covers(this.stripped, "Body", "T_smalls");
-        slot.mesh.visible = smallsOff && style.shape !== null;
+        slot.mesh.visible = !under.bottomOn && style.shape !== null;
         if (slot.mesh.visible) slot.mesh.material = pubicMaterial(slot.worn, style, clampSlider(this.look.sliders.pubesSize));
         continue;
       }
+      if (slot.part === "Body" && slot.original.name === LINGERIE_MATERIAL) {
+        // Whatever styles she has on that aren't painted on her body, in their swatches' colours.
+        const top = under.topOn ? under.top : null;
+        const bottom = under.bottomOn ? under.bottom : null;
+        slot.mesh.visible = top !== null || bottom !== null;
+        const colorOf = (name: string) => {
+          const painted = this.slots.find((s) => s.part === "Body" && s.original.name === name);
+          return painted ? averageColor(painted.worn) : new Color(1, 1, 1);
+        };
+        if (slot.mesh.visible) slot.mesh.material = lingerieMaterial(top, bottom, colorOf(BAND_MATERIAL), colorOf("T_smalls"));
+        continue;
+      }
       if (slot.part === "Body") {
-        const bare = stripped || (this.undressed && covers(painted, slot.part, slot.original.name));
+        // Her band and braies give way to the styles drawn instead of them; a one-piece takes the braies' place too.
+        const drawnOver =
+          (slot.original.name === BAND_MATERIAL && under.top !== null) ||
+          (slot.original.name === "T_smalls" && (under.whole || under.bottom !== null));
+        const bare = stripped || drawnOver || (this.undressed && covers(painted, slot.part, slot.original.name));
         slot.mesh.material = bare && skin ? skin.worn : slot.worn;
         continue;
       }
@@ -1966,6 +2110,27 @@ export function armSpreadFor(sliders: Record<string, number>): number {
   const more = (id: string) => Math.max(0, clampSlider(sliders[id]));
   return ARM_SPREAD.reduce((sum, [id, amount]) => sum + more(id) * amount, 0);
 }
+/** How her Posture sliders set her stance, in radians, for her body's pose (Body.refreshRest in player.ts). */
+export interface Posture {
+  /**
+   * How far the Lower back arch slider moves her pelvis's forward tip from her walk style's own: -1 takes the
+   * arch away entirely at any style, +1 adds about as much again as the strut has.
+   */
+  arch: number;
+  /** How far her ribcage leans back over her waist (positive) or rounds forwards (negative): the Upper back arch. */
+  chest: number;
+}
+export const UPRIGHT: Posture = { arch: 0, chest: 0 };
+
+export function postureFor(sliders: Record<string, number>): Posture {
+  const chest = clampSlider(sliders.upperArch);
+  return { arch: clampSlider(sliders.arch) * ARCH_RANGE, chest: chest * (chest >= 0 ? CHEST_BACK : CHEST_ROUND) };
+}
+const ARCH_RANGE = 0.15;
+/** The Upper back arch at its ends: leaning back 10 degrees at 1, rounding forwards 7 at -1. */
+const CHEST_BACK = 0.18;
+const CHEST_ROUND = 0.12;
+
 const ARM_SPREAD: [string, number][] = [
   // The fullest bust comes 1.3 cm into the upper arms as they hang.
   ["bust", 0.11], ["hips", 0.06], ["build", 0.05], ["rear", 0.07], ["rearProjection", 0.05], ["rearWidth", 0.05], ["thighs", 0.03],
@@ -2009,6 +2174,12 @@ export function randomLook(body: BodyName, random: () => number = Math.random): 
     const style = pick(options.shoes);
     if (style !== options.shoes[0]) look.shoes = style.id;
   }
+  if (options.tops.length) {
+    const top = pick(options.tops);
+    if (top !== options.tops[0]) look.bra = top.id;
+    const bottom = pick(options.bottoms);
+    if (bottom !== options.bottoms[0]) look.briefs = bottom.id;
+  }
   return look;
 }
 
@@ -2045,6 +2216,8 @@ export function readLook(raw: unknown, body: BodyName): Look | null {
   if (options.bustShapes.slice(1).some((shape) => shape.id === data.bustShape)) look.bustShape = data.bustShape;
   if (options.pubes.slice(1).some((style) => style.id === data.pubes)) look.pubes = data.pubes;
   if (options.shoes.slice(1).some((style) => style.id === data.shoes)) look.shoes = data.shoes;
+  if (options.tops.slice(1).some((style) => style.id === data.bra)) look.bra = data.bra;
+  if (options.bottoms.slice(1).some((style) => style.id === data.briefs)) look.briefs = data.briefs;
   return look;
 }
 

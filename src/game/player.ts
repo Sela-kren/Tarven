@@ -2,6 +2,7 @@ import { Group, MathUtils, Object3D, Vector3 } from "three";
 import { moveVector, resolveCircle, type Rect } from "./collision";
 import type { Input } from "./input";
 import { Jiggle, type SpringSettings } from "./jiggle";
+import type { Posture } from "./appearance";
 import { BUILT_LEGS, Skirt, type LegSize } from "./skirt";
 
 /** How much the female's soft parts move, from 0 (still) up; 1 is the tuned amount. */
@@ -23,8 +24,14 @@ const SOFT_PARTS: Record<string, SpringSettings> = {
   ThighSoft_R: { frequency: 2.6, damping: 0.26, gain: 0.0018, axes: [0.35, 1, 0.35], limit: 0.012 },
   // Her hair: what hangs from her head, and what falls down her back. Slower and looser than flesh, and it swings
   // across and back more than it bobs; the long ends on her back swing furthest.
+  // The head's spring's limit is HAIR_SOFT_REACH in build_world.py, which keeps the locks by her face clear of it.
   HairSoft: { frequency: 1.6, damping: 0.18, gain: 0.004, axes: [1, 0.5, 1], limit: 0.025 },
-  HairTail: { frequency: 1.3, damping: 0.15, gain: 0.006, axes: [1, 0.4, 1], limit: 0.045 },
+  // Long hair lies on her back, so it swings back away from her (+z) but never forwards into her, and only a
+  // little to the sides, where her back curves round under it.
+  HairTail: {
+    frequency: 1.3, damping: 0.15, gain: 0.006, axes: [1, 0.4, 1], limit: 0.045,
+    range: [[-0.015, 0.015], [-0.02, 0.02], [0, 0.045]],
+  },
 };
 
 /**
@@ -142,6 +149,11 @@ interface Stance {
   sway: number;
   /** 1 rests the standing side's hand on its hip, elbow out. */
   handOnHip: number;
+  /**
+   * The small of the back curves in, in radians: the pelvis tips forwards, pushing the rear up and back,
+   * and her upright torso stands over it. Held while walking too; sitting takes it away.
+   */
+  arch: number;
 }
 
 interface Gait {
@@ -230,17 +242,17 @@ const STANCE_ANCHORS: Record<1 | 3 | 5, Stance> = {
   1: {
     hipShift: 0.012, hipRoll: 0.025, hipTwist: -0.02, shoulderRoll: 0.015, shoulderTwist: 0.01, headTilt: 0.015,
     standIn: 0.01, freeThigh: 0.1, freeKnee: 0.14, freeIn: 0.03, freeTurn: -0.05, freeArm: 0.02, standArm: 0.03,
-    elbow: 0.12, breath: 0.01, sway: 0.1, handOnHip: 0,
+    elbow: 0.12, breath: 0.01, sway: 0.1, handOnHip: 0, arch: 0.07,
   },
   3: {
     hipShift: 0.045, hipRoll: 0.095, hipTwist: -0.09, shoulderRoll: 0.06, shoulderTwist: 0.06, headTilt: 0.07,
     standIn: 0.035, freeThigh: 0.42, freeKnee: 0.524, freeIn: 0.13, freeTurn: -0.2, freeArm: 0.04, standArm: 0.14,
-    elbow: 0.22, breath: 0.012, sway: 0.15, handOnHip: 0,
+    elbow: 0.22, breath: 0.012, sway: 0.15, handOnHip: 0, arch: 0.11,
   },
   5: {
     hipShift: 0.075, hipRoll: 0.16, hipTwist: -0.15, shoulderRoll: 0.1, shoulderTwist: 0.1, headTilt: 0.12,
     standIn: 0.05, freeThigh: 0.5, freeKnee: 0.66, freeIn: 0.22, freeTurn: -0.32, freeArm: 0.08, standArm: 0.14,
-    elbow: 0.25, breath: 0.014, sway: 0.2, handOnHip: 1,
+    elbow: 0.25, breath: 0.014, sway: 0.2, handOnHip: 1, arch: 0.15,
   },
 };
 
@@ -270,12 +282,29 @@ const SWAY_PERIOD = 7;
 const RESTING_ELBOW_STAND = 0.08;
 const NO_STANCE: Stance = {
   hipShift: 0, hipRoll: 0, hipTwist: 0, shoulderRoll: 0, shoulderTwist: 0, headTilt: 0, standIn: 0, freeThigh: 0,
-  freeKnee: 0, freeIn: 0, freeTurn: 0, freeArm: 0, standArm: 0, elbow: 0, breath: 0, sway: 0, handOnHip: 0,
+  freeKnee: 0, freeIn: 0, freeTurn: 0, freeArm: 0, standArm: 0, elbow: 0, breath: 0, sway: 0, handOnHip: 0, arch: 0,
 };
 
 /** How far the shoe reaches in front of and behind the shin, for keeping a planted foot out of the floor. */
 const TOE_REACH = 0.18;
 const HEEL_REACH = 0.08;
+
+/**
+ * How far the chest leans back for each radian of arch, against the pelvis tipping forwards by one: a little
+ * over one, so her torso stands upright, a touch back, and the bend is in the small of her back. The curve
+ * itself is in her shape: the Back arch slider draws the small of her back in (appearance.ts), only at the back.
+ * Bones alone can't: sliding or bending the torso back moves her front with it, and pushes her belly out.
+ */
+const ARCH_CHEST = 1.15;
+
+/**
+ * How far back a torso leans to stand over its pelvis as the arch tips it, with her ribcage's own lean (the
+ * Upper back arch): scenes that copy a posed body and then set the torso's angle outright add this, so the
+ * copy keeps her posture.
+ */
+export function chestOverHips(torso: Object3D): number {
+  return -(torso.parent?.rotation.x ?? 0) * ARCH_CHEST + ((torso.userData.chestLean as number | undefined) ?? 0);
+}
 
 /** How much of the upper body's tilt and turn the neck takes back, keeping the gaze level. */
 const HEAD_STEADY = 0.85;
@@ -314,6 +343,8 @@ export class Body {
   private style: number | null;
   private readonly hips: Object3D;
   private hipsBaseY: number;
+  /** Where the hips sit front to back at rest, for the arch to move them back from. */
+  private hipsBaseZ: number;
   /** From the hip joint to the floor. */
   private legLength: number;
   private readonly torso: Object3D;
@@ -346,6 +377,9 @@ export class Body {
   private legSize: LegSize = BUILT_LEGS;
   /** How far the arms hang out from the sides, in radians, so a wider or fuller figure keeps its hands clear. */
   private armSpread = 0;
+  /** Added to the walk style's arch, from the look's Back arch slider; the arch never goes below none. */
+  /** Her Posture sliders' settings, on top of the walk style's own arch. */
+  private posture: Posture = { arch: 0, chest: 0 };
 
   constructor(model: Object3D, name: string) {
     this.name = name;
@@ -353,6 +387,7 @@ export class Body {
     this.root = requirePart(model, name);
     this.hips = part("Hips");
     this.hipsBaseY = this.hips.position.y;
+    this.hipsBaseZ = this.hips.position.z;
     this.torso = part("Torso");
     this.head = part("Head");
     this.style = name === "Female" ? FEMALE_WALK_STYLE : null;
@@ -386,10 +421,12 @@ export class Body {
    * Takes the bones' current places as the body's rest, after a new look reshaped it. Call with the bones
    * at rest, as `Dresser.apply` leaves them.
    */
-  refreshRest(legSize: LegSize = BUILT_LEGS, armSpread = 0): void {
+  refreshRest(legSize: LegSize = BUILT_LEGS, armSpread = 0, posture: Posture = { arch: 0, chest: 0 }): void {
     this.legSize = legSize;
     this.armSpread = armSpread;
+    this.posture = posture;
     this.hipsBaseY = this.hips.position.y;
+    this.hipsBaseZ = this.hips.position.z;
     this.legLength = this.hipsBaseY + this.thighL.position.y;
     for (const jiggle of this.jiggles) jiggle.rebase();
     this.skirt?.dispose();
@@ -463,8 +500,10 @@ export class Body {
     const lower = this.hipsBaseY + thigh.position.y - upper; // knee to sole; the sole rests on the floor
     const hip = thigh.position.x * Math.sin(hipRoll) + thigh.position.y * Math.cos(hipRoll);
     const tilt = Math.cos(thigh.rotation.z + hipRoll);
-    const pitch = thigh.rotation.x + shin.rotation.x;
-    const reach = (upper * Math.cos(thigh.rotation.x) + lower * Math.cos(pitch)) * tilt;
+    // The thighs hang from the pelvis, so its forward tip (the arch) counts against their swing.
+    const swing = thigh.rotation.x + this.hips.rotation.x;
+    const pitch = swing + shin.rotation.x;
+    const reach = (upper * Math.cos(swing) + lower * Math.cos(pitch)) * tilt;
     // There is no ankle, so the foot tips with the shin: the heel dips when it swings forward, the toe when back.
     const dip = pitch >= 0 ? HEEL_REACH * Math.sin(pitch) : TOE_REACH * Math.sin(-pitch);
     return this.hipsBaseY + hip - reach - dip;
@@ -534,22 +573,32 @@ export class Body {
     const still = (1 - swing) * (1 - sit);
     const shifting = still * (1 + s.sway * Math.sin((this.clock * 2 * Math.PI) / SWAY_PERIOD));
     const breath = Math.sin((this.clock * 2 * Math.PI) / BREATH_PERIOD) * s.breath * still;
+    // Negative X tips the pelvis's top forwards; the torso leans back past it and the thighs swing
+    // forwards by the same amount, so the legs still hang straight.
+    const arch = (this.gait.stance ? Math.max(0, s.arch + this.posture.arch) : 0) * (1 - sit);
+    // The ribcage leans back over the waist, or rounds forwards; the arms still hang straight down from it.
+    const chestLean = this.posture.chest * (1 - sit);
+    this.torso.userData.chestLean = chestLean;
 
     // The left leg stands while lift is negative, so its hip rises and the hips slide over to it.
     // The hips move a little ahead of the legs, so they lead each step.
     const lead = g("hipLead");
     const hipRoll = Math.cos(stride + lead) * g("hipRoll") * moving + s.hipRoll * shifting;
     this.hips.rotation.z = hipRoll;
+    this.hips.rotation.x = -arch;
+    // Tipping the pelvis carries the waist forwards; the hips move back by as much, so her upper body stays over
+    // her feet where it stood, and only her rear and the small of her back change.
+    this.hips.position.z = this.hipsBaseZ + Math.sin(arch) * this.torso.position.y;
     this.hips.rotation.y = -Math.sin(stride + lead) * g("hipTwist") * moving + s.hipTwist * still;
     this.hips.position.x = Math.cos(stride + lead) * g("hipShift") * moving + s.hipShift * shifting;
 
     this.torso.rotation.z = -hipRoll - lift * g("shoulderRoll") * moving - s.shoulderRoll * shifting;
     this.torso.rotation.y =
       -this.hips.rotation.y + phase * g("shoulderTwist") * moving + s.shoulderTwist * still;
-    this.torso.rotation.x = g("lean") * moving + breath;
+    this.torso.rotation.x = g("lean") * moving + breath + arch * ARCH_CHEST + chestLean;
     this.head.rotation.z = -(this.hips.rotation.z + this.torso.rotation.z) * HEAD_STEADY + s.headTilt * still;
     this.head.rotation.y = -(this.hips.rotation.y + this.torso.rotation.y) * HEAD_STEADY;
-    this.head.rotation.x = -this.torso.rotation.x * HEAD_STEADY;
+    this.head.rotation.x = -(this.hips.rotation.x + this.torso.rotation.x) * HEAD_STEADY;
     if (this.drunk > 0) {
       this.head.rotation.z += Math.sin(this.clock * 1.1) * DRUNK_LOLL * this.drunk;
       this.head.rotation.x += DRUNK_DROOP * this.drunk;
@@ -557,8 +606,8 @@ export class Body {
     }
 
     const thighSwing = g("thighSwing") * swing;
-    this.thighL.rotation.x = lerp(phase * thighSwing + s.freeThigh * still, SIT_THIGH, sit);
-    this.thighR.rotation.x = lerp(-phase * thighSwing, SIT_THIGH, sit);
+    this.thighL.rotation.x = lerp(phase * thighSwing + s.freeThigh * still, SIT_THIGH, sit) + arch;
+    this.thighR.rotation.x = lerp(-phase * thighSwing, SIT_THIGH, sit) + arch;
     this.thighL.rotation.y = s.freeTurn * still;
     // The legs stay upright under the rolling hips, lean back against the hip slide so the feet stay
     // where they are, then step in towards the centre line, most of all as each foot reaches forwards,
@@ -584,8 +633,8 @@ export class Body {
     const raised = (angle: number) => lerp(lerp(angle, CARRY_UPPER_ARM, carrying), SIT_UPPER_ARM, sit);
     const armSwing = g("armSwing") * swing;
     const armBias = g("armBias") * swing;
-    this.upperArmL.rotation.x = raised(-phase * armSwing + armBias + s.freeArm * still);
-    this.upperArmR.rotation.x = raised(phase * armSwing + armBias + s.standArm * still);
+    this.upperArmL.rotation.x = raised(-phase * armSwing + armBias + s.freeArm * still - chestLean);
+    this.upperArmR.rotation.x = raised(phase * armSwing + armBias + s.standArm * still - chestLean);
     // Loose arms hang straight down while the body above the hips tilts.
     const dangle = -(this.hips.rotation.z + this.torso.rotation.z) * g("armDangle") * moving;
     // Positive Z swings the left arm in and the right arm out.
@@ -652,8 +701,8 @@ export class Sibling {
   }
 
   /** Call after a new look reshapes this sibling's body. */
-  refreshBody(legSize?: LegSize, armSpread?: number): void {
-    this.body.refreshRest(legSize, armSpread);
+  refreshBody(legSize?: LegSize, armSpread?: number, posture?: Posture): void {
+    this.body.refreshRest(legSize, armSpread, posture);
   }
 
   constructor(model: Object3D, name: string, spawn: Vector3) {
