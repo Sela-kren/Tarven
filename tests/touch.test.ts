@@ -10,7 +10,8 @@ import {
   touchesFor,
   touchLands,
   touchOutcome,
-  FORCE_DESIRE_MARGIN,
+  GIVE_IN_MARGIN,
+  intensityBonus,
   type NerveFacts,
 } from "../src/game/touch";
 import { TOUCHES } from "../src/game/touchtalk";
@@ -96,18 +97,42 @@ describe("her answers", () => {
     expect(touchAnswers(kiss, { desire: 10, sloppy: false, guestSloppy: true })).toEqual(["slap", "pull"]);
   });
 
-  it("end with pulling away until her desire runs well past the touch", () => {
-    const facts = { sloppy: false, guestSloppy: false };
-    const justUnder = desireNeeded(kiss.level) + FORCE_DESIRE_MARGIN - 0.5;
-    expect(touchAnswers(kiss, { ...facts, desire: justUnder }).at(-1)).toBe("pull");
+  it("always end with slap and pull away, at every desire, so leaving is always there", () => {
+    for (const touch of TOUCHES) {
+      for (let desire = 0; desire <= 10; desire += 0.5) {
+        for (const sloppy of [false, true]) {
+          const answers = touchAnswers(touch, { desire, sloppy, guestSloppy: false });
+          expect(answers.slice(-2)).toEqual(["slap", "pull"]);
+        }
+      }
+    }
+    expect(touchLands("pull")).toBe(false);
+    expect(touchLands("slap")).toBe(false);
   });
 
-  it("can't pull away once her desire runs well past the touch, and it lands", () => {
+  it("add Give in beside the others once her desire runs well past the touch, never in place of them", () => {
     const facts = { sloppy: false, guestSloppy: false };
-    expect(touchAnswers(kiss, { ...facts, desire: desireNeeded(kiss.level) + FORCE_DESIRE_MARGIN })).toEqual(["force"]);
-    expect(touchLands("force")).toBe(true);
-    expect(touchLands("pull")).toBe(false);
-    expect(touchOutcome(kiss, "force").gold).toBeGreaterThan(0);
+    const justUnder = desireNeeded(kiss.level) + GIVE_IN_MARGIN - 0.5;
+    expect(touchAnswers(kiss, { ...facts, desire: justUnder })).not.toContain("givein");
+    expect(touchAnswers(kiss, { ...facts, desire: desireNeeded(kiss.level) + GIVE_IN_MARGIN })).toEqual(["allow", "lean", "givein", "slap", "pull"]);
+    // Too drunk on either side, and there's no yes of any kind.
+    expect(touchAnswers(kiss, { desire: 10, sloppy: true, guestSloppy: false })).toEqual(["slap", "pull"]);
+    expect(touchLands("givein")).toBe(true);
+  });
+
+  it("pays more for giving in than for letting it, and less than for leaning in", () => {
+    const allow = touchOutcome(kiss, "allow");
+    const givein = touchOutcome(kiss, "givein");
+    const lean = touchOutcome(kiss, "lean");
+    expect(givein.gold).toBeGreaterThan(allow.gold);
+    expect(givein.gold).toBeLessThan(lean.gold);
+    expect(givein.respect).toBeGreaterThanOrEqual(lean.respect);
+  });
+
+  it("only adds an intensity bonus for bold touches", () => {
+    expect(intensityBonus(3)).toEqual({ gold: 0, meter: 0 });
+    expect(intensityBonus(6).gold).toBeGreaterThan(0);
+    expect(intensityBonus(9).gold).toBeGreaterThan(intensityBonus(6).gold);
   });
 
   it("pay and cost more the bolder the touch and the further she goes", () => {
@@ -178,7 +203,7 @@ describe("in the tavern", () => {
   });
 
   /** The boldness of the touch the guest reaches with, which is the same whatever her desire. */
-  const reachLevel = (): number => served("Female").touchChatPublic!.touch.level;
+  const reachLevel = (): number => (served("Female") as unknown as { touchChat: { touch: { level: number } } }).touchChat.touch.level;
 
   it("pays her, makes her bolder and plays out on screen when she lets it happen", () => {
     // Ready for it, but not so far past it that she can't pull away.
@@ -197,17 +222,33 @@ describe("in the tavern", () => {
     expect(t.inConversation).toBe(false);
   });
 
-  it("lands the touch, and counts it as let happen, when she wants it too much to pull away", () => {
-    expect(desireNeeded(reachLevel()) + FORCE_DESIRE_MARGIN).toBeLessThanOrEqual(10);
+  it("still lets her pull away when she wants it badly, and offers Give in as well", () => {
+    expect(desireNeeded(reachLevel()) + GIVE_IN_MARGIN).toBeLessThanOrEqual(10);
+    const t = served("Female", 10);
+    const labels = t.talkChoices.map((c) => c.label.split(" · ")[0]);
+    expect(labels.slice(-2)).toEqual(["Slap them", "Pull away"]);
+    expect(labels.some((l) => l.startsWith("Give in"))).toBe(true);
+    // No bar while she's still choosing.
+    expect(t.landedTouch).toBeNull();
+    const pulled = t.records.pulled;
+    t.chooseTalk(labels.indexOf("Pull away"));
+    expect(t.records.pulled).toBe(pulled + 1);
+    expect(t.takeTouchMoment()?.answer).toBe("pull");
+    expect(Object.values(t.touchMemory.lets).reduce((a, n) => a + (n ?? 0), 0)).toBe(0);
+    // A no never shows the bar either.
+    expect(t.landedTouch).toBeNull();
+  });
+
+  it("lands the touch, and shows the intensity bar after, when she chooses to give in", () => {
     const t = served("Female", 10);
     const gold = t.gold;
-    const pulled = t.records.pulled;
-    expect(t.talkChoices.map((c) => c.label)).toHaveLength(1);
-    t.chooseTalk(0);
+    const giveIn = t.talkChoices.findIndex((c) => c.label.startsWith("Give in"));
+    expect(giveIn).toBeGreaterThanOrEqual(0);
+    t.chooseTalk(giveIn);
     expect(t.gold).toBeGreaterThan(gold);
-    expect(t.records.pulled).toBe(pulled);
     expect(Object.values(t.touchMemory.lets).reduce((a, n) => a + (n ?? 0), 0)).toBe(1);
-    expect(t.takeTouchMoment()?.answer).toBe("force");
+    expect(t.takeTouchMoment()?.answer).toBe("givein");
+    expect(t.landedTouch?.answer).toBe("givein");
     expect(t.talkChoices.map((c) => c.label)).toEqual(["Get back to work"]);
   });
 

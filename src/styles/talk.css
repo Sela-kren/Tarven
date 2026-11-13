@@ -182,5 +182,10 @@
 #touch-force .force-value{min-width:28px;text-align:right;font-weight:700;color:var(--text-bright)}
 #touch-force .house-mode{font-size:11px;color:#ff9ec8;margin-left:6px;font-weight:700}
 #talk.open #touch-force.visible{display:flex}
+/* An impulsive guest who didn't wait to ask: the bar rushes up, and the label pulses. */
+#touch-force.fast .force-fill{animation:force-rush .3s ease-out}
+#touch-force.fast .force-label{animation:force-pulse .5s ease-in-out 2}
+@keyframes force-rush{from{width:0}}
+@keyframes force-pulse{50%{color:#ff9ec8}}
 #stats .log .status{color:#ff9ec8;font-weight:600}
 #stats .log .talk.lewd{color:#ffb3d1;font-style:italic}

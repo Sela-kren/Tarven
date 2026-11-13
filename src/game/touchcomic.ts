@@ -542,7 +542,7 @@ export class TouchComic {
     switch (show.answer) {
       case "allow":
       case "lean":
-      case "force": {
+      case "givein": {
         const kiss = show.region === "lips" || show.region === "neck" || show.region === "face";
         const words: Record<Gesture, string> = {
           rest: "...",
@@ -559,7 +559,7 @@ export class TouchComic {
         // A kiss is a kiss, whatever the guest's hand is doing meanwhile.
         const word = show.region === "lips" && show.id !== "feed" ? "mwah" : words[this.shot.gesture];
         letter(word, "hit", after, after + 0.9);
-        letter(show.answer === "lean" ? "mmh~" : show.answer === "force" ? "nn—!" : "eep!", "voice", after + 0.35, T.popOut);
+        letter(show.answer === "lean" ? "mmh~" : show.answer === "givein" ? "ah~" : "eep!", "voice", after + 0.35, T.popOut);
         if (show.answer === "lean") letter("♥", "heart", after + 0.6, T.popOut);
         break;
       }
@@ -591,8 +591,8 @@ export class TouchComic {
     let elbow = 0.25;
     const landed = span(t, T.contact, T.contact + 0.12);
     const fade = 1 - ease(span(t, T.release, T.popOut));
-    if (answer === "allow" || answer === "force") {
-      // A jolt as it lands, then still, head ducked shyly. Forced or let, it lands the same.
+    if (answer === "allow" || answer === "givein") {
+      // A jolt as it lands, then still, head ducked shyly. Let or given in to, it lands the same.
       const jolt = Math.sin(Math.PI * span(t, T.contact, T.contact + 0.35));
       torsoX -= jolt * 0.14;
       headX += ease(landed) * 0.12 * fade;
@@ -785,13 +785,13 @@ export class TouchComic {
   }
 
   /**
-   * How pink her cheeks are: none for a slap, a little for a pull, more for letting it, flushed when she can't
-   * hold back, most for leaning in.
+   * How pink her cheeks are: none for a slap, a little for a pull, more for letting it, flushed when she gives in,
+   * most for leaning in.
    */
   private blush(): number {
     if (!this.show || this.show.words) return 0;
     const grow = ease(span(this.time, T.contact, T.contact + 0.6));
-    const amount = { allow: 0.55, lean: 0.85, force: 0.7, pull: 0.25, slap: 0 }[this.show.answer];
+    const amount = { allow: 0.55, lean: 0.85, givein: 0.7, pull: 0.25, slap: 0 }[this.show.answer];
     return grow * amount;
   }
 

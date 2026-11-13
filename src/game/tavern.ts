@@ -33,6 +33,7 @@ import {
   reachChance,
   readTouchMemory,
   thoughtTier,
+  intensityBonus,
   touchAnswers,
   touchLands,
   touchOutcome,
@@ -42,7 +43,8 @@ import {
   type TouchRegion,
 } from "./touch";
 import { GUEST_TOO_DRUNK, PULLS, SLAPS, TOO_DRUNK_TO_ALLOW, WAVERED, WORN_THIN } from "./touchtalk";
-import { FORCE_TEXTS } from "./touchtalk-force-addiotions";
+import { GIVE_IN_TEXTS, IMPULSE_LINES } from "./touchtalk-givein";
+import { autoTouchFits, defaultTouchSettings, impulsive, type TouchSettings } from "./touchsettings";
 import { Fight, type FighterStats, type FightMove, type FightOutcome } from "./fight";
 import { ROLE_PLAYS, type RolePlay } from "./duellines";
 import { coatStages, loadOf, type CoatSection, type CumSpot } from "./cum";
@@ -807,10 +809,16 @@ interface TouchChat {
   lines: TalkLine[];
   answers: TouchAnswer[];
   answered: boolean;
+  /** What she answered, once she has: the intensity bar shows only after a yes. */
+  answer: TouchAnswer | null;
   /** How tempted she was when the hand came in: 0 not ready, 1 torn, 2 wanting it. Saying no costs willpower past 0. */
   tier: number;
   /** What was just said, after their lines. */
   reply: TalkLine[];
+  /** An impulsive guest, and the player hasn't said yet whether they may touch without asking: she's asked here. */
+  offerAuto: boolean;
+  /** It landed without the question, because the player said impulsive guests may: the Force bar fills fast. */
+  impulse: boolean;
 }
 
 /** A touch that's just been answered, for the game to play out on screen. */
@@ -924,9 +932,14 @@ export class Tavern {
   private tipChat: TipChat | null = null;
   /** A guest reaching for you, waiting on your answer, or null. */
   private touchChat: TouchChat | null = null;
-  /** Exposed for the force UI. */
-  get touchChatPublic(): TouchChat | null {
-    return this.touchChat;
+  /**
+   * The touch she has just said yes to, for the intensity (Force) bar: its boldness and her answer. Null before she
+   * answers, and after a slap or a pull, so the bar never shows while she's still choosing.
+   */
+  get landedTouch(): { level: number; answer: TouchAnswer; impulse: boolean } | null {
+    const chat = this.touchChat;
+    if (!chat?.answered || !chat.answer || !touchLands(chat.answer)) return null;
+    return { level: chat.touch.level, answer: chat.answer, impulse: chat.impulse };
   }
   /** How far guests' touches have brought you, which lasts from night to night. */
   touchMemory: TouchMemory = newTouchMemory();
@@ -946,6 +959,11 @@ export class Tavern {
   private willSpent = 0;
   /** How far she's sold out, from 0 up. Lasts. */
   corruption = 0;
+  /**
+   * The player's say over impulsive guests touching without asking. Not part of a save: the game loads it from the
+   * browser and keeps it there, like the sound settings.
+   */
+  touchSettings: TouchSettings = defaultTouchSettings();
   /** Play-mode cache: tavern now, brothel (and more) later. */
   houseMode: { current: "tavern" | "brothel"; unlocked: Set<string>; brothel: number } = {
     current: "tavern",
@@ -2163,15 +2181,30 @@ export class Tavern {
     const tier = sloppy || guestSloppy ? 0 : tempted;
     const lines: TalkLine[] = [{ ...narrate(fill(touch.reach)), guestId: guest.id }, you(thought)];
     if (tier > 0 && this.willpower < refuseCost(tier, touch.level)) lines.push(narrate(WORN_THIN));
-    this.touchChat = {
+    const answers = touchAnswers(touch, { desire, sloppy, guestSloppy, leanMargin });
+    // An impulsive guest, on a touch she could say yes to anyway: covered by the player's setting, or asked about.
+    const s = this.touchSettings;
+    const covered = s.autoTouch && impulsive(feltMood(guest), guestNerve) && autoTouchFits(s, touch, answers);
+    const chat: TouchChat = {
       guestId: guest.id,
       touch,
       lines,
-      answers: touchAnswers(touch, { desire, sloppy, guestSloppy, leanMargin }),
+      answers,
       answered: false,
+      answer: null,
       tier,
       reply: [],
+      offerAuto: covered && !s.agreed,
+      impulse: false,
     };
+    this.touchChat = chat;
+    // Already agreed to, and only some of the time: it lands without the question, as a yes she gave in advance.
+    if (covered && s.agreed && this.random() < s.chance) {
+      chat.lines = [{ ...narrate(fill(touch.reach)), guestId: guest.id }];
+      chat.impulse = true;
+      this.answerTouch(chat, "allow");
+      chat.reply.unshift(narrate(IMPULSE_LINES[Math.floor(this.random() * IMPULSE_LINES.length) % IMPULSE_LINES.length]));
+    }
   }
 
   /** You answer a guest who reached for you. */
@@ -2181,9 +2214,10 @@ export class Tavern {
     const piece = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder)[this.stripped]?.label ?? null;
     const fill = (text: string) => fillPiece(text, piece);
     chat.answered = true;
+    chat.answer = answer;
     const guest = this.guests.find((g) => g.id === chat.guestId);
     const e = this.effects;
-    // A forced touch lands like one she lets happen: she wanted it too much to stop it.
+    // Letting it, leaning in or giving in: all three are her yes.
     const took = touchLands(answer);
     const r = this.records;
     let gold = out.gold;
@@ -2211,6 +2245,10 @@ export class Tavern {
       const own = TOUCH_DESIRE * (answer === "lean" ? LEAN_DESIRE : 1) * (1 + practised.sens);
       const meter = METER_OF[touch.region];
       for (const m of METERS) this.raise(m, m === meter ? own : own / 3);
+      // The intensity bar: a bold touch she said yes to tips a little more and warms her a little more.
+      const intensity = intensityBonus(touch.level);
+      gold += intensity.gold;
+      this.raise(meter, own * intensity.meter);
       this.raiseAll(e.spill + (answer === "lean" ? e.leanMeters : 0));
       this.raise("pussy", e.spillPussy);
       if (ROUGH_TOUCHES.has(touch.id)) {
@@ -2254,10 +2292,16 @@ export class Tavern {
       const before = this.touchMemory.lets[touch.region] ?? 0;
       this.touchMemory.lets[touch.region] = before + 1;
       const tip = gold > 0 ? ` (+${gold} gold)` : "";
-      let line = fill(answer === "lean" ? touch.lean : answer === "force" ? (FORCE_TEXTS[touch.id]?.force ?? touch.allow) : touch.allow);
-      line = mindStage(this.corruption, this.lewdness) >= 2
-        ? bodyLine(touch.region, mindStage(this.corruption, this.lewdness), false)
-        : flavorLine(line, this.corruption, this.lewdness, touch.region, false);
+      // Giving in has several lines per touch: one of them, picked at random.
+      const givenInLines = answer === "givein" ? GIVE_IN_TEXTS[touch.id] : undefined;
+      const givenIn = givenInLines?.length ? pick(givenInLines) : undefined;
+      let line = fill(answer === "lean" ? touch.lean : givenIn ?? touch.allow);
+      // Her giving in is its own beat, so its line stays; otherwise a far-gone mind speaks in the body's words.
+      if (!givenIn) {
+        line = mindStage(this.corruption, this.lewdness) >= 2
+          ? bodyLine(touch.region, mindStage(this.corruption, this.lewdness), false)
+          : flavorLine(line, this.corruption, this.lewdness, touch.region, false);
+      }
       chat.reply = [narrate(line + tip)];
       const after = afterLine(touch.region, before);
       if (after) chat.reply.push(you(after.text));
@@ -2294,11 +2338,37 @@ export class Tavern {
       if ((answer !== "slap" && answer !== "pull") || cost === 0) return "";
       return this.willpower >= cost ? ` · ${cost} will` : " (no willpower left: it'll show)";
     };
-    return chat.answers.map((answer) => ({
+    const options: (TalkChoice & { run: () => void })[] = chat.answers.map((answer) => ({
       label: answerLabel(chat.touch, answer) + willNote(answer),
       disabled: false,
       run: () => this.answerTouch(chat, answer),
     }));
+    // The first impulsive guest: she's asked once whether guests like this may touch without asking from now on.
+    // Every usual answer stays, Slap and Pull away included, and "Always ask me" keeps things as they are.
+    if (chat.offerAuto) {
+      const s = this.touchSettings;
+      const chance = Math.round(s.chance * 100);
+      options.unshift(
+        {
+          label: `${answerLabel(chat.touch, "allow")}, and let eager guests skip asking (${chance}% of the time)`,
+          disabled: false,
+          run: () => {
+            s.agreed = true;
+            this.answerTouch(chat, "allow");
+          },
+        },
+        {
+          label: "Always ask me first",
+          disabled: false,
+          run: () => {
+            s.autoTouch = false;
+            chat.offerAuto = false;
+            chat.reply = [narrate("Every guest will wait for your answer. (You can change this in Settings.)")];
+          },
+        },
+      );
+    }
+    return options;
   }
 
   /** The options with a tipping guest: drink what they bought you, answer them, and get back to work. */

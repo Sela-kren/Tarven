@@ -3,7 +3,7 @@
 > The story design document. It replaces the story parts of GAME_CONCEPT.md (sections 1, 8.2, 9 and 11) once it is approved.
 > **Draft 2.11, 13 Nov 2026.** See the changelog at the bottom.
 
-**House rules stay in force.** Every character is an adult (18+), and the game says so. Every intimate beat is her choice, and pulling away works until her own desire runs well past the touch (desire ≥ boldness − 1 + 3). Then it lands as **force**: she wants it too much to stop it. Force never happens when she or the guest is sloppy drunk. Sexual scenes stay as non-graphic 18+ cards.
+**House rules stay in force.** Every character is an adult (18+), and the game says so. Every intimate beat is her choice: the player is asked first, Slap and Pull away are always offered and always work, and being too drunk blocks every yes. No text shows a touch landing after a refusal. The Force bar only shows how bold a touch was after she said yes (GAME_PATH.MD, consent rule). Sexual scenes stay as non-graphic 18+ cards.
 
 > **The main goal is popularity.** She starts with one cold tavern and a debt, and aims to make it **the most popular house on the pass**. She beats the rival taverns, buys them up, and decides whether to work with the bosses she beat, the Baron included. The red book is the story underneath. It explains why the Baron wants her tavern, and it is the leverage the top house gets to use.
 
@@ -745,7 +745,7 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 2. Is Father alive in the cells, or is it only his pages that are?
 3. Should the player see the corruption number, or only the tier word?
 4. Three rivals, or two to keep the scope down?
-5. ~~Force vs. "pulling away always works"?~~ **Decided: keep force.** It lands like a touch she lets happen (pay, desire, records), with its own lines from `touchtalk-force-addiotions.ts` where written (waist, smack, tugTie, lap, thigh, cheekKiss) and the plain "let it happen" line otherwise. `resistFail` texts are written but not used yet.
+5. ~~Force vs. "pulling away always works"?~~ **Decided: pulling away always works** (GAME_PATH.MD, consent rule). Force became **Give in**: an extra yes, offered beside the other answers once her desire runs well past the touch, never replacing Slap or Pull away. Its lines are in `touchtalk-givein.ts`. The Force bar is feedback only, after a yes.
 6. The lantern gate is mind stage 2, but the letter that reveals the lantern unlocks at mind stage 3 (section 10). Which one moves?
 7. Does she run owned houses herself (walk to another map), or only through managers on a menu?
 8. Can she partner with the Baron and still get The Village Rises, if she uses the partnership to protect the village?

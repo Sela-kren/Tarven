@@ -93,6 +93,7 @@ import { saveBadges } from "./saveicons";
 import { SkyDial } from "./skydial";
 import { TouchComic } from "./touchcomic";
 import { touchLands } from "./touch";
+import { readTouchSettings, writeTouchSettings } from "./touchsettings";
 import { arousalOf, easeArousal } from "./nipples";
 import { easeOpening } from "./vulva";
 import { METER_MAX } from "./passives";
@@ -278,7 +279,7 @@ const TOUCH_ANSWER_TEXT: Record<TouchMoment["answer"], string> = {
   lean: "She leans into it, wanting more.",
   slap: "She slaps their hand away.",
   pull: "She pulls away from them.",
-  force: "She means to pull away, but she wants it too much to stop them.",
+  givein: "She could pull away, and she chooses not to: she gives in to it.",
 };
 /** How far past the room's walls the follow camera has to reach for the room to fill the screen. */
 const CAMERA_INSET_X = 6.5;
@@ -717,6 +718,7 @@ export class Game {
 
     const dustSpots = findDustSpots(world.colliders, ROOM);
     this.tavern = new Tavern(world.seats.length, world.seats.map((seat) => seat.table), dustSpots.length);
+    this.tavern.touchSettings = readTouchSettings();
     this.messLayer = new MessLayer(world.seats, dustSpots);
     scene.add(this.messLayer.group);
     this.checkpoint = this.tavern.snapshot();
@@ -1924,6 +1926,8 @@ export class Game {
     this.clearTarget();
     this.screen = "talk";
     this.dialogue.start(lines, this.tavern.talkChoices, (index) => this.pickTalk(index));
+    // An impulsive guest's touch has already landed as the talk opens: play it out now.
+    this.showTouch();
     for (const line of lines) {
       this.log.addTalk(line);
       this.narrator.note(line.speaker ? `${line.speaker} says: ${line.text}` : line.text);
@@ -1934,12 +1938,14 @@ export class Game {
   private updateForceUI(): void {
     const el = document.getElementById("touch-force");
     if (!el) return;
-    const chat = this.tavern.touchChatPublic;
-    const level = chat?.touch.level ?? 0;
+    // Only once she has said yes: while she's still choosing, there's nothing to show.
+    const level = this.tavern.landedTouch?.level ?? 0;
     if (level > 0) {
       el.classList.add("visible");
       el.classList.toggle("high", level >= 6);
       el.classList.toggle("extreme", level >= 9);
+      // An impulsive guest who didn't wait to ask: the bar fills fast.
+      el.classList.toggle("fast", this.tavern.landedTouch?.impulse ?? false);
       const fill = el.querySelector<HTMLElement>(".force-fill");
       const val = el.querySelector(".force-value");
       const modeEl = el.querySelector(".house-mode");
@@ -1950,7 +1956,7 @@ export class Game {
       if (modeEl) modeEl.textContent = `${mode === "brothel" ? "[Brothel] " : ""}${mindStageName(stage)}`;
       el.setAttribute("aria-hidden", "false");
     } else {
-      el.classList.remove("visible", "high", "extreme");
+      el.classList.remove("visible", "high", "extreme", "fast");
       el.setAttribute("aria-hidden", "true");
     }
   }
@@ -2050,13 +2056,15 @@ export class Game {
       this.narrator.note(`The innkeeper chooses: ${picked.label}`);
     }
     tavern.chooseTalk(index);
+    // The first impulsive guest's offer can change the touch settings: remember the answer.
+    writeTouchSettings(tavern.touchSettings);
     this.syncStripped();
     this.showTouch();
     this.pendingAdult ??= tavern.takeAdultScene();
     if (!tavern.inConversation) {
       this.dialogue.close();
       this.screen = "play";
-      document.getElementById("touch-force")?.classList.remove("visible", "high", "extreme");
+      document.getElementById("touch-force")?.classList.remove("visible", "high", "extreme", "fast");
       const scene = this.pendingAdult;
       this.pendingAdult = null;
       if (scene) {

@@ -10,17 +10,18 @@ import { CONFIDENT, FIRSTS, TOUCHES, type TouchDef, type TouchRegion } from "./t
  * that desire comes in on a scale of 0 to 10. Slapping the hand away and slipping out of reach are always there,
  * and only they are, when either of them has had far too much.
  *
- * Force path added: when desire is high enough relative to the touch, resistance can fail
- * and the touch proceeds without a clean refusal.
+ * Once her desire runs well past what a touch needs, "Give in" is offered as well: the player can choose to stop
+ * holding back. It is only ever an extra button. Nothing here takes an answer away from her, and Pull away always
+ * works (GAME_CONCEPT.md 7.1, GAME_PATH.MD). Wanting it shows instead in what saying no costs her (willpower.ts).
  */
 
 export type { TouchDef, TouchRegion } from "./touchtalk";
 
-export type TouchAnswer = "allow" | "lean" | "slap" | "pull" | "force";
+export type TouchAnswer = "allow" | "lean" | "givein" | "slap" | "pull";
 
-/** Whether the touch lands: she lets it, leans in, or wants it too much to stop it. A slap or a pull stops it. */
+/** Whether the touch lands: she lets it, leans in, or gives in. A slap or a pull always stops it. */
 export function touchLands(answer: TouchAnswer): boolean {
-  return answer === "allow" || answer === "lean" || answer === "force";
+  return answer === "allow" || answer === "lean" || answer === "givein";
 }
 
 export const MAX_LEVEL = 10;
@@ -49,8 +50,8 @@ const SEEN_WEIGHT = 0.2;
 /** How far past what a touch needs her desire has to be before she can lean into it. */
 export const LEAN_MARGIN = 2;
 
-/** Desire threshold (0-10) past which resistance can fail for this touch. Tune as needed. */
-export const FORCE_DESIRE_MARGIN = 3;
+/** How far past what a touch needs her desire has to be before "Give in" is offered too. */
+export const GIVE_IN_MARGIN = 3;
 
 /** How many times she has to have let something like it before she stops being shocked. */
 const CONFIDENT_AFTER = 3;
@@ -157,37 +158,33 @@ export interface AnswerFacts {
   sloppy: boolean;
   /** So has the guest. */
   guestSloppy: boolean;
-  /** Optional: guest's current nerve (0-10) for force calculations. */
-  guestNerve?: number;
-  /** Optional: her current respect (-10 to 10). */
-  respect?: number;
 }
 
 /**
- * What she can answer, in the order shown.
- * When desire is high enough relative to the touch level, resistance can fail
- * and only "force" is offered (or the touch auto-resolves).
+ * What she can answer, in the order shown. Slap and Pull away are always there, at every desire. The yeses come
+ * only as her desire allows, and not at all when either of them has had far too much. "Give in" joins them once
+ * her desire runs well past the touch; it never replaces anything.
  */
 export function touchAnswers(touch: TouchDef, f: AnswerFacts): TouchAnswer[] {
   const answers: TouchAnswer[] = [];
-
-  const need = desireNeeded(touch.level);
-  const forceReady = f.desire >= need + FORCE_DESIRE_MARGIN;
-
-  // Force path: high desire relative to the touch → resistance fails
-  if (forceReady && !f.sloppy && !f.guestSloppy) {
-    answers.push("force");
-    return answers;
-  }
-
-  // Original consent path
   if (!f.sloppy && !f.guestSloppy) {
     const tier = thoughtTier(touch, f.desire, f.leanMargin);
     if (tier >= 1) answers.push("allow");
     if (tier >= 2) answers.push("lean");
+    if (f.desire >= desireNeeded(touch.level) + GIVE_IN_MARGIN) answers.push("givein");
   }
   answers.push("slap", "pull");
   return answers;
+}
+
+/**
+ * What the intensity (Force) bar adds once a touch she said yes to has landed: a bolder touch tips a little more
+ * and warms her a little more. Never shown, and never anything, before she has answered.
+ */
+export function intensityBonus(level: number): { gold: number; meter: number } {
+  if (level >= 9) return { gold: 2, meter: 0.5 };
+  if (level >= 6) return { gold: 1, meter: 0.25 };
+  return { gold: 0, meter: 0 };
 }
 
 /** What an answer does: to her reputation, her purse, her own feelings, and the guest. */
@@ -219,11 +216,12 @@ export function touchOutcome(touch: TouchDef, answer: TouchAnswer): TouchOutcome
         flirt: 1,
         mood: "lust",
       };
-    case "force":
+    case "givein":
+      // Between letting it and leaning in: she stopped holding back, and the room saw her choose to.
       return {
-        gold: Math.max(1, Math.floor(level * 0.8)),
-        respect: -Math.floor(level / 2) - 1,
-        fame: level >= 3 ? 2 : 1,
+        gold: level + 1,
+        respect: -Math.floor(level / 3),
+        fame: level >= 4 ? 1 : 0,
         flirt: 1,
         mood: "lust",
       };
@@ -241,8 +239,8 @@ export function answerLabel(touch: TouchDef, answer: TouchAnswer): string {
       return touch.strip ? "Let them take it" : "Let it happen";
     case "lean":
       return touch.strip ? "Help them with it" : "Lean into it";
-    case "force":
-      return touch.strip ? "You can't stop them" : "You can't pull away";
+    case "givein":
+      return touch.strip ? "Give in and let it go" : "Give in";
     case "slap":
       return "Slap them";
     case "pull":
