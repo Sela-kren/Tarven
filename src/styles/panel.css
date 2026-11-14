@@ -715,6 +715,60 @@
   color: #9fd08a;
 }
 
+/* ---------- Morning report: the log on one board, where she stands on another ---------- */
+
+#panel .dawn-spread {
+  display: grid;
+  grid-template-columns: minmax(0, 580px) minmax(0, 440px);
+  gap: 24px;
+  align-items: start;
+  width: min(1044px, 100%);
+}
+
+#panel .dawn-spread .box {
+  width: 100%;
+}
+
+/* A long night's log scrolls inside its board, so the button stays in reach. */
+#panel .dawn-log .story {
+  max-height: 58vh;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+#panel .dawn-side h1 {
+  font-size: 34px;
+  margin-bottom: 6px;
+}
+
+#panel .dawn-side .dawn-sub {
+  margin: 0 0 4px;
+  font-size: 14px;
+  color: #e8d8b0;
+  text-align: center;
+  letter-spacing: 1px;
+}
+
+#panel .dawn-side .day-status {
+  grid-template-columns: 1fr;
+}
+
+#panel .dawn-side .new-passives {
+  max-height: 46vh;
+}
+
+@media (max-width: 900px) {
+  #panel .dawn-spread {
+    grid-template-columns: 1fr;
+    width: min(600px, 100%);
+  }
+
+  #panel .dawn-log .story,
+  #panel .dawn-side .new-passives {
+    max-height: none;
+  }
+}
+
 /* ---------- Brawls ---------- */
 
 #panel.fight-open .box {

@@ -1616,7 +1616,7 @@ export class Game {
     const box = document.createElement("div");
     box.className = "box";
     this.panelEl.classList.toggle("title-screen", style === "title");
-    this.panelEl.classList.remove("journal-open", "adult-open", "fight-open", "duel-open", "duel-test-open");
+    this.panelEl.classList.remove("journal-open", "adult-open", "fight-open", "duel-open", "duel-test-open", "dawn-open");
     const heading = document.createElement("h1");
     if (style === "title") {
       // "Last Call at" small over the sign, "Tarven" large across it.
@@ -1679,7 +1679,7 @@ export class Game {
   }
 
   closePanel(): void {
-    this.panelEl.classList.remove("open", "journal-open", "adult-open", "fight-open", "duel-open", "duel-test-open");
+    this.panelEl.classList.remove("open", "journal-open", "adult-open", "fight-open", "duel-open", "duel-test-open", "dawn-open");
     this.panelEl.replaceChildren();
     this.panelButtons = [];
     this.panelBack = null;
@@ -2555,6 +2555,31 @@ export class Game {
       }
       this.panelEl.querySelector(".box")?.insertBefore(list, this.panelEl.querySelector(".box .menu"));
     }
+    this.splitDawn(tavern.nightIndex + 1);
+  }
+
+  /**
+   * Lays the morning report out as two boards side by side: the night's log on the left (with the button),
+   * and where she stands now (status and new passives) on the right.
+   */
+  private splitDawn(night: number): void {
+    const box = this.panelEl.querySelector<HTMLElement>(".box");
+    if (!box) return;
+    box.classList.add("dawn-log");
+    const side = document.createElement("div");
+    side.className = "box dawn-side";
+    const heading = document.createElement("h1");
+    heading.textContent = "Where you stand";
+    const sub = document.createElement("p");
+    sub.className = "dawn-sub";
+    sub.textContent = `After night ${night}`;
+    side.append(heading, sub);
+    for (const el of Array.from(box.querySelectorAll(".day-status, .new-passives"))) side.append(el);
+    const spread = document.createElement("div");
+    spread.className = "dawn-spread";
+    spread.append(box, side);
+    this.panelEl.replaceChildren(spread);
+    this.panelEl.classList.add("dawn-open");
   }
 
   private advanceNight(): void {
