@@ -2471,8 +2471,10 @@ JIGGLE_LOBES = {
 JIGGLE_RISE = {"Bust": 1.0, "Glute_L": 1.0, "Glute_R": 1.0}
 # The bust's weight follows each breast's own outline (bust_weight): `most` all over the middle of the breast, out
 # to `full` of the way to its edge, then easing to nothing at `spread` times the breast's size, a little onto the
-# chest so its root widens with it. Towards the sides of the trunk (by how far forwards, `front`, in metres) it
-# eases off too, so the ribs under her arms stay put. `most` keeps each cup size as the game measured them
+# chest so its root widens with it. Round the sides of the trunk (by how far forwards, `front`, in metres) it eases
+# off to nothing a centimetre behind her side, so the breast's outer side grows round into her side under the arm
+# (stopping further forwards, it left a hard edge there seen from behind) and her back stays put. `most` keeps
+# each cup size as the game measured them
 # (appearance.ts): at Q the front of the breast stands 28 cm out, as it did with the old weights. Towards the
 # middle it reaches further, `cleavage` times, so the skin between the breasts comes forwards with them and a full
 # bust presses together in one line down the middle; easing out there as on the other sides, the cleavage stayed
@@ -2480,20 +2482,24 @@ JIGGLE_RISE = {"Bust": 1.0, "Glute_L": 1.0, "Glute_R": 1.0}
 # `below` times as far, over the fold, so a big bust's underside drops and rounds with the rest and hangs heavy over
 # the fold; easing out as on the other sides, the underside stayed put as the breast grew and dropped, and set into a
 # flat slope from the chest to the nipple. Much further and the skin under the fold creases as it's pulled down.
-BUST_WEIGHT = {"Bust": {"most": 0.58, "full": 0.5, "spread": 1.3, "cleavage": 2.4, "below": 1.8, "front": (0.02, 0.06)}}
+# Round the outer side it reaches `outside` times as far, so the whole outer side of the breast grows alike: easing
+# out over the breast itself, its outer side grew less than its front and stood off her side in a hard edge.
+BUST_WEIGHT = {"Bust": {"most": 0.58, "full": 0.5, "spread": 1.3, "cleavage": 2.4, "below": 1.8, "outside": 1.8, "front": (-0.01, 0.045)}}
 
 
-# Where the soft parts get extra faces: (lobe centres, radii, side: 1 front, -1 back). A little larger
-# than their weight regions, so the faces round off where the weight fades.
+# Where the soft parts get extra faces: (lobe centres, radii, side: 1 front, -1 back, 0 both). A little larger
+# than their weight regions, so the faces round off where the weight fades. The breasts' reach round her sides,
+# under the arms, where a big bust's outer side grows out over her ribs: with few faces there it turned into one
+# flat panel or a ragged edge seen from behind.
 REFINE_REGIONS = [
-    ([(-0.072, 0.085, 1.14), (0.072, 0.085, 1.14)], (0.11, 0.1, 0.1), 1),
+    ([(-0.072, 0.085, 1.14), (0.072, 0.085, 1.14)], (0.12, 0.135, 0.1), 0),
     ([(-0.065, -0.08, 0.83), (0.065, -0.08, 0.83)], (0.1, 0.1, 0.12), -1),
 ]
 # The breasts are split once more: the game grows them up to a Q cup, four times the size they are built,
 # and they need the extra corners to stay round. A little inside the first region, so the crease keeps its edge.
 # The glutes as well: grown, a rear with only four rows of corners top to bottom stands out as a polygon.
 REFINE_AGAIN = [
-    ([(-0.072, 0.085, 1.14), (0.072, 0.085, 1.14)], (0.1, 0.09, 0.09), 1),
+    ([(-0.072, 0.085, 1.14), (0.072, 0.085, 1.14)], (0.11, 0.125, 0.09), 0),
     ([(-0.065, -0.08, 0.83), (0.065, -0.08, 0.83)], (0.09, 0.09, 0.11), -1),
 ]
 # Her upper trunk, front and back, from above the breasts up to the collarbone and out into the armpits: built with
@@ -3462,7 +3468,8 @@ def add_jiggle_weights(name, layers):
         for v in obj.data.vertices:
             x, y, z = v.co
             for label, (_, centre, radii, most, side) in JIGGLE_REGIONS.items():
-                if side and side * y <= 0.02:
+                # The bust eases off round her sides by itself (bust_weight's `front`).
+                if side and side * y <= 0.02 and label not in BUST_WEIGHT:
                     continue
                 centres, (rx, ry, rz) = JIGGLE_LOBES.get(label, ([centre], radii))
                 if not side:
@@ -3493,7 +3500,7 @@ def bust_weight(x, y, z, spec=None):
     spec = spec or BUST_WEIGHT["Bust"]
     dome = BREAST_DOME
     dx, dz = abs(x) - dome["x"], z - dome["z"]
-    a = dx / (dome["inner"] * spec["cleavage"] if dx < 0 else dome["outer"] * spec["spread"])
+    a = dx / (dome["inner"] * spec["cleavage"] if dx < 0 else dome["outer"] * spec["outside"])
     b = dz / (dome["up"] * spec["spread"] if dz > 0 else dome["down"] * spec["below"])
     reach = math.sqrt(a * a + b * b)
     if reach >= 1.0:

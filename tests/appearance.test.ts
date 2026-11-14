@@ -616,6 +616,22 @@ describe("bust shape and height", () => {
     expect(reshape([{ grow: [0, 0, 0], apart: 0.01 }], new Vector3(0.0005, 0, 0), out).x).toBeCloseTo(0.0006, 4);
   });
 
+  it("opens the cleavage as the breasts are set apart, and closes it as they're pushed together", () => {
+    const cleft = (sliders: Record<string, number>, shape?: string, held = 0) =>
+      activeTerms("Female", { bust: 1, ...sliders }, shape, held).get("Bust")!.find((t) => t.lobes)!.cleft ?? 0;
+    expect(cleft({})).toBe(0);
+    expect(cleft({ bustSpacing: 0.5 })).toBeCloseTo(0.5);
+    expect(cleft({ bustSpacing: 1 }, "sideset")).toBe(1);
+    expect(cleft({}, "sideset")).toBeGreaterThan(0);
+    expect(cleft({ bustInner: -1 })).toBeGreaterThan(0);
+    expect(cleft({ bustSpacing: 0.5, bustTogether: 1 })).toBe(0);
+    // The middle of her chest grows less, the breasts themselves as much as ever.
+    const term = { grow: [0, 0, 1] as [number, number, number], lobes: [0.06, 0, 0] as const, cleft: 1 };
+    const out = new Vector3();
+    expect(reshape([term], new Vector3(0, 0, -0.04), out).z).toBeCloseTo(-0.04);
+    expect(reshape([term], new Vector3(0.06, 0, -0.04), out).z).toBeCloseTo(-0.08);
+  });
+
   it("sets a fuller bust wider apart, more with every cup, and leaves smaller ones where they are", () => {
     const spread = (cup: number) => (activeTerms("Female", { bust: cup }).get("Bust") ?? []).reduce((sum, t) => sum + (t.apart ?? 0), 0);
     expect(spread(0)).toBe(0);

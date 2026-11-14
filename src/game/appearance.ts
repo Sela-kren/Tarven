@@ -377,6 +377,10 @@ const BUST_HOLDS: Readonly<Record<string, number>> = { bra: 1, bodice: 0.8, top:
 const BUST_HELD: Readonly<Record<string, number>> = { bustLift: 0.35, bustTogether: 0.5, bustInner: 0.3, bustCloser: 0.25 };
 /** How round the inner side of each breast fills with the inner fullness slider at 0 (see activeTerms). */
 const INNER_AS_BUILT = 0.6;
+/** How far each bust shape opens the cleavage (see ActiveTerm.cleft): those that set the breasts apart. */
+const CLEFT_OF_SHAPE: Readonly<Record<string, number>> = { sideset: 0.7, eastwest: 0.3 };
+/** How far the Inner fullness slider opens the cleavage at -1, drawing the inner sides in. */
+const CLEFT_OF_INNER = 0.5;
 /** The neck sliders reshape her skin and what lies on it, never her hair, which keeps to the head. */
 const NECK_PARTS: readonly MeshPart[] = ["Body", "Cloth", "Cum"];
 /** Each glute's joint is 6.5 cm to its side of the body's middle. */
@@ -1712,6 +1716,11 @@ interface ActiveTerm {
   lobes?: readonly [number, number, number];
   /** How round the inner side of each breast fills, -1..1, from the inner fullness slider; only for `lobes` terms. */
   inner?: number;
+  /**
+   * How far the cleavage opens, 0..1, as the breasts are set apart: the middle of her chest grows that much less
+   * than the breasts, so they part over it instead of pulling the skin between them along. Only `lobes` terms.
+   */
+  cleft?: number;
   about?: readonly [number, number, number];
   midline?: number;
   reach?: number;
@@ -1748,6 +1757,8 @@ export function reshape(active: readonly ActiveTerm[], d: Vector3, out: Vector3,
       weight = t * t * (3 - 2 * t);
     }
     if (term.band) weight *= bandWeight(term.band, d.y);
+    // Set apart, the breasts part over the middle of her chest: it grows less, nothing at all fully open.
+    if (term.lobes && term.cleft) weight *= 1 - term.cleft * (1 - Math.min(1, Math.abs(d.x) / term.lobes[0])) ** 2;
     if (term.back) {
       const t = Math.min(1, Math.max(0, (d.z - term.back[0]) / (term.back[1] - term.back[0])));
       weight *= t * t * (3 - 2 * t);
@@ -1865,6 +1876,14 @@ export function activeTerms(
   const slider = clampSlider(sliders.bustInner);
   const inner = slider >= 0 ? INNER_AS_BUILT + (1 - INNER_AS_BUILT) * slider : INNER_AS_BUILT + (1 + INNER_AS_BUILT) * slider;
   if (inner !== 0) for (const list of byBone.values()) for (const term of list) if (term.lobes) term.inner = inner;
+  // Breasts set apart part over her chest instead of dragging the skin between them along, so the cleavage opens:
+  // with the Spacing slider, a side-set or east-west shape, or the inner sides drawn in; pushed together (by her or
+  // by what she wears), it closes again.
+  const cleft = Math.min(1, Math.max(0,
+    Math.max(0, clampSlider(sliders.bustSpacing)) + (CLEFT_OF_SHAPE[bustShape ?? ""] ?? 0)
+    + Math.max(0, -slider) * CLEFT_OF_INNER - Math.max(0, clampSlider(sliders.bustTogether)),
+  ));
+  if (cleft > 0) for (const list of byBone.values()) for (const term of list) if (term.lobes) term.cleft = cleft;
   return byBone;
 }
 
@@ -3153,8 +3172,9 @@ const CHEST_BACK = 0.18;
 const CHEST_ROUND = 0.12;
 
 const ARM_SPREAD: [string, number][] = [
-  // A full bust grows wide, out past where the arms hang: at Q the arms swing out about 11 degrees to clear it.
-  ["bust", 0.19], ["hips", 0.06], ["build", 0.05], ["rear", 0.07], ["rearProjection", 0.05], ["rearWidth", 0.05], ["thighs", 0.03],
+  // A full bust grows wide, out past where the arms hang (each breast reaches 23 cm from her middle at Q): at Q the
+  // arms swing out about 17 degrees to clear it.
+  ["bust", 0.3], ["hips", 0.06], ["build", 0.05], ["rear", 0.07], ["rearProjection", 0.05], ["rearWidth", 0.05], ["thighs", 0.03],
 ];
 
 /** A random look: every slider somewhere in the middle of its range, colours from the swatches. */
