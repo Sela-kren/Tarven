@@ -143,6 +143,9 @@ describe("her face", () => {
     expect(arched).toBeGreaterThan(moved({ ...REST_FACE, browArch: 1 }, [0.055, 1.502, -0.06], "brow")[1] - 1.502);
     expect(moved({ ...REST_FACE, browOuter: -1 }, [0.055, 1.502, -0.06], "brow")[1]).toBeLessThan(1.502);
     expect(moved({ ...REST_FACE, browOuter: -1 }, [0.012, 1.505, -0.08], "brow")[1]).toBeCloseTo(1.505, 4);
+    // Drawn close over her eyes, her brows come down further than lowered ever takes them.
+    const lowest = moved({ ...REST_FACE, brow: -1, browInner: -1 }, [0.033, 1.506, -0.07], "brow")[1];
+    expect(moved({ ...REST_FACE, brow: -1, browNear: 1 }, [0.033, 1.506, -0.07], "brow")[1]).toBeLessThan(lowest - 0.008);
     // Flicked, only the very tips of her brows by her nose lift.
     expect(moved({ ...REST_FACE, browTip: 1 }, [0.012, 1.505, -0.08], "brow")[1]).toBeGreaterThan(1.507);
     expect(moved({ ...REST_FACE, browTip: 1 }, [0.033, 1.506, -0.07], "brow")[1]).toBe(1.506);
