@@ -2269,6 +2269,8 @@ export class Game {
   private showPoseShown = "";
   /** The tops her hands last pulled off her breasts, kept while the pose eases off so the cloth goes back with them. */
   private pullShown: { ids: string[]; dir: "down" | "up"; side?: "left" | "right" } | null = null;
+  /** Whether a show pose was on the model (held or easing off) last time, to notice it finishing. */
+  private poseOnModel = false;
 
   /**
    * Poses her while she shows a guest what they paid to see (7e), and lets the pose ease off after; her top comes
@@ -2291,6 +2293,10 @@ export class Game {
     const pull = DEV_SHOW_POSE ? devPull(DEV_SHOW_POSE, topPull(tavern.playerBody, tavern.playerOutfit, tavern.strippedPieces)) : tavern.showingPull;
     if (pull) this.pullShown = pull;
     const held = this.siblings[this.active]?.showing;
+    // The pose has finished easing off her: the portrait (drawn the moment the talk ended, still mid-pose) is
+    // drawn again, so the next talk doesn't open on her still showing.
+    if (this.poseOnModel && !held) this.playerPortrait = null;
+    this.poseOnModel = held !== null;
     const amount = held && held.pose.startsWith("chest") ? held.amount : 0;
     if (amount <= 0) this.pullShown = null;
     this.dressers.forEach((dresser, index) => dresser.setPull(index === this.active ? this.pullShown : null, amount));
