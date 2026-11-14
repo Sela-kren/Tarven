@@ -7,10 +7,12 @@ import {
   joinChance,
   ONE_MORE_WARNING,
   PASS_OUT_AFTER,
-  PASS_OUT_DRUNK,
+  passOutLimit,
   PASS_OUT_LINES,
   PASS_OUT_RESPECT,
   REDRESS_LINES,
+  REDRESS_ON_AT,
+  REDRESS_SECONDS,
   REDRESS_PATIENCE,
   roomNerve,
   SOBER_NIGHT_SERVED,
@@ -1641,6 +1643,12 @@ export class Tavern {
   private lastServer: number | null = null;
   private joinNext: { guestId: number; prelude: TalkLine[]; joined: number[] } | null = null;
   private passingOut = false;
+  /** How far past the top of drunk she's drunk tonight, in drunk points: it wears off before she sobers (barwork.ts). */
+  overLimit = 0;
+  /** Something she's just started acting out, once, for the game to play on her (player.ts `Act`). */
+  private actMoment: "dress" | "faint" | null = null;
+  /** Seconds left of putting a piece back on: it's still off her until her hands bring it up (barwork.ts). */
+  private dressLeft = 0;
   /** Tonight's touches, for the journal: how many guests reached, how many you let, how many you turned away. */
   readonly touchesTonight = { reached: 0, allowed: 0, refused: 0, boldest: 0 };
   /** Who the player is, so what guests say fits them. The game sets it. */
@@ -1790,6 +1798,7 @@ export class Tavern {
     if (this.phase !== "bedtime") return;
     this.phase = "dawn";
     this.drunk = 0;
+    this.overLimit = 0;
     this.endOfNight();
     // The morning after tonight's invitations (invitetalk.ts).
     for (const line of this.morningAfter.splice(0)) this.say(line);
@@ -1997,6 +2006,7 @@ export class Tavern {
     if (this.phase !== "day" || this.napped) return;
     this.napped = true;
     this.drunk = 0;
+    this.overLimit = 0;
     this.restoreWill(Math.round(this.maxWillpower * NAP_RESTORE));
     this.say("You wake up in the late afternoon. Ring the bell when you're ready.");
   }
@@ -2526,7 +2536,10 @@ export class Tavern {
   tick(dt: number, context: TickContext): void {
     // Dead drunk: once she's done talking, she's done for the night (barwork.ts).
     if (this.passingOut && !this.inConversation) this.passOut();
-    this.drunk = Math.max(0, this.drunk - SOBER_RATE * dt);
+    this.dressLeft = Math.max(0, this.dressLeft - dt);
+    // Over the limit wears off first; then she starts to sober up.
+    if (this.overLimit > 0) this.overLimit = Math.max(0, this.overLimit - SOBER_RATE * dt);
+    else this.drunk = Math.max(0, this.drunk - SOBER_RATE * dt);
     this.passiveCheck -= dt;
     if (this.passiveCheck <= 0) {
       this.passiveCheck = PASSIVE_CHECK_SECONDS;
@@ -2733,7 +2746,10 @@ export class Tavern {
    * shift, then everything). The dares are what count for anything else.
    */
   get shownPieces(): string[] {
-    const off = [...this.strippedPieces, ...this.showingPieces()];
+    // A piece she's putting back on stays off until her hands bring it up (barwork.ts).
+    const dressing = this.dressLeft > REDRESS_SECONDS * (1 - REDRESS_ON_AT);
+    const goingOn = dressing ? piecesOff(this.playerBody, this.stripped + 1, this.playerOutfit, this.playerLegwear, this.playerUnder) : [];
+    const off = [...this.strippedPieces, ...goingOn, ...this.showingPieces()];
     const undressed = Math.max(this.duel?.undressed ?? 0, this.endedTest?.undressed ?? 0, this.undressedTonight);
     if (undressed === 0) return [...new Set(off)];
     const ladder = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder);
@@ -2840,7 +2856,10 @@ export class Tavern {
 
   /** You took a drink with a guest. */
   private takeDrink(): void {
-    this.drunk = Math.min(DRUNK_MAX, this.drunk + DRINK_STRENGTH * (1 - Math.min(0.9, this.effects.drunkRate)));
+    const strength = this.drinkStrength;
+    // Past the top of drunk, it piles up as over the limit (barwork.ts).
+    this.overLimit += Math.max(0, this.drunk + strength - DRUNK_MAX);
+    this.drunk = Math.min(DRUNK_MAX, this.drunk + strength);
     this.shift({ drinks: 1, fame: 1, respect: this.drunk >= SLOPPY_DRUNK ? -1 : 0 });
     this.raiseAll(DRINK_DESIRE + this.effects.drinkMeters);
     // Drink loosens her: it fills her adult play stack (too drunk still blocks every yes).
@@ -2850,8 +2869,14 @@ export class Tavern {
     this.cue("drink");
     // Karryn's dead drunk: past her limit she's done for the night, once whoever she's talking to is done with her.
     // The drink before, she knows it.
-    if (this.phase === "service" && this.drunk >= PASS_OUT_DRUNK) this.passingOut = true;
-    else if (this.drunk + DRINK_STRENGTH * (1 - Math.min(0.9, this.effects.drunkRate)) >= PASS_OUT_DRUNK) this.say(ONE_MORE_WARNING);
+    const limit = passOutLimit(strength, this.effects.holdLiquor);
+    if (this.phase === "service" && this.overLimit >= limit) this.passingOut = true;
+    else if (this.overLimit + strength >= limit) this.say(ONE_MORE_WARNING);
+  }
+
+  /** How drunk one drink makes her, after her passives. */
+  private get drinkStrength(): number {
+    return DRINK_STRENGTH * (1 - Math.min(0.9, this.effects.drunkRate));
   }
 
   /** She's drunk herself under the table: the night's over, and the room saw it. */
@@ -2864,6 +2889,14 @@ export class Tavern {
     this.say(pick(PASS_OUT_LINES));
     this.say(PASS_OUT_AFTER);
     this.closeEarly();
+    this.actMoment = "faint";
+  }
+
+  /** What she's just started acting out, once: the game plays it on her. */
+  takeActMoment(): "dress" | "faint" | null {
+    const act = this.actMoment;
+    this.actMoment = null;
+    return act;
   }
 
   /**
@@ -2879,6 +2912,8 @@ export class Tavern {
       if (guest.status === "waiting" || guest.status === "arriving") guest.patience = Math.max(1, guest.patience - guest.maxPatience * REDRESS_PATIENCE);
     }
     this.records.redressed++;
+    this.dressLeft = REDRESS_SECONDS;
+    this.actMoment = "dress";
     this.say(pick(REDRESS_LINES).replaceAll("{piece}", piece));
     this.cue("putDown");
   }
@@ -5750,8 +5785,10 @@ export class Tavern {
     this.earned = 0;
     this.napped = false;
     this.drunk = 0;
+    this.overLimit = 0;
     this.passingOut = false;
     this.joinNext = null;
+    this.dressLeft = 0;
     this.stripped = 0;
     this.undressedTonight = 0;
     this.coated = {};

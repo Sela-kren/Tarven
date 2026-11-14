@@ -318,6 +318,8 @@ export interface Effects {
   drinkMeters: number;
   /** How much slower drink gets to her, as a fraction. */
   drunkRate: number;
+  /** How many more drinks past the top of drunk she can hold before she passes out (barwork.ts). */
+  holdLiquor: number;
   /** How much longer guests wait, as a fraction. */
   patience: number;
   /** Extra gold on every tipped serve, and on everything, as a fraction. */
@@ -428,6 +430,7 @@ export function noEffects(): Effects {
     leanMeters: 0,
     drinkMeters: 0,
     drunkRate: 0,
+    holdLiquor: 0,
     patience: 0,
     serveTip: 0,
     payPct: 0,
@@ -1497,6 +1500,26 @@ export const PASSIVES: readonly PassiveDef[] = [
       e.serveTip += 1;
     },
     thought: "(They buy me drinks just to watch me drink them.)",
+  },
+  {
+    id: "hollowLegs",
+    name: "Hollow Legs",
+    group: "drink",
+    need: "Drink yourself under the table 3 times",
+    progress: (f) => count(f.records.passedOut, 3),
+    benefit: "Two more drinks past your limit before you pass out",
+    effect: (e) => (e.holdLiquor += 2),
+    thought: "(I know where the floor is now. I can stay off it a while longer.)",
+  },
+  {
+    id: "lastStanding",
+    name: "Last One Standing",
+    group: "drink",
+    need: "Drink with guests 100 times",
+    progress: (f) => count(f.drinks, 100),
+    benefit: "Three more drinks past your limit before you pass out",
+    effect: (e) => (e.holdLiquor += 3),
+    thought: "(The whole table's under it. I'm still pouring.)",
   },
 
   // ---- Bar work ----

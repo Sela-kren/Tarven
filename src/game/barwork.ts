@@ -88,8 +88,18 @@ export function roomNerve(f: { fame: number; horny: boolean; wet: boolean }): nu
 
 // ---------- Dead drunk ----------
 
-/** How drunk she has to be to be done for the night (DRUNK_MAX is 1). */
-export const PASS_OUT_DRUNK = 1;
+/**
+ * How much she can drink past the top of drunk (DRUNK_MAX) before she's done for the night, in drinks. At the top
+ * she's as drunk as she gets; what she drinks after that piles up as "over the limit" and wears off first. With
+ * about four drinks to reach the top, she passes out on the seventh drink in a row. Passives add more
+ * (`Effects.holdLiquor`).
+ */
+export const PASS_OUT_DRINKS_PAST = 3;
+
+/** How far over the limit she can go, in drunk points, before she passes out. */
+export function passOutLimit(drinkStrength: number, holdLiquor: number): number {
+  return (PASS_OUT_DRINKS_PAST + holdLiquor) * drinkStrength;
+}
 /** What passing out costs her: respect, as the room carries her off. */
 export const PASS_OUT_RESPECT = -2;
 /** Least orders served for a night without a drink to count as a sober shift. */
@@ -105,6 +115,16 @@ export const PASS_OUT_AFTER = "The regulars carry you up to bed and see themselv
 export const ONE_MORE_WARNING = "(One more and I'll be under the table.)";
 
 // ---------- Fixing her clothes ----------
+
+/**
+ * How long she takes over it, acted out on her (player.ts): the piece stays off until her hands have brought it up
+ * this far through.
+ */
+export const REDRESS_SECONDS = 1.4;
+export const REDRESS_ON_AT = 0.5;
+/** How long she takes to go down when she passes out, and how long she lies there before the room carries her up. */
+export const FAINT_SECONDS = 1.6;
+export const FAINT_HOLD = 1.2;
 
 /** How much of every waiting guest's patience goes while she's behind the bar putting a piece back on. */
 export const REDRESS_PATIENCE = 0.15;

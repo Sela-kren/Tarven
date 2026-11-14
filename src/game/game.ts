@@ -137,6 +137,7 @@ import type { CumSpot } from "./cum";
 import type { DuelArea, DuelLogEntry, DuelState } from "./duel";
 import type { HerMove } from "./duelmoves";
 import { SMACK_TOUCHES, type TouchRegion } from "./touchtalk";
+import { FAINT_HOLD, FAINT_SECONDS } from "./barwork";
 import type { TouchShow } from "./touchcomic";
 import { BattleView, FoeColumn, type BattleMode, type BattleStat } from "./battleview";
 import { Body, Sibling, SHOW_POSES, WALK_STYLE_NAMES, type Reaction, type ShowPose, type SoftPart } from "./player";
@@ -793,6 +794,8 @@ export class Game {
   /** The "Brawl!" card that slams onto the screen before a fight, and how long it has left. */
   private readonly brawlIntroEl = makeBrawlIntro();
   private brawlIntro = 0;
+  /** Seconds until the room carries her up to bed, once she's passed out (barwork.ts); 0 when she hasn't. */
+  private faintLeft = 0;
   /** The trouble whose shout has been said out loud, so it's said once. */
   private shoutedTrouble: Trouble | null = null;
   private readonly storyEl = element("story");
@@ -2523,6 +2526,8 @@ export class Game {
     this.clearTarget();
     this.audio.play("cloth");
     this.fadeTo(() => {
+      // Up off the floor by morning, whatever she was in the middle of.
+      this.siblings.forEach((sibling) => sibling.act(null));
       this.clock.setTime(this.tavern.nightIndex + 1, MORNING_HOUR);
       this.showDawn();
     });
@@ -2770,8 +2775,26 @@ export class Game {
       }
       return;
     }
+    // Something she's acting out (barwork.ts): putting a piece back on, or going under from drink. She holds still
+    // for it; once she's down, the room carries her up to bed and it's morning.
+    const act = tavern.takeActMoment();
+    if (act) {
+      player.act(act);
+      this.audio.play(act === "faint" ? "drop" : "cloth");
+      if (act === "faint") this.faintLeft = FAINT_SECONDS + FAINT_HOLD;
+      this.playerPortrait = null;
+    }
+    if (this.faintLeft > 0) {
+      this.faintLeft -= dt;
+      if (this.faintLeft <= 0) {
+        this.faintLeft = 0;
+        tavern.sleep();
+        this.goToSleep();
+      }
+    }
     const strideBefore = player.strideAngle;
-    if (player.move(dt, input, this.world.colliders, tavern.drunk)) tavern.stumble(this.active);
+    if (player.acted) player.rest(dt);
+    else if (player.move(dt, input, this.world.colliders, tavern.drunk)) tavern.stumble(this.active);
     if (footfalls(strideBefore, player.strideAngle) > 0) this.audio.play("step", input.run ? RUNNING_STEP_LOUDNESS : 1);
 
     // O steps the sister's walk through its five styles, whoever is being played.
@@ -2782,6 +2805,10 @@ export class Game {
         this.log.add(`Walk style ${level} of 5: ${WALK_STYLE_NAMES[level - 1]}`);
       }
     }
+
+    // K and L act out putting a piece back on and passing out, to check the animations, in development only.
+    if (import.meta.env.DEV && input.pressed("KeyK")) player.act("dress");
+    if (import.meta.env.DEV && input.pressed("KeyL")) player.act(player.acted?.kind === "faint" ? null : "faint");
 
     // P opens the sex fight test panel, in development only.
     if (import.meta.env.DEV && input.pressed("KeyP")) {

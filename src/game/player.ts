@@ -1,4 +1,5 @@
 import { Group, MathUtils, Object3D, Vector3 } from "three";
+import { FAINT_SECONDS, REDRESS_SECONDS } from "./barwork";
 import { moveVector, resolveCircle, type Rect } from "./collision";
 import type { Input } from "./input";
 import { BUILT_HEFT, heftedSpring, type SoftHeft } from "./heft";
@@ -43,6 +44,14 @@ export type Reaction = "jolt" | "melt" | "recoil";
 /** The soft parts a touch can set bouncing. */
 export type SoftPart = "Bust" | "Glute";
 const REACTION_TIME: Record<Reaction, number> = { jolt: 0.4, melt: 1.8, recoil: 0.55 };
+
+/**
+ * Something she does with her whole body for a moment, acted out on the model rather than cut to (barwork.ts):
+ * bending to put a piece back on and pulling it up into place, or going under from drink (a sway, her knees giving,
+ * slumping down where she stood). A faint holds once it's done, until it's cleared.
+ */
+export type Act = "dress" | "faint";
+export const ACT_TIME: Record<Act, number> = { dress: REDRESS_SECONDS, faint: FAINT_SECONDS };
 
 /**
  * How she stands to show a guest what they paid to see (show.ts): both hands holding her top pulled down under her
@@ -398,6 +407,8 @@ export class Body {
   /** Added to the walk style's arch, from the look's Back arch slider; the arch never goes below none. */
   /** Her Posture sliders' settings, on top of the walk style's own arch. */
   private posture: Posture = { arch: 0, chest: 0 };
+  /** What she's acting out right now, and how far through it (0 to 1). */
+  private acting: { kind: Act; done: number } | null = null;
   /** A show pose held over the standing pose, and how far it's on (0 to 1); `showHeld` false lets it ease off. */
   private show: ShowPose | null = null;
   private showAmount = 0;
@@ -588,6 +599,57 @@ export class Body {
     return this.reaction?.kind ?? null;
   }
 
+  /** Starts acting something out, or with null stops (a faint holds until then). */
+  act(kind: Act | null): void {
+    this.acting = kind ? { kind, done: 0 } : null;
+  }
+
+  /** What she's acting out now, and how far through it (0 to 1); null with nothing. */
+  get acted(): { kind: Act; done: number } | null {
+    return this.acting ? { ...this.acting } : null;
+  }
+
+  /** Lays what she's acting out over everything else on her. */
+  private poseAct(): void {
+    if (!this.acting) return;
+    const { lerp, smoothstep } = MathUtils;
+    const { kind, done } = this.acting;
+    if (kind === "dress") {
+      // In and out over the whole of it; her hands travel up from her knees to her chest as the piece comes on.
+      const k = Math.sin(Math.PI * done);
+      const pull = smoothstep(done, 0.15, 0.85);
+      this.hips.position.y -= 0.06 * k;
+      // Negative X bends her forwards and drops her head, on this rig.
+      this.torso.rotation.x -= (0.32 * (1 - pull) + 0.04) * k;
+      this.head.rotation.x -= 0.22 * k;
+      // Mirrored for the left arm: positive Z swings the left arm in and the right arm out.
+      const arm = (upper: Object3D, fore: Object3D, mirror: number) => {
+        upper.rotation.x = lerp(upper.rotation.x, 0.3 + 0.3 * pull, k);
+        upper.rotation.z = lerp(upper.rotation.z, -0.2 * mirror, k);
+        upper.rotation.y = lerp(upper.rotation.y, 0.3 * mirror, k);
+        fore.rotation.x = lerp(fore.rotation.x, 0.6 + 1.5 * pull, k);
+      };
+      arm(this.upperArmR, this.foreArmR, 1);
+      arm(this.upperArmL, this.foreArmL, -1);
+      return;
+    }
+    // A faint: she wobbles, then her knees go and she folds down onto them, head dropped, arms hanging.
+    const fall = smoothstep(done, 0.3, 0.9);
+    const wobble = Math.sin(done * Math.PI * 4) * Math.min(1, done * 4) * (1 - fall);
+    this.torso.rotation.z += 0.14 * wobble;
+    this.head.rotation.z += 0.2 * wobble + 0.35 * fall;
+    this.head.rotation.x -= 0.75 * fall;
+    this.torso.rotation.x -= 0.6 * fall;
+    this.thighL.rotation.x = lerp(this.thighL.rotation.x, 0.15, fall);
+    this.thighR.rotation.x = lerp(this.thighR.rotation.x, 0.05, fall);
+    this.shinL.rotation.x = lerp(this.shinL.rotation.x, -1.55, fall);
+    this.shinR.rotation.x = lerp(this.shinR.rotation.x, -1.6, fall);
+    // Kneeling: her hips come down by about a shin's length.
+    this.hips.position.y -= this.legLength * 0.47 * fall;
+    for (const upper of [this.upperArmL, this.upperArmR]) upper.rotation.x = lerp(upper.rotation.x, 0.15, fall);
+    for (const fore of [this.foreArmL, this.foreArmR]) fore.rotation.x = lerp(fore.rotation.x, 0.25, fall);
+  }
+
   /** Holds a show pose (at once, so a picture taken now shows it), or with null lets it ease off. */
   display(pose: ShowPose | null): void {
     if (pose) {
@@ -675,6 +737,11 @@ export class Body {
     if (this.reaction) {
       this.reaction.done += dt / REACTION_TIME[this.reaction.kind];
       if (this.reaction.done >= 1) this.reaction = null;
+    }
+    if (this.acting) {
+      this.acting.done = Math.min(1, this.acting.done + dt / ACT_TIME[this.acting.kind]);
+      // Dressed, she's done; a faint stays down until it's cleared.
+      if (this.acting.done >= 1 && this.acting.kind === "dress") this.acting = null;
     }
     for (const jiggle of this.jiggles) jiggle.update(dt);
     this.skirt?.advance(dt);
@@ -783,6 +850,7 @@ export class Body {
 
     this.poseShow();
     this.poseReaction();
+    this.poseAct();
     this.swayHair(stride, moving);
     this.skirt?.solve(this.skirtTime);
     this.skirtTime = 0;
@@ -835,6 +903,16 @@ export class Sibling {
   /** The touch she's reacting to right now: see `Body.reacting`. */
   get reacting(): Reaction | null {
     return this.body.reacting;
+  }
+
+  /** Acts something out on her, or with null stops: see `Body.act`. */
+  act(kind: Act | null): void {
+    this.body.act(kind);
+  }
+
+  /** What she's acting out now: see `Body.acted`. */
+  get acted(): { kind: Act; done: number } | null {
+    return this.body.acted;
   }
 
   /** Answers a touch on the floor: see `Body.react`. */

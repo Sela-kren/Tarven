@@ -4,8 +4,9 @@ import {
   JOIN_MAX,
   JOIN_NERVE,
   joinChance,
-  PASS_OUT_DRUNK,
+  REDRESS_ON_AT,
   REDRESS_PATIENCE,
+  REDRESS_SECONDS,
   roomNerve,
   SOBER_NIGHT_SERVED,
   trayDropChance,
@@ -126,15 +127,42 @@ describe("the room reads her", () => {
 });
 
 describe("dead drunk", () => {
+  /** How many drinks in a row she has before she's going under. */
+  const drinksToPassOut = (t: Tavern) => {
+    let n = 0;
+    while (!(t as unknown as { passingOut: boolean }).passingOut && n < 30) {
+      inside(t).takeDrink();
+      n++;
+    }
+    return n;
+  };
+
+  it("takes seven drinks in a row, and two more with Hollow Legs", () => {
+    expect(drinksToPassOut(serving())).toBe(7);
+    const t = serving();
+    t.effects.holdLiquor = 2;
+    expect(drinksToPassOut(t)).toBe(9);
+  });
+
+  it("wears off over the limit first, before she sobers", () => {
+    const t = serving();
+    for (let i = 0; i < 5; i++) inside(t).takeDrink();
+    expect(t.overLimit).toBeGreaterThan(0);
+    const drunk = t.drunk;
+    t.tick(1, idle);
+    expect(t.drunk).toBe(drunk);
+  });
+
   it("ends the night once she's done talking, and the room saw it", () => {
     const t = serving();
-    t.drunk = PASS_OUT_DRUNK - 0.01;
     const respect = t.persona.respect;
-    inside(t).takeDrink();
+    drinksToPassOut(t);
     t.tick(0.1, idle);
     expect(t.records.passedOut).toBe(1);
     expect(t.phase).toBe("bedtime");
     expect(t.persona.respect).toBeLessThan(respect);
+    // She goes down where she stood, acted out on her.
+    expect(t.takeActMoment()).toBe("faint");
   });
 
   it("counts a busy night without a drink as a sober shift", () => {
@@ -158,5 +186,17 @@ describe("fixing her clothes", () => {
     expect(t.stripped).toBe(0);
     expect(t.records.redressed).toBe(1);
     expect(waiting.patience).toBeCloseTo(Math.max(1, patience - waiting.maxPatience * REDRESS_PATIENCE));
+  });
+
+  it("acts it out: the piece stays off until her hands have brought it up", () => {
+    const t = serving();
+    t.stripped = 1;
+    const off = t.shownPieces;
+    expect(off.length).toBeGreaterThan(0);
+    t.interact(0, { kind: "station", station: "wash" });
+    expect(t.takeActMoment()).toBe("dress");
+    expect(t.shownPieces).toEqual(off);
+    t.tick(REDRESS_SECONDS * REDRESS_ON_AT + 0.05, idle);
+    expect(t.shownPieces.length).toBeLessThan(off.length);
   });
 });
