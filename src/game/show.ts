@@ -3,7 +3,8 @@
  * she picks what she shows them, one thing at a time, each acted out on her model (GAME_PATH.MD 7e):
  *
  * - Her breast band: her top pulled down (or, for a top that can't come down, lifted up) off it.
- * - Her breasts: her top pulled down or lifted up, and her band with it, bare.
+ * - Her breasts: her top pulled down or lifted up, and her band with it, bare: both of them, or (by chance) just
+ *   her left or just her right, her other hand on her hip.
  * - Her smallclothes: her skirt lifted at the front.
  * - Her pussy: her skirt lifted at the front, her smallclothes off.
  * - Her behind: she turns round and lifts her skirt behind, her smallclothes off.
@@ -21,6 +22,11 @@ export type ShowPart = "band" | "breasts" | "smalls" | "pussy" | "butt";
 
 /** Everything she can show, in the order her answers list them: top half first, then bottom. */
 export const SHOW_PARTS: readonly ShowPart[] = ["band", "breasts", "smalls", "pussy", "butt"];
+
+/** Which of her breasts she bares: both, or just the one, her own left or right. */
+export type ShowSide = "both" | "left" | "right";
+/** Picked at random each time she shows her breasts, each as likely. */
+export const SHOW_SIDES: readonly ShowSide[] = ["both", "left", "right"];
 
 /** Her underwear (a peek: nothing bare), or bare skin. */
 export type ShowHow = "peek" | "bare";
@@ -150,6 +156,12 @@ export const SHOW_TOLD: Record<ShowPart, readonly string[]> = {
     "You turn, bend a little and lift your skirt behind you, bare underneath, for a long moment. The whole room sees.",
   ],
 };
+
+/** What she does baring just the one breast. `{top}` is as above; `{side}` is which, "left" or "right". */
+export const SHOW_TOLD_ONE: readonly string[] = [
+  "You tug your top {top} on the {side} only, band and all, and bare just the one breast, your other hand on your hip. Someone whistles.",
+  "You hook one side {top} and let your {side} breast out, only that one, and cup it for them. They stare like it's the best thing in the room.",
+];
 
 /** What she says, saying yes, and saying no. */
 export const SHOW_YES: readonly string[] = ["\"One look. That's all you get.\"", "\"Pay first.\"", "\"Don't blink.\""];

@@ -47,10 +47,11 @@ const REACTION_TIME: Record<Reaction, number> = { jolt: 0.4, melt: 1.8, recoil: 
 /**
  * How she stands to show a guest what they paid to see (show.ts): both hands holding her top pulled down under her
  * breasts, or lifted up over them (the game pulls the cloth with them, `Dresser.setPull`), her skirt lifted at the
- * front, or turned round with it lifted behind.
+ * front, or turned round with it lifted behind. A chest pose ending L or R bares just the one breast, her own left or
+ * right, her other hand on her hip.
  */
-export type ShowPose = "chestDown" | "chestUp" | "frontLift" | "backLift";
-export const SHOW_POSES: readonly ShowPose[] = ["chestDown", "chestUp", "frontLift", "backLift"];
+export type ShowPose = "chestDown" | "chestDownL" | "chestDownR" | "chestUp" | "chestUpL" | "chestUpR" | "frontLift" | "backLift";
+export const SHOW_POSES: readonly ShowPose[] = ["chestDown", "chestDownL", "chestDownR", "chestUp", "chestUpL", "chestUpR", "frontLift", "backLift"];
 /** How quickly a show pose eases off once it's over, per second. It comes on at once. */
 const SHOW_EASE = 3;
 
@@ -286,6 +287,9 @@ function feminine(level: number): Gait {
  * found by searching the arm's angles against the female model in Blender.
  */
 const HAND_ON_HIP = { upper: new Vector3(-1.747, 0.845, 1.34), elbow: 1.506 };
+
+/** Baring just the one breast, she turns that one a little towards them (radians). */
+const ONE_BREAST_TURN = 0.18;
 
 /** Turned round to show her behind: most of the way, so she can still look back over her shoulder. */
 const BACK_TURN = Math.PI * 0.95;
@@ -605,23 +609,32 @@ export class Body {
     };
     const bend = (bone: Object3D, x: number) => (bone.rotation.x = MathUtils.lerp(bone.rotation.x, x, a));
     // Positive Z swings the left arm in and the right arm out.
-    if (pose === "chestDown") {
-      // Her top dragged down under her breasts, and her hands presenting them: elbows open out to her sides and back,
-      // each palm turned up (the forearm's twist) right under a breast, holding it up; chest out, chin up.
-      set(this.upperArmR, -0.48, 0.27, 0.57);
-      set(this.foreArmR, 1.99, 0, -1.13);
-      set(this.upperArmL, -0.48, -0.27, -0.57);
-      set(this.foreArmL, 1.99, 0, 1.13);
-      this.torso.rotation.x -= 0.12 * a;
-      this.head.rotation.x -= 0.06 * a;
-    } else if (pose === "chestUp") {
-      // Both hands high on her chest, holding her top lifted up over her breasts; chest out, looking down at them.
-      set(this.upperArmR, 0.5, -0.5, 0.7);
-      bend(this.foreArmR, 2.3);
-      set(this.upperArmL, 0.5, 0.5, -0.7);
-      bend(this.foreArmL, 2.3);
-      this.torso.rotation.x -= 0.1 * a;
-      this.head.rotation.x += 0.1 * a;
+    if (pose.startsWith("chest")) {
+      const up = pose.startsWith("chestUp");
+      const only = pose.endsWith("L") ? "L" : pose.endsWith("R") ? "R" : null;
+      // Each arm (mirrored for the left: its y and z turn the other way): showing its breast, or with just the other
+      // one bared, its hand resting on her hip.
+      const arm = (upper: Object3D, fore: Object3D, mirror: number, showing: boolean) => {
+        if (!showing) {
+          set(upper, HAND_ON_HIP.upper.x, HAND_ON_HIP.upper.z * mirror, HAND_ON_HIP.upper.y * mirror);
+          set(fore, HAND_ON_HIP.elbow, 0);
+        } else if (up) {
+          // High on her chest, holding her top lifted up over her breast.
+          set(upper, 0.5, -0.5 * mirror, 0.7 * mirror);
+          bend(fore, 2.3);
+        } else {
+          // Her top dragged down under her breast, and her hand presenting it: elbow open out to her side and back,
+          // palm turned up (the forearm's twist) right under her breast, holding it up.
+          set(upper, -0.48, 0.27 * mirror, 0.57 * mirror);
+          set(fore, 1.99, 0, -1.13 * mirror);
+        }
+      };
+      arm(this.upperArmR, this.foreArmR, 1, only !== "L");
+      arm(this.upperArmL, this.foreArmL, -1, only !== "R");
+      // Chest out; down, chin up, up, looking down at them. Just the one, turned a little to show it.
+      this.torso.rotation.x -= (up ? 0.1 : 0.12) * a;
+      this.head.rotation.x += (up ? 0.1 : -0.06) * a;
+      if (only) this.torso.rotation.y += (only === "R" ? 1 : -1) * ONE_BREAST_TURN * a;
     } else if (pose === "frontLift") {
       // Both hands low at her waist, either side, holding the front of her skirt gathered up against her middle,
       // clear of her groin; she looks down.

@@ -11,6 +11,7 @@ import {
   SHOW_NOT_READY,
   SHOW_NOT_WEARING,
   SHOW_PARTS,
+  SHOW_SIDES,
   SHOW_TOO_DRUNK,
   showChance,
   type ShowPart,
@@ -160,6 +161,27 @@ describe("a guest asking for a look", () => {
     expect(breasts.shownPieces).toEqual([]);
     expect(breasts.showingPull).toBeNull();
     expect(breasts.showingOff).toBeNull();
+  });
+
+  it("bares both her breasts, or by chance just her left or her right", () => {
+    const sides = SHOW_SIDES.map((_, i) => {
+      // Pinned so the first roll, the side, lands on each in turn.
+      const { t } = asked(10, (t) => (t.random = () => (i + 0.5) / SHOW_SIDES.length));
+      show(t, "breasts");
+      return { side: t.showingSide, pull: t.showingPull, told: t.talkReplyLines[1].text };
+    });
+    expect(sides.map((s) => s.side)).toEqual(["both", "left", "right"]);
+    // Both: her top pulled down off the two of them. Just the one: off that one only, and she says which.
+    expect(sides[0].pull?.side).toBeUndefined();
+    expect(sides[1].pull).toMatchObject({ dir: "down", side: "left" });
+    expect(sides[2].pull).toMatchObject({ dir: "down", side: "right" });
+    expect(sides[1].told).toContain("left");
+    expect(sides[2].told).toContain("right");
+    // Her band, a peek, is always both.
+    const { t } = asked(10, (t) => (t.random = () => 0.9));
+    show(t, "band");
+    expect(t.showingSide).toBe("both");
+    expect(t.showingPull?.side).toBeUndefined();
   });
 
   it("lifts a top that can't come down up over her breasts instead", () => {

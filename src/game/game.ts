@@ -105,7 +105,7 @@ import { readTouchSettings, writeTouchSettings } from "./touchsettings";
 import { arousalOf, easeArousal } from "./nipples";
 import { easeOpening } from "./vulva";
 import { METER_MAX } from "./passives";
-import type { ShowPart } from "./show";
+import type { ShowPart, ShowSide } from "./show";
 import { DialogueBox } from "./dialogue";
 import { MessageLog } from "./messagelog";
 import { UnlockToasts, type Toast } from "./unlocktoast";
@@ -495,12 +495,21 @@ function devFlag(name: string): boolean {
  * top that only lifts, up); her smallclothes or her pussy, her skirt lifted at the front; her behind, turned round
  * with it lifted behind.
  */
-function showPoseOf(part: ShowPart, top: "down" | "up"): ShowPose {
-  if (part === "band" || part === "breasts") return top === "up" ? "chestUp" : "chestDown";
+function showPoseOf(part: ShowPart, top: "down" | "up", side: ShowSide): ShowPose {
+  if (part === "band" || part === "breasts") {
+    const chest = top === "up" ? "chestUp" : "chestDown";
+    return side === "left" ? `${chest}L` : side === "right" ? `${chest}R` : chest;
+  }
   return part === "butt" ? "backLift" : "frontLift";
 }
 
-/** In development, holds her in a show pose to look at: "?pose=chestDown" (chestDown, chestUp, frontLift, backLift). */
+/** A held development pose's pull: her top, off the breast the pose bares. */
+function devPull(pose: ShowPose, top: ReturnType<typeof topPull>): { ids: string[]; dir: "down" | "up"; side?: "left" | "right" } | null {
+  if (!pose.startsWith("chest") || !top) return null;
+  return pose.endsWith("L") ? { ...top, side: "left" } : pose.endsWith("R") ? { ...top, side: "right" } : top;
+}
+
+/** In development, holds her in a show pose to look at: "?pose=chestDown" (any of SHOW_POSES: chestDownL bares her left). */
 const DEV_SHOW_POSE: ShowPose | null = (() => {
   const asked = import.meta.env.DEV && typeof location !== "undefined" ? new URLSearchParams(location.search).get("pose") : null;
   return SHOW_POSES.find((p) => p === asked) ?? null;
@@ -2239,7 +2248,7 @@ export class Game {
   /** The show pose last put on the player, as "sibling:pose"; "" for none. */
   private showPoseShown = "";
   /** The tops her hands last pulled off her breasts, kept while the pose eases off so the cloth goes back with them. */
-  private pullShown: { ids: string[]; dir: "down" | "up" } | null = null;
+  private pullShown: { ids: string[]; dir: "down" | "up"; side?: "left" | "right" } | null = null;
 
   /**
    * Poses her while she shows a guest what they paid to see (7e), and lets the pose ease off after; her top comes
@@ -2249,7 +2258,7 @@ export class Game {
   private syncShowPose(): void {
     const { tavern } = this;
     const showing = tavern.showingOff;
-    const pose: ShowPose | null = DEV_SHOW_POSE ?? (showing ? showPoseOf(showing, tavern.topPullDir) : null);
+    const pose: ShowPose | null = DEV_SHOW_POSE ?? (showing ? showPoseOf(showing, tavern.topPullDir, tavern.showingSide) : null);
     const key = `${this.active}:${pose ?? ""}`;
     if (key !== this.showPoseShown) {
       this.showPoseShown = key;
@@ -2259,9 +2268,7 @@ export class Game {
       });
       this.playerPortrait = null;
     }
-    const pull = DEV_SHOW_POSE
-      ? (DEV_SHOW_POSE.startsWith("chest") ? topPull(tavern.playerBody, tavern.playerOutfit, tavern.strippedPieces) : null)
-      : tavern.showingPull;
+    const pull = DEV_SHOW_POSE ? devPull(DEV_SHOW_POSE, topPull(tavern.playerBody, tavern.playerOutfit, tavern.strippedPieces)) : tavern.showingPull;
     if (pull) this.pullShown = pull;
     const held = this.siblings[this.active]?.showing;
     const amount = held && held.pose.startsWith("chest") ? held.amount : 0;

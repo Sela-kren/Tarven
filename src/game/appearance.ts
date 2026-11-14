@@ -2089,6 +2089,13 @@ const PULL_ROLL = { gap: 0.006, height: 0.028, narrow: 0.06, thick: [0.006, 0.01
 /** Meshes on her skin a top lifted over her breasts doesn't lie on: her nipple discs, pubic hair and underwear patch. */
 const PULL_SKIP_SKIN: readonly string[] = [DISC_MATERIAL, PUBIC_MATERIAL, LINGERIE_MATERIAL];
 
+/**
+ * Pulling it off just the one breast: which way across is her own left and right (x, as built), and how the pull
+ * fades out across the middle of her chest, from none this far over on the other side to all of it this far on hers.
+ */
+const PULL_SIDE: Readonly<Record<"left" | "right", number>> = { left: -1, right: 1 };
+const PULL_SIDE_BLEND: readonly [number, number] = [-0.01, 0.05];
+
 /** Where a pulled top's points go: for each point its place in the lists (-1 if it stays), where it goes, how far. */
 interface PullPlan {
   at: Int32Array;
@@ -2246,7 +2253,7 @@ export class Dresser {
    * which way and how far (0 to 1); a state of the moment, never part of the look. Each pulled mesh's plan says
    * where its points go, worked out from the body as last shaped, and is dropped when the body's reshaped.
    */
-  private pull: { ids: readonly string[]; dir: "down" | "up"; amount: number } | null = null;
+  private pull: { ids: readonly string[]; dir: "down" | "up"; side?: "left" | "right"; amount: number } | null = null;
   private readonly pullPlans = new Map<MeshSlot, PullPlan>();
   /** The pulled meshes' normals as built, to put back once the pull's let go. */
   private readonly pullNormals = new Map<MeshSlot, Float32Array>();
@@ -2724,13 +2731,13 @@ export class Dresser {
 
   /**
    * Pulls her tops (the wardrobe's garment ids) down off her breasts or up over them, `amount` of the way (0 to 1),
-   * as her hands do in a show pose (show.ts, 7e); null or 0 lets them back. Only the pulled meshes change, so it can
-   * follow her hands from moment to moment.
+   * as her hands do in a show pose (show.ts, 7e); null or 0 lets them back. With a `side`, only off that breast (her
+   * own left or right). Only the pulled meshes change, so it can follow her hands from moment to moment.
    */
-  setPull(pull: { ids: readonly string[]; dir: "down" | "up" } | null, amount: number): void {
+  setPull(pull: { ids: readonly string[]; dir: "down" | "up"; side?: "left" | "right" } | null, amount: number): void {
     const a = pull ? Math.min(1, Math.max(0, amount)) : 0;
-    const next = pull && a > 0 ? { ids: [...pull.ids], dir: pull.dir, amount: a } : null;
-    const key = (p: { ids: readonly string[]; dir: string } | null) => (p ? `${p.dir}:${p.ids.join(",")}` : "");
+    const next = pull && a > 0 ? { ids: [...pull.ids], dir: pull.dir, side: pull.side, amount: a } : null;
+    const key = (p: { ids: readonly string[]; dir: string; side?: string } | null) => (p ? `${p.dir}:${p.side ?? ""}:${p.ids.join(",")}` : "");
     const now = this.pull;
     const same = key(next) === key(now);
     // Small steps aren't worth rewriting the cloth for, but the ends are.
@@ -2785,10 +2792,12 @@ export class Dresser {
    * Where a pulled top's points go (PULL_* above), on the body as shaped now (`totals`, every mesh's moves). Down:
    * the cloth over her breasts and above them is dragged down under them, rolled up in a band on the cloth below,
    * the neckline outermost. Up: it's lifted up over them, rolled in a band on her chest above. All the way at the
-   * front, less round her sides, and not at all at her back or on her arms, so the cloth there pulls on a slant.
+   * front, less round her sides, and not at all at her back or on her arms, so the cloth there pulls on a slant. Off
+   * just the one breast, the pull fades out across the middle of her chest, so the cloth there pulls on a slant too.
    */
   private planPull(slot: MeshSlot, totals: Float32Array[]): PullPlan {
     const dir = this.pull?.dir ?? "down";
+    const side = this.pull?.side;
     const own = this.slots.indexOf(slot);
     const count = slot.bind.length / 3;
     const at = new Int32Array(count).fill(-1);
@@ -2798,6 +2807,13 @@ export class Dresser {
       return p.set(bind[v * 3] + totals[s][v * 3], bind[v * 3 + 1] + totals[s][v * 3 + 1], bind[v * 3 + 2] + totals[s][v * 3 + 2]);
     };
     const front = this.frontness(slot, own, totals);
+    if (side) {
+      const [from, to] = PULL_SIDE_BLEND;
+      for (let v = 0; v < count; v++) {
+        const t = Math.min(1, Math.max(0, (shapedAt(own, v).x * PULL_SIDE[side] - from) / (to - from)));
+        front[v] *= t * t * (3 - 2 * t);
+      }
+    }
 
     // Down: the roll goes under her breasts, as low as their undersides are now. Up: over the top's upper edge.
     let low = Infinity;

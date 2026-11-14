@@ -133,11 +133,14 @@ import {
   SHOW_NOT_WEARING,
   SHOW_PARTS,
   SHOW_THOUGHTS,
+  SHOW_SIDES,
   SHOW_TOLD,
+  SHOW_TOLD_ONE,
   SHOW_TOO_DRUNK,
   SHOW_UNDER,
   SHOW_YES,
   type ShowPart,
+  type ShowSide,
 } from "./show";
 import {
   grabChance,
@@ -1171,6 +1174,8 @@ interface ShowChat {
   reply: TalkLine[];
   /** What she's showing them, while the talk lasts: the model shows it too (`shownPieces`, `showingPull`). */
   shown?: ShowPart;
+  /** Which of her breasts she's baring, showing them her breasts: both, or just the one (picked at random). */
+  side?: ShowSide;
 }
 
 /** The state that lasts between nights. */
@@ -2714,10 +2719,17 @@ export class Tavern {
    * (7e): the garments' ids, and which way. The game pulls them on the model in time with her hands; they're still
    * on her, never stripped. Null while she's showing nothing up there.
    */
-  get showingPull(): { ids: string[]; dir: "down" | "up" } | null {
+  get showingPull(): { ids: string[]; dir: "down" | "up"; side?: "left" | "right" } | null {
     const shown = this.showChat?.shown;
     if (shown !== "band" && shown !== "breasts") return null;
-    return topPull(this.playerBody, this.playerOutfit, this.strippedPieces);
+    const pull = topPull(this.playerBody, this.playerOutfit, this.strippedPieces);
+    const side = this.showingSide;
+    return pull && side !== "both" ? { ...pull, side } : pull;
+  }
+
+  /** Which of her breasts she's baring for a guest right now (7e): both, or just her left or her right. */
+  get showingSide(): ShowSide {
+    return this.showChat?.shown === "breasts" ? (this.showChat.side ?? "both") : "both";
   }
 
   /** Which way her top comes off her breasts, as she has it on now (7e); down when there's none to move. */
@@ -4178,6 +4190,8 @@ export class Tavern {
     const gold = this.showGold(part, chat.part);
     chat.answered = true;
     chat.shown = part;
+    // Her breasts: both, or just the one, by chance.
+    if (part === "breasts") chat.side = pick(SHOW_SIDES);
     this.adjust(gold, 0, 0);
     this.earned += gold;
     if (how === "peek") this.records.peeks++;
@@ -4189,7 +4203,8 @@ export class Tavern {
     this.stirGuest(guest, SHOWN_LUST[how], SHOWN_BOLD[how]);
     // Bare: the whole room gets an eyeful.
     if (how === "bare") for (const other of this.guests) if (other !== guest && other.status !== "leaving") other.lust = Math.min(10, other.lust + ROOM_LUST);
-    const told = pick(SHOW_TOLD[part]).replaceAll("{top}", this.topPullDir);
+    const one = chat.side && chat.side !== "both" ? chat.side : null;
+    const told = (one ? pick(SHOW_TOLD_ONE).replaceAll("{side}", one) : pick(SHOW_TOLD[part])).replaceAll("{top}", this.topPullDir);
     const after = part === chat.part ? SHOW_AFTER[how] : SHOW_AFTER.other;
     chat.reply = [you(pick(SHOW_YES)), narrate(`${told} (+${gold} gold)`), this.guestSays(guest, pick(after))];
     this.say(`You showed them your ${this.showUnder(part) || PART_WORDS[part]}. +${gold} gold.`);
