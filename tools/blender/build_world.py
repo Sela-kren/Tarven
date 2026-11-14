@@ -1139,11 +1139,14 @@ FACE_PLANES = [
 # Her teeth and tongue, each a thin slab inside her mouth, out of sight until it opens. Teeth: from the middle out,
 # (pixels sideways, how far forward); their top and bottom (pixels up); and how thick. Her upper teeth hang just below
 # her mouth line, her lower teeth stand just below it; her tongue lies on the floor of her mouth.
-MOUTH_TEETH = [(0, 0.0835), (6, 0.0818), (10, 0.0785)]
+MOUTH_TEETH = [(0, 0.0835), (6, 0.0818), (10, 0.079), (13, 0.0768)]
 MOUTH_UPPER_TEETH = (46, 40.5)
 MOUTH_LOWER_TEETH = (42.2, 38.5)
 MOUTH_TEETH_THICK = 0.0012
-MOUTH_TONGUE = [(0, 0.081, 41.6), (7, 0.078, 41.0), (0, 0.07, 40.6), (6, 0.07, 40.2)]
+# Her tongue, rounded at the tip: rows from its tip back, each its middle (how far forward, pixels up) and its edge
+# (pixels sideways, how far forward, pixels up).
+MOUTH_TONGUE = [((0.081, 41.7), (5, 0.0798, 41.6)), ((0.0785, 41.5), (8.5, 0.0772, 41.2)),
+                ((0.0745, 41.0), (10, 0.074, 40.7)), ((0.069, 40.4), (9.5, 0.069, 40.2))]
 MOUTH_TONGUE_THICK = 0.0015
 # The lines an expression can draw on her face, each a thin dark slab just in front of it, hidden till the game shows
 # it (face.ts): the creases between her brows as she frowns or strains, two at the sides and a third in the middle;
@@ -1456,13 +1459,18 @@ def head_grid(at, m):
             for h in (0, 1):
                 head.face(((name, c, h, 0), (name, c + 1, h, 0), (name, c + 1, h, 1), (name, c, h, 1)), m[tone])
         head.face(((name, last_column, 0, 0), (name, last_column, 1, 0), (name, last_column, 1, 1), (name, last_column, 0, 1)), m[tone])
-    for i, (x, forward, up) in enumerate(MOUTH_TONGUE):
-        head.add(("tongue", i, 0), x * FACE_TRACE_X, forward, up * FACE_TRACE_UP)
-        head.add(("tongue", i, 1), x * FACE_TRACE_X, forward, up * FACE_TRACE_UP - MOUTH_TONGUE_THICK)
-    for layer in (0, 1):
-        head.face((("tongue", 0, layer), ("tongue", 1, layer), ("tongue", 3, layer), ("tongue", 2, layer)), m["tongue"])
-    for a, b in ((0, 1), (1, 3), (3, 2)):
-        head.face((("tongue", a, 0), ("tongue", b, 0), ("tongue", b, 1), ("tongue", a, 1)), m["tongue"])
+    for i, ((forward, up), (x, edge_forward, edge_up)) in enumerate(MOUTH_TONGUE):
+        for layer in (0, 1):
+            low = MOUTH_TONGUE_THICK * layer
+            head.add(("tongue", i, "mid", layer), 0, forward, up * FACE_TRACE_UP - low)
+            head.add(("tongue", i, "edge", layer), x * FACE_TRACE_X, edge_forward, edge_up * FACE_TRACE_UP - low)
+    for i in range(len(MOUTH_TONGUE) - 1):
+        for layer in (0, 1):
+            head.face((("tongue", i, "mid", layer), ("tongue", i, "edge", layer), ("tongue", i + 1, "edge", layer),
+                       ("tongue", i + 1, "mid", layer)), m["tongue"])
+        head.face((("tongue", i, "edge", 0), ("tongue", i + 1, "edge", 0), ("tongue", i + 1, "edge", 1),
+                   ("tongue", i, "edge", 1)), m["tongue"])
+    head.face((("tongue", 0, "mid", 0), ("tongue", 0, "mid", 1), ("tongue", 0, "edge", 1), ("tongue", 0, "edge", 0)), m["tongue"])
 
     # The lines an expression draws on her face: creases between her brows, and a blush's strokes on her cheeks.
     def plane_through(points):

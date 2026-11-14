@@ -26,6 +26,7 @@ const rig = faceRig(
   [...ring(-0.035, 1.487), ...ring(0.035, 1.487)],
   [[-0.012, 1.505, -0.08], [-0.055, 1.502, -0.06], [0.012, 1.505, -0.08], [0.055, 1.502, -0.06]],
   [[-0.016, 1.427, -0.08], [0, 1.428, -0.085], [0.016, 1.427, -0.08]],
+  [[0, 1.4245, -0.081], [0.006, 1.4235, -0.07], [-0.006, 1.4235, -0.07]],
 )!;
 const moved = (shape = REST_FACE, p: number[], part: FacePart = "skin") => {
   const out = [0, 0, 0];
@@ -67,8 +68,8 @@ describe("her face", () => {
     // Jolted while she's worked up, she's overwhelmed; on the edge with her pleasure past it, she loses herself.
     expect(expressionFor({ ...calm, reaction: "jolt", arousal: 0.8 })).toBe("overwhelmed");
     const edge = (pleasure: number) => faceFor({ ...calm, duel: { state: "edge", pleasure } });
-    expect(edge(1).tongue).toBeGreaterThan(0.6);
-    expect(edge(0.5).tongue).toBe(0);
+    expect(edge(1).tongue).toBeGreaterThan(0.9);
+    expect(edge(0.5).tongue).toBe(EXPRESSIONS.edge.tongue);
   });
 
   it("wears her state over her bearing: tired, embarrassed, drunk", () => {
@@ -116,6 +117,7 @@ describe("her face", () => {
     expect(rig.brows).toEqual([0.012, 0.055]);
     expect(rig.corners[0][0]).toBeCloseTo(-0.016);
     expect(rig.corners[1][0]).toBeCloseTo(0.016);
+    expect(rig.tongue).toEqual([-0.081, -0.07]);
     expect(faceRig([], [], [])).toBeNull();
   });
 
@@ -141,9 +143,14 @@ describe("her face", () => {
     expect(arched).toBeGreaterThan(moved({ ...REST_FACE, browArch: 1 }, [0.055, 1.502, -0.06], "brow")[1] - 1.502);
     expect(moved({ ...REST_FACE, browOuter: -1 }, [0.055, 1.502, -0.06], "brow")[1]).toBeLessThan(1.502);
     expect(moved({ ...REST_FACE, browOuter: -1 }, [0.012, 1.505, -0.08], "brow")[1]).toBeCloseTo(1.505, 4);
-    // Her tongue comes out forwards, onto her lower lip.
-    const tip = moved({ ...REST_FACE, tongue: 1 }, [0, 1.42, -0.08], "tongue");
-    expect(tip[2]).toBeLessThan(-0.088);
+    // Her tongue comes out forwards, its tip furthest, hanging down over her lower lip; its root less, and lifted.
+    const tip = moved({ ...REST_FACE, tongue: 1 }, [0, 1.4245, -0.081], "tongue");
+    const root = moved({ ...REST_FACE, tongue: 1 }, [0.006, 1.4235, -0.07], "tongue");
+    expect(tip[2]).toBeLessThan(-0.095);
+    expect(tip[1]).toBeLessThan(1.4245);
+    expect(root[2] - -0.07).toBeGreaterThan(tip[2] - -0.081);
+    expect(root[1]).toBeGreaterThan(1.4235);
+    expect(root[0]).toBeGreaterThan(0.006);
     // Smiling, the corners of her mouth go up; a smirk lifts only her left.
     expect(moved({ ...REST_FACE, smile: 1 }, [0.016, 1.427, -0.08])[1]).toBeGreaterThan(1.427);
     expect(moved({ ...REST_FACE, smirk: 1 }, [0.016, 1.427, -0.08])[1]).toBeCloseTo(1.427);
@@ -163,7 +170,15 @@ describe("her face", () => {
     // Her chin goes with it; the corners of her mouth hardly move.
     expect(moved(open, [0, 1.405, -0.08])[1]).toBeLessThan(1.4);
     expect(moved(open, [0.016, 1.4267, -0.08])[1]).toBeCloseTo(1.4267, 3);
-    // Her upper teeth, even hanging below the line, stay with her skull.
+    // Her upper teeth, even hanging below the line, stay with her skull, only spreading as her mouth widens.
     expect(moved(open, [0, 1.424, -0.083], "teeth")).toEqual([0, 1.424, -0.083]);
+    const tooth = moved(open, [0.009, 1.424, -0.08], "teeth");
+    expect(tooth[0]).toBeGreaterThan(0.009);
+    expect(tooth[1]).toBe(1.424);
+    // Her whole mouth widens as one, inside and all: halfway to the corner, half as far as the corner goes.
+    const corner = moved(open, [0.016, 1.428, -0.08])[0] - 0.016;
+    expect(moved(open, [0.008, 1.428, -0.07])[0] - 0.008).toBeCloseTo(corner / 2, 5);
+    // Well out on her cheek, nothing.
+    expect(moved(open, [0.04, 1.428, -0.07])[0]).toBe(0.04);
   });
 });

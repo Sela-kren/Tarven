@@ -101,7 +101,7 @@ export const EXPRESSIONS: Readonly<Record<Expression, FaceShape>> = {
   // Barely able to: lips pressed small, brows worried, eyes down, red all over.
   bashful: face({ brow: 0.25, browInner: 1, browOuter: -0.6, lidUpper: 0.35, lookY: -0.9, lookX: 0.3, smile: -0.1, purse: 1, blush: 1, crease: 0.4 }),
   // Breathless: mouth soft and open, tongue out over her lip, lids heavy, brows worried, flushed.
-  panting: face({ brow: 0.2, browInner: 0.9, browArch: 0.2, browOuter: -0.7, lidUpper: 0.6, lidLower: 0.15, lookY: 0.2, smile: 0.05, open: 0.75, tongue: 0.75, blush: 1, crease: 0.4 }),
+  panting: face({ brow: 0.2, browInner: 0.9, browArch: 0.2, browOuter: -0.7, lidUpper: 0.6, lidLower: 0.15, lookY: 0.2, smile: 0.05, open: 0.75, tongue: 1, blush: 1, crease: 0.4 }),
   // Fighting it: mouth stretched wide on both rows of teeth, corners down, eyes squeezed shut, brows pinched.
   strained: face({ brow: 0.2, browInner: 1, browOuter: -0.8, lidUpper: 1, lidLower: 0.6, smile: -0.8, open: 0.55, blush: 0.9, crease: 1 }),
   // Melting: a soft smile on parted lips, dreamy half shut eyes, brows lifted and easy, flushed.
@@ -111,10 +111,10 @@ export const EXPRESSIONS: Readonly<Record<Expression, FaceShape>> = {
   delighted: face({ brow: 0.3, browInner: 0.4, browArch: 0.5, browOuter: -0.3, lidUpper: 0.35, lidLower: 0.55, smile: 0.1, open: 0.8, purse: -0.9, tongue: 0.15, blush: 0.8 }),
   // Eyes nearly shut, brows up in the middle and down at the ends, mouth open on a moan, flushed.
   pleasure: face({ brow: 0.15, browInner: 1, browArch: 0.3, browOuter: -0.8, lidUpper: 0.85, lidLower: 0.25, smile: 0.2, open: 0.55, blush: 1, crease: 0.6 }),
-  // On the edge: eyes screwed shut, brows high and pinched, mouth wide open, as red as she gets.
-  edge: face({ brow: 0.5, browInner: 1, browArch: 0.3, browOuter: -0.9, lidUpper: 1, lidLower: 0.4, smile: -0.1, open: 0.9, blush: 1, crease: 1 }),
+  // On the edge: eyes screwed shut, brows high and pinched, mouth wide open on her tongue, as red as she gets.
+  edge: face({ brow: 0.5, browInner: 1, browArch: 0.3, browOuter: -0.9, lidUpper: 1, lidLower: 0.4, smile: -0.1, open: 0.9, tongue: 0.6, blush: 1, crease: 1 }),
   // Past it: eyes rolled up under heavy lids, brows high and helpless, mouth hanging open, tongue out.
-  lost: face({ brow: 0.6, browInner: 1, browArch: 0.4, browOuter: -0.8, lidUpper: 0.3, lidLower: 0.2, lookY: 1, smile: 0.15, open: 1, tongue: 0.7, blush: 1, crease: 0.6 }),
+  lost: face({ brow: 0.6, browInner: 1, browArch: 0.4, browOuter: -0.8, lidUpper: 0.3, lidLower: 0.2, lookY: 1, smile: 0.15, open: 1, tongue: 1, blush: 1, crease: 0.6 }),
   // Brows knitted down, eyes narrowed, mouth turned down.
   annoyed: face({ brow: -0.4, browInner: -1, browOuter: 0.3, lidUpper: 0.35, lidLower: 0.2, smile: -0.7, crease: 0.6 }),
 };
@@ -285,6 +285,8 @@ export interface FaceRig {
   corners: [[number, number, number], [number, number, number]];
   /** How high her mouth line is: her upper lip's lower edge, level, with her lower lip's just below. */
   line: number;
+  /** Her tongue, how far forwards it reaches: its tip's z and its root's (forwards is -z); null if she has none. */
+  tongue: [number, number] | null;
 }
 
 /** What a point of her face is: her brows' and her upper teeth's move in their own ways; the rest by where it is. */
@@ -318,10 +320,17 @@ export const FACE_REACH = {
   /** Her mouth wide open: how far her jaw drops, and swings back. */
   jaw: 0.019,
   jawBack: 0.004,
-  /** Open wide, the corners of her mouth draw out to the sides this far, and the skin round them with them. */
+  /**
+   * Open wide, the corners of her mouth draw out to the sides this far; pressed small (`purseIn`), in. Her whole mouth
+   * stretches with them, inside and all, so its corners stay clean: everything within `mouthHigh` of her mouth line,
+   * fading out by `mouthFade`, out to her corners and fading out by `mouthSide` times as far.
+   */
   mouthWiden: 0.004,
-  /** Her lips pressed small: the corners draw in this far, and a little forward. */
   purseIn: 0.0045,
+  mouthHigh: 0.006,
+  mouthFade: 0.014,
+  mouthSide: 1.8,
+  /** Her lips pressed small: the corners come a little forward. */
   purseForward: 0.0015,
   /**
    * What drops with her jaw: everything below her mouth line (by more than `jawGap`) down to `jawDepth` below it, all
@@ -334,16 +343,31 @@ export const FACE_REACH = {
   jawWide: 0.016,
   jawWideLow: 0.05,
   jawFull: 0.35,
-  /** Her tongue all the way out: how far forwards, lifted up onto her lower lip as it comes. */
-  tongueOut: 0.011,
-  tongueUp: 0.0028,
+  /**
+   * Her tongue all the way out: how far forwards its tip comes (its root `tongueRoot` of that), lifted up over her
+   * lower teeth (`tongueUp`, all of it by `tongueLifted` of the way out), its tip hanging down over her lower lip
+   * (`tongueDroop`, from `tongueBend` along it, more the further out it is), and spread wider (`tongueWide`, share of
+   * its width). Lifting first and hanging down last, it comes out over her lip rather than through it.
+   */
+  tongueOut: 0.017,
+  tongueRoot: 0.45,
+  tongueUp: 0.003,
+  tongueLifted: 0.4,
+  tongueDroop: 0.0065,
+  tongueBend: 0.35,
+  tongueWide: 0.3,
 };
 
 /**
- * Finds her eyes, brows and mouth from the points of the meshes they're drawn in (as shaped): her eye dots', her
- * brows' and her lips'. Null if any are missing.
+ * Finds her eyes, brows, mouth and tongue from the points of the meshes they're drawn in (as shaped): her eye dots',
+ * her brows', her lips' and her tongue's. Null if any but her tongue are missing.
  */
-export function faceRig(eyes: readonly number[][], brows: readonly number[][], lips: readonly number[][]): FaceRig | null {
+export function faceRig(
+  eyes: readonly number[][],
+  brows: readonly number[][],
+  lips: readonly number[][],
+  tongue: readonly number[][] = [],
+): FaceRig | null {
   if (!eyes.length || !brows.length || !lips.length) return null;
   const eye = (side: number): EyeRig | null => {
     const points = eyes.filter((p) => Math.sign(p[0]) === side);
@@ -364,7 +388,28 @@ export function faceRig(eyes: readonly number[][], brows: readonly number[][], l
     return [out[0], out[1], out[2]];
   };
   const corners: FaceRig["corners"] = [corner(-1), corner(1)];
-  return { eyes: [left, right], brows: [Math.min(...across), Math.max(...across)], corners, line: (corners[0][1] + corners[1][1]) / 2 };
+  const reach = tongue.map((p) => p[2]);
+  return {
+    eyes: [left, right],
+    brows: [Math.min(...across), Math.max(...across)],
+    corners,
+    line: (corners[0][1] + corners[1][1]) / 2,
+    tongue: reach.length ? [Math.min(...reach), Math.max(...reach)] : null,
+  };
+}
+
+const smooth = (s: number) => {
+  const c = Math.min(1, Math.max(0, s));
+  return c * c * (3 - 2 * c);
+};
+
+/** How much of her mouth's widening a point of her face takes, 0 to 1 (FACE_REACH.mouth*). */
+export function mouthWeight(rig: FaceRig, x: number, y: number, z: number): number {
+  if (z > rig.corners[0][2] + 0.02) return 0;
+  const half = (Math.abs(rig.corners[0][0]) + Math.abs(rig.corners[1][0])) / 2;
+  const across = 1 - smooth((Math.abs(x) - half) / (half * (FACE_REACH.mouthSide - 1)));
+  const high = 1 - smooth((Math.abs(y - rig.line) - FACE_REACH.mouthHigh) / (FACE_REACH.mouthFade - FACE_REACH.mouthHigh));
+  return across * high;
 }
 
 /** How much of her jaw's drop a point of her face below her mouth line takes, 0 to 1 (FACE_REACH.jaw*). */
@@ -387,7 +432,6 @@ export function faceMove(rig: FaceRig, shape: FaceShape, p: readonly number[], p
   out[0] = x;
   out[1] = y;
   out[2] = z;
-  if (part === "teeth") return false;
   if (part === "brow") {
     const [inner, outer] = rig.brows;
     const t = Math.min(1, Math.max(0, (Math.abs(x) - inner) / Math.max(1e-6, outer - inner)));
@@ -403,7 +447,19 @@ export function faceMove(rig: FaceRig, shape: FaceShape, p: readonly number[], p
     out[2] = z + Math.min(0, up) * FACE_REACH.browForward;
     return up !== 0 || knit !== 0;
   }
+  // Her mouth stretches wide or draws in as a whole, lips, teeth, tongue and the inside of it, from the middle out.
   let moved = false;
+  const widen = FACE_REACH.mouthWiden * shape.open - FACE_REACH.purseIn * shape.purse;
+  if (widen !== 0) {
+    const w = mouthWeight(rig, x, y, z);
+    if (w > 0) {
+      const half = (Math.abs(rig.corners[0][0]) + Math.abs(rig.corners[1][0])) / 2;
+      out[0] += (x / half) * widen * w;
+      moved = true;
+    }
+  }
+  // Her upper teeth stay with her skull.
+  if (part === "teeth") return moved;
   for (const eye of rig.eyes) {
     const [cx, cy, cz] = eye.centre;
     const [hw, hh] = eye.half;
@@ -415,30 +471,33 @@ export function faceMove(rig: FaceRig, shape: FaceShape, p: readonly number[], p
     const lid = Math.max(0.06, dy > 0 ? 1 - shape.lidUpper : 1 - shape.lidLower);
     out[0] = cx + dx * scale + shape.lookX * hw * FACE_REACH.look;
     out[1] = cy + dy * scale * lid + shape.lookY * hh * FACE_REACH.look;
-    moved = true;
+    return true;
   }
-  if (moved) return true;
   rig.corners.forEach((corner, i) => {
     const d = Math.hypot(x - corner[0], y - corner[1]);
     if (d >= FACE_REACH.corner || z > corner[2] + 0.012) return;
     const w = (1 - d / FACE_REACH.corner) ** 2;
     const side = i === 0 ? -1 : 1;
     const lift = shape.smile + (i === 0 ? shape.smirk : 0);
-    out[0] += side * (FACE_REACH.mouthWiden * shape.open - FACE_REACH.purseIn * shape.purse) * w;
-    out[2] -= FACE_REACH.purseForward * shape.purse * w;
-    if (lift === 0) {
-      moved ||= shape.open > 0 || shape.purse > 0;
-      return;
+    if (shape.purse > 0) {
+      out[2] -= FACE_REACH.purseForward * shape.purse * w;
+      moved = true;
     }
+    if (lift === 0) return;
     out[0] += side * FACE_REACH.smileOut * Math.max(0, lift) * w;
     out[1] += FACE_REACH.smileUp * lift * w;
     out[2] += FACE_REACH.smileBack * Math.max(0, lift) * w;
     moved = true;
   });
-  // Her tongue comes out over her lower lip.
-  if (part === "tongue" && shape.tongue > 0) {
-    out[2] -= FACE_REACH.tongueOut * shape.tongue;
-    out[1] += FACE_REACH.tongueUp * shape.tongue;
+  // Her tongue comes out over her lower teeth and lip, spreading, its tip hanging down over her lip.
+  if (part === "tongue" && shape.tongue > 0 && rig.tongue) {
+    const [tip, root] = rig.tongue;
+    const t = Math.min(1, Math.max(0, (root - z) / Math.max(1e-6, root - tip)));
+    const bend = Math.max(0, (t - FACE_REACH.tongueBend) / (1 - FACE_REACH.tongueBend));
+    out[0] += x * FACE_REACH.tongueWide * shape.tongue;
+    const lift = FACE_REACH.tongueUp * Math.min(1, shape.tongue / FACE_REACH.tongueLifted);
+    out[1] += lift - FACE_REACH.tongueDroop * bend * bend * shape.tongue * shape.tongue;
+    out[2] -= FACE_REACH.tongueOut * shape.tongue * (FACE_REACH.tongueRoot + (1 - FACE_REACH.tongueRoot) * t);
     moved = true;
   }
   // Her jaw drops, and her lower lip, teeth and tongue with it.

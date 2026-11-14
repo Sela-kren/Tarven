@@ -2831,7 +2831,7 @@ export class Dresser {
     const pointsOf = (names: readonly string[]) =>
       slots.filter((slot) => names.includes(slot.original.name)).flatMap((slot) => Array.from({ length: slot.bind.length / 3 }, (_, v) => shapedAt(slot, v)));
     if (this.faceRigOn !== shaped) {
-      this.faceRig = faceRig(pointsOf([EYE_MATERIAL]), pointsOf([BROW_MATERIAL]), pointsOf(LIP_MATERIALS));
+      this.faceRig = faceRig(pointsOf([EYE_MATERIAL]), pointsOf([BROW_MATERIAL]), pointsOf(LIP_MATERIALS), pointsOf([TONGUE_MATERIAL]));
       this.faceRigOn = shaped;
     }
     const rig = this.faceRig;
