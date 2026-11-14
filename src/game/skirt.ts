@@ -61,9 +61,11 @@ const TAU = Math.PI * 2;
  * gathered, to `midScale` and `lowerScale` of their length, so it all sits in a short roll at her waist in her hands,
  * clear of her groin and her behind; at full length they stood out round her like stiff wings. The rest of the skirt,
  * round her sides, is hitched up with it, `hitch` of the way (to her knees), so its hem rises too instead of trailing a long tail
- * to the floor beside the bunch.
+ * to the floor beside the bunch. The panels hang from about the middle of her behind, so where she gathers them
+ * they're also lifted `raise` metres and their upper part bunched to `upperScale`, taking the roll up to her waist,
+ * clear of her behind (and in front, of her groin).
  */
-export const GATHER = { upper: 3.0, mid: 1.6, lower: 3.0, midScale: 0.4, lowerScale: 0.3, hitch: 1 };
+export const GATHER = { upper: 3.0, mid: 1.6, lower: 3.0, upperScale: 0.35, midScale: 0.4, lowerScale: 0.3, hitch: 1, raise: 0.2 };
 /**
  * How far round her a lift reaches, by how much the panel faces the lifted side (the sine of its angle round her):
  * none from the first, all of it from the second; so the panels either side of the middle come up all the way too,
@@ -82,6 +84,8 @@ interface Panel {
   readonly mid: Object3D | null;
   readonly lower: Object3D;
   readonly upperRest: Quaternion;
+  /** Where the panel hangs from, in the hips' frame, as built. */
+  readonly upperAt: Vector3;
   readonly midRest: Quaternion;
   readonly lowerRest: Quaternion;
   /** Outwards, level with the floor. */
@@ -166,6 +170,7 @@ export class Skirt {
         mid,
         lower,
         upperRest: upper.quaternion.clone(),
+        upperAt: upper.position.clone(),
         midRest: mid ? mid.quaternion.clone() : new Quaternion(),
         lowerRest: lower.quaternion.clone(),
         out,
@@ -312,9 +317,12 @@ export class Skirt {
       // Gathered, the cloth below her hips bunches up, and round her sides it's hitched up with it; the lower part's
       // scale is on top of the mid part's.
       const bunch = p.mid ? Math.max(held, GATHER.hitch * Math.max(this.lift.front, this.lift.back)) : 0;
-      const midScale = 1 + (GATHER.midScale - 1) * bunch;
+      const upperScale = 1 + (GATHER.upperScale - 1) * held;
+      const midScale = (1 + (GATHER.midScale - 1) * bunch) / upperScale;
+      p.upper.position.copy(p.upperAt).setY(p.upperAt.y + GATHER.raise * held);
+      p.upper.scale.setScalar(upperScale);
       p.mid?.scale.setScalar(midScale);
-      p.lower.scale.setScalar((1 + (GATHER.lowerScale - 1) * bunch) / midScale);
+      p.lower.scale.setScalar((1 + (GATHER.lowerScale - 1) * bunch) / (upperScale * midScale));
       Skirt.turn(p.upper, p.upperRest, axisLocal.copy(p.axis), upper[i] - p.rest);
       // Turning about the axis leaves it where it was, so in each part's frame it is only un-rested.
       const inUpper = axisLocal.copy(p.axis).applyQuaternion(inverse.copy(p.upperRest).invert()).clone();
@@ -342,6 +350,8 @@ export class Skirt {
       p.upper.quaternion.copy(p.upperRest);
       p.mid?.quaternion.copy(p.midRest);
       p.lower.quaternion.copy(p.lowerRest);
+      p.upper.position.copy(p.upperAt);
+      p.upper.scale.setScalar(1);
       p.mid?.scale.setScalar(1);
       p.lower.scale.setScalar(1);
     }
