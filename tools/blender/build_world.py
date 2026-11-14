@@ -1181,11 +1181,18 @@ HEAD_BROW = [(0.0156, 0.1065, 0.1125, 0.092), (0.0398, 0.1095, 0.1149, 0.079), (
 HEAD_BROW_SECTIONS = 16
 HEAD_BROW_BUNCH = 1.35
 HEAD_BROW_THICK = [(0.0, 0.0017), (0.1, 0.0031), (0.3, 0.0041), (0.7, 0.0027), (1.0, 0.0004)]
-HEAD_BROW_DEPTH = 0.006
+# Drawn on her face like her eyes, not standing off it: each edge of the stroke this far in front of her face just
+# there (`HEAD_BROW_LIFT`, enough that no fold of her face rises in front of it from any side), and the stroke only
+# this deep, the rest of it under her skin, so its sides hardly show. The game keeps it there as it moves (appearance.ts).
+HEAD_BROW_LIFT = 0.0015
+HEAD_BROW_DEPTH = 0.003
 
 
-def brow_stroke(at, sx):
-    """One brow as rings of four corners (top and bottom, front and back) from the nose out, for a loft."""
+def brow_stroke(at, sx, surface=None):
+    """
+    One brow as rings of four corners (top and bottom, front and back) from the nose out, for a loft. `surface` says
+    how far forward her face is at (x, height), to lay the stroke on it.
+    """
     xs = [x for x, _, _, _ in HEAD_BROW]
 
     def through(values, x):
@@ -1212,8 +1219,12 @@ def brow_stroke(at, sx):
         middle = through([(low + top) / 2 for _, low, top, _ in HEAD_BROW], x)
         forward = through([y for _, _, _, y in HEAD_BROW], x)
         half = thick(share) / 2
-        rings.append([at(sx * x, forward, middle + half), at(sx * x, forward, middle - half),
-                      at(sx * x, forward - HEAD_BROW_DEPTH, middle - half), at(sx * x, forward - HEAD_BROW_DEPTH, middle + half)])
+        top = bottom = forward
+        if surface:
+            top = (surface(sx * x, middle + half) or forward - HEAD_BROW_LIFT) + HEAD_BROW_LIFT
+            bottom = (surface(sx * x, middle - half) or forward - HEAD_BROW_LIFT) + HEAD_BROW_LIFT
+        rings.append([at(sx * x, top, middle + half), at(sx * x, bottom, middle - half),
+                      at(sx * x, bottom - HEAD_BROW_DEPTH, middle - half), at(sx * x, top - HEAD_BROW_DEPTH, middle + half)])
     return rings
 # One half of the bob from the crown to the neck. Each ring runs around the outside from the front
 # edge to the centre of the back, then returns along the inside: (x, y, height above the chin).
@@ -1600,12 +1611,14 @@ def add_head(part, spec, m, hair_parts=None):
 
     part.loft([neck_ring(*r) for r in spec["neck"]], skin)
     jaw = spec["jaw"]
+    face_tree = None
     if spec.get("angular_head"):
         points, faces, mats = angular_head(at, m, skin)
         part.solid(points, faces, mats)
     elif spec.get("head_grid"):
         points, faces, mats = head_grid(at, m)
         part.solid(points, faces, mats)
+        face_tree = BVHTree.FromPolygons([Vector(p) for p in points], [list(f) for f in faces])
     else:
         part.loft([outline(up, [(x * (jaw if i < 2 else 1.0), y) for x, y in half])
                    for i, (up, half) in enumerate(spec.get("head_rings", HEAD_RINGS))], skin)
@@ -1614,8 +1627,16 @@ def add_head(part, spec, m, hair_parts=None):
     if spec.get("angular_head"):
         pass  # the nose, eyes and mouth are part of the head itself
     elif spec.get("cute_face"):
+        def face_surface(x, up):
+            # How far forward her face is at (x, height): a ray from in front, straight back onto it.
+            if face_tree is None:
+                return None
+            ox, _, oz = at(x, 0, up)
+            hit, _, _, _ = face_tree.ray_cast(Vector((ox, 1.0, oz)), Vector((0.0, -1.0, 0.0)))
+            return hit.y / ky if hit else None
+
         for sx in (-1, 1):
-            part.loft(brow_stroke(at, sx), hair)
+            part.loft(brow_stroke(at, sx, face_surface), hair)
     else:
         part.solid([at(0, 0.096, 0.122), at(0, 0.124, 0.072), at(0.021, 0.096, 0.066),
                     at(-0.021, 0.096, 0.066), at(0, 0.093, 0.06)], nose, skin)

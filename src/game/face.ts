@@ -299,6 +299,27 @@ export interface FaceRig {
 /** What a point of her face is: her brows' and her upper teeth's move in their own ways; the rest by where it is. */
 export type FacePart = "brow" | "teeth" | "tongue" | "skin";
 
+/**
+ * The front of her face, from its triangles (each nine numbers: three points' x, y, z), to keep her brows on it as
+ * they move: how far forward it is (its z, forwards being -z) at (x, y), or null off it.
+ */
+export function faceSurface(triangles: readonly number[][]): (x: number, y: number) => number | null {
+  return (x, y) => {
+    let front: number | null = null;
+    for (const [ax, ay, az, bx, by, bz, cx, cy, cz] of triangles) {
+      const d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+      if (Math.abs(d) < 1e-12) continue;
+      const u = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / d;
+      const v = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / d;
+      const w = 1 - u - v;
+      if (u < -1e-6 || v < -1e-6 || w < -1e-6) continue;
+      const z = u * az + v * bz + w * cz;
+      if (front === null || z < front) front = z;
+    }
+    return front;
+  };
+}
+
 /** How far the parts move at full strength (metres). */
 export const FACE_REACH = {
   /**

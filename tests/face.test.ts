@@ -8,6 +8,7 @@ import {
   faceMove,
   faceMoved,
   faceRig,
+  faceSurface,
   REST_FACE,
   SULTRY_PAST,
   BASHFUL_BELOW,
@@ -171,6 +172,16 @@ describe("her face", () => {
     expect(moved(pressed, [0, 1.405, -0.08])).toEqual([0, 1.405, -0.08]);
     // Her chin, well away from the corners, stays put.
     expect(moved({ ...REST_FACE, smile: 1 }, [0, 1.4, -0.08])).toEqual([0, 1.4, -0.08]);
+  });
+
+  it("finds the front of her face, for her brows to lie on", () => {
+    // A slope leaning back as it goes up, and behind it a plane further back that never counts.
+    const surface = faceSurface([
+      [0, 0, -0.08, 0.1, 0, -0.08, 0, 0.1, -0.07],
+      [0, 0, -0.02, 0.1, 0, -0.02, 0, 0.1, -0.02],
+    ]);
+    expect(surface(0.02, 0.05)).toBeCloseTo(-0.075);
+    expect(surface(0.5, 0.5)).toBeNull();
   });
 
   it("opens her mouth: her lower lip and chin drop, her upper lip and teeth stay", () => {

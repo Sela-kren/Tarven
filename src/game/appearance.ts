@@ -17,7 +17,7 @@ import {
   GLANS_MATERIAL, PENIS_MATERIAL, PENIS_TYPES, SCROTUM_MATERIAL, penisFrame, penisShape, readPenis, shapePenis, type PenisPatch,
   type PenisType,
 } from "./penis";
-import { FACE_LINES, faceMove, faceMoved, faceRig, REST_FACE, type FaceRig, type FaceShape } from "./face";
+import { FACE_LINES, faceMove, faceMoved, faceRig, faceSurface, REST_FACE, type FaceRig, type FaceShape } from "./face";
 import { coatRetroMaterial, coverCoat, solidRetroMaterial, stainRetroMaterial } from "./retro";
 import type { LegSize } from "./skirt";
 
@@ -2245,6 +2245,8 @@ const EYE_MATERIAL = "T_soot";
 const UPPER_TEETH_MATERIAL = "T_teeth";
 const TONGUE_MATERIAL = "T_tongue";
 const BROW_MATERIAL = "T_hair_f";
+/** The planes of her face's skin, which her brows lie on. */
+const SKIN_FACE_MATERIAL = /^T_face_/;
 const LIP_MATERIALS: readonly string[] = ["T_lip", "T_lip_lit"];
 /**
  * As she blushes, the red spreads over her face towards this colour: her cheeks first, then the tip of her nose, then
@@ -2364,6 +2366,10 @@ export class Dresser {
   /** The shape her face's rig was found on, so it's only found again once she's reshaped. */
   private faceRigOn: unknown = null;
   private readonly faceMoves = new Map<MeshSlot, Float32Array>();
+  /** The front of her face round her brows (on her as shaped), and how far in front of it each point of them is. */
+  private browSurface: ((x: number, y: number) => number | null) | null = null;
+  private browSurfaceOn: unknown = null;
+  private readonly browOffsets = new Map<MeshSlot, Float32Array>();
   private readonly pullPlans = new Map<MeshSlot, PullPlan>();
   /** The pulled meshes' normals as built, to put back once the pull's let go. */
   private readonly pullNormals = new Map<MeshSlot, Float32Array>();
@@ -2905,6 +2911,45 @@ export class Dresser {
       this.faceRigOn = shaped;
     }
     const rig = this.faceRig;
+    // Her brows lie on her face like her eyes, however she's shaped and wherever they move: the front of her face
+    // round them as shaped, and how far in front of it each point of them was built (on her face as built).
+    if (this.browSurfaceOn !== shaped) {
+      this.browSurfaceOn = shaped;
+      this.browSurface = null;
+      this.browOffsets.clear();
+      if (rig) {
+        const low = Math.min(...rig.eyes.map((eye) => eye.centre[1] - eye.half[1])) - 0.02;
+        const high = Math.max(...pointsOf([BROW_MATERIAL]).map((p) => p[1])) + 0.02;
+        const built = (slot: MeshSlot, v: number) => [slot.bind[v * 3], slot.bind[v * 3 + 1], slot.bind[v * 3 + 2]];
+        const front = (at: (slot: MeshSlot, v: number) => number[]) => {
+          const triangles: number[][] = [];
+          for (const slot of slots) {
+            if (!SKIN_FACE_MATERIAL.test(slot.original.name)) continue;
+            const index = slot.mesh.geometry.index;
+            const count = index ? index.count : slot.bind.length / 3;
+            for (let t = 0; t < count; t += 3) {
+              const corners = [0, 1, 2].map((k) => at(slot, index ? index.getX(t + k) : t + k));
+              if (corners.every((p) => p[1] < low - 0.02 || p[1] > high + 0.02)) continue;
+              triangles.push(corners.flat());
+            }
+          }
+          return triangles.length ? faceSurface(triangles) : null;
+        };
+        this.browSurface = front(shapedAt);
+        const asBuilt = front(built);
+        for (const slot of slots) {
+          if (slot.original.name !== BROW_MATERIAL || !asBuilt) continue;
+          const offsets = new Float32Array(slot.bind.length / 3);
+          for (let v = 0; v < offsets.length; v++) {
+            const [x, y, z] = built(slot, v);
+            const under = asBuilt(x, y);
+            offsets[v] = under === null ? Number.NaN : z - under;
+          }
+          this.browOffsets.set(slot, offsets);
+        }
+      }
+    }
+    const surface = this.browSurface;
     const to = [0, 0, 0];
     for (const slot of slots) {
       const count = slot.bind.length / 3;
@@ -2916,7 +2961,13 @@ export class Dresser {
       if (rig) {
         for (let v = 0; v < count; v++) {
           const p = shapedAt(slot, v);
-          if (!faceMove(rig, this.faceShape, p, part, to)) continue;
+          const moved = faceMove(rig, this.faceShape, p, part, to);
+          // Her brows: kept as far in front of her face as they were built, wherever they are.
+          const offset = part === "brow" && surface ? this.browOffsets.get(slot)?.[v] : undefined;
+          if (offset !== undefined && !Number.isNaN(offset)) {
+            const under = surface!(to[0], to[1]);
+            if (under !== null) to[2] = under + offset;
+          } else if (!moved) continue;
           moves[v * 3] = to[0] - p[0];
           moves[v * 3 + 1] = to[1] - p[1];
           moves[v * 3 + 2] = to[2] - p[2];
