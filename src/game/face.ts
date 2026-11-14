@@ -38,7 +38,7 @@ export interface FaceShape {
   smirk: number;
   /** Her mouth open, 0 shut to 1 as wide as it goes. */
   open: number;
-  /** Her lips pressed together small, the corners drawn in, 0 to 1. */
+  /** Her lips pressed together small, the corners drawn in (1); or stretched wide, drawn out and back (-1). */
   purse: number;
   /** Her tongue out over her lower lip, 0 in to 1 as far as it goes. */
   tongue: number;
@@ -106,8 +106,9 @@ export const EXPRESSIONS: Readonly<Record<Expression, FaceShape>> = {
   strained: face({ brow: 0.2, browInner: 1, browOuter: -0.8, lidUpper: 1, lidLower: 0.6, smile: -0.8, open: 0.55, blush: 0.9, crease: 1 }),
   // Melting: a soft smile on parted lips, dreamy half shut eyes, brows lifted and easy, flushed.
   blissful: face({ brow: 0.25, browInner: 0.5, browArch: 0.3, browOuter: -0.3, lidUpper: 0.65, lidLower: 0.2, smile: 0.7, open: 0.25, blush: 0.9 }),
-  // Loving it: a big open smile on her teeth, eyes crinkled shut from below, brows up and easy, flushed.
-  delighted: face({ brow: 0.3, browInner: 0.4, browArch: 0.5, browOuter: -0.3, lidUpper: 0.35, lidLower: 0.55, smile: 1, open: 0.6, tongue: 0.15, blush: 0.8 }),
+  // Loving it: a big open smile, her upper lip straight and stretched wide on her teeth, her lower lip dropped round
+  // below it, eyes crinkled from below, brows up and easy, flushed.
+  delighted: face({ brow: 0.3, browInner: 0.4, browArch: 0.5, browOuter: -0.3, lidUpper: 0.35, lidLower: 0.55, smile: 0.1, open: 0.8, purse: -0.9, tongue: 0.15, blush: 0.8 }),
   // Eyes nearly shut, brows up in the middle and down at the ends, mouth open on a moan, flushed.
   pleasure: face({ brow: 0.15, browInner: 1, browArch: 0.3, browOuter: -0.8, lidUpper: 0.85, lidLower: 0.25, smile: 0.2, open: 0.55, blush: 1, crease: 0.6 }),
   // On the edge: eyes screwed shut, brows high and pinched, mouth wide open, as red as she gets.
