@@ -62,6 +62,12 @@ const FARMER: readonly GuestKind[] = ["farmer"];
 const SOLDIER: readonly GuestKind[] = ["soldier"];
 const SMUGGLER: readonly GuestKind[] = ["smuggler"];
 const FUGITIVE: readonly GuestKind[] = ["fugitive"];
+const ADVENTURER: readonly GuestKind[] = ["adventurer"];
+const BANDIT: readonly GuestKind[] = ["bandit"];
+const NOBLE: readonly GuestKind[] = ["noble"];
+
+/** Touches that land as a smack: the comic panel shakes harder for them, and she jolts more. */
+export const SMACK_TOUCHES: ReadonlySet<string> = new Set(["smack", "swat", "luckyPat", "banditSmack", "scuffleSpank"]);
 
 export const TOUCHES: readonly TouchDef[] = [
   // 1: barely there.
@@ -219,6 +225,16 @@ export const TOUCHES: readonly TouchDef[] = [
     allow: "You let them guide you through. The hand stays a moment after you're clear.",
     lean: "You slow right down, so the hand has to stay longer.",
   },
+  {
+    id: "pinch",
+    level: 3,
+    region: "rear",
+    kinds: ANY,
+    reach: "As you squeeze between the benches, someone pinches your backside.",
+    thoughts: ["(Ow! Who did— which one of you—)", "(I didn't see who. I'm not sure I want to know.)", "(Whoever that was, they can do it again.)"],
+    allow: "You rub the spot and carry on, pretending you didn't feel a thing. Someone snickers.",
+    lean: "You glance back over your shoulder, and give your hips a little sway on the way past.",
+  },
 
   // 4: cheeky.
   {
@@ -230,6 +246,26 @@ export const TOUCHES: readonly TouchDef[] = [
     thoughts: ["(Are they really going to—)", "(I should be furious. Why am I blushing?)", "(Finally.)"],
     allow: "SMACK. You squeak, and the whole table roars. \"You brute!\" But you're smiling.",
     lean: "SMACK. You look back over your shoulder. \"That the best you've got, soldier?\"",
+  },
+  {
+    id: "swat",
+    level: 4,
+    region: "rear",
+    kinds: ANY,
+    reach: "You turn from the table with the empties, and a hand swings for your backside.",
+    thoughts: ["(Don't you dare—)", "(Everyone's going to hear it. Why am I not moving?)", "(Go on, then. Make it a good one.)"],
+    allow: "SMACK. You yelp and nearly drop the cups. The table thinks it's the funniest thing all night.",
+    lean: "SMACK. You stop, look back, and wiggle once. The table howls.",
+  },
+  {
+    id: "luckyPat",
+    level: 4,
+    region: "rear",
+    kinds: ADVENTURER,
+    reach: "\"For luck,\" the adventurer says, and gives your backside a pat as you go past. \"Big job tomorrow.\"",
+    thoughts: ["(I am not a lucky charm!)", "(It's only for luck. That's what they said.)", "(They'll want a lot of luck, then.)"],
+    allow: "You let it go with a roll of your eyes. They grin like they've already won.",
+    lean: "You turn round and back up to them. \"Better make it twice. Big job.\"",
   },
   {
     id: "kissHand",
@@ -334,6 +370,36 @@ export const TOUCHES: readonly TouchDef[] = [
     allow: "You take it from their fingers. They watch you chew like it's the best show in town.",
     lean: "You take the bread, and nip their fingertip for good measure. The farmer chokes on their ale.",
   },
+  {
+    id: "brush",
+    level: 5,
+    region: "chest",
+    kinds: ANY,
+    reach: "They reach past you for the jug, and their arm drags slow across your chest. It's no accident.",
+    thoughts: ["(That was on purpose. That was on purpose!)", "(My skin's prickling where it went.)", "(Reach for the jug again. Slower.)"],
+    allow: "You stand very still and let them take their time getting the jug.",
+    lean: "You lean in to pour for them, so it happens again on the way back.",
+  },
+  {
+    id: "banditSmack",
+    level: 5,
+    region: "rear",
+    kinds: BANDIT,
+    reach: "The bandit swings a hand at your backside hard enough to sting. \"That's what I call service.\"",
+    thoughts: ["(That hurt! You animal—)", "(It stings. I can still feel exactly where.)", "(Again. Harder.)"],
+    allow: "SMACK. You bite your lip and keep walking, the sting spreading warm.",
+    lean: "SMACK. You stop dead and look back at them. \"That all?\" Their mates roar.",
+  },
+  {
+    id: "clumsyPat",
+    level: 5,
+    region: "rear",
+    kinds: FARMER,
+    reach: "The farmer gives your backside an awkward pat, then looks horrified at their own hand.",
+    thoughts: ["(Did they just— they did.)", "(They've gone redder than I have. That's sweet. Is it sweet?)", "(Don't stop at one, farmer.)"],
+    allow: "You pretend not to notice. They pretend not to notice you pretending.",
+    lean: "You lean down and whisper, \"You can do that properly, you know.\" They spill their ale.",
+  },
 
   // 6: hands wander.
   {
@@ -385,6 +451,46 @@ export const TOUCHES: readonly TouchDef[] = [
     thoughts: ["(Their heart's racing. So's mine.)", "(I could stay like this.)", "(I want more than this.)"],
     allow: "You rest against them and listen to their heart slow down.",
     lean: "You wrap your arms round them in return and hold on just as tight.",
+  },
+  {
+    id: "grope",
+    level: 6,
+    region: "rear",
+    kinds: ANY,
+    reach: "A hand cups your backside as you lean over the table, and gives it a slow squeeze.",
+    thoughts: ["(Get your hand off— everyone can see—)", "(It's still there. I'm still leaning over.)", "(Mm. Take your time.)"],
+    allow: "You go on wiping the table, very slowly, with their hand right where it is.",
+    lean: "You lean a little further over the table, and their grip tightens.",
+  },
+  {
+    id: "cup",
+    level: 6,
+    region: "chest",
+    kinds: ANY,
+    reach: "As you bend to set the plate down, a hand comes up under your breast and cups it, weighing it.",
+    thoughts: ["(Like— like fruit at market?! Put it—)", "(They're just holding it. Just holding. In front of everyone.)", "(Heavy, isn't it? Keep holding.)"],
+    allow: "You freeze, plate still in your hand, and let them hold you there.",
+    lean: "You set the plate down, slow, and don't straighten up.",
+  },
+  {
+    id: "gloved",
+    level: 6,
+    region: "chest",
+    kinds: NOBLE,
+    reach: "The noble's gloved hand brushes your breast as you pour, and lingers. They don't apologise.",
+    thoughts: ["(Some lord thinks they can just—)", "(The leather's soft. So soft. Why do I know that?)", "(Does my lord want a closer look?)"],
+    allow: "You keep pouring, and their glove stays where it is till the cup is full.",
+    lean: "You overfill the cup on purpose, so you have to stand there longer.",
+  },
+  {
+    id: "overHeart",
+    level: 6,
+    region: "chest",
+    kinds: FUGITIVE,
+    reach: "The stranger's hand settles over your heart, shaking, and then slips a little lower.",
+    thoughts: ["(That's not my heart any more—)", "(Their hand's shaking worse than mine.)", "(It's alright. You can stay there.)"],
+    allow: "You let their hand rest there, and feel them breathe out for the first time all night.",
+    lean: "You lay your hand over theirs and press it closer.",
   },
 
   // 7: over the line.
@@ -438,6 +544,36 @@ export const TOUCHES: readonly TouchDef[] = [
     allow: "You straighten up, touch your lips, and say nothing at all.",
     lean: "You bend down and steal one right back. The farmer nearly falls off the bench.",
   },
+  {
+    id: "fondle",
+    level: 7,
+    region: "chest",
+    kinds: ANY,
+    reach: "A hand slides up under your arm and closes over your breast, and starts to knead.",
+    thoughts: ["(No— not there, not here—)", "(I can't breathe right. I can't make my feet go.)", "(Don't you dare stop now.)"],
+    allow: "You stand there with the tray shaking in your hands and let them.",
+    lean: "You lean back against them with a little sound you didn't mean to make.",
+  },
+  {
+    id: "bothCheeks",
+    level: 7,
+    region: "rear",
+    kinds: ANY,
+    reach: "Two hands take hold of your backside, one for each side, and pull you back against the bench.",
+    thoughts: ["(Both hands?! Let go of—)", "(I'm caught. I'm not pulling very hard.)", "(Hold on tight, then.)"],
+    allow: "You stay put, face burning, while they get a good grip.",
+    lean: "You settle back into their hands. The next table stops talking altogether.",
+  },
+  {
+    id: "banditGrab",
+    level: 7,
+    region: "chest",
+    kinds: BANDIT,
+    reach: "The bandit hooks your neckline with a finger, tugs you down, and grabs a handful. \"Let's see what you're hiding.\"",
+    thoughts: ["(Get your filthy hands—)", "(Rough. So rough. And I'm just letting it happen.)", "(Rougher.)"],
+    allow: "You let them have their handful, glaring, and don't pull away.",
+    lean: "You lean in close enough to bite, and push into their grip instead.",
+  },
 
   // 8: heated.
   {
@@ -480,6 +616,16 @@ export const TOUCHES: readonly TouchDef[] = [
     thoughts: ["(B-both of them— in front of everyone!)", "(Everyone's watching. I'm letting them.)", "(Mm. Greedy.)"],
     allow: "You go red to the roots of your hair and let them.",
     lean: "You arch into it with a sigh, and half the room spills their drinks.",
+  },
+  {
+    id: "handful",
+    level: 8,
+    region: "chest",
+    kinds: ANY,
+    reach: "They pull you down by your apron and get both hands on your breasts, right there at the table.",
+    thoughts: ["(Not both— not in front of the whole room—)", "(The whole room's watching. My hands won't push them off.)", "(Don't be shy. Squeeze.)"],
+    allow: "You hold on to the table edge and let them fill their hands.",
+    lean: "You push your chest into their hands and close your eyes.",
   },
   {
     id: "holdLap",

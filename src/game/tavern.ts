@@ -38,6 +38,8 @@ import {
   LAYER_BONUS,
   LAYER_LINES,
   layersOpen,
+  LEWD_REGIONS,
+  openness,
   pickLayer,
   touchAnswers,
   touchLands,
@@ -400,6 +402,8 @@ const SLUT_LEVELS_PER_GOLD = 2;
 const BRAWL_BOLDER = 2;
 /** Mid-brawl, a foe's hands go for the part of her their type likes: these parts, this much more often. */
 const BRAWL_PREFER_PULL = 2;
+/** At the table, a guest goes for the part of her their type likes this much more often (GAME_PATH.MD, section 4). */
+const PREFER_PULL = 0.4;
 const REGIONS_OF_AREA: Record<DuelArea, readonly TouchRegion[]> = {
   hands: ["hand", "waist"],
   mouth: ["lips", "neck", "face"],
@@ -3927,7 +3931,13 @@ export class Tavern {
     const piece = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder)[this.stripped]?.label ?? null;
     // Mid-brawl, their hands go bolder, and for the part of her their type likes.
     const pull = { ...this.effects.pull };
-    if (brawl) for (const region of REGIONS_OF_AREA[guest.stats.prefers] ?? []) pull[region] = (pull[region] ?? 0) + BRAWL_PREFER_PULL;
+    const prefer = brawl ? BRAWL_PREFER_PULL : PREFER_PULL;
+    for (const region of REGIONS_OF_AREA[guest.stats.prefers] ?? []) pull[region] = (pull[region] ?? 0) + prefer;
+    // Karryn-style: her breasts and behind only as far as her desire and Slut Level open them (touch.ts). Not in a
+    // brawl, which goes by its own rules.
+    const open = brawl
+      ? undefined
+      : Object.fromEntries(LEWD_REGIONS.map((region) => [region, openness(this.desireFor(region), this.slutLevel)]));
     // The first reach of the whole run is always one of the gentlest (STORY.md 4b): she's new to all of it.
     const firstEver = !brawl && !held && this.lewdness === 0 && this.records.pulled + this.records.slapped + this.timesLet === 0;
     const reachNerve = brawl ? Math.min(10, guestNerve + BRAWL_BOLDER) : firstEver ? Math.min(FIRST_REACH_MAX, guestNerve) : guestNerve;
@@ -3945,6 +3955,7 @@ export class Tavern {
         pull,
         brawl,
         held: held !== null,
+        open,
       });
     if (!touch) return false;
     this.touchSeen.add(touch.id);

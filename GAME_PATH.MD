@@ -195,8 +195,9 @@ Each type has a base Nerve (section 2) and a preferred desire meter. When they r
 | Noble | 2 | Mouth / Body | Expects it, a gloved hand, a chin lifted to look | 2–8 |
 | Servant | 0 | Body | Nervous, apologetic, only once someone else has | 0–5 |
 
-- Base nerve, and how nerve grows with lust, mood, drink and touches allowed, are **[built]**. Only the meter weighting is planned.
-- Preferred meter gets +30–50% weight when picking a touch.
+- Base nerve, and how nerve grows with lust, mood, drink and touches allowed, are **[built]**.
+- **[built]** Preferred meter gets +40% weight when picking a touch at the table (`PREFER_PULL` in `tavern.ts`; +200% mid-brawl).
+- **[built] Breasts and behind, Karryn-style.** Every kind of guest has chest and rear touches (a pinch, a swat, a brush, a cup, a grope, both hands; plus their own: the adventurer's pat for luck, the bandit's smack and grab, the farmer's clumsy pat, the noble's gloved hand, the stranger's hand over her heart). They only go for them as far as she's **open** to it: openness = her desire for that part (0–10) + her Slut Level. A chest or rear touch needs their nerve as ever, **and** openness ≥ its boldness − 3, so at 0 only the pinch (3); each point of openness opens one more step. Every point also makes them go for that part 10% more often. Her answer is still hers: openness only decides what they try (`openness`, `LEWD_REGIONS` in `src/game/touch.ts`). A brawl isn't held to it.
 - Allowing a preferred-meter touch gives extra tip and a small extra rise to that meter.
 - Force bar still shows the actual boldness of the chosen touch (1–10).
 

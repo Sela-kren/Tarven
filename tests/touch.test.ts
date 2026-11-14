@@ -12,6 +12,8 @@ import {
   touchOutcome,
   GIVE_IN_MARGIN,
   intensityBonus,
+  LEWD_SLACK,
+  openness,
   type NerveFacts,
 } from "../src/game/touch";
 import { TOUCHES } from "../src/game/touchtalk";
@@ -84,6 +86,39 @@ describe("what a guest reaches for", () => {
     expect(new Set(scuffle.map((t) => t.region)).size).toBeGreaterThanOrEqual(5);
     // Still never past their nerve.
     expect(touchesFor("bandit", 3, { ...none, brawl: true }).every((t) => t.level <= 3)).toBe(true);
+  });
+
+  it("gives every kind of guest a go at her breasts and her behind", () => {
+    for (const kind of ["farmer", "smuggler", "soldier", "fugitive", "adventurer", "bandit", "noble"] as const) {
+      const regions = new Set(touchesFor(kind, 10, none).map((t) => t.region));
+      expect(regions.has("chest")).toBe(true);
+      expect(regions.has("rear")).toBe(true);
+    }
+  });
+
+  it("only goes for her breasts or behind as far as her desire and Slut Level open them, Karryn-style", () => {
+    const closed = { ...none, open: { chest: openness(0, 0), rear: openness(0, 0) } };
+    const lewd = (list: ReturnType<typeof touchesFor>) => list.filter((t) => t.region === "chest" || t.region === "rear");
+    // Not open at all: only the tamest there (boldness up to LEWD_SLACK), however bold they are.
+    expect(lewd(touchesFor("soldier", 10, closed)).every((t) => t.level <= LEWD_SLACK)).toBe(true);
+    // Her desire opens it up, part by part.
+    const breasts = { ...none, open: { chest: openness(5, 0), rear: openness(0, 0) } };
+    expect(touchesFor("soldier", 10, breasts).some((t) => t.region === "chest" && t.level === 8)).toBe(true);
+    expect(touchesFor("soldier", 10, breasts).some((t) => t.region === "rear" && t.level > LEWD_SLACK)).toBe(false);
+    // So does her Slut Level, for both at once.
+    const slut = { ...none, open: { chest: openness(0, 5), rear: openness(0, 5) } };
+    expect(lewd(touchesFor("bandit", 10, slut)).some((t) => t.level === 8)).toBe(true);
+    // Still never past their nerve.
+    expect(touchesFor("bandit", 4, slut).every((t) => t.level <= 4)).toBe(true);
+  });
+
+  it("goes for a part more often the more open she is to it", () => {
+    const count = (open: number) => {
+      let hits = 0;
+      for (let i = 0; i < 200; i++) if (pickTouch("noble", 6, () => (i + 0.5) / 200, { ...none, open: { chest: open, rear: 0 } })?.region === "chest") hits++;
+      return hits;
+    };
+    expect(count(10)).toBeGreaterThan(count(3));
   });
 
   it("is nothing at all without the nerve for the gentlest touch", () => {

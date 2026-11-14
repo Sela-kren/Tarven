@@ -25,6 +25,7 @@ import { ComicFx, fxPlan, makeMoanBubble, touchHeat, type FxPlan, type FxSpots }
 import { Jiggle } from "./jiggle";
 import { chestOverHips } from "./player";
 import { touchLands, type TouchAnswer, type TouchRegion } from "./touch";
+import { SMACK_TOUCHES } from "./touchtalk";
 import type { GuestKind } from "./tavern";
 
 /**
@@ -136,6 +137,16 @@ const SHOT_BY_TOUCH: Record<string, Partial<Shot>> = {
   stolenKiss: { offset: SIDE_OF_FACE, distance: 0.7, gesture: "hold", sideOfFace: true },
   deepKiss: { offset: SIDE_OF_FACE, distance: 0.7, gesture: "hold", sideOfFace: true },
   bothHands: { gesture: "squeeze" },
+  // Her breasts and behind, from anyone.
+  pinch: { gesture: "tap" },
+  swat: { gesture: "smack" },
+  luckyPat: { gesture: "smack" },
+  banditSmack: { gesture: "smack" },
+  clumsyPat: { gesture: "tap" },
+  brush: { gesture: "stroke" },
+  cup: { gesture: "hold" },
+  gloved: { gesture: "stroke" },
+  overHeart: { offset: [-0.04, 0.24, -0.15], gesture: "rest" },
   // A brawl's own touches.
   scuffleSpank: { gesture: "smack" },
   scuffleMouth: { gesture: "stroke" },
@@ -932,7 +943,7 @@ export class TouchComic {
     const scale = Math.max(0, opening < 1 ? spring : 1 - MathUtils.smootherstep(closing, 0, 1));
     const answer = this.show?.answer;
     const hitAt = answer === "slap" ? T.swing + 0.15 : T.contact;
-    const hard = answer === "slap" || this.show?.id === "smack" || this.show?.region === "chest";
+    const hard = answer === "slap" || SMACK_TOUCHES.has(this.show?.id ?? "") || this.show?.region === "chest";
     const shake = answer !== "pull" && t > hitAt && t < hitAt + 0.15 ? Math.sin(t * 90) * (hard ? 5 : 2) : 0;
     this.root.style.transform = `translate(${shake}px, 0) rotate(${2 + (1 - opening) * 10}deg) scale(${scale})`;
     for (const { el, from, to, shake } of this.letters) {

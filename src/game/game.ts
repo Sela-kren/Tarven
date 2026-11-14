@@ -136,7 +136,7 @@ import { NavGrid } from "./path";
 import type { CumSpot } from "./cum";
 import type { DuelArea, DuelLogEntry, DuelState } from "./duel";
 import type { HerMove } from "./duelmoves";
-import type { TouchRegion } from "./touchtalk";
+import { SMACK_TOUCHES, type TouchRegion } from "./touchtalk";
 import type { TouchShow } from "./touchcomic";
 import { BattleView, FoeColumn, type BattleMode, type BattleStat } from "./battleview";
 import { Body, Sibling, SHOW_POSES, WALK_STYLE_NAMES, type Reaction, type ShowPose, type SoftPart } from "./player";
@@ -2907,7 +2907,7 @@ export class Game {
     const took = touchLands(moment.answer);
     const soft: SoftPart | null = !took ? null : moment.region === "chest" ? "Bust" : moment.region === "rear" || moment.region === "lap" ? "Glute" : null;
     const reaction: Reaction = !took ? "recoil" : moment.answer === "lean" ? "melt" : "jolt";
-    sibling.react(reaction, soft, moment.id === "smack" ? 0.9 : 0.6);
+    sibling.react(reaction, soft, SMACK_TOUCHES.has(moment.id) ? 0.9 : 0.6);
     const name = BODY_NAMES[this.active];
     const body = sibling.root.getObjectByName(name);
     if (body) this.touchComic.play(body, name, { id: moment.id, region: moment.region, answer: moment.answer, kind: moment.kind, level: moment.level });

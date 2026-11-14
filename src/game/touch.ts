@@ -109,6 +109,32 @@ export interface PickOptions {
   brawl?: boolean;
   /** A guest with hold of her at the table: the held strip tries open up, and garments are all they go for. */
   held?: boolean;
+  /**
+   * How open she is, by part, for the parts guests only go as far as she's open to (`LEWD_REGIONS`): see `openness`.
+   * A part left out isn't held to it (a brawl leaves it all out: the fight has its own rules).
+   */
+  open?: Partial<Record<TouchRegion, number>>;
+}
+
+/**
+ * Karryn-style, any guest may go for her breasts or her behind, but only as far as she's open to it: her desire for
+ * that part (0 to 10) and her Slut Level, each level counting as this much desire. A touch there needs their nerve as
+ * ever, and her openness at least its boldness less `LEWD_SLACK`; and the more open she is, the more often they go
+ * for it (`LEWD_PULL` per point). Her answer is still hers: openness only decides what they try.
+ */
+export const LEWD_REGIONS: readonly TouchRegion[] = ["chest", "rear"];
+export const LEWD_SLACK = 3;
+export const SLUT_OPENS = 1;
+export const LEWD_PULL = 0.1;
+
+export function openness(desire: number, slutLevel: number): number {
+  return desire + slutLevel * SLUT_OPENS;
+}
+
+/** Whether she's open enough to a touch for a guest to try it (always, for a part not held to her openness). */
+function openTo(touch: TouchDef, open: PickOptions["open"]): boolean {
+  const how = open?.[touch.region];
+  return how === undefined || touch.level <= how + LEWD_SLACK;
 }
 
 /** How much likelier a brawl's own touches are than the room's, mid-fight. */
@@ -125,6 +151,7 @@ export function touchesFor(kind: GuestKind, guestNerve: number, options: PickOpt
       (!t.brawl || options.brawl === true) &&
       (!t.grab || options.held === true) &&
       t.level <= guestNerve &&
+      openTo(t, options.open) &&
       (t.kinds.length === 0 || t.kinds.includes(kind)) &&
       (!t.strip || options.canStrip),
   );
@@ -132,7 +159,8 @@ export function touchesFor(kind: GuestKind, guestNerve: number, options: PickOpt
 
 /**
  * Which touch a guest reaches for: one of the boldest they've the nerve for, more often than not, and less
- * often one they've tried already tonight. Null if their nerve won't stretch to anything.
+ * often one they've tried already tonight, more often for a part she's open to. Null if their nerve won't stretch
+ * to anything.
  */
 export function pickTouch(kind: GuestKind, guestNerve: number, random: () => number, options: PickOptions): TouchDef | null {
   const open = touchesFor(kind, guestNerve, options);
@@ -144,7 +172,7 @@ export function pickTouch(kind: GuestKind, guestNerve: number, random: () => num
     (t) =>
       Math.exp(-BOLD_PULL * (guestNerve - t.level)) *
       (options.seen.has(t.id) ? SEEN_WEIGHT : 1) *
-      (1 + (options.pull?.[t.region] ?? 0)) *
+      (1 + (options.pull?.[t.region] ?? 0) + LEWD_PULL * (options.open?.[t.region] ?? 0)) *
       (t.brawl ? BRAWL_TOUCH_WEIGHT : 1),
   );
   let roll = random() * weights.reduce((a, b) => a + b, 0);
