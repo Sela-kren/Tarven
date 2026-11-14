@@ -4531,19 +4531,21 @@ def build_gown_extra(spec, m):
 
 
 # ---------------------------------------------------------------- the frilled set and the plunge dress
-# Two more. The frilled set: a strapless top under her bust with a big bow at the front, three tiers of ruffles round
-# her hips down to the tops of her thighs, cut shorter at the front over a little frill on her crotch, and a band of
-# lace round one arm; worn with white stockings on a garter belt. The plunge dress: a gold choker and a dress hanging from it, open at the front from her throat to below
+# Two more. The frilled set: a strapless top under her bust with a big bow on the front of her hip, three tiers of
+# ruffles round her hips down to the tops of her thighs, cut shorter at the front, and a band of lace round one arm;
+# worn with sheer white stockings on a garter belt. The plunge dress: a gold choker and a dress hanging from it, open at the front from her throat to below
 # her hips, so it covers only the outsides of her breasts, her sides and her back, with long panels down her legs.
 FRILL_COLOURS = (("bow", (0.95, 0.94, 0.92)), ("dress", (0.86, 0.74, 0.38)))
-FRILL_TOP = (0.965, 1.09)
+FRILL_TOP = (0.965, 1.07)  # stops below the crease under her bust, so the breasts' shaping can't lift its edge
 # Three tiers of ruffles, each lying over the one below it, down to the tops of her thighs.
 FRILL_TIERS = ([0.985, 0.965, 0.94, 0.915], [0.935, 0.91, 0.88, 0.85], [0.875, 0.84, 0.8, 0.765])
-FRILL_WAVES = 14  # folds round each tier
-FRILL_DEPTH = 0.02  # how deep the folds are at the hem
-FRILL_FRONT_RISE = 0.035  # how much shorter the lowest tier is at her front middle, showing the frill under it
-FRILL_BOW = (0.085, 0.048)  # how far each loop reaches out from the knot, and how high its outer end stands
-FRILL_CROTCH = (0.8, 0.757)  # the little frill over her crotch: where it's gathered, and its hem
+FRILL_WAVES = 16  # folds round each tier
+FRILL_DEPTH = 0.03  # how deep the folds are at the hem
+FRILL_DIP = 0.009  # how far the hem drops at each fold
+FRILL_FRONT_RISE = 0.035  # how much shorter the lowest tier is at her front middle
+# The bow on the front of her right hip: where its knot is, how far each loop reaches out from it, how high a loop's
+# outer end stands, and how far down its tails hang.
+FRILL_BOW = {"x": 0.095, "z": 1.0, "loop": 0.11, "high": 0.06, "tails": 0.78}
 FRILL_ARM = (1.12, 1.16)  # the lace band round her right upper arm
 # The dress's opening at the front: half its width at heights from her throat down, between which it runs straight.
 PLUNGE_OPEN = [(1.33, 0.02), (1.24, 0.07), (1.17, 0.15), (1.1, 0.14), (1.0, 0.1), (0.9, 0.11), (0.8, 0.2)]
@@ -4604,7 +4606,7 @@ def frill_tier(spec, zs, out, a):
         t = r / (len(zs) - 1)
         if r == len(zs) - 1:
             # The hem dips at each fold, and the lowest tier is cut shorter at the front.
-            z += 0.006 * math.cos(FRILL_WAVES * a)
+            z += FRILL_DIP * math.cos(FRILL_WAVES * a)
             if zs is FRILL_TIERS[-1]:
                 z += FRILL_FRONT_RISE * max(0.0, math.sin(a)) ** 6
         span = [z + (top - z) * i / 6 for i in range(7)]
@@ -4616,7 +4618,7 @@ def frill_tier(spec, zs, out, a):
 
 
 def build_frill_extra(spec, m, surface):
-    """The frilled set's three tiers of ruffles, the big bow on its top, and the little frill over her crotch."""
+    """The frilled set's three tiers of ruffles, and the big bow at the side of its top with tails over the ruffles."""
     extra = Skin()
     columns = FRILL_WAVES * 4 + 1
     tiers = len(FRILL_TIERS)
@@ -4625,51 +4627,47 @@ def build_frill_extra(spec, m, surface):
         rings = [frill_tier(spec, zs, out, 2 * math.pi * k / (columns - 1)) for k in range(columns)]
         add_sheet(extra, f"frill{tier}", lambda r, k, rings=rings: rings[k][r], len(zs), columns, m["skirt"], 0.003)
 
-    def ruffles_front(z):
-        """How far forward the ruffles reach at her front middle at height z, at most."""
-        reach = 0.0
+    def reach(a, z):
+        """How far out from her middle the ruffles (or her top, above them) reach at angle a and height z."""
+        w, f, b = profile_at(spec, z)
+        out = math.hypot(math.cos(a) * w, math.sin(a) * (f if math.sin(a) > 0 else b)) + 0.02
         for tier, zs in enumerate(FRILL_TIERS):
-            if zs[-1] - 0.01 <= z <= zs[0] + 0.01:
-                for k in range(-2, 3):
-                    for co, _ in frill_tier(spec, zs, 0.012 * (tiers - 1 - tier), math.pi / 2 + k * 0.06):
-                        reach = max(reach, co[1])
-        return reach
+            if zs[-1] - 0.03 <= z <= zs[0] + 0.01:
+                for da in (-0.05, 0.0, 0.05):
+                    for co, _ in frill_tier(spec, zs, 0.012 * (tiers - 1 - tier), a + da):
+                        out = max(out, math.hypot(co[0], co[1]))
+        return out
 
-    # The bow, a little to her left of the middle: two big loops tipped forward, a knot, and two long tails hanging
-    # down over the ruffles.
+    # The bow, on the front of her hip on her right: two big loops tipped forward and a knot, square to the top.
     trunk = trunk_weights(spec)
-    bx, z = 0.035, 1.005
-    y = profile_at(spec, z)[1] + CLOTH_GAP + 0.014
-    loop, high = FRILL_BOW
+    bx, z = FRILL_BOW["x"], FRILL_BOW["z"]
+    loc, normal, _ = surface.hit(bx, z)
+    normal = Vector((normal.x, normal.y, 0.0)).normalized()
+    across = Vector((0.0, 0.0, 1.0)).cross(normal).normalized()
+    centre = loc + normal * 0.01
+    loop, high = FRILL_BOW["loop"], FRILL_BOW["high"]
+
+    def at(u, v, out):
+        co = centre + across * u + Vector((0.0, 0.0, v)) + normal * out
+        return (co.x, co.y, co.z)
     for i, sx in enumerate((-1, 1)):
-        corners = [(bx + sx * 0.01, y + 0.002, z - 0.008), (bx + sx * loop, y + 0.016, z - high * 0.8),
-                   (bx + sx * loop, y + 0.016, z + high), (bx + sx * 0.01, y + 0.002, z + 0.008)]
-        add_slab(extra, f"bow{i}", corners, (0.0, 0.006, 0.0), trunk, m["bow"])
-        stations = [1.0, 0.96, 0.92, 0.88, 0.84, 0.8]
+        corners = [at(sx * 0.014, -0.012, 0.0), at(sx * loop, -high * 0.75, 0.022), at(sx * loop, high, 0.022),
+                   at(sx * 0.014, 0.012, 0.0)]
+        add_slab(extra, f"bow{i}", corners, tuple(normal * 0.007), trunk, m["bow"])
+    facing(extra, "bowknot", tuple(centre + normal * 0.006), (0.02, 0.022), (normal.x, normal.y), trunk, m["bow"], depth=0.012)
 
-        def tail(r, k, sx=sx, stations=stations):
+    # Its tails, hanging from the knot down over the ruffles, spreading apart as they fall.
+    a0 = math.atan2(loc.y, loc.x)
+    stations = [z - 0.01 - (z - FRILL_BOW["tails"]) * i / 7 for i in range(8)]
+    for i, sx in enumerate((-1, 1)):
+        def tail(r, k, sx=sx):
             tz = stations[r]
-            drift = (1.0 - tz) * 0.35
-            tx = bx + sx * (0.006 + drift + 0.03 * k)
-            ty = max(y + 0.004, ruffles_front(tz) + 0.01)
-            return (tx, ty, tz), (trunk((tx, ty, tz)) if tz > SKIRT_HANG[0] else hung_weights(spec, math.pi / 2, tz))
+            fall = (stations[0] - tz) / (stations[0] - stations[-1])
+            radius = reach(a0, tz) + 0.012
+            a = a0 + sx * (0.03 + 0.14 * fall + k * 0.045 / radius * (1 + 0.6 * fall))
+            co = (math.cos(a) * radius, math.sin(a) * radius, tz)
+            return co, (trunk(co) if tz > SKIRT_HANG[0] else hung_weights(spec, a, tz))
         add_sheet(extra, f"bowtail{i}", tail, len(stations), 2, m["bow"], 0.003)
-    facing(extra, "bowknot", (bx, y + 0.008, z), (0.016, 0.018), (0.0, 1.0), trunk, m["bow"], depth=0.01)
-
-    # A little ruffle over her crotch, gathered along the top and waving out at the bottom.
-    xs = [-0.05 + 0.1 * k / 12 for k in range(13)]
-    top, bottom = FRILL_CROTCH
-
-    def crotch(r, k):
-        x = xs[k]
-        wave = 0.5 + 0.5 * math.cos(math.pi * k / 2)  # a fold every four columns
-        tz = top if r == 0 else bottom - 0.005 * wave
-        hit = surface.hit(x, tz) or surface.hit(x, top)
-        loc, normal, weights = hit
-        lift = 0.004 if r == 0 else 0.01 + 0.008 * wave
-        co = loc + normal * lift
-        return (co.x, co.y, tz), weights
-    add_sheet(extra, "crotch", crotch, 2, len(xs), m["skirt"], 0.002)
     return extra
 
 

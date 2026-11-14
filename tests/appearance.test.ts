@@ -44,6 +44,7 @@ import {
   shapeAmount,
   stopValue,
   toneColor,
+  sheerOf,
   underOf,
   wearOutfit,
   type Look,
@@ -813,10 +814,32 @@ describe("legwear", () => {
     const seat = piece("Female_Cloth_1", "T_hose");
     const thigh = piece("Female_Cloth_2", "T_hose_thigh");
     const garter = piece("Female_Cloth_3", "T_garter");
+    const over = piece("Female_Cloth_4", "T_hose_over");
     const cuff = piece("Female_Shoes", "T_hose");
     const skin = piece("Female_Body", "T_skin_f");
-    return { ...parts, seat, thigh, garter, cuff, skin };
+    return { ...parts, seat, thigh, garter, over, cuff, skin };
   }
+
+  it("lets her skin show through sheer stockings below their top band", () => {
+    expect(sheerOf("Female", { outfit: "frills" })).toEqual({
+      bands: ["T_hose_over", "T_hose_knee", "T_hose_calf", "T_hose_shin", "T_hose_low", "T_hose_ankle"], amount: 0.45,
+    });
+    expect(sheerOf("Female", { outfit: "frills", legwear: "noshow" })).toBeNull();
+    expect(sheerOf("Female", { outfit: "bunny" })).toBeNull();
+
+    const { model, thigh, over, skin } = legRig();
+    (skin.material as MeshLambertMaterial).color.setRGB(0.8, 0.5, 0.4);
+    const dresser = new Dresser(model, "Female");
+    const frills = wearOutfit("Female", newLook(), "frills");
+    dresser.apply(frills);
+    const colour = (mesh: SkinnedMesh) => (mesh.material as MeshLambertMaterial).color;
+    // The top band stays the stockings' own white; below it they take on her skin's warmth.
+    expect(colour(over).b).toBeLessThan(colour(thigh).b - 0.1);
+    dresser.apply({ ...frills, legwear: "thighhigh" });
+    expect(colour(over).b).toBeLessThan(colour(thigh).b - 0.1);
+    dresser.apply({ ...wearOutfit("Female", newLook(), "dirndl"), legwear: "thighhigh" });
+    expect(colour(over).getHex()).toBe(colour(thigh).getHex());
+  });
 
   it("comes with each outfit, and the pirate's rig has none", () => {
     expect(legwearOf("Female", {})!.id).toBe("tights");

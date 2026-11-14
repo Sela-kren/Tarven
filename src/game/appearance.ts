@@ -318,6 +318,8 @@ export interface OutfitDef {
   legwear?: string;
   /** The underwear styles it's put on with (lingerie.ts ids), for an outfit made to show them. */
   under?: { bra?: string; briefs?: string };
+  /** How much of her skin colour shows through its stockings below their top band, out of 1: sheer stockings. */
+  sheer?: number;
 }
 
 export interface LookOptions {
@@ -967,8 +969,8 @@ const FEMALE_OUTFITS: OutfitDef[] = [
     legwear: "noshow",
   },
   {
-    // All in white: a strapless top under her bare breasts with a big bow, two tiers of ruffles round her hips, a band
-    // of lace round her arm, and white stockings on a garter belt.
+    // All in white: a strapless top under her bare breasts with a big bow on her hip, three tiers of ruffles round her
+    // hips, a band of lace round her arm, and sheer white stockings on a garter belt.
     id: "frills", label: "Frilled set", mesh: "Frills",
     colors: ["bow", "trim", "bodice", "skirt", "stockings", "shoes", "soles", "bra", "smalls"],
     preset: {
@@ -976,6 +978,7 @@ const FEMALE_OUTFITS: OutfitDef[] = [
       soles: "#c9c2b6",
     },
     legwear: "garter",
+    sheer: 0.45,
   },
   {
     // A gold choker and a gold dress hanging from it, open at the front from her throat to below her hips, with long
@@ -1515,6 +1518,18 @@ export function legwearOf(body: BodyName, look: Pick<Look, "outfit" | "legwear">
   if (!outfit.legwear) return null;
   const styles = LOOK_OPTIONS[body].legwear;
   return styles.find((style) => style.id === look.legwear) ?? styles.find((style) => style.id === outfit.legwear) ?? null;
+}
+
+/**
+ * The stocking bands her skin shows through, and how much, for an outfit with sheer stockings: every band her legwear
+ * reaches but the top one, which is doubled over and stays solid. Null for an outfit without them.
+ */
+export function sheerOf(body: BodyName, look: Pick<Look, "outfit" | "legwear">): { bands: string[]; amount: number } | null {
+  const amount = outfitOf(body, look).sheer ?? 0;
+  const legwear = legwearOf(body, look);
+  if (amount <= 0 || !legwear) return null;
+  const bands = legwear.bands.filter((band) => HOSE_BANDS.includes(band)).slice(1);
+  return bands.length ? { bands, amount } : null;
 }
 
 /**
@@ -2842,6 +2857,18 @@ export class Dresser {
     for (const slot of this.slots) {
       slot.worn = materialFor(this.body, slot.part, slot.original, look.colors, originals);
       slot.mesh.material = slot.worn;
+    }
+    // Sheer stockings: her skin colour shows through them below their top band.
+    const sheer = sheerOf(this.body, look);
+    const [skinPart, skinName] = LOOK_OPTIONS[this.body].colors.find((color) => color.id === "skin")?.parts[0] ?? ["Body", ""];
+    const skin = this.slots.find((s) => s.part === skinPart && s.original.name === skinName);
+    if (sheer && skin) {
+      const tone = averageColor(skin.worn);
+      for (const slot of this.slots) {
+        if (slot.part !== "Cloth" || !sheer.bands.includes(slot.original.name)) continue;
+        slot.worn = paint(slot.original, averageColor(slot.worn).clone().lerp(tone, sheer.amount));
+        slot.mesh.material = slot.worn;
+      }
     }
     this.showPieces();
   }
