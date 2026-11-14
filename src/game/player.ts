@@ -606,12 +606,12 @@ export class Body {
     const bend = (bone: Object3D, x: number) => (bone.rotation.x = MathUtils.lerp(bone.rotation.x, x, a));
     // Positive Z swings the left arm in and the right arm out.
     if (pose === "chestDown") {
-      // Her top dragged down under her breasts, and her hands presenting them: elbows open out to her sides, forearms
-      // forwards, hands just under her breasts with the palms turned up (the forearm's twist); chest out, chin up.
-      set(this.upperArmR, 0.3, 0.3, 0.6);
-      set(this.foreArmR, 1.45, 0, -1.5);
-      set(this.upperArmL, 0.3, -0.3, -0.6);
-      set(this.foreArmL, 1.45, 0, 1.5);
+      // Her top dragged down under her breasts, and her hands presenting them: elbows open out to her sides and back,
+      // each palm turned up (the forearm's twist) right under a breast, holding it up; chest out, chin up.
+      set(this.upperArmR, -0.34, 0.14, 0.41);
+      set(this.foreArmR, 1.94, 0, -1.35);
+      set(this.upperArmL, -0.34, -0.14, -0.41);
+      set(this.foreArmL, 1.94, 0, 1.35);
       this.torso.rotation.x -= 0.12 * a;
       this.head.rotation.x -= 0.06 * a;
     } else if (pose === "chestUp") {
