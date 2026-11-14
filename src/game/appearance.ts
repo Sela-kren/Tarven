@@ -1949,6 +1949,124 @@ const NIPPLE_PIERCE = 0.5;
 /** How far from a nipple's tip, as built, the clothes over it can tent out: past the widest areola there is. */
 const RIDE = 0.04;
 
+/**
+ * Clothes don't sink into the cleavage: fabric pulled over two breasts stretches straight from one to the other.
+ * The body points that can hold it out: the front of the chest, from just off the middle to past the breasts.
+ * Model space: x across, y up, z backwards.
+ */
+const SPAN_HOLD = { across: [0.015, 0.16], height: [0.8, 1.5] } as const;
+/** The clothing points that can stretch across: the front, near the middle, at chest height. */
+const SPAN_CLOTH = { across: 0.12, height: [0.85, 1.45] } as const;
+/** The span is measured in bands of this height, each holding either side's most forward point. */
+const SPAN_BAND = 0.005;
+const SPAN_BANDS = Math.ceil((SPAN_HOLD.height[1] - SPAN_HOLD.height[0]) / SPAN_BAND);
+/** How much of the deeper dip the fabric still follows, so it lies a little into the cleavage, not dead flat. */
+const SPAN_SLACK = 0.2;
+
+/** The body points that hold the clothes out over her cleavage, by index into the body's points, as built. */
+interface CleavageHold {
+  at: Int32Array;
+  bind: Float32Array;
+}
+
+/** A mesh's points that can stretch across her cleavage, and how far each lay behind the span as built. */
+interface ClothSpan {
+  verts: Int32Array;
+  sunk: Float32Array;
+}
+
+/** The body points in front of her chest either side of the middle, out of the body's points as built. */
+export function cleavageHold(body: Float32Array): CleavageHold {
+  const at: number[] = [];
+  for (let b = 0; b < body.length / 3; b++) {
+    const x = Math.abs(body[b * 3]), y = body[b * 3 + 1], z = body[b * 3 + 2];
+    if (x > SPAN_HOLD.across[0] && x < SPAN_HOLD.across[1] && y > SPAN_HOLD.height[0] && y < SPAN_HOLD.height[1] && z < 0) {
+      at.push(b);
+    }
+  }
+  const bind = new Float32Array(at.length * 3);
+  at.forEach((b, k) => bind.set(body.subarray(b * 3, b * 3 + 3), k * 3));
+  return { at: Int32Array.from(at), bind };
+}
+
+/**
+ * For each band of height and each side (left first), the most forward of the holding points there and how far
+ * across it lies, with the body moved by `bodyMoves` (by index into all the body's points), or as built.
+ */
+function spanBands(hold: CleavageHold, bodyMoves: Float32Array | null): { front: Float32Array; across: Float32Array } {
+  const front = new Float32Array(SPAN_BANDS * 2).fill(-Infinity);
+  const across = new Float32Array(SPAN_BANDS * 2);
+  for (let k = 0; k < hold.at.length; k++) {
+    const b = hold.at[k] * 3;
+    const x = hold.bind[k * 3] + (bodyMoves ? bodyMoves[b] : 0);
+    const y = hold.bind[k * 3 + 1] + (bodyMoves ? bodyMoves[b + 1] : 0);
+    const f = -(hold.bind[k * 3 + 2] + (bodyMoves ? bodyMoves[b + 2] : 0));
+    const band = Math.floor((y - SPAN_HOLD.height[0]) / SPAN_BAND);
+    if (band < 0 || band >= SPAN_BANDS) continue;
+    const i = band * 2 + (x < 0 ? 0 : 1);
+    if (f > front[i]) {
+      front[i] = f;
+      across[i] = x;
+    }
+  }
+  return { front, across };
+}
+
+/**
+ * How far forward the fabric stretched from one side's most forward point to the other's lies at (x, y): those of
+ * the band at that height and either next to it. NaN where a side has none, or (x, y) isn't between them.
+ */
+function spanAt(bands: { front: Float32Array; across: Float32Array }, x: number, y: number): number {
+  const band = Math.floor((y - SPAN_HOLD.height[0]) / SPAN_BAND);
+  let leftF = -Infinity, leftX = 0, rightF = -Infinity, rightX = 0;
+  for (let b = Math.max(0, band - 1); b <= Math.min(SPAN_BANDS - 1, band + 1); b++) {
+    if (bands.front[b * 2] > leftF) {
+      leftF = bands.front[b * 2];
+      leftX = bands.across[b * 2];
+    }
+    if (bands.front[b * 2 + 1] > rightF) {
+      rightF = bands.front[b * 2 + 1];
+      rightX = bands.across[b * 2 + 1];
+    }
+  }
+  if (leftF === -Infinity || rightF === -Infinity || !(leftX < x && x < rightX)) return NaN;
+  return leftF + (rightF - leftF) * (x - leftX) / (rightX - leftX);
+}
+
+/** A mesh's points that can stretch across her cleavage, from its points as built, with how far each lay behind. */
+export function clothSpan(hold: CleavageHold, bind: Float32Array): ClothSpan | null {
+  const bands = spanBands(hold, null);
+  const verts: number[] = [], sunk: number[] = [];
+  for (let v = 0; v < bind.length / 3; v++) {
+    const x = bind[v * 3], y = bind[v * 3 + 1], z = bind[v * 3 + 2];
+    if (Math.abs(x) >= SPAN_CLOTH.across || y <= SPAN_CLOTH.height[0] || y >= SPAN_CLOTH.height[1] || z >= 0) continue;
+    const span = spanAt(bands, x, y);
+    verts.push(v);
+    sunk.push(Number.isNaN(span) ? 0 : Math.max(0, span + z));
+  }
+  return verts.length ? { verts: Int32Array.from(verts), sunk: Float32Array.from(sunk) } : null;
+}
+
+/**
+ * Stretches a mesh's points across her cleavage: where the body under them has dipped further behind the span from
+ * breast to breast than they lay as built, they come forward to it, all but SPAN_SLACK of the extra. `moves` are
+ * the mesh's, changed in place; `bodyMoves` the body's, by index into all its points.
+ */
+export function spanCleavage(
+  hold: CleavageHold, cloth: ClothSpan, bind: Float32Array, moves: Float32Array, bodyMoves: Float32Array,
+): void {
+  const bands = spanBands(hold, bodyMoves);
+  for (let k = 0; k < cloth.verts.length; k++) {
+    const v = cloth.verts[k] * 3;
+    const z = bind[v + 2] + moves[v + 2];
+    const span = spanAt(bands, bind[v] + moves[v], bind[v + 1] + moves[v + 1]);
+    if (Number.isNaN(span)) continue;
+    const behind = span + z;
+    const allowed = cloth.sunk[k] + SPAN_SLACK * Math.max(0, behind - cloth.sunk[k]);
+    if (behind > allowed) moves[v + 2] -= behind - allowed;
+  }
+}
+
 /** For each point of a mesh, the body points nearest it and how much each counts, and how much it keeps its own move. */
 interface FollowTable {
   points: Int32Array;
@@ -2013,6 +2131,8 @@ export class Dresser {
    * disc and how far from its tip. They tent out as it stands, and are all that change when only her arousal does.
    */
   private readonly nipples: { slot: MeshSlot; discs: Disc[]; riders: Map<MeshSlot, Riders> } | null = null;
+  /** The body points holding the clothes out over her cleavage, and each clothing mesh's points stretched across. */
+  private readonly cleavage: { hold: CleavageHold; spans: Map<MeshSlot, ClothSpan> } | null = null;
   /** How aroused her vulva shows, from 0 to 1; a state of the night, never part of the look. */
   private vulvaArousal = 0;
   /**
@@ -2136,6 +2256,17 @@ export class Dresser {
     }
     for (const slot of this.slots) {
       if (FOLLOWING_PARTS.includes(slot.part) && bodyCount >= FOLLOW_POINTS) slot.follow = nearestBody(slot.bind, bodyPoints);
+    }
+    // Her clothes, and what landed on them, stretch across her cleavage instead of following the skin into it.
+    const hold = cleavageHold(bodyPoints);
+    if (hold.at.length) {
+      const spans = new Map<MeshSlot, ClothSpan>();
+      for (const slot of this.slots) {
+        if (!slot.follow || !(slot.part === "Cloth" || (slot.part === "Cum" && stainMeshOf(slot.mesh, body)))) continue;
+        const span = clothSpan(hold, slot.bind);
+        if (span) spans.set(slot, span);
+      }
+      if (spans.size) this.cleavage = { hold, spans };
     }
 
     const discs = discSlot ? readDiscs(discSlot.mesh.geometry, discSlot.bind) : [];
@@ -2413,6 +2544,11 @@ export class Dresser {
     this.slots.forEach((slot, i) => {
       if (slot.follow && active.size > 0) this.follow(slot.follow, moves[i].total.slice(), moves[i].total, bodyMoves);
     });
+    if (this.cleavage && active.size > 0) {
+      for (const [slot, span] of this.cleavage.spans) {
+        spanCleavage(this.cleavage.hold, span, slot.bind, moves[this.slots.indexOf(slot)].total, bodyMoves);
+      }
+    }
 
     // Her nipple discs, shaped on the skin where the reshaping left it, and the clothes tenting over them.
     const nipples = this.nipples;
