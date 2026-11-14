@@ -137,6 +137,7 @@ import type { CumSpot } from "./cum";
 import type { DuelArea, DuelLogEntry, DuelState } from "./duel";
 import type { HerMove } from "./duelmoves";
 import { SMACK_TOUCHES, type TouchRegion } from "./touchtalk";
+import { horny } from "./desire";
 import { FAINT_HOLD, FAINT_SECONDS } from "./barwork";
 import type { TouchShow } from "./touchcomic";
 import { BattleView, FoeColumn, type BattleMode, type BattleStat } from "./battleview";
@@ -1516,6 +1517,9 @@ export class Game {
     });
   }
 
+  /** Her state as her portrait was last drawn for it: see `updateHud`. */
+  private herStateShown = "";
+
   private updateHud(): void {
     const { tavern } = this;
     this.stats.update({
@@ -1536,7 +1540,15 @@ export class Game {
       dishes: tavern.cleanWare.dish,
       dishesOwned: tavern.stock.dish,
     });
+    // Karryn's Prison style: her picture follows her state while she talks. Drunker, horny, wet, flushed: it's
+    // drawn again, and the talk box shows the new one at once.
+    const herState = `${drunkLabel(tavern.drunk)}|${horny(tavern.meters)}|${tavern.wet}|${Math.floor(this.arousalShown * 4)}`;
+    if (herState !== this.herStateShown) {
+      this.herStateShown = herState;
+      if (tavern.inConversation) this.playerPortrait = null;
+    }
     this.playerPortrait ??= renderPortrait(this.renderer, this.siblings[this.active].root, -SPRITE_TURN);
+    this.dialogue.setYou(this.playerPortrait);
     this.statusCard.update({
       name: tavern.name,
       portrait: this.playerPortrait,

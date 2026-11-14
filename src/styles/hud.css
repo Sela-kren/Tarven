@@ -58,8 +58,17 @@ body.staging #clock {
   display: none;
 }
 
-/* Out of the way while a conversation, a story beat, a panel or the house plans have the screen. */
-body:has(#talk.open) #status-card,
+/* In a conversation, Karryn's Prison style, her state stays in view: up in the top right, over her picture, clear
+   of the dialog box and the guest on the left. */
+body:has(#talk.open) #status-card {
+  left: auto;
+  bottom: auto;
+  right: 16px;
+  top: 168px;
+  z-index: 5;
+}
+
+/* Out of the way while a story beat, a panel or the house plans have the screen. */
 body:has(#story.open) #status-card,
 body:has(#panel.open) #status-card,
 body:has(#build.open) #status-card {

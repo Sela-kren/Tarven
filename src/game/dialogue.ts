@@ -50,7 +50,15 @@ export class DialogueBox {
     this.choices = choices;
     this.onChoose = onChoose;
     this.view.root.classList.add("open");
+    // Karryn's Prison style: she's on stage, on the right, from the first line, whoever's talking.
+    this.setYou(this.portraitFor({ speaker: "You", text: "" }));
     this.show(0);
+  }
+
+  /** Puts her current portrait on the right, if it's changed (her state, her clothes, her face): see game.ts. */
+  setYou(portrait: HTMLCanvasElement | null): void {
+    if (!this.open || !portrait || this.view.you.firstChild === portrait) return;
+    this.view.you.replaceChildren(portrait);
   }
 
   close(): void {

@@ -56,6 +56,11 @@
   filter: none;
 }
 
+/* Karryn's Prison style, she stays on stage the whole talk, only a little dimmed while someone else speaks. */
+#talk-you:not(.speaking) {
+  filter: brightness(0.8) saturate(0.9);
+}
+
 #talk .portrait.speaking.hop {
   animation: talk-hop 0.3s ease;
 }
