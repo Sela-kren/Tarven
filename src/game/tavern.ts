@@ -1,6 +1,22 @@
 import { cloneLayout, type HouseLayout } from "./house";
 import { ARC_DAWN, arcIndex, arcStage, ARC_STAGES, flavorLine, TANSY_CALLBACK, type ArcStage, wildSensitivity } from "./lewd";
 import { faceLine } from "./facetalk";
+import {
+  JOIN_CHEERS,
+  JOIN_LINES,
+  joinChance,
+  ONE_MORE_WARNING,
+  PASS_OUT_AFTER,
+  PASS_OUT_DRUNK,
+  PASS_OUT_LINES,
+  PASS_OUT_RESPECT,
+  REDRESS_LINES,
+  REDRESS_PATIENCE,
+  roomNerve,
+  SOBER_NIGHT_SERVED,
+  TRAY_DROP_LINES,
+  trayDropChance,
+} from "./barwork";
 import { arrivalFeelings, arrivalMood, feltMood, HIGH_RESPECT, LOW_RESPECT, MOOD_LABELS, STRONG_LUST, moodAfterDrink, moodAfterReply, moodWhenServed, moodWhileWaiting, MOOD_BEHAVIOUR, type Mood } from "./mood";
 import {
   complimentReplies,
@@ -1288,6 +1304,10 @@ interface TouchChat {
   brawl?: boolean;
   /** How far in the touch goes: over her clothes, inside them, or bare skin (touch.ts). */
   layer?: TouchLayer;
+  /** Everyone at this table who's had a turn this round, this guest included: a tablemate joins in only once (barwork.ts). */
+  joined?: number[];
+  /** The sibling she was when they reached, if she might still have a tray in her hands (barwork.ts). */
+  sibling?: number;
 }
 
 /** Where the game after a lost brawl is played: right where she fell (the room watching), upstairs, or out back. */
@@ -1617,6 +1637,10 @@ export class Tavern {
   /** Brawls tonight, and drinks she's had tonight. */
   private fightsTonight = 0;
   private drinksTonight = 0;
+  /** Bar work (barwork.ts): the sibling who last served, a tablemate waiting their turn, and her drinking herself under. */
+  private lastServer: number | null = null;
+  private joinNext: { guestId: number; prelude: TalkLine[]; joined: number[] } | null = null;
+  private passingOut = false;
   /** Tonight's touches, for the journal: how many guests reached, how many you let, how many you turned away. */
   readonly touchesTonight = { reached: 0, allowed: 0, refused: 0, boldest: 0 };
   /** Who the player is, so what guests say fits them. The game sets it. */
@@ -1789,8 +1813,9 @@ export class Tavern {
     if (this.walkouts === 0 && this.served >= SMOOTH_NIGHT_SERVED) r.smoothNights++;
     if (this.served >= BUSY_NIGHT_SERVED) r.busyNights++;
     if (this.persona.respect >= HIGH_RESPECT_NIGHT) r.respectNights++;
-    // A night without a drink keeps her head clear.
+    // A night without a drink keeps her head clear; with a proper night's work, it's a sober shift.
     if (this.drinksTonight === 0) this.gainXp("mind", 3);
+    if (this.drinksTonight === 0 && this.served >= SOBER_NIGHT_SERVED) r.soberNights++;
     // Anyone still upstairs comes down and pays, and the night has its say on the girls (lantern.ts).
     this.lantern.endNight(this.lanternHost);
     const nightly = this.effects.perNight;
@@ -2499,6 +2524,8 @@ export class Tavern {
   }
 
   tick(dt: number, context: TickContext): void {
+    // Dead drunk: once she's done talking, she's done for the night (barwork.ts).
+    if (this.passingOut && !this.inConversation) this.passOut();
     this.drunk = Math.max(0, this.drunk - SOBER_RATE * dt);
     this.passiveCheck -= dt;
     if (this.passiveCheck <= 0) {
@@ -2585,6 +2612,7 @@ export class Tavern {
     // Her Level: a little more on everything, the more she's grown.
     const amount = Math.round(base * (1 + e.payPct + (this.herLevel - 1) * LEVEL_PAY));
     this.records.served++;
+    this.lastServer = sibling;
     if (bottle) this.records.poured++;
     this.gainXp("agility", 0.5);
     if (tipped) this.gainXp("charm", 1);
@@ -2820,6 +2848,39 @@ export class Tavern {
     this.spendWill(DRINK_WILL);
     this.drinksTonight++;
     this.cue("drink");
+    // Karryn's dead drunk: past her limit she's done for the night, once whoever she's talking to is done with her.
+    // The drink before, she knows it.
+    if (this.phase === "service" && this.drunk >= PASS_OUT_DRUNK) this.passingOut = true;
+    else if (this.drunk + DRINK_STRENGTH * (1 - Math.min(0.9, this.effects.drunkRate)) >= PASS_OUT_DRUNK) this.say(ONE_MORE_WARNING);
+  }
+
+  /** She's drunk herself under the table: the night's over, and the room saw it. */
+  private passOut(): void {
+    this.passingOut = false;
+    if (this.phase !== "service") return;
+    const pick = <T>(lines: readonly T[]) => lines[Math.floor(this.random() * lines.length) % lines.length];
+    this.records.passedOut++;
+    this.shift({ respect: PASS_OUT_RESPECT });
+    this.say(pick(PASS_OUT_LINES));
+    this.say(PASS_OUT_AFTER);
+    this.closeEarly();
+  }
+
+  /**
+   * Behind the bar with empty hands, she puts the last piece she lost back on (barwork.ts). Everyone waiting gets
+   * that much shorter of patience while she does.
+   */
+  private redress(): void {
+    if (this.stripped === 0) return;
+    const pick = <T>(lines: readonly T[]) => lines[Math.floor(this.random() * lines.length) % lines.length];
+    this.stripped--;
+    const piece = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder)[this.stripped]?.label ?? "clothes";
+    for (const guest of this.guests) {
+      if (guest.status === "waiting" || guest.status === "arriving") guest.patience = Math.max(1, guest.patience - guest.maxPatience * REDRESS_PATIENCE);
+    }
+    this.records.redressed++;
+    this.say(pick(REDRESS_LINES).replaceAll("{piece}", piece));
+    this.cue("putDown");
   }
 
   /** Whether a conversation is open: with a party at their table, or with a guest who tipped you a drink. */
@@ -3655,6 +3716,7 @@ export class Tavern {
     this.touchChat = null;
     this.grabChat = null;
     this.showChat = null;
+    this.joinNext = null;
     this.nextArrival = this.arrivals.length;
     this.phase = "bedtime";
     this.eased = false;
@@ -3901,7 +3963,10 @@ export class Tavern {
   /** The nerve her passives and her name give every guest: the lewder she's known to be, the bolder they get. */
   private get nerveBonus(): number {
     const lewd = this.lewdness;
-    return this.effects.nerve + (lewd >= 60 ? 2 : lewd >= 30 ? 1 : 0) + mindBonus(this.level("mind")).nerve;
+    // Karryn's bar: a well-known tavern draws a bolder crowd, and the room can tell when she's worked up (barwork.ts).
+    const her = this.playerBody === "Female";
+    const room = roomNerve({ fame: this.persona.fame, horny: her && horny(this.meters), wet: her && this.wet });
+    return this.effects.nerve + (lewd >= 60 ? 2 : lewd >= 30 ? 1 : 0) + mindBonus(this.level("mind")).nerve + room;
   }
 
   /** The touch just answered, once: the game plays it out in a comic panel. */
@@ -3924,10 +3989,16 @@ export class Tavern {
    * `held`: a guest who has hold of her at the table (maybeGrab). They reach for sure, garments first, and their grip
    * adds to their push in the Consent-off check; `prelude` is how the grab went, said before the reach.
    */
-  private maybeReach(guest: Guest, brawl = false, held: { prelude: TalkLine[] } | null = null): boolean {
+  private maybeReach(
+    guest: Guest,
+    brawl = false,
+    held: { prelude: TalkLine[] } | null = null,
+    join: { prelude: TalkLine[]; joined: number[] } | null = null,
+  ): boolean {
     if (this.playerBody !== "Female" || this.inConversation) return false;
     const guestNerve = this.nerveOf(guest);
-    if (!brawl && !held && this.random() >= reachChance(guestNerve) * Math.max(0, 1 + this.effects.reach)) return false;
+    // A tablemate joining in has already decided to (barwork.ts): no roll.
+    if (!brawl && !held && !join && this.random() >= reachChance(guestNerve) * Math.max(0, 1 + this.effects.reach)) return false;
     const piece = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder)[this.stripped]?.label ?? null;
     // Mid-brawl, their hands go bolder, and for the part of her their type likes.
     const pull = { ...this.effects.pull };
@@ -3939,7 +4010,7 @@ export class Tavern {
       ? undefined
       : Object.fromEntries(LEWD_REGIONS.map((region) => [region, openness(this.desireFor(region), this.slutLevel)]));
     // The first reach of the whole run is always one of the gentlest (STORY.md 4b): she's new to all of it.
-    const firstEver = !brawl && !held && this.lewdness === 0 && this.records.pulled + this.records.slapped + this.timesLet === 0;
+    const firstEver = !brawl && !held && !join && this.lewdness === 0 && this.records.pulled + this.records.slapped + this.timesLet === 0;
     const reachNerve = brawl ? Math.min(10, guestNerve + BRAWL_BOLDER) : firstEver ? Math.min(FIRST_REACH_MAX, guestNerve) : guestNerve;
     // Adult play (adultplay.ts), Karryn-style: once her stack is full, an aroused guest might go for it, by a chance
     // that grows with how worked up they both are. Never in a brawl, never with hold of her (they're after her
@@ -4031,6 +4102,8 @@ export class Tavern {
       impulse: false,
       brawl,
       layer,
+      joined: [...(join?.joined ?? []), guest.id],
+      sibling: brawl ? undefined : (this.lastServer ?? undefined),
     };
     this.touchChat = chat;
     // Consent off, and they push past her hold: it lands without the question, as a yes she gave in advance.
@@ -4063,8 +4136,9 @@ export class Tavern {
       chat.lines.splice(1, 0, narrate(mock), this.guestSays(guest, sulk));
       this.say(`${mock} ${this.nameOf(guest)}: "${sulk}" (push ${check.push} vs hold ${check.hold})`);
     }
-    // How the grab went comes first.
+    // How the grab went comes first; or, a tablemate joining in, how they came to.
     if (held) chat.lines.unshift(...held.prelude);
+    if (join) chat.lines.unshift(...join.prelude);
     return true;
   }
 
@@ -4480,6 +4554,11 @@ export class Tavern {
     }
     this.touchHistory.set(chat.guestId, history);
     this.touchMoment = { id: touch.id, region: touch.region, level: touch.level, answer, kind: guest?.kind ?? "farmer" };
+    // Karryn's bar (barwork.ts): a hand on her may cost her the tray, and the rest of their table was watching.
+    if (took && !chat.brawl) {
+      this.maybeDropTray(chat, guest);
+      if (guest && touch.region !== "invite" && !this.adultScene) this.maybeJoin(chat, guest);
+    }
     // A reach mid-brawl: her answer goes back to the fight, with the willpower she has left after it.
     const fight = this.fight;
     if (chat.brawl && fight?.reaching) {
@@ -4491,11 +4570,80 @@ export class Tavern {
     }
   }
 
+  /**
+   * A hand landing on her while she's still got something on the tray: she may drop the lot, and it breaks like a
+   * stumble, with a spill under their seat to mop (barwork.ts). Steadier the more agile she is.
+   */
+  private maybeDropTray(chat: TouchChat, guest: Guest | undefined): void {
+    const sibling = chat.sibling;
+    if (sibling === undefined || this.effects.steady >= 1) return;
+    const held = this.carrying[sibling];
+    if (!held || held === "cask" || this.carryCount[sibling] === 0) return;
+    const facts = { lean: chat.answer === "lean", sloppy: this.drunk >= SLOPPY_DRUNK, agility: this.level("agility") };
+    const chance = trayDropChance(chat.touch.level, facts) * Math.max(0, 1 - this.effects.steady);
+    if (this.random() >= chance) return;
+    const smashed = this.smashHeld(sibling);
+    if (!smashed) return;
+    if (guest && !this.messes.some((m) => m.kind === "spill" && m.spots[0] === guest.seat)) {
+      this.messes.push({ id: this.nextMessId++, kind: "spill", spots: [guest.seat] });
+    }
+    this.records.traysDropped++;
+    chat.reply.push(narrate(TRAY_DROP_LINES[Math.floor(this.random() * TRAY_DROP_LINES.length) % TRAY_DROP_LINES.length]));
+    this.say(`You dropped ${smashed.what}.`);
+    this.cue(smashed.count > 1 ? "smashTray" : "smashOne");
+  }
+
+  /**
+   * Someone else at their table saw her let that hand stay, and may want a turn: the boldest of them who hasn't had
+   * one this round. Their reach comes once she's back to work, asked like any other (barwork.ts).
+   */
+  private maybeJoin(chat: TouchChat, guest: Guest): void {
+    if (guest.party === null) return;
+    const joined = chat.joined ?? [guest.id];
+    let mate: Guest | null = null;
+    let mateNerve = -1;
+    for (const other of this.partyGuests(guest.party)) {
+      if (joined.includes(other.id) || (other.status !== "waiting" && other.status !== "eating")) continue;
+      const n = this.nerveOf(other);
+      if (n > mateNerve) {
+        mate = other;
+        mateNerve = n;
+      }
+    }
+    if (!mate) return;
+    const mood = feltMood(mate);
+    if (this.random() >= joinChance(mateNerve, mood === "drunk" || mood === "lust") * Math.max(0, 1 + this.effects.join)) return;
+    const pick = <T>(lines: readonly T[]) => lines[Math.floor(this.random() * lines.length) % lines.length];
+    const who = (mate.stats.label ?? mate.kind).toLowerCase();
+    const prelude = [this.guestSays(guest, pick(JOIN_CHEERS[guest.kind])), { ...narrate(pick(JOIN_LINES).replaceAll("{who}", who)), guestId: mate.id }];
+    this.joinNext = { guestId: mate.id, prelude, joined };
+    chat.reply.push(narrate(`The ${who} at their table hasn't taken their eyes off you.`));
+  }
+
+  /** The tablemate waiting their turn reaches, now she's back to work. */
+  private startJoin(): void {
+    const join = this.joinNext;
+    this.joinNext = null;
+    if (!join || this.phase !== "service") return;
+    const mate = this.guests.find((g) => g.id === join.guestId);
+    if (!mate || mate.status === "leaving") return;
+    if (this.maybeReach(mate, false, null, join)) this.records.tableJoins++;
+  }
+
   /** Your answers to a guest reaching for you, then getting back to work once you've given one. */
   private touchOptions(chat: TouchChat): (TalkChoice & { run: () => void })[] {
     if (chat.answered) {
       const label = !chat.brawl ? "Get back to work" : this.fight ? "Back to the fight" : "See how it ended";
-      return [{ label, disabled: false, run: () => (this.touchChat = null) }];
+      return [
+        {
+          label,
+          disabled: false,
+          run: () => {
+            this.touchChat = null;
+            this.startJoin();
+          },
+        },
+      ];
     }
     const cost = this.refuseWill(chat.tier, chat.touch.level);
     const willNote = (answer: TouchAnswer): string => {
@@ -4670,7 +4818,16 @@ export class Tavern {
       const all = [...this.tub, ...this.dirtyHeld[sibling]];
       return { label: `Wash ${dirtyWords(all)}`, run: () => this.fillTub(sibling) };
     }
-    if (station === "wash") return !held && this.tub.length > 0 ? { label: `Wash ${dirtyWords(this.tub)}`, run: () => this.washAll() } : null;
+    if (station === "wash") {
+      if (held) return null;
+      if (this.tub.length > 0) return { label: `Wash ${dirtyWords(this.tub)}`, run: () => this.washAll() };
+      // Behind the bar, out of sight: put a piece back on (barwork.ts).
+      if (this.stripped > 0 && this.phase === "service" && this.playerBody === "Female") {
+        const piece = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder)[this.stripped - 1]?.label ?? "clothes";
+        return { label: `Duck behind the bar and put your ${piece} back on`, run: () => this.redress() };
+      }
+      return null;
+    }
 
     // The bin takes anything you picked up by mistake, except a cask, which goes back on the barrels.
     if (station === "bin") {
@@ -5103,21 +5260,31 @@ export class Tavern {
     }
   }
 
-  /** You stumbled. What you were carrying hits the floor, and the cups and dishes it was on are broken for good. A cask you hang on to. */
-  stumble(sibling: number): void {
+  /**
+   * What's in her hands hits the floor, and the cups and dishes it was on are broken for good. A cask she hangs on
+   * to. Returns what went, or null if nothing did.
+   */
+  private smashHeld(sibling: number): { what: string; count: number } | null {
     const held = this.carrying[sibling];
-    if (held && held !== "cask") {
-      const count = this.carryCount[sibling];
-      const broken = held === "dirty" ? [...this.dirtyHeld[sibling]] : Array.from({ length: count }, () => WARE_OF[held] as Ware);
-      for (const ware of broken) {
-        if (this.stock[ware] === 0) continue;
-        this.stock[ware]--;
-        this.broken[ware]++;
-      }
-      this.emptyHands(sibling);
-      const what = held === "dirty" ? "the dirty dishes" : held === "ale" && count > 1 ? "the whole tray" : `the ${held}`;
-      this.say(`You stumble and drop ${what}!`);
-      this.cue(count > 1 ? "smashTray" : "smashOne");
+    if (!held || held === "cask") return null;
+    const count = this.carryCount[sibling];
+    const broken = held === "dirty" ? [...this.dirtyHeld[sibling]] : Array.from({ length: count }, () => WARE_OF[held] as Ware);
+    for (const ware of broken) {
+      if (this.stock[ware] === 0) continue;
+      this.stock[ware]--;
+      this.broken[ware]++;
+    }
+    this.emptyHands(sibling);
+    const what = held === "dirty" ? "the dirty dishes" : held === "ale" && count > 1 ? "the whole tray" : `the ${held}`;
+    return { what, count };
+  }
+
+  /** You stumbled. What you were carrying hits the floor (smashHeld). */
+  stumble(sibling: number): void {
+    const smashed = this.smashHeld(sibling);
+    if (smashed) {
+      this.say(`You stumble and drop ${smashed.what}!`);
+      this.cue(smashed.count > 1 ? "smashTray" : "smashOne");
     } else {
       this.say("You stumble and nearly go over.");
       this.cue("drop");
@@ -5583,6 +5750,8 @@ export class Tavern {
     this.earned = 0;
     this.napped = false;
     this.drunk = 0;
+    this.passingOut = false;
+    this.joinNext = null;
     this.stripped = 0;
     this.undressedTonight = 0;
     this.coated = {};

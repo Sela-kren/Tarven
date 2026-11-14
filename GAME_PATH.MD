@@ -367,6 +367,16 @@ Karryn-style, a touch on a part her clothes cover (chest, rear, thighs, waist, i
 - **Her yes** is her desire, as before. Further in pays and stirs her more once it lands: inside +1 gold and ×1.25 desire, bare +2 gold and ×1.5. In the Consent-off check it counts as bolder (+1 / +2 to her hold).
 - Never on a garment tug, in a brawl, or by a guest with hold of her. Records: touched inside your clothes, touched on bare skin (journal, Records). Tests: `tests/invite.test.ts`.
 
+## 7h. Bar work, Karryn's waitress job [built]
+Karryn's Prison's bar shift, as Tarven's taproom: the room reads her, and the job gets harder the better known she is. The rules are in `src/game/barwork.ts`; the tests are in `tests/barwork.test.ts`.
+- **The table joins in.** When she lets a guest's touch land, the boldest of their tablemates who hasn't had a turn this round may want one: no chance below nerve 3, 30% at 3, +8% per point past it, ×1.5 if lusting or drunk, never past 75%. Their tablemate cheers them on, and once she's back to work their reach comes, **asked like any other reach** (Slap and Pull away always there; Consent off, the push-vs-hold check). Each tablemate joins once per round. Not in a brawl, never after an invitation or after she's been overwhelmed.
+- **The tray.** A touch landing while she still has something in her hands (not a cask) can make her drop it: 10% + 3% per point of boldness, ×1.5 leaning in, ×1.5 sloppy drunk, −8% (of the chance) per Agility level past 1. It breaks like a stumble, and leaves a spill under their seat to mop.
+- **A known tavern.** Fame 40+ gives every guest +1 nerve, 80+ gives +2: the better known the tavern is, the bolder the crowd.
+- **They can tell.** While she's Horny, every guest gets +1 nerve; while she's Wet, +1 more.
+- **Dead drunk.** A drink that takes her to the top of drunk (1.0, about four drinks close together) means she's done: once the conversation she's in closes, she passes out, loses 2 respect, and the night closes early (like a lost brawl, no last call). The drink before, she warns herself. A night with no drink and 5 or more served counts as a **sober shift**.
+- **Fixing her clothes.** Behind the bar at the wash tub, with empty hands and an empty tub, she can put the last piece she lost back on. Everyone waiting loses 15% of their patience while she does.
+- **Titles:** *Steady Hands* (10 sober shifts: never drops the tray, +5% pay), *Life of the Party* (pass out 10 times: every drink stirs every desire 5 more; drink hits 25% faster), *The Table's Favourite* (15 tablemates joined in: tablemates join 50% more often, +1 gold on breast and behind touches).
+
 ## 7c. Desire, Karryn-style [built]
 Six desires, 0–100, reset each night to what her passives start them at: **Body, Mouth, Breasts, Butt, Pussy, Cock**. Cock desire is her wanting to be intimate with someone. The rules are in `src/game/desire.ts`; the tests are in `tests/desire.test.ts`.
 
@@ -418,6 +428,7 @@ Six desires, 0–100, reset each night to what her passives start them at: **Bod
 | Spawning, choosing types, serving, walk-outs | `src/game/tavern.ts` |
 | Moods and how they change | `src/game/mood.ts` |
 | Nerve and touches | `src/game/touch.ts`, `src/game/touchtalk.ts` |
+| Bar work: the table joining in, the tray, dead drunk, fixing her clothes | `src/game/barwork.ts` |
 | Brawls | `src/game/fight.ts` |
 | After hours | `src/game/duel.ts` |
 | Adult play: when, the story, upstairs or the taproom | `src/game/adultplay.ts`, `src/game/invitetalk.ts`, `src/game/taproom.ts` |

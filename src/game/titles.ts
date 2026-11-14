@@ -186,6 +186,45 @@ export const TITLES: readonly TitleDef[] = [
       e.duelGold += 0.25;
     },
   },
+  // Bar work, Karryn's waitress titles (barwork.ts).
+  {
+    id: "steadyHands",
+    name: "Steady Hands",
+    need: "Work 10 sober shifts (not a drink all night, and 5 or more served)",
+    progress: (f) => count(f.records.soberNights, 10),
+    bonus: { gold: 10 },
+    worn: "You never drop the tray with a hand on you; +5% on everything you're paid",
+    wear: (e) => {
+      e.steady += 1;
+      e.payPct += 0.05;
+    },
+  },
+  {
+    id: "lifeOfTheParty",
+    name: "Life of the Party",
+    need: "Drink yourself under the table 10 times",
+    progress: (f) => count(f.records.passedOut, 10),
+    bonus: { fame: 3 },
+    worn: "Every drink with a guest stirs every desire 5 more",
+    cost: "Drink gets to you 25% faster",
+    wear: (e) => {
+      e.drinkMeters += 5;
+      e.drunkRate -= 0.25;
+    },
+  },
+  {
+    id: "tableFavourite",
+    name: "The Table's Favourite",
+    need: "Have 15 tablemates join in after you let someone's hand stay",
+    progress: (f) => count(f.records.tableJoins, 15),
+    bonus: { gold: 15 },
+    worn: "Tablemates join in 50% more often; +1 gold on every touch to your breasts or behind you allow",
+    wear: (e) => {
+      e.join += 0.5;
+      e.touchGold.chest = (e.touchGold.chest ?? 0) + 1;
+      e.touchGold.rear = (e.touchGold.rear ?? 0) + 1;
+    },
+  },
   {
     id: "seasoned",
     name: "Seasoned Keeper",

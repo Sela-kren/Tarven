@@ -143,6 +143,16 @@ export interface Records {
   messesCleaned: number;
   smoothNights: number;
   busyNights: number;
+  /**
+   * Bar work, Karryn-style (barwork.ts): tablemates who joined in after she let someone's hand land, trays she
+   * dropped with a hand on her, sober shifts (no drink, SOBER_NIGHT_SERVED served), nights she drank herself under
+   * the table, and pieces she put back on behind the bar.
+   */
+  tableJoins: number;
+  traysDropped: number;
+  soberNights: number;
+  passedOut: number;
+  redressed: number;
   /** Nights each meter reached the top. */
   maxed: Partial<Record<Meter, number>>;
   /** Nights every meter reached 60. */
@@ -221,6 +231,11 @@ export function newRecords(): Records {
     messesCleaned: 0,
     smoothNights: 0,
     busyNights: 0,
+    tableJoins: 0,
+    traysDropped: 0,
+    soberNights: 0,
+    passedOut: 0,
+    redressed: 0,
     maxed: {},
     allHigh: 0,
     clothesLost: 0,
@@ -313,6 +328,10 @@ export interface Effects {
   bottleAsk: number;
   /** How much more (or, negative, less) often guests reach for her, as a fraction. */
   reach: number;
+  /** How much less likely she is to drop her tray with a hand on her, as a fraction (barwork.ts). */
+  steady: number;
+  /** How much more (or, negative, less) often a tablemate joins in, as a fraction (barwork.ts). */
+  join: number;
   /** How much more (or, negative, less) often guests grab her as she serves them (grab.ts), as a fraction. */
   grab: number;
   /** Gold she gets each time she lets a guest who grabbed her hold her. */
@@ -415,6 +434,8 @@ export function noEffects(): Effects {
     bottleGold: 0,
     bottleAsk: 0,
     reach: 0,
+    steady: 0,
+    join: 0,
     grab: 0,
     grabGold: 0,
     showAsk: 0,
@@ -2540,6 +2561,11 @@ export function readProgress(raw: unknown): ProgressSave {
       "messesCleaned",
       "smoothNights",
       "busyNights",
+      "tableJoins",
+      "traysDropped",
+      "soberNights",
+      "passedOut",
+      "redressed",
       "allHigh",
       "clothesLost",
       "bareNights",
