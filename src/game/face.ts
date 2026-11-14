@@ -118,8 +118,9 @@ export const EXPRESSIONS: Readonly<Record<Expression, FaceShape>> = {
   panting: face({ browNear: 0.8, browInner: 0.45, browArch: -0.3, browOuter: -0.4, browTip: 1, lidUpper: 0.6, lidLower: 0.15, lookY: 0.2, smile: 0.05, open: 1, round: 1, tongue: 1, blush: 1, crease: 0.4 }),
   // Fighting it: mouth stretched wide on both rows of teeth, corners down, eyes squeezed shut, brows pinched.
   strained: face({ browNear: 1, browInner: 0.5, browArch: -0.4, browOuter: -0.5, browTip: 0.6, lidUpper: 1, lidLower: 0.6, smile: -0.3, open: 0.65, bare: 1, blush: 0.9, crease: 1 }),
-  // Melting: a soft smile on parted lips, dreamy half shut eyes, brows lifted and easy, flushed.
-  blissful: face({ brow: 0.25, browInner: 0.5, browArch: 0.3, browOuter: -0.3, browTip: 0.6, lidUpper: 0.65, lidLower: 0.2, smile: 0.7, open: 0.25, blush: 0.9 }),
+  // Melting: a wide, soft crescent of a smile on parted lips, its corners turned up to points, dreamy half shut eyes,
+  // brows lifted and easy, flushed.
+  blissful: face({ brow: 0.25, browInner: 0.5, browArch: 0.3, browOuter: -0.3, browTip: 0.6, lidUpper: 0.65, lidLower: 0.2, smile: 1.2, open: 0.25, purse: -1, blush: 0.9 }),
   // Loving it: a big open smile, her upper lip straight and stretched wide on her teeth, her lower lip dropped round
   // below it, eyes crinkled from below, brows up and easy, flushed.
   delighted: face({ brow: 0.3, browInner: 0.4, browArch: 0.5, browOuter: -0.3, lidUpper: 0.35, lidLower: 0.55, smile: 0.1, open: 0.8, purse: -0.9, tongue: 0.15, blush: 0.8 }),
