@@ -25,6 +25,7 @@ import { Game, WHOLE_PIECES } from "./game/game";
 import { claimFurniture } from "./game/houseview";
 import { Input } from "./game/input";
 import { DayNightLighting } from "./game/lighting";
+import { DownloadTally, LoadScreen, nextPaint } from "./game/loadscreen";
 import { RetroPipeline } from "./game/retro";
 import { WorldClock } from "./game/time";
 import { setupWorld } from "./game/world";
@@ -36,7 +37,16 @@ const MAX_FRAME_TIME = 1 / 20;
 const SHADOW_UPDATE_INTERVAL = 0.1;
 
 async function start(): Promise<void> {
-  const status = document.getElementById("status")!;
+  // The code is here: the page's stall check (index.html) stands down, and the loading bar takes over.
+  (window as unknown as { __tarvenStarted?: boolean }).__tarvenStarted = true;
+  // A load that got this far worked: the next dropped download gets its one automatic retry again.
+  try {
+    sessionStorage.removeItem("tarven.retried");
+  } catch {
+    // No session storage: the retry just isn't remembered.
+  }
+  // The loading bar: it fills as the models download, then step by step as the game gets ready.
+  const loading = new LoadScreen(document.getElementById("status")!);
 
   // Right-click belongs to the game, not the browser's menu. Text boxes keep it, for copy and paste.
   window.addEventListener("contextmenu", (event) => {
@@ -70,13 +80,23 @@ async function start(): Promise<void> {
 
   const base = import.meta.env.BASE_URL;
   const loader = new GLTFLoader();
-  const [worldFile, maleFile, femaleFile, propsFile] = await Promise.all([
-    loader.loadAsync(`${base}models/world.glb`),
-    loader.loadAsync(`${base}models/male.glb`),
-    loader.loadAsync(`${base}models/female.glb`),
-    loader.loadAsync(`${base}models/props.glb`),
-  ]);
+  const files = ["world", "male", "female", "props"];
+  const tally = new DownloadTally(files);
+  const fetchModel = (name: string) =>
+    loader
+      .loadAsync(`${base}models/${name}.glb`, (event) => {
+        tally.update(name, event.loaded, event.lengthComputable ? event.total : 0);
+        loading.show("download", tally.fraction, tally.megabytes);
+      })
+      .then((file) => {
+        tally.done(name);
+        loading.show("download", tally.fraction, tally.megabytes);
+        return file;
+      });
+  const [worldFile, maleFile, femaleFile, propsFile] = await Promise.all(files.map(fetchModel));
 
+  loading.show("world", 0);
+  await nextPaint();
   addBedroom(worldFile.scene);
   addBin(worldFile.scene);
   addWashTub(worldFile.scene);
@@ -87,6 +107,8 @@ async function start(): Promise<void> {
   scene.add(worldFile.scene);
   lighting.addSkyGlow(worldFile.scene, ["T_window"]);
 
+  loading.show("game", 0);
+  await nextPaint();
   const input = new Input();
   const audio = new Soundscape(base);
   // For testing: ?mute on the address (development only) starts muted, whatever was saved.
@@ -126,6 +148,12 @@ async function start(): Promise<void> {
     Object.assign(window, { __tarven: { game, world, renderer, clock, audio } });
   }
 
+  // Every shader the first frames need, compiled now (in the background where the browser can), rather than
+  // freezing the first frame with nothing on screen to say why.
+  loading.show("shaders", 0);
+  await nextPaint();
+  await renderer.compileAsync(scene, camera);
+
   let last = performance.now();
   let elapsed = 0;
   let nextShadowUpdate = 0;
@@ -162,11 +190,15 @@ async function start(): Promise<void> {
     pipeline.render(scene, camera);
   });
 
-  status.remove();
+  loading.finish();
 }
 
 start().catch((error: unknown) => {
   console.error(error);
   const status = document.getElementById("status");
-  if (status) status.textContent = `Could not start the game: ${String(error)}`;
+  if (status) {
+    status.classList.remove("loading");
+    status.removeAttribute("role");
+    status.textContent = `Could not start the game: ${String(error)}`;
+  }
 });

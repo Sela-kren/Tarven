@@ -64,6 +64,50 @@
     <div id="build" aria-label="House plans"></div>
     <div id="panel" role="dialog" aria-modal="true"></div>
     <div id="fade"></div>
-    <script type="module" src="/src/main.ts"></script>
+    <script>
+      // If the game's code can't be fetched (a dropped connection, or a web filter cutting into local traffic), the
+      // page would sit on "Loading..." for ever. Say so instead, with a way to try again. main.ts turns this off
+      // as soon as it runs (window.__tarvenStarted), and its own loading bar takes over from there.
+      (function () {
+        var STALL_SECONDS = 20;
+        function stuck(why) {
+          if (window.__tarvenStarted) return;
+          var status = document.getElementById("status");
+          if (!status) return;
+          status.classList.add("stuck");
+          status.textContent = "";
+          var line = document.createElement("div");
+          line.textContent = why;
+          var again = document.createElement("button");
+          again.type = "button";
+          again.textContent = "Reload";
+          again.onclick = function () { location.reload(); };
+          status.append(line, again);
+        }
+        // A dropped download usually goes through on a second try: reload once by itself, then ask.
+        function failed() {
+          if (window.__tarvenStarted) return;
+          var tried = false;
+          try {
+            tried = sessionStorage.getItem("tarven.retried") === "1";
+            if (!tried) sessionStorage.setItem("tarven.retried", "1");
+          } catch (e) {
+            tried = true;
+          }
+          if (!tried) location.reload();
+          else stuck("Part of the game could not be downloaded (the connection dropped).");
+        }
+        window.__tarvenStuck = stuck;
+        window.__tarvenFailed = failed;
+        setTimeout(function () {
+          stuck("This is taking longer than it should. Part of the game may not have downloaded.");
+        }, STALL_SECONDS * 1000);
+      })();
+    </script>
+    <script
+      type="module"
+      src="/src/main.ts"
+      onerror="window.__tarvenFailed && window.__tarvenFailed()"
+    ></script>
   </body>
 </html>
