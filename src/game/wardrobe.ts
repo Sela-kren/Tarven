@@ -94,6 +94,11 @@ export const WARDROBE: Record<WardrobeBody, readonly Garment[]> = {
     { id: "girdle", label: "girdle", layer: "outer", region: "bottom" },
     { id: "jewels", label: "jewellery", layer: "accessory", region: "top", keep: "her jewellery is hers; dares are for clothes" },
     { id: "gems", label: "gems", layer: "accessory", region: "top", keep: "they're set in her jewellery and necklace" },
+    // The bunny set's own. Its corset is the bodice.
+    { id: "ears", label: "bunny ears", layer: "accessory", region: "top" },
+    { id: "bowtie", label: "bow tie", layer: "accessory", region: "top" },
+    { id: "collar", label: "collar and cuffs", layer: "accessory", region: "top" },
+    { id: "tail", label: "tail", layer: "accessory", region: "bottom" },
     // The pirate's rig, which only guests wear for now. Her corset is the bodice and her shirt the chemise.
     ...PIRATE_GARMENTS,
     { id: "feather", label: "feather", layer: "accessory", region: "top", keep: "it's pinned in her hat, or on her arrows" },
@@ -136,13 +141,17 @@ export const WARDROBE: Record<WardrobeBody, readonly Garment[]> = {
  */
 export const TOP_PULL: Readonly<Record<string, "down" | "up">> = { blouse: "down", bodice: "down", belt: "down", ribbons: "down", top: "up" };
 
+/** Tops that sit under her breasts in an outfit, leaving them bare: the bunny set's corset. */
+const UNDER_BUST: Readonly<Record<string, readonly string[]>> = { bunny: ["bodice"] };
+
 /**
  * The tops she has on that cover her breasts, and which way they come off them: up if any of them only lifts, down
  * otherwise; null with none on.
  */
 export function topPull(body: WardrobeBody, outfit: string | undefined, off: readonly string[]): { ids: string[]; dir: "down" | "up" } | null {
+  const under = (outfit && UNDER_BUST[outfit]) || [];
   const ids = stripLadder(body, outfit)
-    .filter((g) => g.id in TOP_PULL && !off.includes(g.id))
+    .filter((g) => g.id in TOP_PULL && !off.includes(g.id) && !under.includes(g.id))
     .map((g) => g.id);
   if (ids.length === 0) return null;
   return { ids, dir: ids.some((id) => TOP_PULL[id] === "up") ? "up" : "down" };

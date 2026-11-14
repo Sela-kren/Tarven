@@ -37,10 +37,21 @@ describe("her underwear styles", () => {
   }, 30_000);
 
   it("covers her between the legs in every pair of briefs and every one-piece", () => {
-    for (const style of [...BRIEF_STYLES.slice(1), ...WHOLE_STYLES]) {
+    // The heart pasty is only stuck on her front.
+    for (const style of [...BRIEF_STYLES.slice(1).filter((s) => s.id !== "heart"), ...WHOLE_STYLES]) {
       expect(style.front!(0, 0.755), style.id).toBeGreaterThan(0);
       expect(style.back!(0, 0.755), style.id).toBeGreaterThan(0);
     }
+  });
+
+  it("sticks the heart pasty over her pussy, point down, and leaves her bare behind and beside it", () => {
+    const heart = BRIEF_STYLES.find((s) => s.id === "heart")!;
+    expect(heart.front!(0, 0.755)).toBeGreaterThan(0);
+    expect(heart.front!(0, 0.8)).toBeGreaterThan(0);
+    expect(heart.front!(0.03, 0.81)).toBeGreaterThan(0);
+    expect(heart.front!(0.035, 0.76)).toBeLessThan(0); // beside its point
+    expect(heart.front!(0, 0.9)).toBeLessThan(0);
+    expect(heart.back!(0, 0.79)).toBeLessThan(0);
   });
 
   it("bares her cheeks in a thong and covers them in full briefs", () => {
@@ -53,6 +64,11 @@ describe("her underwear styles", () => {
     const top = (id: string) => TOP_STYLES.find((s) => s.id === id)!;
     expect(coversNipples(top("fullcup"))).toBe(true);
     expect(coversNipples(top("pasties"))).toBe(true);
+    expect(coversNipples(top("hearts"))).toBe(true);
+    // The heart's lobes are above the nipple and its point below it.
+    expect(top("hearts").front!(NIPPLE.x - 0.012, NIPPLE.z + 0.015)).toBeGreaterThan(0);
+    expect(top("hearts").front!(NIPPLE.x, NIPPLE.z - 0.02)).toBeGreaterThan(0);
+    expect(top("hearts").front!(NIPPLE.x + 0.02, NIPPLE.z - 0.018)).toBeLessThan(0);
     expect(coversNipples(top("shelf"))).toBe(false);
     expect(coversNipples(top("harness"))).toBe(false);
     expect(top("harness").front!(NIPPLE.x, NIPPLE.z)).toBeLessThan(0);

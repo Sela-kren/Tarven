@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LOOK_OPTIONS, playerOutfits } from "../src/game/appearance";
 import { DARES, stripPiece } from "../src/game/banter";
-import { piecesOff, stripLadder, stripStages, WARDROBE, type WardrobeBody } from "../src/game/wardrobe";
+import { piecesOff, stripLadder, stripStages, topPull, WARDROBE, type WardrobeBody } from "../src/game/wardrobe";
 
 const BODIES: WardrobeBody[] = ["Female", "Male"];
 
@@ -57,6 +57,14 @@ describe("the wardrobe", () => {
     expect(stripLadder("Female", "tavern")).toEqual(stripLadder("Female"));
     expect(piecesOff("Female", 2, "priestess")).toEqual(["sleeves", "top"]);
     expect(stripStages("Female", "priestess")).toBe(7);
+    expect(stripLadder("Female", "bunny").map((g) => g.id)).toEqual(
+      ["ears", "bowtie", "collar", "tail", "bodice", "stockings", "bra", "smalls"],
+    );
+  });
+
+  it("leaves the bunny corset under her breasts when she shows them, nothing to pull", () => {
+    expect(topPull("Female", "bunny", [])).toBeNull();
+    expect(topPull("Female", "dirndl", [])?.ids).toContain("bodice");
   });
 
   it("takes the archer's mantle and the warrior's armour off first, and the noble's chain never", () => {

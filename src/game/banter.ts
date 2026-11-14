@@ -620,6 +620,31 @@ export const DARES: Record<string, Omit<StripPiece, "id">> = {
     say: "\"Weigh it if you like. You can't afford it.\"",
     result: "The girdle comes off in a jingle of gold and goes round the table from hand to hand.",
   },
+  // The bunny set's own.
+  ears: {
+    dare: "\"Hop over here, bunny! Give us those ears, I want to wear them.\" A hand reaches for the band on your head.",
+    accept: "Hand over your bunny ears",
+    say: "\"Careful. They suit me better than they'll suit you.\"",
+    result: "The ears come off your head and go straight on a bearded farmhand. The table howls.",
+  },
+  bowtie: {
+    dare: "\"That little pink bow at your throat! Pull the end of it, go on.\"",
+    accept: "Untie your bow tie",
+    say: "\"Pull it yourself, if your hands are steady enough.\"",
+    result: "The bow comes loose with one tug and gets tied round somebody's tankard handle.",
+  },
+  collar: {
+    dare: "\"Collar and cuffs, like a lord's servant. Unbutton them, bunny!\"",
+    accept: "Unbutton your collar and cuffs",
+    say: "\"Neck first, then the wrists. Watch closely.\"",
+    result: "The white collar and cuffs come off one by one and land in a little pile among the mugs.",
+  },
+  tail: {
+    dare: "\"I've been eyeing that fluffy tail all night. Turn round and let me have it.\"",
+    accept: "Let them pluck your tail",
+    say: "\"Turn round, he says. As if you weren't looking already.\"",
+    result: "You turn and bend a little, and someone plucks the tail off your bottom to loud cheers.",
+  },
 };
 
 /** The lines for a garment: its own if it has them, otherwise ones made from what it's called. */

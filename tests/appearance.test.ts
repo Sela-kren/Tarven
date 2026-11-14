@@ -44,6 +44,7 @@ import {
   shapeAmount,
   stopValue,
   toneColor,
+  underOf,
   wearOutfit,
   type Look,
 } from "../src/game/appearance";
@@ -304,7 +305,7 @@ describe("colours", () => {
 describe("keeping looks", () => {
   it("drops anything unknown or out of range", () => {
     const read = readLook(
-      { sliders: { height: 3, bust: -0.5, wings: 1 }, colors: { skin: "#ABCDEF", hair: "red", tail: "#000000" }, hidden: ["apron", "hat"] },
+      { sliders: { height: 3, bust: -0.5, wings: 1 }, colors: { skin: "#ABCDEF", hair: "red", fins: "#000000" }, hidden: ["apron", "hat"] },
       "Female",
     );
     expect(read).toEqual({ sliders: { height: 1, bust: -0.5 }, colors: { skin: "#abcdef" }, hidden: ["apron"] });
@@ -770,6 +771,14 @@ describe("outfits", () => {
     const tavern = wearOutfit("Female", dirndl, "tavern");
     expect(tavern.outfit).toBeUndefined();
     expect(tavern.colors).toEqual({ skin: "#c68a64" });
+  });
+
+  it("puts the bunny set on with its heart pasties, which she can then change", () => {
+    const bunny = wearOutfit("Female", { ...newLook(), bra: "plunge", briefs: "thong" }, "bunny");
+    expect(bunny).toMatchObject({ outfit: "bunny", bra: "hearts", briefs: "heart" });
+    expect(underOf("Female", bunny)).toMatchObject({ top: { id: "hearts" }, bottom: { id: "heart" } });
+    // Other outfits leave her underwear as it was.
+    expect(wearOutfit("Female", bunny, "dirndl")).toMatchObject({ bra: "hearts", briefs: "heart" });
   });
 
   it("lists only clothes colours each body has, and keeps only known outfits", () => {

@@ -4211,6 +4211,127 @@ def build_priestess_extra(spec, m):
     return extra
 
 
+# ---------------------------------------------------------------- the bunny set
+# A brothel girl's bunny set: an underbust corset from low on her hips up to under her bust, which leaves her breasts
+# and her groin bare for her heart pasties (lingerie.ts, "hearts" and "heart"), white cuffs at her wrists, a white
+# collar with a pink bow tie, tall ears on a band over her head, pink inside, and a round white tail.
+BUNNY_COLOURS = (("ears", (0.09, 0.08, 0.09)), ("collar", (0.94, 0.92, 0.88)), ("bowtie", (0.82, 0.38, 0.48)),
+                 ("tail", (0.95, 0.94, 0.92)))
+BUNNY_CORSET = (0.865, 1.09)  # its bottom at her sides, and its top, just under the bust (lingerie.ts, UNDERBUST)
+BUNNY_POINT = (0.035, 0.075)  # it dips to a point at the front middle: how far down, and how wide either side
+BUNNY_CUFF = 0.08  # how far up the forearm from the wrist the cuffs reach: the lowest band of the arm
+BUNNY_COLLAR = (1.338, 1.362)
+BUNNY_EAR = {"height": 0.17, "width": 0.03, "depth": 0.004, "at": math.radians(66), "tilt": math.radians(14),
+             "lean": 0.18}  # where on the band (from her side), how far out, how far back
+BUNNY_TAIL = (0.032, 0.885)  # radius, height
+
+
+def bunny_cloth(spec, m, skin):
+    """The worn skin's faces the bunny set covers: the corset, the cuffs, and her legwear."""
+    cuff = spec["wrist_z"] + BUNNY_CUFF
+    faces = []
+    for f, mat in skin.faces:
+        if mat is m["stripe"] or len(f) > 4:
+            continue
+        bone, (cx, cy, cz) = face_bone(skin, f)
+        if bone.startswith("ForeArm"):
+            if cz < cuff:
+                faces.append((f, m["collar"]))
+        elif bone in ("Hips", "Torso") and not face_leans(skin, f, "UpperArm"):
+            dip = BUNNY_POINT[0] * max(0.0, 1 - abs(cx) / BUNNY_POINT[1]) if cy > 0 else 0.0
+            if BUNNY_CORSET[0] - dip <= cz < BUNNY_CORSET[1]:
+                faces.append((f, m["bodice"]))
+            elif is_legwear(bone, cz):
+                faces.append((f, legwear_band(m, bone, cz)))
+        elif is_legwear(bone, cz):
+            faces.append((f, legwear_band(m, bone, cz)))
+    return faces
+
+
+def bunny_lift(bone, z):
+    """A close-laced corset, cuffs standing off the wrist a little, and stockings on the skin."""
+    if bone.startswith("ForeArm"):
+        return 0.007
+    if bone in ("Hips", "Torso"):
+        return 0.003
+    return 0.0
+
+
+def leaf(extra, key, root, up, height, width, depth, mat, weights, span=(0.0, 1.0), lift=0.0):
+    """
+    A flat closed leaf standing from root along up: narrow at the root, widest a little past halfway, round at the
+    tip, `depth` thick front to back. `span` takes just part of its length, `lift` moves it forward.
+    """
+    across = up.cross(Vector((0.0, 1.0, 0.0))).normalized()
+    forward = across.cross(up).normalized()
+    n = 9
+    for i in range(n):
+        s = span[0] + (span[1] - span[0]) * i / (n - 1)
+        half = width * (0.3 + 0.7 * math.sin(math.pi * min(s, 0.97)) ** 0.6) * (0.45 if i == n - 1 else 1.0)
+        centre = root + up * (height * s) + forward * lift
+        for j, sign in enumerate((-1, 1)):
+            edge = centre + across * (half * sign)
+            for side, toward in (("f", depth), ("b", -depth)):
+                co = tuple(edge + forward * toward)
+                extra.add(f"{key}{side}{i}_{j}", 0, co, weights(co))
+    for i in range(n - 1):
+        a, b = i, i + 1
+        extra.face((f"{key}f{a}_0", f"{key}f{b}_0", f"{key}f{b}_1", f"{key}f{a}_1"), 0, mat)
+        extra.face((f"{key}b{a}_1", f"{key}b{b}_1", f"{key}b{b}_0", f"{key}b{a}_0"), 0, mat)
+        for j in (0, 1):
+            extra.face((f"{key}f{a}_{j}", f"{key}b{a}_{j}", f"{key}b{b}_{j}", f"{key}f{b}_{j}"), 0, mat)
+    for i in (0, n - 1):
+        extra.face((f"{key}f{i}_0", f"{key}f{i}_1", f"{key}b{i}_1", f"{key}b{i}_0"), 0, mat)
+
+
+def build_bunny_extra(spec, m, fit):
+    """The bunny set's collar and bow tie, the band over her head with its ears, and her tail."""
+    extra = Skin()
+    head = lambda co: {"Head": 1.0}
+
+    # The collar, and a bow tie at its front: two wings and a knot.
+    at = neck_band(extra, spec, "collar", BUNNY_COLLAR, 0.007, m["collar"], sides=12)
+    z = sum(BUNNY_COLLAR) / 2
+    _, f, _, cy = at(z)[:4]
+    front = cy + f + 0.012
+    for i, sx in enumerate((-1, 1)):
+        corners = [(sx * 0.005, front, z - 0.004), (sx * 0.032, front, z - 0.013), (sx * 0.032, front, z + 0.013),
+                   (sx * 0.005, front, z + 0.004)]
+        add_slab(extra, f"bow{i}", corners, (0.0, 0.004, 0.0), head, m["bowtie"])
+    facing(extra, "bowknot", (0.0, front + 0.002, z), (0.007, 0.008), (0.0, 1.0), head, m["bowtie"], depth=0.006)
+
+    # The band, over the top of her head from ear to ear, a little forward of its middle, pressed onto her hair.
+    base, cy, rx, _, _, top = fit
+    y = cy + 0.012
+    angles = [math.pi * k / 14 for k in range(15)]
+    corners = ((-0.007, -0.007), (0.007, -0.007), (0.007, -0.001), (-0.007, -0.001))  # pressed into the hair a little
+    for r, (dy, grow) in enumerate(corners):
+        for k, t in enumerate(angles):
+            extra.add(f"band{r}_{k}", 0, (math.cos(t) * (rx + grow), y + dy, base + (top - base + grow) * math.sin(t)),
+                      {"Head": 1.0})
+    for k in range(len(angles) - 1):
+        for r in range(len(corners)):
+            r2 = (r + 1) % len(corners)
+            extra.face((f"band{r}_{k}", f"band{r}_{k + 1}", f"band{r2}_{k + 1}", f"band{r2}_{k}"), 0, m["ears"])
+
+    # The ears, standing from the band, leaning out and a little back, each lined in pink.
+    e = BUNNY_EAR
+    for i, sx in enumerate((-1, 1)):
+        t = e["at"] if sx > 0 else math.pi - e["at"]
+        root = Vector((math.cos(t) * (rx - 0.004), y, base + (top - base - 0.004) * math.sin(t) - 0.006))
+        up = Vector((sx * math.sin(e["tilt"]), -e["lean"], math.cos(e["tilt"]))).normalized()
+        leaf(extra, f"ear{i}", root, up, e["height"], e["width"], e["depth"], m["ears"], head)
+        leaf(extra, f"lining{i}", root, up, e["height"], e["width"] * 0.55, 0.0008, m["bowtie"], head,
+             span=(0.14, 0.9), lift=e["depth"] + 0.001)
+
+    # Her tail, round and white, at the top of the cleft of her bottom.
+    radius, tz = BUNNY_TAIL
+    back = profile_at(spec, tz)[2]
+    centre = Vector((0.0, -(back + radius * 0.55), tz))
+    add_ball(extra, "tail", centre, radius, lambda co: {"Hips": 1.0}, m["tail"], n=10, rings=6)
+    return extra
+
+
 # ---------------------------------------------------------------- the pirate's rig
 # For both bodies: a loose shirt with full sleeves, breeches tucked into tall bucket-topped boots, a sash round the
 # waist knotted at the left hip with its ends hanging, and a cocked hat trimmed with braid. He wears a waistcoat
@@ -5696,6 +5817,7 @@ def more_outfits(spec, m, skin, normals, fit):
     return {
         "Dirndl": (dirndl_cloth(spec, m, skin), lifted(dirndl_puff), build_dirndl_extra(spec, m)),
         "Priestess": (priestess_cloth(spec, m, skin), lifted(priestess_lift), build_priestess_extra(spec, m)),
+        "Bunny": (bunny_cloth(spec, m, skin), lifted(bunny_lift), build_bunny_extra(spec, m, fit)),
         **guests,
     }
 
@@ -6485,6 +6607,11 @@ def main():
     # The adventurer's kit and the noble's clothes, the same way.
     random_state = rng.bit_generator.state
     for key, colour in GUEST_COLOURS:
+        mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
+    rng.bit_generator.state = random_state
+    # Her bunny set, the same way.
+    random_state = rng.bit_generator.state
+    for key, colour in BUNNY_COLOURS:
         mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
     rng.bit_generator.state = random_state
     # What men leave on her, likewise.

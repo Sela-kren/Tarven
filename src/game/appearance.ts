@@ -316,6 +316,8 @@ export interface OutfitDef {
   guestOnly?: boolean;
   /** The legwear style it's put on with. Left out for an outfit whose legs are covered, which has no legwear. */
   legwear?: string;
+  /** The underwear styles it's put on with (lingerie.ts ids), for an outfit made to show them. */
+  under?: { bra?: string; briefs?: string };
 }
 
 export interface LookOptions {
@@ -887,6 +889,12 @@ const FEMALE_COLORS: ColorDef[] = [
   { id: "jewels", label: "Jewellery", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_jewel"]] },
   // The gems on her clothes, and those set in her necklace and her belly ring.
   { id: "gems", label: "Gems", tab: "clothes", mode: "dye", palette: GEM_COLORS, parts: [["Cloth", "T_gem"], ["Jewel", "T_gem"]] },
+  // The bunny set's own: her ears and their band, her collar and cuffs, the bow tie and the ears' linings, her tail.
+  // Its corset is the bodice.
+  { id: "ears", label: "Ears", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_ears"]] },
+  { id: "collar", label: "Collar and cuffs", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_collar"]] },
+  { id: "bowtie", label: "Bow tie", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_bowtie"]] },
+  { id: "tail", label: "Tail", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_tail"]] },
   // The pirate's rig. Her corset is the bodice, her shirt the blouse, and her belt and corset laces the belt.
   ...pirateColors(),
   { id: "feather", label: "Feather", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_plume"]] },
@@ -922,6 +930,18 @@ const FEMALE_OUTFITS: OutfitDef[] = [
       gems: "#3aa6d6", shoes: "#9a7430", stockings: "#9a7430", smalls: "#b8892e", bra: "#b8892e",
     },
     legwear: "noshow",
+  },
+  {
+    // A brothel girl's bunny set: black ears lined in pink, a white collar with a pink bow tie and white cuffs, a
+    // black underbust corset, a white tail, black stockings on a garter belt, and pink heart pasties.
+    id: "bunny", label: "Bunny", mesh: "Bunny",
+    colors: ["ears", "bowtie", "collar", "tail", "bodice", "stockings", "shoes", "soles", "bra", "smalls"],
+    preset: {
+      ears: "#1c1a1e", bowtie: "#d8607e", collar: "#f1ece0", tail: "#f4f1ea", bodice: "#1c1a1e", stockings: "#2a2226",
+      shoes: "#1c1716", soles: "#1c1716", bra: "#e0587a", smalls: "#e0587a",
+    },
+    legwear: "garter",
+    under: { bra: "hearts", briefs: "heart" },
   },
   {
     // A cream shirt, an oxblood corset under a red sash, brown breeches, black boots, and a cocked hat with a white feather.
@@ -1423,6 +1443,8 @@ export function wearOutfit(body: BodyName, look: Look, id: string): Look {
   if (outfit === options.outfits[0]) delete next.outfit;
   else next.outfit = outfit.id;
   delete next.legwear;
+  if (outfit.under?.bra) next.bra = outfit.under.bra;
+  if (outfit.under?.briefs) next.briefs = outfit.under.briefs;
   return next;
 }
 

@@ -90,6 +90,17 @@ const band = (low: number, high: number): Shape => (_x, z) => Math.min(z - low, 
 /** Everything below a line across her, given as its height at her middle and at her side (x = 0.2). */
 const below = (middle: number, side: number): Shape => (x, z) => middle + (side - middle) * Math.min(1, x / 0.2) - z;
 const nothing: Shape = () => -1;
+/**
+ * A heart `size` from its middle to its tip, centred at (cx, cz) with the tip down: two round lobes over a point.
+ * On her middle (cx = 0) it's drawn as the near half, like every shape, and mirrored.
+ */
+function heart(cx: number, cz: number, size: number): Shape {
+  const lobe = (side: number) => circle(cx + side * 0.5 * size, cz + 0.3 * size, 0.55 * size);
+  const point = cx === 0
+    ? polygon([[0, cz + 0.3 * size], [0.98 * size, cz + 0.1 * size], [1e-6, cz - size]]) // the point stays on her middle
+    : polygon([[cx - 0.98 * size, cz + 0.1 * size], [cx, cz + 0.3 * size], [cx + 0.98 * size, cz + 0.1 * size], [cx, cz - size]]);
+  return cx === 0 ? union(lobe(1), point) : union(lobe(-1), lobe(1), point);
+}
 
 // ---- Landmarks -------------------------------------------------------------------------------------
 
@@ -158,6 +169,8 @@ export const BRA_STYLES: UnderStyle[] = [
       line(0.0045, [NIPPLE.x - 0.018, NIPPLE.z + 0.018], [NIPPLE.x + 0.018, NIPPLE.z - 0.018])),
     back: nothing,
   },
+  // Heart-shaped pasties, each over a nipple and its areola.
+  { id: "hearts", label: "Heart pasties", kind: "top", garment: "heart pasties", hold: 0, front: heart(NIPPLE.x, NIPPLE.z + 0.002, 0.024), back: nothing },
   {
     id: "covers", label: "Nipple covers", kind: "top", garment: "nipple covers", hold: 0,
     front: (x, z) => {
@@ -265,6 +278,8 @@ const thongBack = (waist: number, w: number) =>
 
 export const BRIEF_STYLES: UnderStyle[] = [
   { id: "braies", label: "Braies", kind: "bottom", garment: "smallclothes", front: null, back: null },
+  // A heart stuck over her pussy, its point down between her legs, and nothing behind.
+  { id: "heart", label: "Heart pasty", kind: "bottom", garment: "heart pasty", front: heart(0, 0.79, 0.04), back: nothing },
   {
     id: "cstring", label: "C-string", kind: "bottom", garment: "c-string",
     front: union(triangleFront(0.84, 0.05), gusset(0.016)),
