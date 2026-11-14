@@ -1132,7 +1132,11 @@ FACE_PLANES = [
     (("ll0", "l6", "lt0"), "lip"), (("l6", "lt1", "lt0"), "lip"), (("l6", "l1", "lt1"), "lip"),
     (("l1", "l16", "lt1"), "lip"), (("l16", "l20", "lt1"), "lip"), (("l20", "l22", "lt1"), "lip"), (("l22", "lc", "lt1"), "lip"),
     (("lt0", "lt1", "nb1", "nb0"), "face_skin"), (("lt1", "lc", "nb1"), "face_skin"), (("lc", "j2", "ub", "lb1"), "face_skin"),
-    (("un1", "sd", "j5", "j4", "nb2"), "face_blush"), (("nb2", "j4", "j3", "j2", "lc", "nb1"), "face_skin"),
+    (("un1", "sd", "j5", "j4", "nb2"), "face_blush"),
+    # The cheek beside her mouth, in triangles fanned from its corner, so the corner can stretch out as her mouth opens
+    # wide without the cheek folding over it.
+    (("lc", "nb1", "nb2"), "face_skin"), (("lc", "nb2", "j4"), "face_skin"), (("lc", "j4", "j3"), "face_skin"),
+    (("lc", "j3", "j2"), "face_skin"),
     (("t3", "s1", "un1", "nb2"), "face_skin"), (("s1", "un1", "ein", "s2"), "face_skin"), (("s2", "ein", "A6", "s3"), "face_skin"),
     (("nb0", "nb1", "nb2", "tip"), "face_pink"), (("tip", "nb2", "t3", "t2"), "face_pink"), (("t2", "t3", "s1"), ("face_white", "face_cool")),
     (("t2", "s1", "br1"), ("face_lit", "face_cool")), (("br1", "s1", "s2", "br2"), "face_lit"), (("br2", "s2", "s3", "gl"), "face_lit"),
