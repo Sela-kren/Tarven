@@ -1108,6 +1108,10 @@ FACE_POINTS = {
     # The mouth line is level, so the game can open her mouth below it (face.ts). The lower lip has its own points
     # along it, a hair below the upper lip's, so the lips can part.
     "ll0d": (0, 42.85, 0.0854), "l1d": (12, 42.85, 0.085),
+    # More points along both lips' edges, on the lines between those, so the game can bend them into any shape as her
+    # mouth opens (face.ts's mouth rig): round, square or pointed at the ends.
+    "l6": (6, 43, 0.0852), "l16": (16.5, 43, 0.08425), "l20": (20, 43, 0.08367), "l22": (22.5, 43, 0.08325),
+    "l6d": (6, 42.85, 0.0852), "l16d": (16.5, 42.85, 0.08425), "l20d": (20, 42.85, 0.08367), "l22d": (22.5, 42.85, 0.08325),
     # Inside her mouth, a pocket behind the lips: its roof, its back down her throat, and its floor.
     "r0": (0, 46, 0.074), "r1": (11, 46, 0.075), "k0": (0, 40, 0.066), "k1": (10, 40, 0.068),
     "f0": (0, 37, 0.074), "f1": (11, 37.5, 0.075),
@@ -1123,7 +1127,10 @@ FACE_PLANES = [
     (("D0", "E0", "j4", "j3"), "face_mid"), (("E0", "E1", "j5", "j4"), "face_mid"), (("E1", "E2", "sd", "j5"), "face_mid"),
     (("E2", "E3", "sd"), "face_mid"), (("E3", "E4", "D6", "sd"), "face_mid"), (("E4", "E5", "E6", "D6"), "face_mid"),
     (("j0", "j1", "ub", "mu"), "face_skin"), (("j1", "j2", "ub"), "face_skin"), (("mu", "ub", "lb1", "lb0"), "face_skin"),
-    (("lb0", "lb1", "l1d", "ll0d"), "lip_lit"), (("lb1", "lc", "l1d"), "lip"), (("ll0", "l1", "lt1", "lt0"), "lip"), (("l1", "lc", "lt1"), "lip"),
+    (("lb0", "lb1", "l6d"), "lip_lit"), (("lb0", "l6d", "ll0d"), "lip_lit"), (("lb1", "l1d", "l6d"), "lip_lit"),
+    (("lb1", "lc", "l22d"), "lip"), (("lb1", "l22d", "l20d"), "lip"), (("lb1", "l20d", "l16d"), "lip"), (("lb1", "l16d", "l1d"), "lip"),
+    (("ll0", "l6", "lt0"), "lip"), (("l6", "lt1", "lt0"), "lip"), (("l6", "l1", "lt1"), "lip"),
+    (("l1", "l16", "lt1"), "lip"), (("l16", "l20", "lt1"), "lip"), (("l20", "l22", "lt1"), "lip"), (("l22", "lc", "lt1"), "lip"),
     (("lt0", "lt1", "nb1", "nb0"), "face_skin"), (("lt1", "lc", "nb1"), "face_skin"), (("lc", "j2", "ub", "lb1"), "face_skin"),
     (("un1", "sd", "j5", "j4", "nb2"), "face_blush"), (("nb2", "j4", "j3", "j2", "lc", "nb1"), "face_skin"),
     (("t3", "s1", "un1", "nb2"), "face_skin"), (("s1", "un1", "ein", "s2"), "face_skin"), (("s2", "ein", "A6", "s3"), "face_skin"),
@@ -1131,10 +1138,12 @@ FACE_PLANES = [
     (("t2", "s1", "br1"), ("face_lit", "face_cool")), (("br1", "s1", "s2", "br2"), "face_lit"), (("br2", "s2", "s3", "gl"), "face_lit"),
     (("gl", "s3", "A6", "C6"), "face_lit"),
     # The pocket of her mouth, closed off behind her lips: shut, it doesn't show.
-    (("ll0", "r0", "r1", "l1"), "mouth"), (("l1", "r1", "lc"), "mouth"),
+    (("ll0", "r0", "l6"), "mouth"), (("r0", "r1", "l6"), "mouth"), (("r1", "l1", "l6"), "mouth"),
+    (("r1", "lc", "l22"), "mouth"), (("r1", "l22", "l20"), "mouth"), (("r1", "l20", "l16"), "mouth"), (("r1", "l16", "l1"), "mouth"),
     (("r0", "k0", "k1", "r1"), "mouth"), (("r1", "k1", "lc"), "mouth"),
     (("k0", "f0", "f1", "k1"), "mouth"), (("k1", "f1", "lc"), "mouth"),
-    (("f0", "ll0d", "l1d", "f1"), "mouth"), (("f1", "l1d", "lc"), "mouth"),
+    (("f0", "ll0d", "l6d"), "mouth"), (("f0", "l6d", "f1"), "mouth"), (("f1", "l6d", "l1d"), "mouth"),
+    (("f1", "l1d", "l16d"), "mouth"), (("f1", "l16d", "l20d"), "mouth"), (("f1", "l20d", "l22d"), "mouth"), (("f1", "l22d", "lc"), "mouth"),
 ]
 # Her teeth and tongue, each a thin slab inside her mouth, out of sight until it opens. Teeth: from the middle out,
 # (pixels sideways, how far forward); their top and bottom (pixels up); and how thick. Her upper teeth hang just below

@@ -2258,6 +2258,7 @@ const FACE_MATERIAL = /^T_(face_|lip|soot$|hair_f$|mouth$|teeth|tongue$)/;
 const EYE_MATERIAL = "T_soot";
 /** Her upper teeth, which stay with her skull as her mouth opens; her tongue, which can come out. */
 const UPPER_TEETH_MATERIAL = "T_teeth";
+const LOWER_TEETH_MATERIAL = "T_teeth_low";
 const TONGUE_MATERIAL = "T_tongue";
 const BROW_MATERIAL = "T_hair_f";
 /** The planes of her face's skin, which her brows lie on. */
@@ -2984,7 +2985,7 @@ export class Dresser {
       if (!moves) this.faceMoves.set(slot, (moves = new Float32Array(count * 3)));
       moves.fill(0);
       const name = slot.original.name;
-      const part = name === BROW_MATERIAL ? "brow" : name === UPPER_TEETH_MATERIAL ? "teeth" : name === TONGUE_MATERIAL ? "tongue" : "skin";
+      const part = name === BROW_MATERIAL ? "brow" : name === UPPER_TEETH_MATERIAL ? "teeth" : name === LOWER_TEETH_MATERIAL ? "lowerTeeth" : name === TONGUE_MATERIAL ? "tongue" : "skin";
       if (rig) {
         for (let v = 0; v < count; v++) {
           const p = shapedAt(slot, v);

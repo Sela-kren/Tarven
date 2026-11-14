@@ -204,4 +204,33 @@ describe("her face", () => {
     // Well out on her cheek, nothing.
     expect(moved(open, [0.04, 1.428, -0.07])[0]).toBe(0.04);
   });
+
+  it("shapes her open mouth by its rig: rounded in a U, or bared wide and flat on both rows of teeth", () => {
+    const open = { ...REST_FACE, open: 1 };
+    const round = { ...open, round: 1 };
+    const bare = { ...open, bare: 1 };
+    // How far her lower lip's edge drops, and her upper lip's rises, at x.
+    const drop = (shape: typeof open, x: number) => 1.4269 - moved(shape, [x, 1.4269, -0.085])[1];
+    const rise = (shape: typeof open, x: number) => moved(shape, [x, 1.427, -0.085])[1] - 1.427;
+    const nearCorner = 0.0135;
+    // Plain, her lower lip hardly drops near her corners: a wedge. Rounded, it drops well down there, but less than
+    // in the middle: a U. Bared, nearly as far as in the middle: square at the ends.
+    expect(drop(round, nearCorner)).toBeGreaterThan(drop(open, nearCorner) * 2);
+    expect(drop(round, nearCorner)).toBeLessThan(drop(round, 0) * 0.8);
+    expect(drop(bare, nearCorner)).toBeGreaterThan(drop(bare, 0) * 0.9);
+    // Her upper lip: arched up in the middle when rounded, drawn up flat across off her teeth when bared, and her
+    // corners not lifted either way.
+    expect(rise(open, 0)).toBe(0);
+    expect(rise(round, 0)).toBeGreaterThan(rise(round, 0.01));
+    expect(rise(bare, 0.01)).toBeCloseTo(rise(bare, 0), 6);
+    expect(rise(bare, 0)).toBeGreaterThan(0.001);
+    expect(rise(bare, 0.016)).toBeCloseTo(0, 5);
+    // Bared, her lower lip draws down off her lower teeth.
+    const lowerTeeth = moved(bare, [0, 1.4255, -0.083], "lowerTeeth")[1];
+    expect(moved(bare, [0, 1.4255, -0.083])[1]).toBeLessThan(lowerTeeth - 0.0005);
+    // Her corners stretched out bared, drawn a little in rounded.
+    const cornerX = (shape: typeof open) => moved(shape, [0.016, 1.427, -0.08])[0];
+    expect(cornerX(bare)).toBeGreaterThan(cornerX(open) + 0.003);
+    expect(cornerX(round)).toBeLessThan(cornerX(open));
+  });
 });
