@@ -4280,13 +4280,23 @@ def build_priestess_extra(spec, m):
     return extra
 
 
+# An underbust top ends at the last ring of her trunk below her breasts (1.071 at her front; the next, at 1.108, is
+# on the breasts themselves, and a row reaching up to it stands out in a lip under them). Its top edge, any corner
+# above UNDERBUST_FROM, is drawn straight up from there to UNDERBUST_EDGE, just under the crease below her bust
+# (BREAST_DOME reaches down to 1.09), keeping its place on her ribs.
+UNDERBUST_TOP = 1.085  # the faces it covers have their middles below this
+UNDERBUST_FROM = 1.064
+UNDERBUST_EDGE = 1.081
+UNDERBUST_KEEP = 1.03  # above this its corners are kept outside her trunk, which swells towards her breasts
+
+
 # ---------------------------------------------------------------- the bunny set
 # A brothel girl's bunny set: an underbust corset from low on her hips up to under her bust, which leaves her breasts
 # and her groin bare for her heart pasties (lingerie.ts, "hearts" and "heart"), white cuffs at her wrists, a white
 # collar with a pink bow tie, tall ears on a band over her head, pink inside, and a round white tail.
 BUNNY_COLOURS = (("ears", (0.09, 0.08, 0.09)), ("collar", (0.94, 0.92, 0.88)), ("bowtie", (0.82, 0.38, 0.48)),
                  ("tail", (0.95, 0.94, 0.92)))
-BUNNY_CORSET = (0.865, 1.09)  # its bottom at her sides, and its top, just under the bust (lingerie.ts, UNDERBUST)
+BUNNY_CORSET = (0.865, UNDERBUST_TOP)  # its bottom at her sides, and its top, under the bust (see under_bust)
 BUNNY_POINT = (0.035, 0.075)  # it dips to a point at the front middle: how far down, and how wide either side
 BUNNY_CUFF = 0.08  # how far up the forearm from the wrist the cuffs reach: the lowest band of the arm
 BUNNY_COLLAR = (1.338, 1.362)
@@ -4414,10 +4424,46 @@ BABYDOLL_LACE = (0.95, 0.915, 0.012)  # the lace band's top, its bottom and how 
 # The straps, from the choker down the inside of each breast to the band: (x, z) on her near side.
 BABYDOLL_STRAP = [(0.026, 1.31), (0.034, 1.27), (0.041, 1.22), (0.046, 1.17), (0.048, 1.13), (0.049, 1.09),
                   (0.05, 1.06)]
-GOWN_CORSET = (0.875, 1.09)
+GOWN_CORSET = (0.875, UNDERBUST_TOP)
 GOWN_SKIRT = [0.935, 0.88, 0.82, 0.72, 0.6, 0.48, 0.36, 0.25, 0.14]
 GOWN_OPEN = 0.46  # half the angle of the opening at the front
 GOWN_LACE = (0.07, 0.05)  # how far the lace edge lies back onto the skirt, and how far it hangs into the opening
+
+
+
+
+UNDERBUST_OUTFITS = ("Bunny", "Gown", "Frills")  # the outfits with a top that ends under her bust
+
+
+UNDERBUST_CLEAR = 0.004  # how far outside her trunk its top lies, so the smoother body never shows through
+
+
+def under_bust(skin, place):
+    """
+    A corner placement that draws an underbust top's edge up to just under the crease below her bust, so it ends in a
+    clean line there, close under her breasts, laid on the outside of her trunk at its new height. Her arms keep
+    their places.
+    """
+    trunk = []
+
+    def capped(index):
+        x, y, z = place(index)
+        weights = skin.weights[index]
+        if max(weights, key=weights.get) not in ("Hips", "Torso") or z <= UNDERBUST_KEEP:
+            return x, y, z
+        if z > UNDERBUST_FROM:
+            z = UNDERBUST_EDGE
+        if not trunk:
+            trunk.append(ClothSurface(skin, [(f, None) for f, _ in skin.faces if len(f) <= 4], place))
+        out = Vector((x, y, 0.0))
+        if out.length < 1e-6:
+            return x, y, z
+        out.normalize()
+        hit, _, _, _ = trunk[0].tree.ray_cast(Vector((x, y, z)) + out * 0.5, -out)
+        if hit is not None and Vector((hit.x, hit.y, 0.0)).length + UNDERBUST_CLEAR > Vector((x, y, 0.0)).length:
+            x, y = hit.x + out.x * UNDERBUST_CLEAR, hit.y + out.y * UNDERBUST_CLEAR
+        return x, y, z
+    return capped
 
 
 def underbust_cloth(spec, m, skin, mat, z0, z1, lift_point=0.0):
@@ -4545,7 +4591,7 @@ def build_gown_extra(spec, m):
 # worn with sheer white stockings on a garter belt. The plunge dress: a gold choker and a dress hanging from it, open at the front from her throat to below
 # her hips, so it covers only the outsides of her breasts, her sides and her back, with long panels down her legs.
 FRILL_COLOURS = (("bow", (0.95, 0.94, 0.92)), ("dress", (0.86, 0.74, 0.38)))
-FRILL_TOP = (0.965, 1.07)  # stops below the crease under her bust, so the breasts' shaping can't lift its edge
+FRILL_TOP = (0.965, UNDERBUST_TOP)
 # Three tiers of ruffles, each lying over the one below it, down to the tops of her thighs.
 FRILL_TIERS = ([0.985, 0.965, 0.94, 0.915], [0.935, 0.91, 0.88, 0.85], [0.875, 0.84, 0.8, 0.765])
 FRILL_WAVES = 16  # folds round each tier
@@ -6180,13 +6226,13 @@ def more_outfits(spec, m, skin, normals, fit):
     if spec.get("outfit") != "medieval":
         return guests
     babydoll = (underbust_cloth(spec, m, skin, m["skirt"], *BABYDOLL_BAND), lifted(nightwear_lift))
-    frills = (frill_cloth(spec, m, skin), lifted(frill_lift))
+    frills = (frill_cloth(spec, m, skin), under_bust(skin, lifted(frill_lift)))
     return {
         "Dirndl": (dirndl_cloth(spec, m, skin), lifted(dirndl_puff), build_dirndl_extra(spec, m)),
         "Priestess": (priestess_cloth(spec, m, skin), lifted(priestess_lift), build_priestess_extra(spec, m)),
-        "Bunny": (bunny_cloth(spec, m, skin), lifted(bunny_lift), build_bunny_extra(spec, m, fit)),
+        "Bunny": (bunny_cloth(spec, m, skin), under_bust(skin, lifted(bunny_lift)), build_bunny_extra(spec, m, fit)),
         "Babydoll": (*babydoll, build_babydoll_extra(spec, m, ClothSurface(skin, [(f, None) for f, _ in skin.faces], babydoll[1]))),
-        "Gown": (underbust_cloth(spec, m, skin, m["bodice"], *GOWN_CORSET, lift_point=0.03), lifted(nightwear_lift),
+        "Gown": (underbust_cloth(spec, m, skin, m["bodice"], *GOWN_CORSET, lift_point=0.03), under_bust(skin, lifted(nightwear_lift)),
                  build_gown_extra(spec, m)),
         "Frills": (*frills, build_frill_extra(spec, m, ClothSurface(skin, [(f, None) for f, _ in skin.faces], frills[1]))),
         "Plunge": (plunge_cloth(spec, m, skin), lifted(nightwear_lift), build_plunge_extra(spec, m)),
@@ -6797,11 +6843,14 @@ def skin_character(c, m, spec, root):
         hair_spring_weights(spec, name, [hair, *styles], (body_obj, cloth_obj, *outfits))
 
     if spec.get("jiggle"):
-        # The soft parts get more faces, so the game can grow and drop them and they stay round.
+        # The soft parts get more faces, so the game can grow and drop them and they stay round. An underbust top
+        # is split flat there: rounding its open top edge would curl it out into a rim under her breasts.
+        underbust = {label(f"Cloth{outfit}") for outfit in UNDERBUST_OUTFITS}
         for layer in (body_obj, cloth_obj, *outfits):
+            flat = 0.0 if layer.name in underbust else None
             round_ribs(layer, name)
-            refine_soft_parts(layer, name)
-            refine_soft_parts(layer, name, REFINE_AGAIN)
+            refine_soft_parts(layer, name, smooth=flat)
+            refine_soft_parts(layer, name, REFINE_AGAIN, smooth=flat)
             if spec.get("navel"):
                 for reach in NAVEL_REFINE:
                     refine_soft_parts(layer, name, navel_regions(spec, reach))
