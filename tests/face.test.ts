@@ -10,6 +10,8 @@ import {
   faceRig,
   REST_FACE,
   SULTRY_PAST,
+  BASHFUL_BELOW,
+  DELIGHTED_PAST,
   BEARING,
   type FaceCause,
   type FacePart,
@@ -38,14 +40,22 @@ describe("her face", () => {
     expect(expressionFor({ ...calm, slut: BEARING.easy })).toBe("neutral");
     expect(expressionFor({ ...calm, slut: BEARING.confident })).toBe("confident");
     // Showing a guest something: shy, until she wants it well past what it takes.
-    expect(expressionFor({ ...calm, showing: 0 })).toBe("shy");
+    // Showing a guest something: bashful barely able to, shy, sultry, then delighted the more she wants it.
+    expect(expressionFor({ ...calm, showing: 0 })).toBe("bashful");
+    expect(expressionFor({ ...calm, showing: BASHFUL_BELOW })).toBe("shy");
+    expect(expressionFor({ ...calm, showing: DELIGHTED_PAST })).toBe("delighted");
     expect(expressionFor({ ...calm, showing: SULTRY_PAST })).toBe("sultry");
     // A touch's reaction comes first.
     expect(expressionFor({ ...calm, showing: 5, reaction: "jolt" })).toBe("surprised");
     expect(expressionFor({ ...calm, reaction: "melt" })).toBe("pleasure");
     expect(expressionFor({ ...calm, reaction: "recoil" })).toBe("annoyed");
     // What she's in the middle of: an after-hours game, a brawl.
-    expect(expressionFor({ ...calm, duel: { state: "aroused", pleasure: 0.3 } })).toBe("aroused");
+    // In an after-hours game: still proper she strains against it, worked up between, lewd enough she loves it.
+    expect(expressionFor({ ...calm, duel: { state: "aroused", pleasure: 0.3 } })).toBe("strained");
+    expect(expressionFor({ ...calm, slut: BEARING.easy, duel: { state: "aroused", pleasure: 0.3 } })).toBe("aroused");
+    expect(expressionFor({ ...calm, slut: BEARING.confident, duel: { state: "aroused", pleasure: 0.3 } })).toBe("delighted");
+    // Melting into a touch: pleasure while she's proper, blissful once she's lewd.
+    expect(expressionFor({ ...calm, slut: BEARING.confident, reaction: "melt" })).toBe("blissful");
     expect(expressionFor({ ...calm, duel: { state: "edge", pleasure: 0.9 } })).toBe("edge");
     expect(expressionFor({ ...calm, duel: { state: "calm", pleasure: 0 } })).toBe("stern");
     expect(expressionFor({ ...calm, fighting: true })).toBe("angry");
@@ -57,7 +67,7 @@ describe("her face", () => {
     // Jolted while she's worked up, she's overwhelmed; on the edge with her pleasure past it, she loses herself.
     expect(expressionFor({ ...calm, reaction: "jolt", arousal: 0.8 })).toBe("overwhelmed");
     const edge = (pleasure: number) => faceFor({ ...calm, duel: { state: "edge", pleasure } });
-    expect(edge(1).tongue).toBeGreaterThan(0.9);
+    expect(edge(1).tongue).toBeGreaterThan(0.6);
     expect(edge(0.5).tongue).toBe(0);
   });
 
@@ -74,8 +84,10 @@ describe("her face", () => {
     // Drunk, she's flushed and smiling loosely.
     expect(at({ drunk: 1 }).smile).toBeGreaterThan(rest.smile);
     // Deep in an after-hours game, her pleasure takes her further.
-    const game = (pleasure: number) => faceFor({ ...calm, duel: { state: "aroused", pleasure } });
+    // Worked up in an after-hours game, she pants as her pleasure climbs, tongue and all.
+    const game = (pleasure: number) => faceFor({ ...calm, slut: BEARING.easy, duel: { state: "aroused", pleasure } });
     expect(game(1).lidUpper).toBeGreaterThan(game(0).lidUpper);
+    expect(game(1).tongue).toBeGreaterThan(0.5);
   });
 
   it("goes heavy-lidded and flushed as she's aroused or drunk", () => {
@@ -85,7 +97,7 @@ describe("her face", () => {
     expect(aroused.blush).toBeGreaterThan(0);
     expect(faceFor({ ...calm, drunk: 1 }).blush).toBeGreaterThan(0);
     // Never less than the expression's own.
-    expect(faceFor({ ...calm, showing: 0, arousal: 0.1 }).blush).toBe(EXPRESSIONS.shy.blush);
+    expect(faceFor({ ...calm, showing: BASHFUL_BELOW, arousal: 0.1 }).blush).toBe(EXPRESSIONS.shy.blush);
   });
 
   it("eases from one expression to the next", () => {
@@ -136,6 +148,8 @@ describe("her face", () => {
     expect(moved({ ...REST_FACE, smile: 1 }, [0.016, 1.427, -0.08])[1]).toBeGreaterThan(1.427);
     expect(moved({ ...REST_FACE, smirk: 1 }, [0.016, 1.427, -0.08])[1]).toBeCloseTo(1.427);
     expect(moved({ ...REST_FACE, smirk: 1 }, [-0.016, 1.427, -0.08])[1]).toBeGreaterThan(1.427);
+    // Pressed small, the corners of her mouth draw in.
+    expect(moved({ ...REST_FACE, purse: 1 }, [0.016, 1.427, -0.08])[0]).toBeLessThan(0.016);
     // Her chin, well away from the corners, stays put.
     expect(moved({ ...REST_FACE, smile: 1 }, [0, 1.4, -0.08])).toEqual([0, 1.4, -0.08]);
   });
