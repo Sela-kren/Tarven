@@ -157,6 +157,12 @@ describe("her face", () => {
     expect(moved({ ...REST_FACE, smirk: 1 }, [-0.016, 1.427, -0.08])[1]).toBeGreaterThan(1.427);
     // Pressed small, the corners of her mouth draw in.
     expect(moved({ ...REST_FACE, purse: 1 }, [0.016, 1.427, -0.08])[0]).toBeLessThan(0.016);
+    // Pressed thin into a line, her lips close in on her mouth line from above and below, and widen a touch.
+    const pressed = { ...REST_FACE, press: 1 };
+    expect(moved(pressed, [0, 1.431, -0.085])[1]).toBeLessThan(1.429);
+    expect(moved(pressed, [0, 1.4228, -0.085])[1]).toBeGreaterThan(1.425);
+    expect(moved(pressed, [0.016, 1.427, -0.08])[0]).toBeGreaterThan(0.016);
+    expect(moved(pressed, [0, 1.405, -0.08])).toEqual([0, 1.405, -0.08]);
     // Her chin, well away from the corners, stays put.
     expect(moved({ ...REST_FACE, smile: 1 }, [0, 1.4, -0.08])).toEqual([0, 1.4, -0.08]);
   });

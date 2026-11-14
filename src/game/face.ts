@@ -40,6 +40,8 @@ export interface FaceShape {
   open: number;
   /** Her lips pressed together small, the corners drawn in (1); or stretched wide, drawn out and back (-1). */
   purse: number;
+  /** Her lips pressed thin together into a line, as if drawn, 0 to 1: the mouth a touch wider, not smaller. */
+  press: number;
   /** Her tongue out over her lower lip, 0 in to 1 as far as it goes. */
   tongue: number;
   /** Her cheeks flushed, 0 to 1. Deep enough (FACE_LINES.hatch), a blush's strokes show on her cheeks. */
@@ -53,12 +55,12 @@ export const FACE_LINES = { creases: [0.35, 0.7] as const, hatch: 0.7 };
 
 export const FACE_KEYS: readonly (keyof FaceShape)[] = [
   "brow", "browInner", "browArch", "browOuter", "lidUpper", "lidLower", "wide", "lookX", "lookY", "smile", "smirk", "open", "purse",
-  "tongue", "blush", "crease",
+  "press", "tongue", "blush", "crease",
 ];
 
 export const REST_FACE: Readonly<FaceShape> = {
   brow: 0, browInner: 0, browArch: 0, browOuter: 0, lidUpper: 0, lidLower: 0, wide: 0, lookX: 0, lookY: 0, smile: 0, smirk: 0,
-  open: 0, purse: 0, tongue: 0, blush: 0, crease: 0,
+  open: 0, purse: 0, press: 0, tongue: 0, blush: 0, crease: 0,
 };
 
 export type Expression =
@@ -98,8 +100,8 @@ export const EXPRESSIONS: Readonly<Record<Expression, FaceShape>> = {
   overwhelmed: face({ brow: 0.3, browInner: 1, browOuter: -0.8, lidUpper: 0.8, lidLower: 0.5, smile: -0.5, open: 0.6, blush: 0.9, crease: 1 }),
   // Worked up: low brows lifting in the middle, lids low, lips parted, flushed.
   aroused: face({ brow: -0.5, browInner: 0.6, browOuter: -0.4, lidUpper: 0.45, lidLower: 0.1, smile: 0.1, open: 0.3, blush: 0.8 }),
-  // Barely able to: lips pressed small, brows worried, eyes down, red all over.
-  bashful: face({ brow: 0.25, browInner: 1, browOuter: -0.6, lidUpper: 0.35, lookY: -0.9, lookX: 0.3, smile: -0.1, purse: 1, blush: 1, crease: 0.4 }),
+  // Barely able to: lips pressed thin into a line drawn across her face, brows low and flat, eyes down, red all over.
+  bashful: face({ brow: -0.35, browInner: 0.25, browOuter: -0.1, lidUpper: 0.35, lookY: -0.9, lookX: 0.3, smile: 0.2, press: 1, blush: 1, crease: 0.4 }),
   // Breathless: mouth soft and open, tongue out over her lip, lids heavy, brows worried, flushed.
   panting: face({ brow: 0.2, browInner: 0.9, browArch: 0.2, browOuter: -0.7, lidUpper: 0.6, lidLower: 0.15, lookY: 0.2, smile: 0.05, open: 0.75, tongue: 1, blush: 1, crease: 0.4 }),
   // Fighting it: mouth stretched wide on both rows of teeth, corners down, eyes squeezed shut, brows pinched.
@@ -333,6 +335,16 @@ export const FACE_REACH = {
   /** Her lips pressed small: the corners come a little forward. */
   purseForward: 0.0015,
   /**
+   * Her lips pressed thin into a line: everything within `pressLip` of her mouth line closes in towards it by
+   * `pressThin` of the way, the skin past it less, to nothing by `pressFade`; her mouth a touch wider (`pressWiden`),
+   * and her lips pushed out a little (`pressOut`, most in the middle).
+   */
+  pressThin: 0.62,
+  pressOut: 0.0012,
+  pressLip: 0.0052,
+  pressFade: 0.011,
+  pressWiden: 0.0025,
+  /**
    * What drops with her jaw: everything below her mouth line (by more than `jawGap`) down to `jawDepth` below it, all
    * of it in the middle, less towards the sides: none past `jawWide` out at her mouth line, widening to `jawWideLow`
    * down at her chin (`jawChin` below the line), all of it within `jawFull` of that.
@@ -403,11 +415,17 @@ const smooth = (s: number) => {
   return c * c * (3 - 2 * c);
 };
 
-/** How much of her mouth's widening a point of her face takes, 0 to 1 (FACE_REACH.mouth*). */
-export function mouthWeight(rig: FaceRig, x: number, y: number, z: number): number {
+/** How much of her mouth a point of her face is across it, 0 to 1: all of it out to her corners, then fading. */
+function mouthAcross(rig: FaceRig, x: number, z: number): number {
   if (z > rig.corners[0][2] + 0.02) return 0;
   const half = (Math.abs(rig.corners[0][0]) + Math.abs(rig.corners[1][0])) / 2;
-  const across = 1 - smooth((Math.abs(x) - half) / (half * (FACE_REACH.mouthSide - 1)));
+  return 1 - smooth((Math.abs(x) - half) / (half * (FACE_REACH.mouthSide - 1)));
+}
+
+/** How much of her mouth's widening a point of her face takes, 0 to 1 (FACE_REACH.mouth*). */
+export function mouthWeight(rig: FaceRig, x: number, y: number, z: number): number {
+  const across = mouthAcross(rig, x, z);
+  if (across === 0) return 0;
   const high = 1 - smooth((Math.abs(y - rig.line) - FACE_REACH.mouthHigh) / (FACE_REACH.mouthFade - FACE_REACH.mouthHigh));
   return across * high;
 }
@@ -449,7 +467,7 @@ export function faceMove(rig: FaceRig, shape: FaceShape, p: readonly number[], p
   }
   // Her mouth stretches wide or draws in as a whole, lips, teeth, tongue and the inside of it, from the middle out.
   let moved = false;
-  const widen = FACE_REACH.mouthWiden * shape.open - FACE_REACH.purseIn * shape.purse;
+  const widen = FACE_REACH.mouthWiden * shape.open - FACE_REACH.purseIn * shape.purse + FACE_REACH.pressWiden * shape.press;
   if (widen !== 0) {
     const w = mouthWeight(rig, x, y, z);
     if (w > 0) {
@@ -472,6 +490,22 @@ export function faceMove(rig: FaceRig, shape: FaceShape, p: readonly number[], p
     out[0] = cx + dx * scale + shape.lookX * hw * FACE_REACH.look;
     out[1] = cy + dy * scale * lid + shape.lookY * hh * FACE_REACH.look;
     return true;
+  }
+  // Her lips pressed thin: both close in on her mouth line till they're a line drawn across her face.
+  if (shape.press > 0) {
+    const dy = y - rig.line;
+    const far = Math.abs(dy);
+    const w = mouthAcross(rig, x, z);
+    if (w > 0 && far < FACE_REACH.pressFade) {
+      const reach = far <= FACE_REACH.pressLip
+        ? far
+        : FACE_REACH.pressLip * (1 - smooth((far - FACE_REACH.pressLip) / (FACE_REACH.pressFade - FACE_REACH.pressLip)));
+      out[1] -= Math.sign(dy) * reach * FACE_REACH.pressThin * shape.press * w;
+      const half = (Math.abs(rig.corners[0][0]) + Math.abs(rig.corners[1][0])) / 2;
+      const middle = Math.max(0, 1 - Math.abs(x) / half);
+      out[2] -= FACE_REACH.pressOut * shape.press * middle * (reach / FACE_REACH.pressLip);
+      moved = true;
+    }
   }
   rig.corners.forEach((corner, i) => {
     const d = Math.hypot(x - corner[0], y - corner[1]);

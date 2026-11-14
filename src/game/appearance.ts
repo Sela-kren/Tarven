@@ -2193,6 +2193,13 @@ const BLUSHED = new Color(0.86, 0.2, 0.24);
 const CREASE_MATERIAL = "T_crease";
 const CREASE_MID_MATERIAL = "T_crease_mid";
 const HATCH_MATERIAL = "T_hatch";
+/**
+ * Her lips pressed thin into a line (face.ts's `press`): her upper lip darkens to an ink line and her lower lip mostly
+ * fades into the skin round it, a hint of it left, so her mouth reads as a line drawn across her face. Each: towards
+ * what, and how far at most.
+ */
+const PRESSED_LINE = new Color(0.16, 0.05, 0.05);
+const PRESSED_INTO = { T_lip: ["line", 1], T_lip_lit: ["T_face_skin", 0.55] } as const;
 const BLUSH_SPREAD: Readonly<Record<string, { depth: number; from: number }>> = {
   T_face_blush: { depth: 0.9, from: 0 },
   T_face_pink: { depth: 0.75, from: 0.1 },
@@ -2797,7 +2804,7 @@ export class Dresser {
    */
   setExpression(shape: FaceShape): void {
     if (!faceMoved(shape, this.faceShape)) return;
-    const lines = (f: FaceShape) => `${Math.round(f.blush * 10)}:${this.faceLines(f).join(",")}`;
+    const lines = (f: FaceShape) => `${Math.round(f.blush * 10)}:${Math.round(f.press * 10)}:${this.faceLines(f).join(",")}`;
     const blushed = lines(shape) !== lines(this.faceShape);
     this.faceShape = { ...shape };
     this.refreshFace();
@@ -3465,11 +3472,22 @@ export class Dresser {
         const bare = stripped || drawnOver || (this.undressed && covers(painted, slot.part, slot.original.name));
         // Her face flushes as she blushes, the red spreading the deeper it goes.
         const blush = Math.round(this.faceShape.blush * 10) / 10;
-        const spread = this.body === "Female" ? BLUSH_SPREAD[slot.original.name] : undefined;
-        const flushed = spread ? spread.depth * Math.max(0, (blush - spread.from) / (1 - spread.from)) : 0;
-        slot.mesh.material = bare && skin
-          ? skin.worn
-          : flushed > 0 ? paint(slot.original, averageColor(slot.worn).clone().lerp(BLUSHED, flushed)) : slot.worn;
+        const toneOf = (face: MeshSlot) => {
+          const spread = this.body === "Female" ? BLUSH_SPREAD[face.original.name] : undefined;
+          const flushed = spread ? spread.depth * Math.max(0, (blush - spread.from) / (1 - spread.from)) : 0;
+          return flushed > 0 ? averageColor(face.worn).clone().lerp(BLUSHED, flushed) : null;
+        };
+        // Her lips pressed thin: the upper one an ink line, the lower one gone into her skin.
+        const press = this.body === "Female" ? Math.round(this.faceShape.press * 10) / 10 : 0;
+        const into = PRESSED_INTO[slot.original.name as keyof typeof PRESSED_INTO];
+        let tone = toneOf(slot);
+        if (press > 0 && into) {
+          const [toward, most] = into;
+          const round = this.slots.find((s) => s.part === "Body" && s.original.name === toward);
+          const target = toward === "line" ? PRESSED_LINE : round ? (toneOf(round) ?? averageColor(round.worn)) : null;
+          if (target) tone = (tone ?? averageColor(slot.worn).clone()).lerp(target, press * most);
+        }
+        slot.mesh.material = bare && skin ? skin.worn : tone ? paint(slot.original, tone) : slot.worn;
         continue;
       }
       const off = pieces.some((piece) => covers(piece.parts, slot.part, slot.original.name)) || stripped || legs === "hide";
