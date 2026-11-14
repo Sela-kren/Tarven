@@ -247,5 +247,11 @@ describe("her face", () => {
     expect(moved(lifted, [0, 1.427 + 0.014, -0.085])[1]).toBeCloseTo(1.427 + 0.014, 6);
     // No smile, no lift.
     expect(rise({ ...REST_FACE, open: 0.3, lift: 1 }, 0)).toBe(0);
+    // Her upper teeth ride up under it as one, straight, as far as the middle of her lip.
+    const teeth = (x: number, y: number) => moved(lifted, [x, y, -0.08], "teeth")[1] - y;
+    expect(teeth(0, 1.4265)).toBeLessThanOrEqual(rise(lifted, 0));
+    expect(teeth(0, 1.4265)).toBeGreaterThan(rise(lifted, 0) * 0.95);
+    expect(teeth(0.01, 1.4275)).toBeCloseTo(teeth(0, 1.4265), 6);
+    expect(moved(smile, [0, 1.4265, -0.08], "teeth")[1]).toBeCloseTo(1.4265, 6);
   });
 });

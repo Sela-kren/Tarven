@@ -1116,6 +1116,8 @@ FACE_POINTS = {
     "r0": (0, 46, 0.074), "r1": (11, 46, 0.075), "k0": (0, 40, 0.066), "k1": (10, 40, 0.068),
     "f0": (0, 37, 0.074), "f1": (11, 37.5, 0.075),
     "lt0": (0, 48, 0.0955), "lt1": (10, 51, 0.092),
+    # Points along the top of her upper lip too, over those along its edge, so it bends as one even band.
+    "u6": (6, 49.8, 0.0934), "u16": (16.5, 47.29, 0.08782), "u20": (20, 45.29, 0.08557), "u22": (22.5, 43.86, 0.08396),
     "nb0": (0, 64, 0.096), "nb1": (10, 65, 0.092), "nb2": (11, 80, 0.093), "tip": (0, 84, 0.11), "t2": (0, 98, 0.102), "t3": (9, 96, 0.094),
     "s1": (9, 120, 0.092), "br1": (0, 120, 0.092), "s2": (14, 145, 0.093), "br2": (0, 145, 0.095), "s3": (26, 160, 0.09),
     "gl": (0, 160, 0.098), "ein": (18, 132, 0.0914), "un1": (27, 113, 0.0877), "sd": (94, 113, 0.063),
@@ -1129,9 +1131,11 @@ FACE_PLANES = [
     (("j0", "j1", "ub", "mu"), "face_skin"), (("j1", "j2", "ub"), "face_skin"), (("mu", "ub", "lb1", "lb0"), "face_skin"),
     (("lb0", "lb1", "l6d"), "lip_lit"), (("lb0", "l6d", "ll0d"), "lip_lit"), (("lb1", "l1d", "l6d"), "lip_lit"),
     (("lb1", "lc", "l22d"), "lip"), (("lb1", "l22d", "l20d"), "lip"), (("lb1", "l20d", "l16d"), "lip"), (("lb1", "l16d", "l1d"), "lip"),
-    (("ll0", "l6", "lt0"), "lip"), (("l6", "lt1", "lt0"), "lip"), (("l6", "l1", "lt1"), "lip"),
-    (("l1", "l16", "lt1"), "lip"), (("l16", "l20", "lt1"), "lip"), (("l20", "l22", "lt1"), "lip"), (("l22", "lc", "lt1"), "lip"),
-    (("lt0", "lt1", "nb1", "nb0"), "face_skin"), (("lt1", "lc", "nb1"), "face_skin"), (("lc", "j2", "ub", "lb1"), "face_skin"),
+    (("ll0", "l6", "u6", "lt0"), "lip"), (("l6", "l1", "lt1", "u6"), "lip"), (("l1", "l16", "u16", "lt1"), "lip"),
+    (("l16", "l20", "u20", "u16"), "lip"), (("l20", "l22", "u22", "u20"), "lip"), (("l22", "lc", "u22"), "lip"),
+    (("lt0", "u6", "nb0"), "face_skin"), (("u6", "lt1", "nb1", "nb0"), "face_skin"),
+    (("lt1", "u16", "nb1"), "face_skin"), (("u16", "u20", "nb1"), "face_skin"), (("u20", "u22", "nb1"), "face_skin"),
+    (("u22", "lc", "nb1"), "face_skin"), (("lc", "j2", "ub", "lb1"), "face_skin"),
     (("un1", "sd", "j5", "j4", "nb2"), "face_blush"),
     # The cheek beside her mouth, in triangles fanned from its corner, so the corner can stretch out as her mouth opens
     # wide without the cheek folding over it.

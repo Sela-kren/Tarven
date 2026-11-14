@@ -492,6 +492,23 @@ function mouthAcross(rig: FaceRig, x: number, z: number): number {
   return 1 - smooth((Math.abs(x) - half) / (half * (FACE_REACH.mouthSide - 1)));
 }
 
+/**
+ * How far her upper lip rides up with her smile at a point of her face (`lift`): what her corners don't already take
+ * of their rise along her lip, less and less above it (FACE_REACH.liftFade). Her upper teeth (`whole`) go up as one,
+ * as far as the middle of her lip, so they stay tucked under it, straight.
+ */
+function lipLift(rig: FaceRig, shape: FaceShape, x: number, y: number, z: number, whole: boolean): number {
+  if (shape.lift <= 0 || shape.smile <= 0) return 0;
+  const dy = y - rig.line;
+  if (!whole && dy < -FACE_REACH.jawGap) return 0;
+  if (mouthAcross(rig, x, z) <= 0) return 0;
+  const half = (Math.abs(rig.corners[0][0]) + Math.abs(rig.corners[1][0])) / 2;
+  const along = whole ? 0 : Math.abs(x);
+  const cornerTakes = (1 - Math.min(1, Math.max(0, half - along) / FACE_REACH.corner)) ** 2;
+  const above = whole ? 1 : 1 - smooth(Math.max(0, dy) / FACE_REACH.liftFade);
+  return FACE_REACH.smileUp * shape.smile * shape.lift * (1 - cornerTakes) * above;
+}
+
 /** How much of her mouth's widening a point of her face takes, 0 to 1 (FACE_REACH.mouth*). */
 export function mouthWeight(rig: FaceRig, x: number, y: number, z: number): number {
   const across = mouthAcross(rig, x, z);
@@ -556,7 +573,12 @@ export function faceMove(rig: FaceRig, shape: FaceShape, p: readonly number[], p
       moved = true;
     }
   }
-  // Her upper teeth stay with her skull.
+  // Her upper teeth stay with her skull, but for riding up under her upper lip as it lifts with her smile.
+  const lifted = lipLift(rig, shape, x, y, z, part === "teeth");
+  if (lifted > 0) {
+    out[1] += lifted;
+    moved = true;
+  }
   if (part === "teeth") return moved;
   for (const eye of rig.eyes) {
     const [cx, cy, cz] = eye.centre;
@@ -589,7 +611,7 @@ export function faceMove(rig: FaceRig, shape: FaceShape, p: readonly number[], p
   }
   // Her mouth's rig: her upper lip arched up (round) or drawn up flat off her upper teeth (bare), her lower lip pulled
   // down off her lower teeth (bare), each thinning as it goes; her jaw drops her lower lip with the rest, below.
-  if (shape.round > 0 || shape.bare > 0 || shape.lift > 0) {
+  if (shape.round > 0 || shape.bare > 0) {
     const across = mouthAcross(rig, x, z);
     if (across > 0) {
       const half = (Math.abs(rig.corners[0][0]) + Math.abs(rig.corners[1][0])) / 2;
@@ -599,10 +621,6 @@ export function faceMove(rig: FaceRig, shape: FaceShape, p: readonly number[], p
       const flat = 1 - smooth((u - FACE_REACH.bareFlat) / (1 - FACE_REACH.bareFlat));
       if (dy >= -FACE_REACH.jawGap) {
         out[1] += (FACE_REACH.roundArch * shape.round * Math.max(0, 1 - u * u) + FACE_REACH.bareUp * shape.bare * flat) * fade;
-        // Up with her smile: what her corners don't already take of their rise along her lip, it takes here.
-        const cornerTakes = (1 - Math.min(1, Math.max(0, half - Math.abs(x)) / FACE_REACH.corner)) ** 2;
-        out[1] += FACE_REACH.smileUp * Math.max(0, shape.smile) * shape.lift * (1 - cornerTakes) *
-          (1 - smooth(Math.abs(dy) / FACE_REACH.liftFade));
         moved = true;
       } else if (part !== "lowerTeeth" && part !== "tongue" && shape.bare > 0) {
         out[1] -= FACE_REACH.bareDown * shape.bare * flat * fade;
