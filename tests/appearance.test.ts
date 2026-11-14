@@ -16,6 +16,7 @@ import {
   armSpreadFor,
   bandWeight,
   copyLook,
+  CUP_TOP,
   CUPS,
   dressColors,
   Dresser,
@@ -127,7 +128,7 @@ describe("reshaping", () => {
     expect(activeTerms("Female", { arch: -1 }).size).toBe(0);
     const terms = activeTerms("Female", { bust: 1, nonsense: 1, arch: -1 });
     expect([...terms.keys()]).toEqual(["Bust"]);
-    expect(terms.get("Bust")![0].grow).toEqual([2.52, 2.07, 3.55]);
+    expect(terms.get("Bust")![0].grow).toEqual([4.0, 2.07, 2.6]);
     // Shrinking has its own, smaller amounts.
     expect(activeTerms("Female", { bust: -1 }).get("Bust")![0].grow).toEqual([-0.2, -0.25, -0.7]);
   });
@@ -550,19 +551,30 @@ describe("a fuller bust", () => {
 describe("cup sizes", () => {
   const bust = LOOK_OPTIONS.Female.sliders.find((def) => def.id === "bust")!;
 
-  it("runs from A to Q, with C as built", () => {
+  it("runs from A to Z, with C as built", () => {
     expect(bust.stops).toBe(CUPS);
     expect(CUPS.labels[0]).toBe("A");
-    expect(CUPS.labels[CUPS.labels.length - 1]).toBe("Q");
+    expect(CUPS.labels[CUPS.labels.length - 1]).toBe("Z");
     expect(CUPS.labels[nearestStop(CUPS, 0)]).toBe("C");
   });
 
-  it("puts A at -1, B halfway down, and D to Q evenly above", () => {
+  it("puts A at -1, B halfway down, D to Q evenly up to 1, and R to Z on past it by the same step", () => {
     expect(stopValue(CUPS, 0)).toBe(-1);
     expect(stopValue(CUPS, 1)).toBe(-0.5);
     expect(stopValue(CUPS, 3)).toBeCloseTo(1 / 14);
     expect(stopValue(CUPS, 16)).toBe(1);
+    expect(stopValue(CUPS, 25)).toBeCloseTo(23 / 14);
+    expect(CUP_TOP).toBeCloseTo(23 / 14);
     for (let i = 0; i < CUPS.labels.length; i++) expect(nearestStop(CUPS, stopValue(CUPS, i))).toBe(i);
+    expect(CUPS.labels[nearestStop(CUPS, 9)]).toBe("Z");
+  });
+
+  it("grows past Q to Z, and a saved Z stays a Z", () => {
+    const grow = (cup: number) => activeTerms("Female", { bust: cup }).get("Bust")![0].grow[2];
+    expect(grow(CUP_TOP)).toBeCloseTo(grow(1) * CUP_TOP);
+    expect(grow(5)).toBeCloseTo(grow(CUP_TOP));
+    expect(readLook({ sliders: { bust: CUP_TOP } }, "Female")!.sliders.bust).toBeCloseTo(CUP_TOP);
+    expect(readLook({ sliders: { bust: 1 } }, "Female")!.sliders.bust).toBe(1);
   });
 
   it("rolls random busts on a cup, and only up to about a J", () => {
@@ -600,6 +612,16 @@ describe("bust shape and height", () => {
     // Turning moves the front (-z) of a breast most, and the back of it not at all.
     expect(reshape([{ grow: [0, 0, 0], turn: 0.02 }], new Vector3(0.05, 0, -0.06), out).x).toBeCloseTo(0.07);
     expect(reshape([{ grow: [0, 0, 0], turn: 0.02 }], new Vector3(0.05, 0, 0.02), out).x).toBeCloseTo(0.05);
+    // Moving apart eases in from the middle: the skin on it stays put, so the two sides never tear apart there.
+    expect(reshape([{ grow: [0, 0, 0], apart: 0.01 }], new Vector3(0.0005, 0, 0), out).x).toBeCloseTo(0.0006, 4);
+  });
+
+  it("sets a fuller bust wider apart, more with every cup, and leaves smaller ones where they are", () => {
+    const spread = (cup: number) => (activeTerms("Female", { bust: cup }).get("Bust") ?? []).reduce((sum, t) => sum + (t.apart ?? 0), 0);
+    expect(spread(0)).toBe(0);
+    expect(spread(0.5)).toBeGreaterThan(0);
+    expect(spread(1)).toBeCloseTo(spread(0.5) * 2);
+    expect(spread(-1)).toBeCloseTo(0);
   });
 
   it("has teardrop first, as built, and gives shapes more to work with as the cup grows", () => {

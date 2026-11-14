@@ -135,18 +135,27 @@ interface BoneTerm {
    * itself, so a breast slides whole, root and all, where its weight thins out towards the chest.
    */
   reach?: number;
-  /** How far each side moves away from the middle, in metres at a value of 1: breasts set further apart. */
+  /**
+   * How far each side moves away from the middle, in metres at a value of 1: breasts set further apart. It eases in
+   * from the middle (to each breast's middle, for `lobes` terms), so the skin there stretches instead of tearing.
+   */
   apart?: number;
+  /** How far apart at -1, where that differs from the opposite of `apart`. */
+  shrinkApart?: number;
   /** How far each side turns outwards, in metres at the front of the breast at a value of 1: nipples that point out. */
   turn?: number;
   /** Only these mesh parts change, as hair sliders leave the head under the hair alone. Joints never move for these. */
   parts?: readonly MeshPart[];
 }
 
-/** Named steps a slider snaps to, as cup sizes. `zero` is the step at 0; the rest share -1..0 and 0..1 evenly. */
+/**
+ * Named steps a slider snaps to, as cup sizes. `zero` is the step at 0; the rest share -1..0 and 0..1 evenly, 1
+ * at `full` (the last step unless given); any steps past `full` go on past 1 by the same step.
+ */
 export interface SliderStops {
   labels: readonly string[];
   zero: number;
+  full?: number;
 }
 
 export interface SliderDef {
@@ -170,23 +179,35 @@ export interface SliderDef {
   rest?: number;
 }
 
-/** Where on the slider a named step sits. */
+/** How many steps above `zero` make a value of 1: up to `full` if given, else the last step. */
+const stepsToOne = (stops: SliderStops) => (stops.full ?? stops.labels.length - 1) - stops.zero;
+
+/** Where on the slider a named step sits. Steps past `full` go on past 1, as far apart as the rest. */
 export function stopValue(stops: SliderStops, index: number): number {
-  const above = stops.labels.length - 1 - stops.zero;
   if (index < stops.zero) return (index - stops.zero) / stops.zero;
-  if (index > stops.zero) return (index - stops.zero) / above;
+  if (index > stops.zero) return (index - stops.zero) / stepsToOne(stops);
   return 0;
 }
 
 /** The named step nearest a slider value. */
 export function nearestStop(stops: SliderStops, value: number): number {
-  const v = clampSlider(value);
-  const above = stops.labels.length - 1 - stops.zero;
-  return stops.zero + Math.round(v < 0 ? v * stops.zero : v * above);
+  const v = clampSlider(value, stopValue(stops, stops.labels.length - 1));
+  return stops.zero + Math.round(v < 0 ? v * stops.zero : v * stepsToOne(stops));
 }
 
-/** Cup sizes, one letter for each inch the bust measures over the band: A at -1, C as built, Q at 1. */
-export const CUPS: SliderStops = { labels: "ABCDEFGHIJKLMNOPQ".split(""), zero: 2 };
+/**
+ * Cup sizes, one letter for each inch the bust measures over the band: A at -1, C as built, Q at 1, on up to Z
+ * past it. Q stays at 1, where the cup's growth was measured, so a saved Q is still a Q; R to Z carry on by the
+ * same inch a step (about 1.64 at Z).
+ */
+export const CUPS: SliderStops = { labels: "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split(""), zero: 2, full: 16 };
+/** The cup slider's value at its largest cup, Z. */
+export const CUP_TOP = stopValue(CUPS, CUPS.labels.length - 1);
+
+/** The furthest a slider goes: past 1 for one whose named steps run on past 1, as cup sizes do. */
+export function sliderTop(def: SliderDef): number {
+  return def.stops ? stopValue(def.stops, def.stops.labels.length - 1) : 1;
+}
 
 export interface ColorDef {
   id: string;
@@ -525,15 +546,21 @@ const FEMALE_SLIDERS: SliderDef[] = [
   // The bust is weighted on each breast, with a crease under them that holds the fold. The bone's joint sits
   // about 4 cm behind the front of the breasts, so most of the growth is forwards. Here +z is backwards.
   {
-    // Measured on the model with a tape: A at -1, B at -0.5, C as built, then about a cup for each step up to Q.
-    // Each breast swells about its own middle, 7.2 cm out and on the chest wall, so it stays round; a fuller
-    // bust is heavy and hangs: it drops and lengthens as it grows. The top fades out by the collarbone instead
-    // of sliding forwards. The amounts are large because the weights rise slowly (JIGGLE_RISE in
-    // build_world.py): the front of the breasts takes about 0.4 of them. Shrinking stops well short of flat.
+    // Measured on the model with a tape: A at -1, B at -0.5, C as built, then about a cup for each step up to Q at
+    // 1, and on by the same step to Z (CUPS).
+    // Each breast swells about its own middle, 6 cm out and on the chest wall (BREAST_DOME in build_world.py), so it
+    // stays round; a fuller bust is heavy and hangs: it drops and lengthens as it grows, and sits wider, each breast
+    // 3 cm further out at Q and as much less on the way, so they grow apart instead of crowding into the cleavage
+    // (smaller cups stay where they are). The top grows full up to 4 cm above the joint and fades out by 12 cm, just
+    // under the collarbone, so a big bust fills out from high on the chest instead of leaving a tall, flat stretch of
+    // chest above it as it drops; above that it stays put instead of sliding forwards. The
+    // amounts are large because the front of the breasts takes about 0.58 of them (BUST_WEIGHT). They grow wide
+    // as well as out: at Q each stands about 17 cm out from the chest and reaches 18.5 cm from the middle of her
+    // (grown mostly forwards instead, a big bust stood out from her like a log). Shrinking stops well short of flat.
     id: "bust", label: "Cup size", tab: "body", group: "Bust", stops: CUPS, roll: 0.45,
-    terms: terms(["Bust"], [2.52, 2.07, 3.55], {
+    terms: terms(["Bust"], [4.0, 2.07, 2.6], {
       shrink: [0.2, 0.25, 0.7], shift: [0, -0.075, -0.012], shrinkShift: [0, 0, 0],
-      lobes: [0.072, -0.005, 0.025], fade: [0.01, 0.075],
+      lobes: [0.06, -0.005, 0.025], fade: [0.04, 0.12], apart: 0.03, shrinkApart: 0,
     }),
   },
   // Where the breasts sit on the chest, root and all: the move reaches past where their weight thins out towards
@@ -559,7 +586,7 @@ const FEMALE_SLIDERS: SliderDef[] = [
   {
     id: "bustCloser", label: "Closer to body", tab: "body", group: "Bust", early: true,
     terms: terms(["Bust"], [0.195, 0.195, -0.3], {
-      shrink: [0.123, 0.123, -0.3], lobes: [0.072, -0.005, 0.025], fade: [0.01, 0.075],
+      shrink: [0.123, 0.123, -0.3], lobes: [0.06, -0.005, 0.025], fade: [0.01, 0.075],
     }),
   },
   // Pushed together, as a push-up bra does: each breast slides whole towards the cleavage. Below 0 they part.
@@ -656,7 +683,7 @@ const FEMALE_SLIDERS: SliderDef[] = [
 ];
 
 /** Each breast's own middle, from the bust's joint, as the cup size grows about it. */
-const BREASTS = [0.072, -0.005, 0.025] as const;
+const BREASTS = [0.06, -0.005, 0.025] as const;
 /** Above the middle of the breasts (the upper pole), and below it (the lower pole). Here +y is up. */
 const UPPER = [0.03, -0.02] as const;
 const LOWER = [-0.03, 0.01] as const;
@@ -1766,8 +1793,10 @@ export function reshape(active: readonly ActiveTerm[], d: Vector3, out: Vector3,
       out.y += term.shift[1] * weight;
       out.z += term.shift[2] * weight;
     }
-    // Towards the middle, the move fades out over the last 4 cm, so the two sides close in but never cross.
-    if (term.apart) out.x += side * term.apart * weight * (term.apart < 0 ? Math.min(1, Math.abs(d.x) / 0.04) : 1);
+    // Towards the middle, the move fades out over the last 4 cm (or to each breast's middle, for a `lobes` term), so
+    // the two sides close in but never cross, and moving apart they stretch the skin between them instead of
+    // tearing it down the middle.
+    if (term.apart) out.x += side * term.apart * weight * Math.min(1, Math.abs(d.x) / (term.lobes ? term.lobes[0] : 0.04));
     // Turning outwards moves the front of a breast most: by how far forwards (-z) it is, up to 1.5 times at 9 cm.
     if (term.turn) out.x += side * term.turn * weight * Math.min(1.5, Math.max(0, -d.z / 0.06));
     if (reach !== 1) out.sub(before).multiplyScalar(reach).add(before);
@@ -1805,7 +1834,7 @@ export function activeTerms(
       about: term.about,
       midline: term.midline,
       reach: term.reach,
-      apart: term.apart === undefined ? undefined : term.apart * value,
+      apart: term.apart === undefined ? undefined : (value < 0 && term.shrinkApart !== undefined ? -term.shrinkApart : term.apart) * value,
       turn: term.turn === undefined ? undefined : term.turn * value,
       parts: term.parts,
     });
@@ -1813,14 +1842,14 @@ export function activeTerms(
   };
   const defs = LOOK_OPTIONS[body].sliders;
   for (const def of [...defs.filter((d) => d.early), ...defs.filter((d) => !d.early)]) {
-    const raw = clampSlider(sliders[def.id]);
+    const raw = clampSlider(sliders[def.id], sliderTop(def));
     const value = def.rest === undefined ? raw : raw >= 0 ? def.rest + (1 - def.rest) * raw : def.rest * (1 + raw);
     if (value === 0) continue;
     for (const term of def.terms) add(term, value);
   }
   const shape = LOOK_OPTIONS[body].bustShapes.find((s) => s.id === bustShape);
   if (shape) {
-    const amount = shapeAmount(clampSlider(sliders.bust));
+    const amount = shapeAmount(clampSlider(sliders.bust, CUP_TOP));
     for (const term of shape.terms) add(term, amount);
   }
   // Inner fullness changes no bones of its own: it shapes how every breast term grows towards the cleavage. As
@@ -1847,8 +1876,9 @@ export function shapeAmount(cup: number): number {
   return cup < 0 ? 0.8 + 0.45 * cup : 0.8 + 0.6 * cup;
 }
 
-const clampSlider = (value: unknown) =>
-  typeof value === "number" && Number.isFinite(value) ? Math.min(1, Math.max(-1, value)) : 0;
+/** A slider's value, held between -1 and `top` (1 for most; past it for cup sizes); 0 if it isn't a number. */
+const clampSlider = (value: unknown, top = 1) =>
+  typeof value === "number" && Number.isFinite(value) ? Math.min(top, Math.max(-1, value)) : 0;
 
 interface MeshSlot {
   mesh: SkinnedMesh;
@@ -3097,7 +3127,8 @@ export function nearestBody(points: Float32Array, body: Float32Array): FollowTab
  * behind the hips, so wider hips, a fuller build and a bigger rear would otherwise grow into the hands.
  */
 export function armSpreadFor(sliders: Record<string, number>): number {
-  const more = (id: string) => Math.max(0, clampSlider(sliders[id]));
+  // A bust past Q pushes the arms out further still, by as much again for each cup.
+  const more = (id: string) => Math.max(0, clampSlider(sliders[id], id === "bust" ? CUP_TOP : 1));
   return ARM_SPREAD.reduce((sum, [id, amount]) => sum + more(id) * amount, 0);
 }
 /** How her Posture sliders set her stance, in radians, for her body's pose (Body.refreshRest in player.ts). */
@@ -3122,8 +3153,8 @@ const CHEST_BACK = 0.18;
 const CHEST_ROUND = 0.12;
 
 const ARM_SPREAD: [string, number][] = [
-  // The fullest bust comes 1.3 cm into the upper arms as they hang.
-  ["bust", 0.11], ["hips", 0.06], ["build", 0.05], ["rear", 0.07], ["rearProjection", 0.05], ["rearWidth", 0.05], ["thighs", 0.03],
+  // A full bust grows wide, out past where the arms hang: at Q the arms swing out about 11 degrees to clear it.
+  ["bust", 0.19], ["hips", 0.06], ["build", 0.05], ["rear", 0.07], ["rearProjection", 0.05], ["rearWidth", 0.05], ["thighs", 0.03],
 ];
 
 /** A random look: every slider somewhere in the middle of its range, colours from the swatches. */
@@ -3197,7 +3228,7 @@ export function readLook(raw: unknown, body: BodyName): Look | null {
   const look = newLook();
   if (data.sliders && typeof data.sliders === "object") {
     for (const def of options.sliders) {
-      const value = clampSlider((data.sliders as Record<string, unknown>)[def.id]);
+      const value = clampSlider((data.sliders as Record<string, unknown>)[def.id], sliderTop(def));
       if (value !== 0) look.sliders[def.id] = value;
     }
   }

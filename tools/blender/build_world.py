@@ -1934,8 +1934,9 @@ BUST = {"crease": {"C": 1.0, "F": 1.0}, "under": {"C": 0.86, "F": 1.0}, "low": {
 # `out` forwards at its middle. It reaches `inner` and `outer` across, `up` and `down` (metres). How it meets the
 # chest at its edge, as a power of (1 - distance squared): under 0.5 it turns in sharply, the fold beneath; above 1
 # it runs on smoothly, the slope down from the collarbone. In between round the sides. `lean`: how far the outer
-# half moves outwards as well as forwards, at its edge (1 is as far out as forwards).
-BREAST_DOME = {"x": 0.068, "z": 1.14, "out": 0.05, "inner": 0.06, "outer": 0.045, "up": 0.078, "down": 0.05,
+# half moves outwards as well as forwards, at its edge (1 is as far out as forwards). Each sits 6 cm from the
+# middle: further out, a full bust left a broad flat V of chest between them at the top of the cleavage.
+BREAST_DOME = {"x": 0.06, "z": 1.14, "out": 0.05, "inner": 0.06, "outer": 0.045, "up": 0.078, "down": 0.05,
                "fold": 0.45, "flank": 0.85, "slope": 1.6, "lean": 0.8}
 # Through the bust each loop has two more columns: M between the centre and front columns, G between the front
 # and side. They give the bust a round underside and enough corners to grow much larger in the game.
@@ -2475,8 +2476,11 @@ JIGGLE_RISE = {"Bust": 1.0, "Glute_L": 1.0, "Glute_R": 1.0}
 # (appearance.ts): at Q the front of the breast stands 28 cm out, as it did with the old weights. Towards the
 # middle it reaches further, `cleavage` times, so the skin between the breasts comes forwards with them and a full
 # bust presses together in one line down the middle; easing out there as on the other sides, the cleavage stayed
-# back as they grew and opened into a flat V between them, as if they were held apart.
-BUST_WEIGHT = {"Bust": {"most": 0.58, "full": 0.5, "spread": 1.3, "cleavage": 2.4, "front": (0.02, 0.06)}}
+# back as they grew and opened into a flat V between them, as if they were held apart. Below each breast it reaches
+# `below` times as far, over the fold, so a big bust's underside drops and rounds with the rest and hangs heavy over
+# the fold; easing out as on the other sides, the underside stayed put as the breast grew and dropped, and set into a
+# flat slope from the chest to the nipple. Much further and the skin under the fold creases as it's pulled down.
+BUST_WEIGHT = {"Bust": {"most": 0.58, "full": 0.5, "spread": 1.3, "cleavage": 2.4, "below": 1.8, "front": (0.02, 0.06)}}
 
 
 # Where the soft parts get extra faces: (lobe centres, radii, side: 1 front, -1 back). A little larger
@@ -2492,6 +2496,12 @@ REFINE_AGAIN = [
     ([(-0.072, 0.085, 1.14), (0.072, 0.085, 1.14)], (0.1, 0.09, 0.09), 1),
     ([(-0.065, -0.08, 0.83), (0.065, -0.08, 0.83)], (0.09, 0.09, 0.11), -1),
 ]
+# Her upper trunk, front and back, from above the breasts up to the collarbone and out into the armpits: built with
+# only two rings there and a few broad panels running from the shoulder down into the armpit, it read as a box from
+# the side. round_ribs splits it once, flat, then eases each corner towards its neighbours, the edge held still, so
+# the corners round off like a rib cage's instead of swelling.
+RIBS = {"centre": (0.0, -0.005, 1.25), "radii": (0.17, 0.16, 0.1), "ease": 0.5, "passes": 4, "arm": 0.6,
+        "shoulder": 0.3, "neck": 1.32}
 # How far the new corners move towards a smooth surface, from 0 (flat on the old faces) to 1.
 REFINE_SMOOTH = 0.6
 # Long hair blends from the head onto the back over this height below the neck.
@@ -2553,10 +2563,12 @@ def hair_spring_weights(spec, name, hairs, clear_of=()):
         bm.free()
 
 
-def refine_soft_parts(obj, name, regions=REFINE_REGIONS, smooth=None, touching=False):
+def refine_soft_parts(obj, name, regions=REFINE_REGIONS, smooth=None, touching=False, arm_share=0.2):
     """Splits each face in these regions into four, leaving the arms alone. Weights follow the new corners. The new
     corners round the surface out by `smooth` (REFINE_SMOOTH unless given); 0 leaves it exactly as it was. A face is
-    in a region if its middle is, or, `touching`, if any corner is: long faces reaching into it are split too."""
+    in a region if its middle is, or, `touching`, if any corner is: long faces reaching into it are split too. A
+    region's side is 1 for the front, -1 the back, 0 both. A face with a corner the arm holds more than `arm_share` of
+    is the arm's, and stays as it is."""
     arms = {g.index for g in obj.vertex_groups if g.name.startswith((f"{name}_UpperArm", f"{name}_ForeArm"))}
     bm = bmesh.new()
     bm.from_mesh(obj.data)
@@ -2564,7 +2576,7 @@ def refine_soft_parts(obj, name, regions=REFINE_REGIONS, smooth=None, touching=F
 
     def inside(co):
         for centres, (rx, ry, rz), side in regions:
-            if side * co.y <= 0.0:
+            if side and side * co.y <= 0.0:
                 continue
             for cx, cy, cz in centres:
                 if ((co.x - cx) / rx) ** 2 + ((co.y - cy) / ry) ** 2 + ((co.z - cz) / rz) ** 2 < 1:
@@ -2572,7 +2584,7 @@ def refine_soft_parts(obj, name, regions=REFINE_REGIONS, smooth=None, touching=F
         return False
 
     def on_arm(vert):
-        return deform is not None and any(group in arms and w > 0.2 for group, w in vert[deform].items())
+        return deform is not None and any(group in arms and w > arm_share for group, w in vert[deform].items())
 
     def chosen(f):
         return any(inside(v.co) for v in f.verts) if touching else inside(f.calc_center_median())
@@ -2582,6 +2594,42 @@ def refine_soft_parts(obj, name, regions=REFINE_REGIONS, smooth=None, touching=F
     if edges:
         bmesh.ops.subdivide_edges(bm, edges=edges, cuts=1, use_grid_fill=True,
                                   smooth=REFINE_SMOOTH if smooth is None else smooth)
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+
+
+def round_ribs(obj, name, ribs=RIBS):
+    """Rounds off her upper trunk (see RIBS): split once, flat, then each corner inside eased towards its neighbours."""
+    arms = {g.index for g in obj.vertex_groups if g.name.startswith((f"{name}_UpperArm", f"{name}_ForeArm"))}
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    deform = bm.verts.layers.deform.active
+    (cx, cy, cz), (rx, ry, rz) = ribs["centre"], ribs["radii"]
+
+    def inside(co):
+        return ((co.x - cx) / rx) ** 2 + ((co.y - cy) / ry) ** 2 + ((co.z - cz) / rz) ** 2 < 1
+
+    def arm(vert):
+        return deform is not None and sum(w for group, w in vert[deform].items() if group in arms) > ribs["arm"]
+
+    faces = [f for f in bm.faces if inside(f.calc_center_median()) and not all(arm(v) for v in f.verts)]
+    edges = list({e for f in faces for e in f.edges})
+    if edges:
+        bmesh.ops.subdivide_edges(bm, edges=edges, cuts=1, use_grid_fill=True, smooth=0.0)
+    chosen = {f for f in bm.faces if inside(f.calc_center_median()) and not all(arm(v) for v in f.verts)}
+    # Only corners wholly inside the region move, so its edge stays where it is and meets the rest without a seam;
+    # nor the ring at the base of the neck, which the head's own mesh meets, nor any corner next to the arm, which
+    # would pull in under it and leave its top standing out.
+    def shared(v):
+        return deform is not None and sum(w for group, w in v[deform].items() if group in arms) > ribs["shoulder"]
+
+    def held(v):
+        return v.co.z > ribs["neck"] or shared(v) or any(arm(e.other_vert(v)) for e in v.link_edges)
+
+    inner = [v for v in {v for f in chosen for v in f.verts} if all(f in chosen for f in v.link_faces) and not held(v)]
+    for _ in range(ribs["passes"]):
+        bmesh.ops.smooth_vert(bm, verts=inner, factor=ribs["ease"], use_axis_x=True, use_axis_y=True, use_axis_z=True)
     bm.to_mesh(obj.data)
     bm.free()
     obj.data.update()
@@ -2662,8 +2710,9 @@ NIPPLE_SPOKES = 12
 NIPPLE_RADIUS = 0.026
 # How far over the skin it lies, so the skin never shows through it; well inside the clothes' gap.
 NIPPLE_LIFT = 0.0008
-# Where each nipple is found: looking out from inside the breast, a little outwards and down.
-NIPPLE_AIM = [((side * 0.072, 0.03, 1.15), (side * 0.12, 1.0, -0.06)) for side in (-1, 1)]
+# Where each nipple is found: looking out from inside the breast, a little outwards and down. From just outside the
+# middle of each breast (BREAST_DOME's x), so the nipple sits a little past its fullest point.
+NIPPLE_AIM = [((side * 0.064, 0.03, 1.15), (side * 0.12, 1.0, -0.06)) for side in (-1, 1)]
 
 
 def add_nipples(m, name, body_obj):
@@ -3445,7 +3494,7 @@ def bust_weight(x, y, z, spec=None):
     dome = BREAST_DOME
     dx, dz = abs(x) - dome["x"], z - dome["z"]
     a = dx / (dome["inner"] * spec["cleavage"] if dx < 0 else dome["outer"] * spec["spread"])
-    b = dz / ((dome["up"] if dz > 0 else dome["down"]) * spec["spread"])
+    b = dz / (dome["up"] * spec["spread"] if dz > 0 else dome["down"] * spec["below"])
     reach = math.sqrt(a * a + b * b)
     if reach >= 1.0:
         return 0.0
@@ -6142,6 +6191,7 @@ def skin_character(c, m, spec, root):
     if spec.get("jiggle"):
         # The soft parts get more faces, so the game can grow and drop them and they stay round.
         for layer in (body_obj, cloth_obj, *outfits):
+            round_ribs(layer, name)
             refine_soft_parts(layer, name)
             refine_soft_parts(layer, name, REFINE_AGAIN)
             if spec.get("navel"):

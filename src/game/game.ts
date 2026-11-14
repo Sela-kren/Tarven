@@ -66,6 +66,7 @@ import {
 import { BuildMode, type Supply } from "./buildmode";
 import { lanternSupplies } from "./lanternplans";
 import { GuestActor, Walker } from "./guests";
+import { softHeft } from "./heft";
 import { statsOf, type GuestRole } from "./guestroles";
 import { cloneLayout, emptyLayout, footprint, HousePlan, seatSpecs, type FurnitureKind, type HouseLayout, type Placed } from "./house";
 import { HouseView } from "./houseview";
@@ -1167,7 +1168,9 @@ export class Game {
   private applyLook(index: number): void {
     this.dressers[index].apply(this.looks[BODY_NAMES[index]]);
     const dresser = this.dressers[index];
-    this.siblings[index].refreshBody(dresser.legSize(), dresser.armSpread(), dresser.posture());
+    this.siblings[index].refreshBody(
+      dresser.legSize(), dresser.armSpread(), dresser.posture(), softHeft(this.looks[BODY_NAMES[index]].sliders),
+    );
     this.playerPortrait = null;
   }
 

@@ -45,7 +45,7 @@ export class Jiggle {
 
   constructor(
     readonly bone: Object3D,
-    private readonly settings: SpringSettings,
+    private settings: SpringSettings,
     /** Scales how far it moves; 0 holds it still. */
     public strength = 1,
   ) {
@@ -102,6 +102,11 @@ export class Jiggle {
    */
   kick(velocity: Vector3): void {
     this.speed.addScaledVector(velocity, this.strength);
+  }
+
+  /** Changes how it bounces from now on, as when the part grows heavier or lighter; it keeps moving as it was. */
+  retune(settings: SpringSettings): void {
+    this.settings = settings;
   }
 
   /** Takes where the bone stands now as its new rest, as after the body is reshaped. */

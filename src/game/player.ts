@@ -1,6 +1,7 @@
 import { Group, MathUtils, Object3D, Vector3 } from "three";
 import { moveVector, resolveCircle, type Rect } from "./collision";
 import type { Input } from "./input";
+import { BUILT_HEFT, heftedSpring, type SoftHeft } from "./heft";
 import { Jiggle, type SpringSettings } from "./jiggle";
 import type { Posture } from "./appearance";
 import { BUILT_LEGS, Skirt, type LegSize } from "./skirt";
@@ -13,8 +14,8 @@ export const FEMALE_JIGGLE = 1;
  * each step sets them going.
  */
 const SOFT_PARTS: Record<string, SpringSettings> = {
-  // The bust's weights rise slowly from the crease (see JIGGLE_RISE in build_world.py), so the front of the
-  // breasts takes about 0.4 of the bone's move: the gain and limit make up for it.
+  // The breasts take about 0.58 of the bust bone's move, evenly over each (BUST_WEIGHT in build_world.py): the gain
+  // and limit make up for it. These are for the bust and rear as built; a fuller one is heavier (heft.ts).
   Bust: { frequency: 2.3, damping: 0.2, gain: 0.0038, axes: [0.35, 1, 0.3], limit: 0.033 },
   Glute_L: { frequency: 2.1, damping: 0.22, gain: 0.0022, axes: [0.3, 1, 0.25], limit: 0.018 },
   Glute_R: { frequency: 2.1, damping: 0.22, gain: 0.0022, axes: [0.3, 1, 0.25], limit: 0.018 },
@@ -439,14 +440,23 @@ export class Body {
    * Takes the bones' current places as the body's rest, after a new look reshaped it. Call with the bones
    * at rest, as `Dresser.apply` leaves them.
    */
-  refreshRest(legSize: LegSize = BUILT_LEGS, armSpread = 0, posture: Posture = { arch: 0, chest: 0 }): void {
+  refreshRest(
+    legSize: LegSize = BUILT_LEGS, armSpread = 0, posture: Posture = { arch: 0, chest: 0 }, heft: SoftHeft = BUILT_HEFT,
+  ): void {
     this.legSize = legSize;
     this.armSpread = armSpread;
     this.posture = posture;
     this.hipsBaseY = this.hips.position.y;
     this.hipsBaseZ = this.hips.position.z;
     this.legLength = this.hipsBaseY + this.thighL.position.y;
-    for (const jiggle of this.jiggles) jiggle.rebase();
+    for (const jiggle of this.jiggles) {
+      // A fuller bust or rear is heavier: it swings further and a little slower.
+      const part = jiggle.bone.name.slice(this.name.length + 1);
+      const base = SOFT_PARTS[part];
+      const weight = part === "Bust" ? heft.bust : part.startsWith("Glute") ? heft.rear : 1;
+      if (base) jiggle.retune(heftedSpring(base, weight));
+      jiggle.rebase();
+    }
     this.skirt?.dispose();
     this.skirt = this.findSkirt();
     this.skirtTime = 0;
@@ -796,8 +806,8 @@ export class Sibling {
   }
 
   /** Call after a new look reshapes this sibling's body. */
-  refreshBody(legSize?: LegSize, armSpread?: number, posture?: Posture): void {
-    this.body.refreshRest(legSize, armSpread, posture);
+  refreshBody(legSize?: LegSize, armSpread?: number, posture?: Posture, heft?: SoftHeft): void {
+    this.body.refreshRest(legSize, armSpread, posture, heft);
   }
 
   constructor(model: Object3D, name: string, spawn: Vector3) {
