@@ -56,17 +56,20 @@ export const SKIRT_SWAY: SpringSettings = { frequency: 1.2, damping: 0.35, gain:
 const TAU = Math.PI * 2;
 /**
  * A long skirt gathered up in her hands and folded over on itself, each part's angle out from straight down, in
- * radians (past a quarter turn points up): from her hips the cloth rises flat up her belly to her hands, folds back
- * down at mid-thigh, and its lower half folds up again over the top, so it bunches close against her middle, clear
- * of her groin seen from above as well as in front. (Folded out at her waist, it stood out over her groin.)
+ * radians (past a quarter turn points up): from her hips the cloth rises up her middle to her hands, folds back over
+ * at her waist, and its lower half folds up again over the top. The parts below the hips also bunch up as they're
+ * gathered, to `midScale` and `lowerScale` of their length, so it all sits in a short roll at her waist in her hands,
+ * clear of her groin and her behind; at full length they stood out round her like stiff wings. The rest of the skirt,
+ * round her sides, is hitched up with it, `hitch` of the way (to her knees), so its hem rises too instead of trailing a long tail
+ * to the floor beside the bunch.
  */
-const GATHER = { upper: 3.0, mid: 0.8, lower: 3.0 };
+export const GATHER = { upper: 3.0, mid: 1.6, lower: 3.0, midScale: 0.4, lowerScale: 0.3, hitch: 1 };
 /**
  * How far round her a lift reaches, by how much the panel faces the lifted side (the sine of its angle round her):
  * none from the first, all of it from the second; so the panels either side of the middle come up all the way too,
  * and the opening's wide enough to see through.
  */
-const LIFT_REACH: readonly [number, number] = [0.2, 0.6];
+const LIFT_REACH: readonly [number, number] = [0.25, 0.5];
 
 /** Angle round the body, as the skirt is built: 0 at the right side, a quarter turn at the front. */
 function turnOf(x: number, z: number): number {
@@ -306,6 +309,12 @@ export class Skirt {
         mid += (GATHER.mid - mid) * held;
         lower += (GATHER.lower - lower) * held;
       }
+      // Gathered, the cloth below her hips bunches up, and round her sides it's hitched up with it; the lower part's
+      // scale is on top of the mid part's.
+      const bunch = p.mid ? Math.max(held, GATHER.hitch * Math.max(this.lift.front, this.lift.back)) : 0;
+      const midScale = 1 + (GATHER.midScale - 1) * bunch;
+      p.mid?.scale.setScalar(midScale);
+      p.lower.scale.setScalar((1 + (GATHER.lowerScale - 1) * bunch) / midScale);
       Skirt.turn(p.upper, p.upperRest, axisLocal.copy(p.axis), upper[i] - p.rest);
       // Turning about the axis leaves it where it was, so in each part's frame it is only un-rested.
       const inUpper = axisLocal.copy(p.axis).applyQuaternion(inverse.copy(p.upperRest).invert()).clone();
@@ -333,6 +342,8 @@ export class Skirt {
       p.upper.quaternion.copy(p.upperRest);
       p.mid?.quaternion.copy(p.midRest);
       p.lower.quaternion.copy(p.lowerRest);
+      p.mid?.scale.setScalar(1);
+      p.lower.scale.setScalar(1);
     }
   }
 }
