@@ -2067,6 +2067,68 @@ export function spanCleavage(
   }
 }
 
+/**
+ * Pulling her tops off her breasts (Dresser.setPull), in the model's space (y up, forwards -z, metres as built).
+ * Only cloth this high takes part, from under her breasts up past her collarbone, and only this far either side.
+ */
+const PULL_BAND: readonly [number, number] = [0.98, 1.4];
+const PULL_HALF_WIDTH = 0.3;
+/**
+ * How far round her the pull reaches, measured round an axis this far behind the middle of her chest: nothing until
+ * this share of the way round from her side towards the front, all of it from the second.
+ */
+const PULL_AXIS = 0.02;
+const PULL_FRONT: readonly [number, number] = [-0.05, 0.6];
+/** Her chest just under each breast as built (across, height): where its underside's gone says where the roll goes. */
+const PULL_CREASE: readonly [number, number] = [0.06, 1.08];
+/**
+ * The rolled-up cloth: how far past the breasts it starts, how deep the roll is, how much it draws in towards her
+ * middle, and how far it stands off what it lies on, at its near edge and its far edge.
+ */
+const PULL_ROLL = { gap: 0.006, height: 0.028, narrow: 0.06, thick: [0.006, 0.016] as const };
+/** Meshes on her skin a top lifted over her breasts doesn't lie on: her nipple discs, pubic hair and underwear patch. */
+const PULL_SKIP_SKIN: readonly string[] = [DISC_MATERIAL, PUBIC_MATERIAL, LINGERIE_MATERIAL];
+
+/** Where a pulled top's points go: for each point its place in the lists (-1 if it stays), where it goes, how far. */
+interface PullPlan {
+  at: Int32Array;
+  target: Float32Array;
+  weight: Float32Array;
+}
+
+/**
+ * The front of a surface, for a pulled top to lie on: for each centimetre square of width and height, how far
+ * forwards it comes. Asked for a square it has nothing in, it looks round it.
+ */
+class DepthGrid {
+  private readonly cells = new Map<number, number>();
+  private static key(ix: number, iy: number): number {
+    return (ix + 500) * 10000 + (iy + 500);
+  }
+  add(p: Vector3): void {
+    const key = DepthGrid.key(Math.round(p.x * 100), Math.round(p.y * 100));
+    const known = this.cells.get(key);
+    if (known === undefined || p.z < known) this.cells.set(key, p.z);
+  }
+  /** How far forwards it comes (its z) at this width and height, from the nearest squares it has; null if none near. */
+  frontAt(x: number, y: number): number | null {
+    const ix = Math.round(x * 100);
+    const iy = Math.round(y * 100);
+    for (let r = 0; r <= 3; r++) {
+      let best: number | null = null;
+      for (let dx = -r; dx <= r; dx++) {
+        for (let dy = -r; dy <= r; dy++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const z = this.cells.get(DepthGrid.key(ix + dx, iy + dy));
+          if (z !== undefined && (best === null || z < best)) best = z;
+        }
+      }
+      if (best !== null) return best;
+    }
+    return null;
+  }
+}
+
 /** For each point of a mesh, the body points nearest it and how much each counts, and how much it keeps its own move. */
 interface FollowTable {
   points: Int32Array;
@@ -2179,6 +2241,15 @@ export class Dresser {
     penisSkin: Float32Array[];
   } | null = null;
   private look: Look = newLook();
+  /**
+   * Her tops pulled down off her breasts or lifted up over them as she shows a guest (show.ts, 7e): which garments,
+   * which way and how far (0 to 1); a state of the moment, never part of the look. Each pulled mesh's plan says
+   * where its points go, worked out from the body as last shaped, and is dropped when the body's reshaped.
+   */
+  private pull: { ids: readonly string[]; dir: "down" | "up"; amount: number } | null = null;
+  private readonly pullPlans = new Map<MeshSlot, PullPlan>();
+  /** The pulled meshes' normals as built, to put back once the pull's let go. */
+  private readonly pullNormals = new Map<MeshSlot, Float32Array>();
 
   constructor(model: Object3D, readonly body: BodyName) {
     const root = model.getObjectByName(body);
@@ -2606,7 +2677,9 @@ export class Dresser {
     }
     const lift = Number.isFinite(lowest) ? this.floor - lowest : 0;
 
-    // The mesh keeps everything but the joints' moves, which the bones now carry.
+    // The mesh keeps everything but the joints' moves, which the bones now carry. A pulled top's plan was worked
+    // out on the old shape: it's worked out again below.
+    this.pullPlans.clear();
     for (const [i, slot] of this.slots.entries()) {
       this.writePositions(slot, moves[i].total, moves[i].settled);
       slot.mesh.geometry.boundingBox = null;
@@ -2621,6 +2694,7 @@ export class Dresser {
       totals: moves.map((m) => m.total), settled: moves.map((m) => m.settled), onSkin, flat, vulvaSkin, vulvaFlat, anusSkin,
       penisSkin,
     };
+    if (this.pull) this.repull(this.pullSlots());
 
     for (const rest of this.bones) {
       const delta = shift.get(rest)!;
@@ -2646,6 +2720,181 @@ export class Dresser {
       slot.mesh.material = slot.worn;
     }
     this.showPieces();
+  }
+
+  /**
+   * Pulls her tops (the wardrobe's garment ids) down off her breasts or up over them, `amount` of the way (0 to 1),
+   * as her hands do in a show pose (show.ts, 7e); null or 0 lets them back. Only the pulled meshes change, so it can
+   * follow her hands from moment to moment.
+   */
+  setPull(pull: { ids: readonly string[]; dir: "down" | "up" } | null, amount: number): void {
+    const a = pull ? Math.min(1, Math.max(0, amount)) : 0;
+    const next = pull && a > 0 ? { ids: [...pull.ids], dir: pull.dir, amount: a } : null;
+    const key = (p: { ids: readonly string[]; dir: string } | null) => (p ? `${p.dir}:${p.ids.join(",")}` : "");
+    const now = this.pull;
+    const same = key(next) === key(now);
+    // Small steps aren't worth rewriting the cloth for, but the ends are.
+    if (same && (!next || !now || (Math.abs(next.amount - now.amount) < 0.02 && (next.amount < 1 || now.amount === 1)))) return;
+    const before = [...this.pullPlans.keys()];
+    if (!same) this.pullPlans.clear();
+    this.pull = next;
+    const after = next ? this.pullSlots() : [];
+    this.repull([...new Set([...before, ...after])]);
+    this.showPieces();
+  }
+
+  /** The cloth meshes the pull takes: the pulled garments', of the outfit she has on. */
+  private pullSlots(): MeshSlot[] {
+    const pull = this.pull;
+    if (!pull) return [];
+    const outfit = outfitOf(this.body, this.look).mesh;
+    const parts = LOOK_OPTIONS[this.body].colors.filter((c) => pull.ids.includes(c.id)).flatMap((c) => c.parts);
+    return this.slots.filter(
+      (slot) => slot.part === "Cloth" && covers(parts, slot.part, slot.original.name) && outfitMeshOf(slot.mesh, this.body) === outfit,
+    );
+  }
+
+  /** Rewrites these meshes where the pull has them now (planning any it's only now taking), or puts them back. */
+  private repull(slots: readonly MeshSlot[]): void {
+    const { shaped } = this;
+    if (!shaped) return;
+    const pulling = new Set(this.pullSlots());
+    for (const slot of slots) {
+      const i = this.slots.indexOf(slot);
+      if (pulling.has(slot) && !this.pullPlans.has(slot)) this.pullPlans.set(slot, this.planPull(slot, shaped.totals));
+      if (!pulling.has(slot)) this.pullPlans.delete(slot);
+      this.writePositions(slot, shaped.totals[i], shaped.settled[i]);
+      const geometry = slot.mesh.geometry;
+      const normal = geometry.getAttribute("normal");
+      if (!normal) continue;
+      if (pulling.has(slot)) {
+        if (!this.pullNormals.has(slot)) this.pullNormals.set(slot, Float32Array.from(normal.array as ArrayLike<number>));
+        geometry.computeVertexNormals();
+      } else {
+        const built = this.pullNormals.get(slot);
+        if (built) {
+          (normal.array as Float32Array).set(built);
+          normal.needsUpdate = true;
+          this.pullNormals.delete(slot);
+        }
+      }
+    }
+  }
+
+  /**
+   * Where a pulled top's points go (PULL_* above), on the body as shaped now (`totals`, every mesh's moves). Down:
+   * the cloth over her breasts and above them is dragged down under them, rolled up in a band on the cloth below,
+   * the neckline outermost. Up: it's lifted up over them, rolled in a band on her chest above. All the way at the
+   * front, less round her sides, and not at all at her back or on her arms, so the cloth there pulls on a slant.
+   */
+  private planPull(slot: MeshSlot, totals: Float32Array[]): PullPlan {
+    const dir = this.pull?.dir ?? "down";
+    const own = this.slots.indexOf(slot);
+    const count = slot.bind.length / 3;
+    const at = new Int32Array(count).fill(-1);
+    const p = new Vector3();
+    const shapedAt = (s: number, v: number) => {
+      const { bind } = this.slots[s];
+      return p.set(bind[v * 3] + totals[s][v * 3], bind[v * 3 + 1] + totals[s][v * 3 + 1], bind[v * 3 + 2] + totals[s][v * 3 + 2]);
+    };
+    const front = this.frontness(slot, own, totals);
+
+    // Down: the roll goes under her breasts, as low as their undersides are now. Up: over the top's upper edge.
+    let low = Infinity;
+    let high = -Infinity;
+    for (let v = 0; v < count; v++) {
+      if (front[v] < 0.5) continue;
+      const y = shapedAt(own, v).y;
+      low = Math.min(low, y);
+      high = Math.max(high, y);
+    }
+    const cut = dir === "down" ? (this.creaseHeight(totals) ?? PULL_CREASE[1]) : low;
+
+    // Which points are taken: down, those above the breasts' undersides; up, all of it at the front.
+    const taken: number[] = [];
+    for (let v = 0; v < count; v++) {
+      if (front[v] <= 0 || shapedAt(own, v).y <= cut) continue;
+      at[v] = taken.length;
+      taken.push(v);
+    }
+
+    // What the roll lies on: down, this cloth where it isn't taken (under her breasts); up, her skin.
+    const ground = new DepthGrid();
+    if (dir === "down") {
+      for (let v = 0; v < count; v++) if (at[v] < 0 && front[v] > 0.3) ground.add(shapedAt(own, v));
+    } else {
+      for (const [s, body] of this.slots.entries()) {
+        if (body.part !== "Body" || PULL_SKIP_SKIN.includes(body.original.name)) continue;
+        const skinFront = this.frontness(body, s, totals);
+        for (let v = 0; v < skinFront.length; v++) if (skinFront[v] > 0.3) ground.add(shapedAt(s, v));
+      }
+    }
+
+    const target = new Float32Array(taken.length * 3);
+    const weight = new Float32Array(taken.length);
+    const span = Math.max(0.01, high - cut);
+    const { gap, height, narrow, thick } = PULL_ROLL;
+    taken.forEach((v, k) => {
+      const { x, y, z } = shapedAt(own, v);
+      // How far through the pulled cloth the point is, from where the roll starts (0) to its far edge (1).
+      const t = Math.min(1, Math.max(0, dir === "down" ? (y - cut) / span : (high - y) / span));
+      const to = dir === "down" ? cut - gap - height * t : high + gap + height * t;
+      const on = ground.frontAt(x, to) ?? z;
+      // The roll stands off what it lies on, the far edge outermost, as rolled cloth does.
+      target[k * 3] = x * (1 - narrow * t);
+      target[k * 3 + 1] = to;
+      target[k * 3 + 2] = on - thick[0] - (thick[1] - thick[0]) * t;
+      weight[k] = front[v];
+    });
+    return { at, target, weight };
+  }
+
+  /**
+   * How much of each point of a mesh the pull takes, 0 to 1: all of it facing forwards, easing off round the sides
+   * to nothing at the back, and nothing on the arms or past her sides.
+   */
+  private frontness(slot: MeshSlot, index: number, totals: Float32Array[]): Float32Array {
+    const count = slot.bind.length / 3;
+    const out = new Float32Array(count);
+    const skinIndex = slot.mesh.geometry.getAttribute("skinIndex");
+    const skinWeight = slot.mesh.geometry.getAttribute("skinWeight");
+    const arm = slot.mesh.skeleton.bones.map((bone) => /^(UpperArm|ForeArm)/.test(this.boneIndex.get(bone)?.label ?? ""));
+    const total = totals[index];
+    const { bind } = slot;
+    for (let v = 0; v < count; v++) {
+      const x = bind[v * 3] + total[v * 3];
+      const y = bind[v * 3 + 1] + total[v * 3 + 1];
+      const z = bind[v * 3 + 2] + total[v * 3 + 2];
+      if (y < PULL_BAND[0] || y > PULL_BAND[1] || Math.abs(x) > PULL_HALF_WIDTH) continue;
+      let onArm = 0;
+      for (let k = 0; k < 4; k++) if (arm[skinIndex.getComponent(v, k)]) onArm += skinWeight.getComponent(v, k);
+      // Forwards is -z: the share of the way round from her side (0) to straight ahead (1).
+      const ahead = -(z + PULL_AXIS) / Math.max(1e-6, Math.hypot(x, z + PULL_AXIS));
+      const t = Math.min(1, Math.max(0, (ahead - PULL_FRONT[0]) / (PULL_FRONT[1] - PULL_FRONT[0])));
+      out[v] = t * t * (3 - 2 * t) * Math.max(0, 1 - onArm * 2);
+    }
+    return out;
+  }
+
+  /** How high the undersides of her breasts are as shaped now: the chest just under them as built, where it's gone. */
+  private creaseHeight(totals: Float32Array[]): number | null {
+    const [skinPart, skinName] = LOOK_OPTIONS[this.body].colors.find((color) => color.id === "skin")?.parts[0] ?? ["Body", ""];
+    const s = this.slots.findIndex((slot) => slot.part === skinPart && slot.original.name === skinName);
+    if (s < 0) return null;
+    const { bind } = this.slots[s];
+    const heights: number[] = [];
+    for (const side of [-1, 1]) {
+      let best = -1;
+      for (let v = 0; v < bind.length / 3; v++) {
+        const x = bind[v * 3];
+        const y = bind[v * 3 + 1];
+        const z = bind[v * 3 + 2];
+        if (Math.abs(x - side * PULL_CREASE[0]) > 0.02 || Math.abs(y - PULL_CREASE[1]) > 0.012 || z > 0) continue;
+        if (best < 0 || z < bind[best * 3 + 2]) best = v;
+      }
+      if (best >= 0) heights.push(bind[best * 3 + 1] + totals[s][best * 3 + 1]);
+    }
+    return heights.length ? heights.reduce((a, b) => a + b, 0) / heights.length : null;
   }
 
   /**
@@ -2925,12 +3174,22 @@ export class Dresser {
     const { bind } = slot;
     const position = slot.mesh.geometry.getAttribute("position");
     const inverse = unbind.copy(slot.mesh.bindMatrix).invert();
+    // A top pulled off her breasts: its points go that far towards where the pull takes them.
+    const plan = this.pull ? this.pullPlans.get(slot) : undefined;
+    const amount = this.pull?.amount ?? 0;
     const one = (v: number) => {
-      point.set(
-        bind[v * 3] + total[v * 3] - settled[v * 3],
-        bind[v * 3 + 1] + total[v * 3 + 1] - settled[v * 3 + 1],
-        bind[v * 3 + 2] + total[v * 3 + 2] - settled[v * 3 + 2],
-      ).applyMatrix4(inverse);
+      point.set(bind[v * 3] + total[v * 3], bind[v * 3 + 1] + total[v * 3 + 1], bind[v * 3 + 2] + total[v * 3 + 2]);
+      const k = plan ? plan.at[v] : -1;
+      if (plan && k >= 0) {
+        const w = plan.weight[k] * amount;
+        point.x += (plan.target[k * 3] - point.x) * w;
+        point.y += (plan.target[k * 3 + 1] - point.y) * w;
+        point.z += (plan.target[k * 3 + 2] - point.z) * w;
+      }
+      point.x -= settled[v * 3];
+      point.y -= settled[v * 3 + 1];
+      point.z -= settled[v * 3 + 2];
+      point.applyMatrix4(inverse);
       position.setXYZ(v, point.x, point.y, point.z);
     };
     if (only) for (const v of only) one(v);
@@ -3088,7 +3347,7 @@ export class Dresser {
       const bare =
         !def?.bare ||
         ((def.bare === "chest" ? !under.nipplesCovered : def.bare === "belly" ? !(under.whole && under.topOn) : vulvaShown) &&
-          !(this.jewelCovers.get(slot) ?? []).some((cloth) => cloth.mesh.visible));
+          !(this.jewelCovers.get(slot) ?? []).some((cloth) => cloth.mesh.visible && !this.pullPlans.has(cloth)));
       slot.mesh.visible = def !== null && jewellery.includes(def.id) && bare;
     }
     // What's on her skin shows by its stage; what landed on her clothes shows too, while she has that piece on.

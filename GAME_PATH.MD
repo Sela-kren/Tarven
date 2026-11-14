@@ -312,17 +312,26 @@ As she leans in to take a guest's order, or sets down what they ordered, they ma
 ## 7e. "Give us a look" [built]
 A bold guest may offer coin for a look at her as she serves them (`src/game/show.ts`, `maybeAskToSee` in `tavern.ts`). **Always asked, always her doing**: nothing here happens unless she picks it, and no is always there.
 
-- **What they ask to see:** the part their type likes (breasts, behind, pussy), if they've the nerve for it (breasts need nerve 2, her behind 3, her pussy 5); her breasts otherwise. Asked as she takes their order or serves them. Chance: 12% + 3% per nerve past 2, by kind, ×1.5 lusting or drunk, at most 40%.
-- **Her answers:**
-  - *Let them peek inside your clothes*: a look at what's under there (her breast band, her smallclothes). 2 gold (4 for her pussy).
-  - *Show them properly*: that part of her bare, for a moment. 5 gold (8 for her pussy), +2 fame, −1 respect. The whole room gets an eyeful: every other guest +1 lust.
+- **What they ask to see:** one thing, the part their type likes (breasts, behind, pussy) if they've the nerve for it (her band needs nerve 2, her breasts, smallclothes or behind 3, her pussy 5); short of it, the boldest thing on the way they've the nerve for (her smallclothes, then her breasts, then her band). Asked as she takes their order or serves them. Chance: 12% + 3% per nerve past 2, by kind, ×1.5 lusting or drunk, at most 40%.
+- **Her answers: each thing on its own,** whatever they asked for, so she picks how far she goes (the one they asked for marked, and +2 gold):
+  - *Show them your breast band* (or her bra style's name): 2 gold.
+  - *Show them your breasts*: bare, 5 gold.
+  - *Show them your smallclothes* (or her briefs style's name): 3 gold.
+  - *Show them your pussy*: bare, 8 gold.
+  - *Show them your behind*: bare, 5 gold.
   - *"Not a chance."*
-- **How far she'll go** depends on that part's desire meter (÷10): a proper look needs 3 for breasts or behind and 5 for her pussy, a peek 3 less. Each exhibition passive takes 1 off (up to 2). Not ready, and the answer is greyed out with "(you're not ready for that)".
-- **Too drunk** on either side, and neither yes is there.
-- **She poses for it:** while the talk lasts she holds a pose (`ShowPose` in `player.ts`, shown in her portrait too): a peek at her breasts is a finger hooked in her neckline, her chemise pulled aside so her breast band shows above her bodice; a proper look is both hands holding her top open, the band off too. Her pussy: both hands gather her long skirt up at the front, folded over on itself at her waist (`Skirt.setLift`; each skirt panel has a mid-thigh joint for the fold, built in `build_world.py`), apron aside. Her behind: she turns round, looks back over her shoulder and gathers her skirt up behind the same way. A proper look of either takes her smallclothes off as well; a bottom that isn't a skirt comes off instead of lifting (`showingPieces` in `tavern.ts`). *Get back to work*, and the pose eases off and it's all back on. It never counts as stripped. In development, `?pose=chestPeek` (or chestBare, frontLift, backLift) holds a pose to look at.
-- **It stirs them up:** a peek leaves that guest +2 lust and as bold as if she'd let them touch her once more; a proper look +3 lust and twice. Her own desire for that part rises (+5 / +10).
+  Bare looks are +2 fame, −1 respect, and the whole room gets an eyeful: every other guest +1 lust. Underwear she's lost tonight (or has none of) is greyed out "(you've nothing on there)".
+- **How far she'll go** depends on that part's desire meter (÷10): her band 0, her smallclothes 2 (her pussy's meter), her breasts or behind 3, her pussy 5. Each exhibition passive takes 1 off (up to 2). Not ready, and the answer is greyed out with "(you're not ready for that)".
+- **Too drunk** on either side, and no yes is there.
+- **She acts it out, nothing just vanishes** (`ShowPose` in `player.ts`, shown in her dialogue portrait too, face to face):
+  - *Her band or her breasts:* both hands drag her top down under her breasts, and the cloth goes with them (`Dresser.setPull` in `appearance.ts`): her chemise, bodice and its laces roll down into a band under her breasts at the front, slanting off round her sides, her back and sleeves staying put. A top that can't come down (the priestess's gold top) is lifted up over them instead, rolled on her chest above, her hands holding it there (`TOP_PULL` / `topPull` in `wardrobe.ts`). For her breasts her breast band goes too (it's painted on her). The cloth follows her hands as the pose eases off after.
+  - *Her smallclothes or her pussy:* both hands at her waist hold the front of her long skirt gathered up flat against her middle, apron and all (`Skirt.setLift`, the skirt panels' mid-thigh joints from `build_world.py`; the panels either side of the front lift all the way too, so the front's open), so she's seen from the front. For her pussy her smallclothes come off as well.
+  - *Her behind:* she turns round, looks back over her shoulder, and both hands hold her skirt gathered up behind at her waist; her smallclothes off.
+  - Tights or leggings over her groin come down for any of the bottom three. A drape (the priestess's) lifts like a skirt and her girdle stays on; a bottom that isn't a skirt comes off instead (`showingPieces` in `tavern.ts`).
+  - *Get back to work*, and the pose eases off and it's all back on. It never counts as stripped. In development, `?pose=chestDown` (or chestUp, frontLift, backLift) holds a pose to look at.
+- **It stirs them up:** her underwear leaves that guest +2 lust and as bold as if she'd let them touch her once more; a bare look +3 lust and twice. Her own desire for that part rises (+5 / +10).
 - **Grabs and gropes stir them up too:** each touch she lets happen is +1 lust for that guest (and, as before, bolder); letting a guest who grabbed her hold her is +1 lust and +1 bold.
-- **Records and passives:** peeks, proper looks, times she said no (records). *Peep Show* (5 peeks: +1 gold a look, asked 25% more). *Flasher* (5 proper looks: +2 gold a look, asked 50% more).
+- **Records and passives:** peeks at her underwear, bare looks, times she said no (records). *Peep Show* (5 peeks: +1 gold a look, asked 25% more). *Flasher* (5 bare looks: +2 gold a look, asked 50% more).
 - Tests: `tests/show.test.ts`; elsewhere the tests' setup turns asks off (`showDice.roll = null`).
 
 ## 7f. Adult play: upstairs, or the taproom [built]

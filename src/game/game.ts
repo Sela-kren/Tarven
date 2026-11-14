@@ -105,7 +105,6 @@ import { readTouchSettings, writeTouchSettings } from "./touchsettings";
 import { arousalOf, easeArousal } from "./nipples";
 import { easeOpening } from "./vulva";
 import { METER_MAX } from "./passives";
-import type { Reaction, ShowPose, SoftPart } from "./player";
 import type { ShowPart } from "./show";
 import { DialogueBox } from "./dialogue";
 import { MessageLog } from "./messagelog";
@@ -126,7 +125,8 @@ import type { HerMove } from "./duelmoves";
 import type { TouchRegion } from "./touchtalk";
 import type { TouchShow } from "./touchcomic";
 import { BattleView, FoeColumn, type BattleMode, type BattleStat } from "./battleview";
-import { Body, Sibling, WALK_STYLE_NAMES } from "./player";
+import { Body, Sibling, SHOW_POSES, WALK_STYLE_NAMES, type Reaction, type ShowPose, type SoftPart } from "./player";
+import { topPull } from "./wardrobe";
 import { COAT_SECTIONS, COAT_STAGES, type CoatSection } from "./cum";
 import { applyRetroLook, solidRetroMaterial } from "./retro";
 import {
@@ -490,18 +490,20 @@ function devFlag(name: string): boolean {
   return import.meta.env.DEV && typeof location !== "undefined" && new URLSearchParams(location.search).has(name);
 }
 
-/** How she poses to show each part (7e): a peek and a proper look of her breasts differ; a skirt lifts either way. */
-const SHOW_POSE_OF: Record<ShowPart, Record<"peek" | "bare", ShowPose>> = {
-  breasts: { peek: "chestPeek", bare: "chestBare" },
-  butt: { peek: "backLift", bare: "backLift" },
-  pussy: { peek: "frontLift", bare: "frontLift" },
-};
+/**
+ * How she poses to show each thing (7e): her band or her breasts, her hands holding her top pulled down (or, for a
+ * top that only lifts, up); her smallclothes or her pussy, her skirt lifted at the front; her behind, turned round
+ * with it lifted behind.
+ */
+function showPoseOf(part: ShowPart, top: "down" | "up"): ShowPose {
+  if (part === "band" || part === "breasts") return top === "up" ? "chestUp" : "chestDown";
+  return part === "butt" ? "backLift" : "frontLift";
+}
 
-/** In development, holds her in a show pose to look at: "?pose=backLift" (chestPeek, chestBare, frontLift, backLift). */
+/** In development, holds her in a show pose to look at: "?pose=chestDown" (chestDown, chestUp, frontLift, backLift). */
 const DEV_SHOW_POSE: ShowPose | null = (() => {
   const asked = import.meta.env.DEV && typeof location !== "undefined" ? new URLSearchParams(location.search).get("pose") : null;
-  const poses: readonly ShowPose[] = ["chestPeek", "chestBare", "frontLift", "backLift"];
-  return poses.find((p) => p === asked) ?? null;
+  return SHOW_POSES.find((p) => p === asked) ?? null;
 })();
 
 /**
@@ -2234,24 +2236,37 @@ export class Game {
     this.playerPortrait = null;
   }
 
-  /** The show pose last put on the player, as "part:how"; "" for none. */
+  /** The show pose last put on the player, as "sibling:pose"; "" for none. */
   private showPoseShown = "";
+  /** The tops her hands last pulled off her breasts, kept while the pose eases off so the cloth goes back with them. */
+  private pullShown: { ids: string[]; dir: "down" | "up" } | null = null;
 
   /**
-   * Poses her while she shows a guest what they paid to see (7e), and lets the pose ease off after. It comes on at
-   * once, so the portrait drawn for the next line has it.
+   * Poses her while she shows a guest what they paid to see (7e), and lets the pose ease off after; her top comes
+   * down off her breasts (or up over them) with her hands, and goes back with them. It comes on at once, so the
+   * portrait drawn for the next line has it.
    */
   private syncShowPose(): void {
-    const showing = this.tavern.showingOff;
-    const pose: ShowPose | null = DEV_SHOW_POSE ?? (showing ? SHOW_POSE_OF[showing.part][showing.how] : null);
+    const { tavern } = this;
+    const showing = tavern.showingOff;
+    const pose: ShowPose | null = DEV_SHOW_POSE ?? (showing ? showPoseOf(showing, tavern.topPullDir) : null);
     const key = `${this.active}:${pose ?? ""}`;
-    if (key === this.showPoseShown) return;
-    this.showPoseShown = key;
-    this.siblings.forEach((sibling, index) => {
-      sibling.display(index === this.active ? pose : null);
-      sibling.rest(0);
-    });
-    this.playerPortrait = null;
+    if (key !== this.showPoseShown) {
+      this.showPoseShown = key;
+      this.siblings.forEach((sibling, index) => {
+        sibling.display(index === this.active ? pose : null);
+        sibling.rest(0);
+      });
+      this.playerPortrait = null;
+    }
+    const pull = DEV_SHOW_POSE
+      ? (DEV_SHOW_POSE.startsWith("chest") ? topPull(tavern.playerBody, tavern.playerOutfit, tavern.strippedPieces) : null)
+      : tavern.showingPull;
+    if (pull) this.pullShown = pull;
+    const held = this.siblings[this.active]?.showing;
+    const amount = held && held.pose.startsWith("chest") ? held.amount : 0;
+    if (amount <= 0) this.pullShown = null;
+    this.dressers.forEach((dresser, index) => dresser.setPull(index === this.active ? this.pullShown : null, amount));
   }
 
   /** How aroused the player shows, easing towards what the night has done to her. */
@@ -2381,7 +2396,7 @@ export class Game {
   private updateTalk(dt: number): void {
     const { input, dialogue } = this;
     if (input.pressed("Space") || input.pressed("Enter") || input.pressed("KeyE")) dialogue.advance();
-    for (let i = 0; i < 5; i++) if (input.pressed(`Digit${i + 1}`)) dialogue.choose(i);
+    for (let i = 0; i < 9; i++) if (input.pressed(`Digit${i + 1}`)) dialogue.choose(i);
     dialogue.update(dt);
     this.siblings.forEach((sibling) => sibling.rest(dt));
   }

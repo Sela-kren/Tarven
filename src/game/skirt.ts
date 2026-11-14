@@ -56,10 +56,17 @@ export const SKIRT_SWAY: SpringSettings = { frequency: 1.2, damping: 0.35, gain:
 const TAU = Math.PI * 2;
 /**
  * A long skirt gathered up in her hands and folded over on itself, each part's angle out from straight down, in
- * radians (past a quarter turn points up): from her hips the cloth rises to her hands, folds back down at
- * mid-thigh, and its lower half folds up again over the top, so it bunches in a fold at her waist.
+ * radians (past a quarter turn points up): from her hips the cloth rises flat up her belly to her hands, folds back
+ * down at mid-thigh, and its lower half folds up again over the top, so it bunches close against her middle, clear
+ * of her groin seen from above as well as in front. (Folded out at her waist, it stood out over her groin.)
  */
-const GATHER = { upper: 2.2, mid: 1.3, lower: 2.7 };
+const GATHER = { upper: 3.0, mid: 0.8, lower: 3.0 };
+/**
+ * How far round her a lift reaches, by how much the panel faces the lifted side (the sine of its angle round her):
+ * none from the first, all of it from the second; so the panels either side of the middle come up all the way too,
+ * and the opening's wide enough to see through.
+ */
+const LIFT_REACH: readonly [number, number] = [0.2, 0.6];
 
 /** Angle round the body, as the skirt is built: 0 at the right side, a quarter turn at the front. */
 function turnOf(x: number, z: number): number {
@@ -193,7 +200,7 @@ export class Skirt {
   private liftAt(turn: number): number {
     // A quarter turn is the front, three quarters the back.
     const side = Math.sin(turn);
-    const reach = (n: number) => Math.min(1, Math.max(0, n * 2.2 - 1.2));
+    const reach = (n: number) => Math.min(1, Math.max(0, (n - LIFT_REACH[0]) / (LIFT_REACH[1] - LIFT_REACH[0])));
     return Math.max(this.lift.front * reach(side), this.lift.back * reach(-side));
   }
 

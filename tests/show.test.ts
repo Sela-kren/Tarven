@@ -4,13 +4,16 @@ import { defaultRole, ROLES, type GuestRole } from "../src/game/guestroles";
 import { earned, effectsOf, PASSIVE_BY_ID } from "../src/game/passives";
 import {
   partToSee,
-  SHOW_BARE_LABEL,
+  SHOW_ASKED_BONUS,
+  SHOW_ASKED_MARK,
   SHOW_GOLD,
   SHOW_NO_LABEL,
   SHOW_NOT_READY,
-  SHOW_PEEK_LABEL,
+  SHOW_NOT_WEARING,
+  SHOW_PARTS,
   SHOW_TOO_DRUNK,
   showChance,
+  type ShowPart,
 } from "../src/game/show";
 import { REPLACE_COST, Tavern, type Guest, type GuestKind, type Target } from "../src/game/tavern";
 
@@ -43,48 +46,73 @@ function asked(desire = 0, before: (t: Tavern, guest: Guest) => void = () => {})
   return { t, guest };
 }
 const labels = (t: Tavern) => t.talkChoices.map((c) => c.label);
-const pick = (t: Tavern, start: string) => t.chooseTalk(labels(t).findIndex((l) => l.startsWith(start)));
 
 describe("a guest asking for a look", () => {
-  it("offers coin, and she answers: a peek, a proper look, or no", () => {
-    const { t } = asked(5);
+  /** Her answer for showing this, by its place in the list. */
+  const answer = (t: Tavern, part: ShowPart) => t.talkChoices[SHOW_PARTS.indexOf(part)];
+  const show = (t: Tavern, part: ShowPart) => t.chooseTalk(SHOW_PARTS.indexOf(part));
+  /** What the guest asked for: the one answer marked so. */
+  const askedFor = (t: Tavern) => SHOW_PARTS.find((part) => answer(t, part).label.includes(SHOW_ASKED_MARK))!;
+
+  it("offers coin for one thing, and she picks what to show them, each on its own, or no", () => {
+    const { t } = asked(10);
     expect(t.inConversation).toBe(true);
     const options = labels(t);
-    expect(options[0]).toMatch(new RegExp(`^${SHOW_PEEK_LABEL} \\(\\+\\d+ gold\\)$`));
-    expect(options[1]).toMatch(new RegExp(`^${SHOW_BARE_LABEL}`));
-    expect(options[2]).toBe(SHOW_NO_LABEL);
-    // She has to answer first.
-    expect(t.talkChoices.at(-1)?.disabled).toBe(true);
+    expect(options.length).toBe(SHOW_PARTS.length + 1);
+    SHOW_PARTS.forEach((_, i) => {
+      expect(options[i]).toMatch(/^Show them your .+ \(.*\+\d+ gold\)$/);
+      expect(t.talkChoices[i].disabled).toBe(false);
+    });
+    expect(options.at(-1)).toBe(SHOW_NO_LABEL);
+    // Exactly one is what they asked for, and it pays a little more.
+    expect(options.filter((l) => l.includes(SHOW_ASKED_MARK)).length).toBe(1);
+    const part = askedFor(t);
+    expect(answer(t, part).label).toContain(`+${SHOW_GOLD[part] + SHOW_ASKED_BONUS} gold`);
+    // Her breasts, her band, her smallclothes, her pussy and her behind are all there to choose from.
+    expect(options.some((l) => l.startsWith("Show them your breasts"))).toBe(true);
+    expect(options.some((l) => l.startsWith("Show them your pussy"))).toBe(true);
+    expect(options.some((l) => l.startsWith("Show them your behind"))).toBe(true);
   });
 
   it("only lets her go as far as she wants to", () => {
     const { t } = asked(0);
-    // The guest's type likes their part; with no desire, even a peek of the bolder parts waits.
-    expect(labels(t)[1]).toContain(SHOW_NOT_READY);
-    expect(t.talkChoices[1].disabled).toBe(true);
+    // With no desire at all, only her band.
+    expect(answer(t, "band").disabled).toBe(false);
+    for (const part of ["breasts", "smalls", "pussy", "butt"] as const) {
+      expect(answer(t, part).disabled).toBe(true);
+      expect(answer(t, part).label).toContain(SHOW_NOT_READY);
+    }
     // No is always there.
-    expect(t.talkChoices[2].disabled).toBe(false);
+    expect(t.talkChoices.at(-1)?.disabled).toBe(false);
   });
 
   it("can't be a yes when she's too drunk", () => {
     const { t } = asked(10, (t) => (t.drunk = 0.9));
-    expect(labels(t)[0]).toContain(SHOW_TOO_DRUNK);
-    expect(t.talkChoices[0].disabled).toBe(true);
-    expect(t.talkChoices[1].disabled).toBe(true);
+    for (const part of SHOW_PARTS) {
+      expect(answer(t, part).label).toContain(SHOW_TOO_DRUNK);
+      expect(answer(t, part).disabled).toBe(true);
+    }
   });
 
-  it("a peek pays, and leaves them hornier and bolder", () => {
+  it("can't show them underwear she's lost tonight", () => {
+    const { t } = asked(10, (t) => (t.stripped = 99));
+    expect(answer(t, "band").label).toContain(SHOW_NOT_WEARING);
+    expect(answer(t, "smalls").disabled).toBe(true);
+    expect(answer(t, "breasts").disabled).toBe(false);
+  });
+
+  it("a peek at her underwear pays, and leaves them hornier and bolder", () => {
     const { t, guest } = asked(10);
     guest.lust = 4;
     const gold = t.gold;
-    pick(t, SHOW_PEEK_LABEL);
+    show(t, "band");
     expect(t.records.peeks).toBe(1);
     expect(t.gold).toBeGreaterThan(gold);
     expect(guest.lust).toBe(6);
     expect(t.talkReplyLines.length).toBe(3);
   });
 
-  it("a proper look pays more, and the whole room gets an eyeful", () => {
+  it("a bare look pays more, and the whole room gets an eyeful", () => {
     const { t, guest } = asked(10, (t, guest) => {
       // Let the room fill, without the one asking giving up on her.
       guest.patience = guest.maxPatience = 1000;
@@ -95,44 +123,80 @@ describe("a guest asking for a look", () => {
     });
     const others = t.guests.filter((g) => g !== guest);
     const gold = t.gold;
-    pick(t, SHOW_BARE_LABEL);
+    show(t, "breasts");
     expect(t.records.flashes).toBe(1);
-    expect(t.gold - gold).toBeGreaterThanOrEqual(SHOW_GOLD.breasts.bare);
+    expect(t.gold - gold).toBeGreaterThanOrEqual(SHOW_GOLD.breasts);
     expect(others.length).toBeGreaterThan(0);
     for (const g of others) expect(g.lust).toBe(1);
   });
 
-  it("shows on her while she shows them: a peek down to her breast band, a proper look bare, and all back on after", () => {
-    const peeked = asked(10).t;
-    expect(peeked.shownPieces).toEqual([]);
-    pick(peeked, SHOW_PEEK_LABEL);
-    const peek = peeked.shownPieces;
-    expect(peek.length).toBeGreaterThan(0);
-    expect(peek).not.toContain("bra");
-    expect(peek).not.toContain("skirt");
-    pick(peeked, "Get back to work");
-    expect(peeked.shownPieces).toEqual([]);
+  it("acts each one out on her: her top pulled down off her band or her breasts, her skirt lifted, and all back after", () => {
+    const shown = (part: ShowPart) => {
+      const { t } = asked(10);
+      expect(t.shownPieces).toEqual([]);
+      expect(t.showingPull).toBeNull();
+      show(t, part);
+      return t;
+    };
+    // Her band: her chemise and bodice pulled down, still on her; nothing comes off.
+    const band = shown("band");
+    expect(band.showingOff).toBe("band");
+    expect(band.showingPull).toEqual({ ids: ["belt", "bodice", "blouse"], dir: "down" });
+    expect(band.shownPieces).toEqual([]);
+    // Her breasts: pulled down the same, and her band off.
+    const breasts = shown("breasts");
+    expect(breasts.showingPull?.dir).toBe("down");
+    expect(breasts.shownPieces).toEqual(["bra"]);
+    // Her smallclothes: her skirt lifted, apron and all, nothing pulled; only her tights come down, which hide them.
+    const smalls = shown("smalls");
+    expect(smalls.shownPieces).toEqual(["stockings"]);
+    expect(smalls.showingPull).toBeNull();
+    // Her pussy and her behind: her skirt lifted, her tights and smallclothes off.
+    expect(shown("pussy").shownPieces).toEqual(["stockings", "smalls"]);
+    expect(shown("butt").shownPieces).toEqual(["stockings", "smalls"]);
+    // Nothing counts as stripped: it's only out of the way while she shows them. Back to work, it's all back.
+    expect(breasts.strippedPieces).toEqual([]);
+    breasts.chooseTalk(labels(breasts).indexOf("Get back to work"));
+    expect(breasts.shownPieces).toEqual([]);
+    expect(breasts.showingPull).toBeNull();
+    expect(breasts.showingOff).toBeNull();
+  });
 
-    const bared = asked(10).t;
-    pick(bared, SHOW_BARE_LABEL);
-    expect(bared.shownPieces).toEqual(expect.arrayContaining([...peek, "bra"]));
-    // Nothing counts as stripped: it's only out of the way while she shows them.
-    expect(bared.strippedPieces).toEqual([]);
+  it("lifts a top that can't come down up over her breasts instead", () => {
+    const { t } = asked(10, (t) => (t.playerOutfit = "priestess"));
+    expect(t.topPullDir).toBe("up");
+    show(t, "breasts");
+    expect(t.showingPull).toEqual({ ids: ["top"], dir: "up" });
+    // Her drapes lift with her skirt panels and her girdle stays round her waist: nothing below comes off for a peek.
+    const { t: below } = asked(10, (t) => (t.playerOutfit = "priestess"));
+    show(below, "smalls");
+    expect(below.shownPieces).toEqual([]);
+  });
+
+  it("pays a little more for just what they asked for", () => {
+    const { t } = asked(10);
+    const part = askedFor(t);
+    const gold = t.gold;
+    show(t, part);
+    expect(t.gold - gold).toBe(SHOW_GOLD[part] + SHOW_ASKED_BONUS);
   });
 
   it("no is just no: nothing shown, nothing paid", () => {
     const { t } = asked(10);
     const gold = t.gold;
-    t.chooseTalk(2);
+    t.chooseTalk(SHOW_PARTS.length);
     expect(t.records.showsRefused).toBe(1);
     expect(t.gold).toBe(gold);
     expect(labels(t)).toEqual(["Get back to work"]);
   });
 
-  it("asks for the part their type likes, if they've the nerve for it", () => {
+  it("asks for the part their type likes, if they've the nerve for it, or the boldest thing short of it", () => {
     expect(partToSee("butt", 5)).toBe("butt");
-    expect(partToSee("pussy", 4)).toBe("breasts");
+    expect(partToSee("butt", 2)).toBe("band");
+    expect(partToSee("pussy", 4)).toBe("smalls");
     expect(partToSee("pussy", 5)).toBe("pussy");
+    expect(partToSee("breasts", 2)).toBe("band");
+    expect(partToSee("breasts", 3)).toBe("breasts");
     expect(partToSee("hands", 9)).toBe("breasts");
     expect(showChance("farmer", 1, true)).toBe(0);
     expect(showChance("farmer", 2, false)).toBeGreaterThan(0.08);

@@ -45,10 +45,12 @@ export type SoftPart = "Bust" | "Glute";
 const REACTION_TIME: Record<Reaction, number> = { jolt: 0.4, melt: 1.8, recoil: 0.55 };
 
 /**
- * How she stands to show a guest what they paid to see (show.ts): a finger hooked in her neckline, both hands
- * holding her top open, her skirt lifted at the front, or turned round with it lifted behind.
+ * How she stands to show a guest what they paid to see (show.ts): both hands holding her top pulled down under her
+ * breasts, or lifted up over them (the game pulls the cloth with them, `Dresser.setPull`), her skirt lifted at the
+ * front, or turned round with it lifted behind.
  */
-export type ShowPose = "chestPeek" | "chestBare" | "frontLift" | "backLift";
+export type ShowPose = "chestDown" | "chestUp" | "frontLift" | "backLift";
+export const SHOW_POSES: readonly ShowPose[] = ["chestDown", "chestUp", "frontLift", "backLift"];
 /** How quickly a show pose eases off once it's over, per second. It comes on at once. */
 const SHOW_EASE = 3;
 
@@ -572,6 +574,11 @@ export class Body {
     }
   }
 
+  /** The show pose on her now, and how far it's on (0 to 1, eased as her limbs are); null with none. */
+  get showing(): { pose: ShowPose; amount: number } | null {
+    return this.show ? { pose: this.show, amount: MathUtils.smoothstep(this.showAmount, 0, 1) } : null;
+  }
+
   /** Holds a show pose (at once, so a picture taken now shows it), or with null lets it ease off. */
   display(pose: ShowPose | null): void {
     if (pose) {
@@ -598,37 +605,38 @@ export class Body {
     };
     const bend = (bone: Object3D, x: number) => (bone.rotation.x = MathUtils.lerp(bone.rotation.x, x, a));
     // Positive Z swings the left arm in and the right arm out.
-    if (pose === "chestPeek") {
-      // Her right hand comes up and hooks a finger in her neckline; she leans in a little, head tipped, coy.
-      set(this.upperArmR, 0.5, -0.15, 0.9);
-      bend(this.foreArmR, 1.9);
-      set(this.upperArmL, 0.05, 0.08);
-      bend(this.foreArmL, 0.35);
-      this.torso.rotation.x += 0.1 * a;
-      this.head.rotation.x += 0.08 * a;
-      this.head.rotation.z += 0.16 * a;
-    } else if (pose === "chestBare") {
-      // Both hands hold her top open at the sides of her chest; chest out, chin up.
-      set(this.upperArmR, 0.4, -0.1, 0.5);
-      bend(this.foreArmR, 1.7);
-      set(this.upperArmL, 0.4, 0.1, -0.5);
-      bend(this.foreArmL, 1.7);
+    if (pose === "chestDown") {
+      // Both hands low on her chest, holding her top dragged down under her breasts; chest out, chin up.
+      set(this.upperArmR, 0.4, -0.22, 0.4);
+      bend(this.foreArmR, 1.4);
+      set(this.upperArmL, 0.4, 0.22, -0.4);
+      bend(this.foreArmL, 1.4);
       this.torso.rotation.x -= 0.12 * a;
       this.head.rotation.x -= 0.06 * a;
+    } else if (pose === "chestUp") {
+      // Both hands high on her chest, holding her top lifted up over her breasts; chest out, looking down at them.
+      set(this.upperArmR, 0.5, -0.5, 0.7);
+      bend(this.foreArmR, 2.3);
+      set(this.upperArmL, 0.5, 0.5, -0.7);
+      bend(this.foreArmL, 2.3);
+      this.torso.rotation.x -= 0.1 * a;
+      this.head.rotation.x += 0.1 * a;
     } else if (pose === "frontLift") {
-      // Both hands at her waist, the front of her skirt gathered up and folded over in them; she looks down.
-      set(this.upperArmR, 0.45, -0.1, 0.4);
-      bend(this.foreArmR, 1.2);
-      set(this.upperArmL, 0.45, 0.1, -0.4);
-      bend(this.foreArmL, 1.2);
+      // Both hands low at her waist, either side, holding the front of her skirt gathered up against her middle,
+      // clear of her groin; she looks down.
+      set(this.upperArmR, 0.45, -0.22, 0.3);
+      bend(this.foreArmR, 0.75);
+      set(this.upperArmL, 0.45, 0.22, -0.3);
+      bend(this.foreArmL, 0.75);
       this.torso.rotation.x += 0.06 * a;
       this.head.rotation.x += 0.14 * a;
     } else {
-      // Turned round, bent a little forwards, both hands behind holding her skirt up, looking back over her shoulder.
-      set(this.upperArmR, -0.55, 0.15);
-      bend(this.foreArmR, 1.1);
-      set(this.upperArmL, -0.55, -0.15);
-      bend(this.foreArmL, 1.1);
+      // Turned round, bent a little forwards, both hands behind at her waist holding her skirt gathered up there, clear
+      // of her behind, looking back over her shoulder.
+      set(this.upperArmR, -0.6, -0.15);
+      bend(this.foreArmR, 1.5);
+      set(this.upperArmL, -0.6, 0.15);
+      bend(this.foreArmL, 1.5);
       this.torso.rotation.x += 0.3 * a;
       this.torso.rotation.y += 0.3 * a;
       this.head.rotation.y += 0.85 * a;
@@ -798,6 +806,11 @@ export class Sibling {
   /** Holds a show pose, or lets it ease off: see `Body.display`. */
   display(pose: ShowPose | null): void {
     this.body.display(pose);
+  }
+
+  /** The show pose on her now, and how far it's on: see `Body.showing`. */
+  get showing(): { pose: ShowPose; amount: number } | null {
+    return this.body.showing;
   }
 
   /** Answers a touch on the floor: see `Body.react`. */

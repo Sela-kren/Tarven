@@ -129,6 +129,31 @@ export const WARDROBE: Record<WardrobeBody, readonly Garment[]> = {
 };
 
 /**
+ * How each top comes off her breasts when she shows them (GAME_PATH.MD 7e), pulled on her model rather than taken
+ * off: a chemise and a bodice are dragged down under them, and the laces up the bodice's front with them (the belt's
+ * leather, the dirndl's ribbons; only what's over her breasts moves, so a belt round her waist stays put, and arm
+ * ribbons on her arms); the priestess's short gold top is lifted up over them.
+ */
+export const TOP_PULL: Readonly<Record<string, "down" | "up">> = { blouse: "down", bodice: "down", belt: "down", ribbons: "down", top: "up" };
+
+/**
+ * The tops she has on that cover her breasts, and which way they come off them: up if any of them only lifts, down
+ * otherwise; null with none on.
+ */
+export function topPull(body: WardrobeBody, outfit: string | undefined, off: readonly string[]): { ids: string[]; dir: "down" | "up" } | null {
+  const ids = stripLadder(body, outfit)
+    .filter((g) => g.id in TOP_PULL && !off.includes(g.id))
+    .map((g) => g.id);
+  if (ids.length === 0) return null;
+  return { ids, dir: ids.some((id) => TOP_PULL[id] === "up") ? "up" : "down" };
+}
+
+/** Whether her legwear reaches up over her groin (tights, leggings): its top band, from her waist down her thighs. */
+export function legwearOverGroin(body: WardrobeBody, outfit?: string, legwear?: string): boolean {
+  return legwearOf(body, { outfit, legwear })?.bands.includes("T_hose") ?? false;
+}
+
+/**
  * The garments that can come off an outfit (the character's own when left out), in the order they come off.
  * `legwear` is the style of stockings she has on, the outfit's own when left out.
  */

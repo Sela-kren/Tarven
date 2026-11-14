@@ -20,7 +20,7 @@ import {
   type Reply,
   type StripPiece,
 } from "./banter";
-import { piecesOff, stripLadder } from "./wardrobe";
+import { legwearOverGroin, piecesOff, stripLadder, topPull } from "./wardrobe";
 import {
   adultTouch,
   afterLine,
@@ -113,26 +113,29 @@ import {
 import {
   partToSee,
   PART_WORDS,
-  PEEK_EASIER,
   ROOM_LUST,
   showChance,
   SHOWN_BOLD,
   SHOWN_DESIRE,
   SHOWN_LUST,
   SHOW_AFTER,
+  SHOW_ASKED_BONUS,
+  SHOW_ASKED_MARK,
   SHOW_ASKS,
-  SHOW_BARE_LABEL,
-  SHOW_BARES,
   SHOW_GOLD,
+  SHOW_HOW,
+  SHOW_LABELS,
   SHOW_METER,
   SHOW_NEED,
   SHOW_NO,
   SHOW_NO_LABEL,
   SHOW_NOT_READY,
-  SHOW_PEEK_LABEL,
-  SHOW_PEEKS,
+  SHOW_NOT_WEARING,
+  SHOW_PARTS,
   SHOW_THOUGHTS,
+  SHOW_TOLD,
   SHOW_TOO_DRUNK,
+  SHOW_UNDER,
   SHOW_YES,
   type ShowPart,
 } from "./show";
@@ -363,8 +366,12 @@ const FAME_DEEDS = [-6, 8, -3];
 const RESPECT_DEEDS = [-2, 2, -1];
 /** This drunk in front of the customers, and they stop taking you seriously. */
 const SLOPPY_DRUNK = 0.6;
-/** Bottoms she can hold up in her hands to show a guest (the model's skirt panels lift); anything else comes off. */
-const LIFTED_SKIRTS: ReadonlySet<string> = new Set(["skirt"]);
+/**
+ * Bottoms she can hold up in her hands to show a guest (they hang on the model's skirt panels, which lift), and
+ * those that stay on as she does, round her waist above it all; anything else comes off.
+ */
+const LIFTED_SKIRTS: ReadonlySet<string> = new Set(["skirt", "drapes"]);
+const KEPT_ON_LIFT: ReadonlySet<string> = new Set(["girdle"]);
 /** The drink a pleased guest bought her, as an option: it says whose drink it is, whatever else they've said since. */
 export const TIP_DRINK_LABEL = "Drink the one they bought you";
 const TIP_DRINK_TOO_DRUNK = "Drink the one they bought you (you've had more than enough)";
@@ -1157,12 +1164,13 @@ export interface BaronVisit {
 /** A guest who's offered coin for a look at her (show.ts), and her answer. */
 interface ShowChat {
   guestId: number;
+  /** What they asked to see. */
   part: ShowPart;
   lines: TalkLine[];
   answered: boolean;
   reply: TalkLine[];
-  /** What she's showing them, while the talk lasts: the model shows it too (`shownPieces`). */
-  shown?: "peek" | "bare";
+  /** What she's showing them, while the talk lasts: the model shows it too (`shownPieces`, `showingPull`). */
+  shown?: ShowPart;
 }
 
 /** The state that lasts between nights. */
@@ -2697,34 +2705,46 @@ export class Tavern {
   }
 
   /** What she's showing a guest right now, while the talk lasts (7e): the game poses her for it. */
-  get showingOff(): { part: ShowPart; how: "peek" | "bare" } | null {
-    const chat = this.showChat;
-    return chat?.shown ? { part: chat.part, how: chat.shown } : null;
+  get showingOff(): ShowPart | null {
+    return this.showChat?.shown ?? null;
+  }
+
+  /**
+   * Her tops, pulled down off her breasts or lifted up over them while she shows a guest her band or her breasts
+   * (7e): the garments' ids, and which way. The game pulls them on the model in time with her hands; they're still
+   * on her, never stripped. Null while she's showing nothing up there.
+   */
+  get showingPull(): { ids: string[]; dir: "down" | "up" } | null {
+    const shown = this.showChat?.shown;
+    if (shown !== "band" && shown !== "breasts") return null;
+    return topPull(this.playerBody, this.playerOutfit, this.strippedPieces);
+  }
+
+  /** Which way her top comes off her breasts, as she has it on now (7e); down when there's none to move. */
+  get topPullDir(): "down" | "up" {
+    return topPull(this.playerBody, this.playerOutfit, this.strippedPieces)?.dir ?? "down";
   }
 
   /**
    * What's out of the way while she shows a guest what they paid to see (7e), for as long as the talk lasts; the
-   * game poses her too (a hand at her neckline, her skirt lifted). Her top half: a peek is her chemise pulled
-   * aside, showing her breast band above her bodice (her outer top, if there's no chemise); a proper look, all of
-   * it and the band. Her bottom half: a skirt stays on, lifted in her hands; anything else there comes off, with
-   * her apron for her front, and for a proper look her smallclothes. Back to work, and it's all back on.
+   * game poses her too. Her top half is pulled, not taken off (`showingPull`); showing her breasts bare, her band goes
+   * too (it's painted on her). Her bottom half: a skirt stays on, lifted in her hands with her apron, and her girdle
+   * stays round her waist; anything else there comes off, and bare, her smallclothes. Back to work, and it's all back.
    */
   private showingPieces(): string[] {
-    const chat = this.showChat;
-    if (!chat?.shown) return [];
-    const bare = chat.shown === "bare";
+    const shown = this.showChat?.shown;
+    if (!shown) return [];
     const ladder = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder);
-    if (chat.part === "breasts") {
-      const tops = ladder.filter((g) => g.region === "top" && (g.layer === "outer" || g.layer === "under"));
-      const chemise = tops.filter((g) => g.layer === "under");
-      const band = ladder.filter((g) => g.region === "top" && g.layer === "smallclothes");
-      return (bare ? [...tops, ...band] : chemise.length > 0 ? chemise : tops).map((g) => g.id);
-    }
+    if (shown === "band") return [];
+    if (shown === "breasts") return ladder.filter((g) => g.region === "top" && g.layer === "smallclothes").map((g) => g.id);
+    const bare = SHOW_HOW[shown] === "bare";
+    // Tights over her groin would hide it all: they come down too.
+    const tights = legwearOverGroin(this.playerBody, this.playerOutfit, this.playerLegwear);
     return ladder
       .filter((g) => {
         if (g.layer === "smallclothes") return bare && g.region === "bottom";
-        if (g.layer === "accessory") return chat.part === "pussy" && g.region === "waist";
-        return g.layer === "outer" && g.region === "bottom" && !LIFTED_SKIRTS.has(g.id);
+        if (g.layer === "legwear") return tights;
+        return g.layer === "outer" && g.region === "bottom" && !LIFTED_SKIRTS.has(g.id) && !KEPT_ON_LIFT.has(g.id);
       })
       .map((g) => g.id);
   }
@@ -4085,38 +4105,55 @@ export class Tavern {
     if (this.showRandom() >= showChance(guest.kind, guestNerve, loose, this.effects.showAsk)) return false;
     const part = partToSee(guest.stats.prefers, guestNerve);
     const pick = <T>(lines: readonly T[]) => lines[Math.floor(this.random() * lines.length) % lines.length];
-    const offer = SHOW_GOLD[part].bare + this.effects.showGold;
+    const offer = this.showGold(part, part);
     const ask = this.guestSays(guest, pick(SHOW_ASKS[part]).replaceAll("{gold}", String(offer)));
     this.showChat = { guestId: guest.id, part, lines: [ask, you(pick(SHOW_THOUGHTS))], answered: false, reply: [] };
     this.say(`A ${this.nameOf(guest).toLowerCase()} offers gold for a look at your ${PART_WORDS[part]}.`);
     return true;
   }
 
-  /** How much of her a guest's asked to see she's ready to show: a peek, a proper look, or neither yet. */
-  showReady(part: ShowPart): { peek: boolean; bare: boolean } {
+  /** Whether she's ready to show a guest this much of her: that part's desire, helped by her exhibition passives. */
+  showReady(part: ShowPart): boolean {
     const owned = [...this.passives].filter((id) => PASSIVE_BY_ID.get(id)?.group === "exhibition").length;
-    const desire = this.meters[SHOW_METER[part]] / 10 + Math.min(2, owned);
-    return { peek: desire >= SHOW_NEED[part] - PEEK_EASIER, bare: desire >= SHOW_NEED[part] };
+    return this.meters[SHOW_METER[part]] / 10 + Math.min(2, owned) >= SHOW_NEED[part];
   }
 
-  /** Her answers to a guest who's asked for a look: a peek, a proper look, or no. Then back to work. */
+  /** What showing this pays, to a guest who asked for `asked`: more for just what they wanted. */
+  private showGold(part: ShowPart, asked: ShowPart): number {
+    return SHOW_GOLD[part] + (part === asked ? SHOW_ASKED_BONUS : 0) + this.effects.showGold;
+  }
+
+  /** What she calls the underwear a peek shows, as she has it on tonight; null if she has none on there. */
+  private showUnder(part: ShowPart): string | null {
+    const id = SHOW_UNDER[part];
+    if (!id) return "";
+    if (this.strippedPieces.includes(id)) return null;
+    return stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder).find((g) => g.id === id)?.label ?? null;
+  }
+
+  /**
+   * Her answers to a guest who's asked for a look: each thing she could show them, one at a time (the one they
+   * asked for marked), or no. Once she's answered, back to work.
+   */
   private showOptions(chat: ShowChat): (TalkChoice & { run: () => void })[] {
     const guest = this.guests.find((g) => g.id === chat.guestId);
     const options: (TalkChoice & { run: () => void })[] = [];
     const pick = <T>(lines: readonly T[]) => lines[Math.floor(this.random() * lines.length) % lines.length];
     if (!chat.answered && guest) {
-      const { part } = chat;
-      const ready = this.showReady(part);
       // Too drunk on either side, and it can't be a yes (GAME_PATH.MD).
       const tooDrunk = this.drunk >= SLOPPY_DRUNK || guest.mood === "drunk";
-      const gold = SHOW_GOLD[part];
-      const extra = this.effects.showGold;
-      const yes = (how: "peek" | "bare", ok: boolean, label: string) => ({
-        label: tooDrunk ? `${label} ${SHOW_TOO_DRUNK}` : ok ? `${label} (+${gold[how] + extra} gold)` : `${label} ${SHOW_NOT_READY}`,
-        disabled: tooDrunk || !ok,
-        run: () => this.showThem(chat, guest, how),
-      });
-      options.push(yes("peek", ready.peek, SHOW_PEEK_LABEL), yes("bare", ready.bare, SHOW_BARE_LABEL), {
+      for (const part of SHOW_PARTS) {
+        const under = this.showUnder(part);
+        const label = SHOW_LABELS[part].replace("{under}", under || PART_WORDS[part]);
+        const why = tooDrunk ? SHOW_TOO_DRUNK : under === null ? SHOW_NOT_WEARING : !this.showReady(part) ? SHOW_NOT_READY : null;
+        const asked = part === chat.part ? `${SHOW_ASKED_MARK}, ` : "";
+        options.push({
+          label: why ? `${label} ${why}` : `${label} (${asked}+${this.showGold(part, chat.part)} gold)`,
+          disabled: why !== null,
+          run: () => this.showThem(chat, guest, part),
+        });
+      }
+      options.push({
         label: SHOW_NO_LABEL,
         disabled: false,
         run: () => {
@@ -4125,18 +4162,22 @@ export class Tavern {
           chat.reply = [you(pick(SHOW_NO)), this.guestSays(guest, pick(SHOW_AFTER.no))];
         },
       });
+      return options;
     }
-    options.push({ label: "Get back to work", disabled: !chat.answered && guest !== undefined, run: () => (this.showChat = null) });
+    options.push({ label: "Get back to work", disabled: false, run: () => (this.showChat = null) });
     return options;
   }
 
-  /** She shows them: a peek inside her clothes, or that part of her bare. It leaves them hornier and bolder. */
-  private showThem(chat: ShowChat, guest: Guest, how: "peek" | "bare"): void {
+  /**
+   * She shows them one thing: her underwear (a peek), or a part of her bare. The model acts it out while the talk
+   * lasts. It leaves them hornier and bolder; bare, the whole room too.
+   */
+  private showThem(chat: ShowChat, guest: Guest, part: ShowPart): void {
     const pick = <T>(lines: readonly T[]) => lines[Math.floor(this.random() * lines.length) % lines.length];
-    const { part } = chat;
-    const gold = SHOW_GOLD[part][how] + this.effects.showGold;
+    const how = SHOW_HOW[part];
+    const gold = this.showGold(part, chat.part);
     chat.answered = true;
-    chat.shown = how;
+    chat.shown = part;
     this.adjust(gold, 0, 0);
     this.earned += gold;
     if (how === "peek") this.records.peeks++;
@@ -4146,11 +4187,12 @@ export class Tavern {
     this.raise(SHOW_METER[part], SHOWN_DESIRE[how]);
     // Hornier, and bolder, as if she'd let them touch her.
     this.stirGuest(guest, SHOWN_LUST[how], SHOWN_BOLD[how]);
-    // A proper look: the whole room gets an eyeful.
+    // Bare: the whole room gets an eyeful.
     if (how === "bare") for (const other of this.guests) if (other !== guest && other.status !== "leaving") other.lust = Math.min(10, other.lust + ROOM_LUST);
-    const told = pick(how === "peek" ? SHOW_PEEKS[part] : SHOW_BARES[part]);
-    chat.reply = [you(pick(SHOW_YES)), narrate(`${told} (+${gold} gold)`), this.guestSays(guest, pick(SHOW_AFTER[how]))];
-    this.say(`You ${how === "peek" ? "let them peek at" : "showed them"} your ${PART_WORDS[part]}. +${gold} gold.`);
+    const told = pick(SHOW_TOLD[part]).replaceAll("{top}", this.topPullDir);
+    const after = part === chat.part ? SHOW_AFTER[how] : SHOW_AFTER.other;
+    chat.reply = [you(pick(SHOW_YES)), narrate(`${told} (+${gold} gold)`), this.guestSays(guest, pick(after))];
+    this.say(`You showed them your ${this.showUnder(part) || PART_WORDS[part]}. +${gold} gold.`);
     this.cue("tip");
   }
 
