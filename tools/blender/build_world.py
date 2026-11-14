@@ -1175,10 +1175,12 @@ FACE_EAR = [[(0.07, 0.0105, 0.0855), (0.07, -0.002, 0.0947), (0.07, -0.0147, 0.0
 # The eyebrow from the nose outwards: x, bottom edge, top edge, how far forward.
 HEAD_BROW = [(0.0156, 0.1065, 0.1125, 0.092), (0.0398, 0.1095, 0.1149, 0.079), (0.064, 0.1008, 0.1035, 0.067)]
 # Her brows (the cute face's) drawn as brush strokes: a smooth curve through HEAD_BROW's middles, in this many
-# sections so an expression can bend it anywhere along (face.ts), and this thick along it from the nose out (share of
-# the way, metres): firm by her nose, fullest a third of the way, tapering to a point at her temple.
-HEAD_BROW_SECTIONS = 12
-HEAD_BROW_THICK = [(0.0, 0.0027), (0.3, 0.0041), (0.7, 0.0027), (1.0, 0.0004)]
+# sections so an expression can bend it anywhere along (face.ts), closer together by her nose (`HEAD_BROW_BUNCH`) so
+# its tip there can curl up; and this thick along it from the nose out (share of the way, metres): fine at the tip by
+# her nose, fullest a third of the way, tapering to a point at her temple.
+HEAD_BROW_SECTIONS = 16
+HEAD_BROW_BUNCH = 1.35
+HEAD_BROW_THICK = [(0.0, 0.0017), (0.1, 0.0031), (0.3, 0.0041), (0.7, 0.0027), (1.0, 0.0004)]
 HEAD_BROW_DEPTH = 0.006
 
 
@@ -1205,7 +1207,7 @@ def brow_stroke(at, sx):
 
     rings = []
     for i in range(HEAD_BROW_SECTIONS + 1):
-        share = i / HEAD_BROW_SECTIONS
+        share = (i / HEAD_BROW_SECTIONS) ** HEAD_BROW_BUNCH
         x = xs[0] + (xs[-1] - xs[0]) * share
         middle = through([(low + top) / 2 for _, low, top, _ in HEAD_BROW], x)
         forward = through([y for _, _, _, y in HEAD_BROW], x)
@@ -4507,6 +4509,119 @@ def build_gown_extra(spec, m):
     return extra
 
 
+# ---------------------------------------------------------------- the frilled set and the plunge dress
+# Two more. The frilled set: a strapless top under her bust with a big bow at the front, two tiers of ruffles round
+# her hips, short enough to leave her bare below, and a band of lace round one arm; worn with white stockings on a
+# garter belt. The plunge dress: a gold choker and a dress hanging from it, open at the front from her throat to below
+# her hips, so it covers only the outsides of her breasts, her sides and her back, with long panels down her legs.
+FRILL_COLOURS = (("bow", (0.95, 0.94, 0.92)), ("dress", (0.86, 0.74, 0.38)))
+FRILL_TOP = (0.965, 1.09)
+FRILL_TIERS = ([0.985, 0.94, 0.89], [0.935, 0.875, 0.815])  # the upper tier lies over the lower
+FRILL_WAVES = 12  # folds round each tier's hem
+FRILL_ARM = (1.12, 1.16)  # the lace band round her right upper arm
+# The dress's opening at the front: half its width at heights from her throat down, between which it runs straight.
+PLUNGE_OPEN = [(1.33, 0.02), (1.24, 0.07), (1.17, 0.15), (1.1, 0.14), (1.0, 0.1), (0.9, 0.11), (0.8, 0.2)]
+PLUNGE_SKIRT = [0.93, 0.86, 0.78, 0.68, 0.58, 0.48, 0.38, 0.3]
+PLUNGE_PARTED = (0.5, 0.75)  # half the angle of the skirt's opening at its top and at its hem
+
+
+def plunge_open(z):
+    """Half the width of the plunge dress's opening at height z."""
+    table = PLUNGE_OPEN
+    if z >= table[0][0]:
+        return table[0][1]
+    for (z0, w0), (z1, w1) in zip(table, table[1:]):
+        if z >= z1:
+            return w1 + (w0 - w1) * (z - z1) / (z0 - z1)
+    return table[-1][1]
+
+
+def frill_cloth(spec, m, skin):
+    """The worn faces of the frilled set: its top, the lace round her arm, and her legwear."""
+    faces = underbust_cloth(spec, m, skin, m["bodice"], *FRILL_TOP)
+    for f, fm in skin.faces:
+        if fm is m["stripe"] or len(f) > 4:
+            continue
+        bone, (_, _, cz) = face_bone(skin, f)
+        if bone == "UpperArm_R" and FRILL_ARM[0] <= cz < FRILL_ARM[1]:
+            faces.append((f, m["trim"]))
+    return faces
+
+
+def frill_lift(bone, z):
+    """The top just off her, the arm lace standing off her arm a little."""
+    if bone.startswith("UpperArm"):
+        return 0.005
+    return nightwear_lift(bone, z)
+
+
+def plunge_cloth(spec, m, skin):
+    """The worn faces of the plunge dress: her back and sides, and her front beside the opening."""
+    faces = []
+    for f, fm in skin.faces:
+        if fm is m["stripe"] or len(f) > 4:
+            continue
+        bone, (cx, cy, cz) = face_bone(skin, f)
+        if bone not in ("Hips", "Torso") or face_leans(skin, f, "UpperArm") or cz < 0.8:
+            continue
+        if cy > 0 and abs(cx) < plunge_open(cz):
+            continue
+        faces.append((f, m["dress"]))
+    return faces
+
+
+def build_frill_extra(spec, m):
+    """The frilled set's two tiers of ruffles and the bow on its top."""
+    extra = Skin()
+    columns = FRILL_WAVES * 2 + 1
+    for tier, zs in enumerate(FRILL_TIERS):
+        top = zs[0]
+        out = 0.012 if tier == 0 else 0.0  # the upper tier stands over the lower
+
+        def point(r, k, zs=zs, top=top, out=out):
+            z = zs[r]
+            a = 2 * math.pi * k / (columns - 1)
+            span = [z + (top - z) * i / 6 for i in range(7)]
+            w, f, b = (max(profile_at(spec, zz)[i] for zz in span) for i in range(3))
+            t = (top - z) / (zs[0] - zs[-1])
+            grow = out + 0.008 + 0.045 * t + (0.01 * math.cos(FRILL_WAVES * a) if r == len(zs) - 1 else 0.0)
+            co = (math.cos(a) * (w + grow), math.sin(a) * ((f if math.sin(a) > 0 else b) + grow), z)
+            return co, hung_weights(spec, a, z)
+        add_sheet(extra, f"frill{tier}", point, len(zs), columns, m["skirt"], 0.003)
+
+    # The bow, a little to her left of the middle: two big loops, a knot and two tails down over the ruffles.
+    trunk = trunk_weights(spec)
+    bx, z = 0.04, 1.0
+    y = profile_at(spec, z)[1] + CLOTH_GAP + 0.012
+    for i, sx in enumerate((-1, 1)):
+        corners = [(bx + sx * 0.008, y, z - 0.006), (bx + sx * 0.062, y + 0.004, z - 0.03), (bx + sx * 0.062, y + 0.004, z + 0.03),
+                   (bx + sx * 0.008, y, z + 0.006)]
+        add_slab(extra, f"bow{i}", corners, (0.0, 0.005, 0.0), trunk, m["bow"])
+        low = profile_at(spec, 0.9)[1] + 0.09
+        corners = [(bx + sx * 0.002, y + 0.002, z), (bx + sx * 0.014, y + 0.002, z), (bx + sx * 0.05, low, 0.875),
+                   (bx + sx * 0.03, low, 0.875)]
+        add_slab(extra, f"bowtail{i}", corners, (0.0, 0.004, 0.0), trunk, m["bow"])
+    facing(extra, "bowknot", (bx, y + 0.003, z), (0.01, 0.012), (0.0, 1.0), trunk, m["bow"], depth=0.008)
+    return extra
+
+
+def build_plunge_extra(spec, m):
+    """The plunge dress's choker, and its long panels from her hips, parted wide at the front."""
+    extra = Skin()
+    neck_band(extra, spec, "choker", (1.34, 1.365), 0.006, m["dress"], sides=12)
+    columns = 15
+
+    def point(r, k):
+        z = PLUNGE_SKIRT[r]
+        t = r / (len(PLUNGE_SKIRT) - 1)
+        half = PLUNGE_PARTED[0] + (PLUNGE_PARTED[1] - PLUNGE_PARTED[0]) * t
+        a = math.pi / 2 + half + (2 * math.pi - 2 * half) * k / (columns - 1)
+        x, y, _ = skirt_point(spec, a, z)
+        return (x * 0.98, y * 0.98, z), hung_weights(spec, a, z)
+    add_sheet(extra, "skirt", point, len(PLUNGE_SKIRT), columns, m["dress"], 0.003)
+    return extra
+
+
 # ---------------------------------------------------------------- the pirate's rig
 # For both bodies: a loose shirt with full sleeves, breeches tucked into tall bucket-topped boots, a sash round the
 # waist knotted at the left hip with its ends hanging, and a cocked hat trimmed with braid. He wears a waistcoat
@@ -5997,6 +6112,8 @@ def more_outfits(spec, m, skin, normals, fit):
         "Babydoll": (*babydoll, build_babydoll_extra(spec, m, ClothSurface(skin, [(f, None) for f, _ in skin.faces], babydoll[1]))),
         "Gown": (underbust_cloth(spec, m, skin, m["bodice"], *GOWN_CORSET, lift_point=0.03), lifted(nightwear_lift),
                  build_gown_extra(spec, m)),
+        "Frills": (frill_cloth(spec, m, skin), lifted(frill_lift), build_frill_extra(spec, m)),
+        "Plunge": (plunge_cloth(spec, m, skin), lifted(nightwear_lift), build_plunge_extra(spec, m)),
         **guests,
     }
 
@@ -6537,8 +6654,8 @@ def skin_character(c, m, spec, root):
         more, more_kept = pieces.mesh(f"{name}_Cloth{outfit}Pieces", pieces.faces)
         outfits.append(join(obj, [pieces.link(c, more, more_kept, name, f"{name}_Cloth{outfit}Pieces")]))
     # Every dress she can wear has the leg warmers and garter belt too, for the legwear styles that show them.
-    # Not the outfits whose breeches or mail cover her legs.
-    covered = {label(f"Cloth{outfit}") for outfit in ("Pirate", "Archer", "Warrior", "Rogue", "Brute")}
+    # Not the outfits whose breeches or mail cover her legs, nor the plunge dress, which has no legwear.
+    covered = {label(f"Cloth{outfit}") for outfit in ("Pirate", "Archer", "Warrior", "Rogue", "Brute", "Plunge")}
     dresses = [cloth_obj] + [obj for obj in outfits if obj.name not in covered] if medieval else []
     for dress in dresses:
         join(dress, [build_warmers(c, m, name, skin, normals)])
@@ -6796,6 +6913,11 @@ def main():
     # The babydoll's and the corset gown's, the same way.
     random_state = rng.bit_generator.state
     for key, colour in NIGHTWEAR_COLOURS:
+        mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
+    rng.bit_generator.state = random_state
+    # The frilled set's and the plunge dress's, the same way.
+    random_state = rng.bit_generator.state
+    for key, colour in FRILL_COLOURS:
         mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
     rng.bit_generator.state = random_state
     # What men leave on her, likewise.

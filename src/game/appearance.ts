@@ -899,6 +899,10 @@ const FEMALE_COLORS: ColorDef[] = [
   // babydoll's skirt and band, and the gown's skirt, are the skirt; the gown's corset is the bodice.
   { id: "straps", label: "Straps", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_straps"]] },
   { id: "trim", label: "Lace", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_trim"]] },
+  // The frilled set's bow (its top is the bodice, its ruffles the skirt, the lace round her arm the lace), and the
+  // plunge dress with its choker.
+  { id: "bow", label: "Bow", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_bow"]] },
+  { id: "dress", label: "Dress", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_dress"]] },
   // The pirate's rig. Her corset is the bodice, her shirt the blouse, and her belt and corset laces the belt.
   ...pirateColors(),
   { id: "feather", label: "Feather", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_plume"]] },
@@ -961,6 +965,24 @@ const FEMALE_OUTFITS: OutfitDef[] = [
     colors: ["trim", "bodice", "skirt", "stockings", "shoes", "soles", "bra", "smalls"],
     preset: { bodice: "#f1ece0", skirt: "#f1ece0", trim: "#1c1716", shoes: "#f1ece0", soles: "#9a8f80" },
     legwear: "noshow",
+  },
+  {
+    // All in white: a strapless top under her bare breasts with a big bow, two tiers of ruffles round her hips, a band
+    // of lace round her arm, and white stockings on a garter belt.
+    id: "frills", label: "Frilled set", mesh: "Frills",
+    colors: ["bow", "trim", "bodice", "skirt", "stockings", "shoes", "soles", "bra", "smalls"],
+    preset: {
+      bow: "#f6f3ee", trim: "#f6f3ee", bodice: "#f6f3ee", skirt: "#f6f3ee", stockings: "#f1ece0", shoes: "#f1ece0",
+      soles: "#c9c2b6",
+    },
+    legwear: "garter",
+  },
+  {
+    // A gold choker and a gold dress hanging from it, open at the front from her throat to below her hips, with long
+    // panels down her legs. Nothing on her legs.
+    id: "plunge", label: "Plunge dress", mesh: "Plunge",
+    colors: ["dress", "shoes", "soles", "bra", "smalls"],
+    preset: { dress: "#d9b85c", shoes: "#b8892e", soles: "#7a5c22" },
   },
   {
     // A cream shirt, an oxblood corset under a red sash, brown breeches, black boots, and a cocked hat with a white feather.

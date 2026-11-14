@@ -65,12 +65,18 @@ describe("the wardrobe", () => {
   it("strips the babydoll and the corset gown lace first", () => {
     expect(stripLadder("Female", "babydoll").map((g) => g.id)).toEqual(["straps", "trim", "skirt", "bra", "smalls"]);
     expect(stripLadder("Female", "gown").map((g) => g.id)).toEqual(["trim", "bodice", "skirt", "bra", "smalls"]);
+    expect(stripLadder("Female", "frills").map((g) => g.id)).toEqual(
+      ["bow", "trim", "bodice", "skirt", "stockings", "bra", "smalls"],
+    );
+    expect(stripLadder("Female", "plunge").map((g) => g.id)).toEqual(["dress", "bra", "smalls"]);
   });
 
   it("leaves the bunny and gown corsets under her breasts when she shows them, nothing to pull", () => {
     expect(topPull("Female", "bunny", [])).toBeNull();
     expect(topPull("Female", "gown", [])).toBeNull();
     expect(topPull("Female", "babydoll", [])).toBeNull();
+    expect(topPull("Female", "frills", [])).toBeNull();
+    expect(topPull("Female", "plunge", [])).toBeNull();
     expect(topPull("Female", "dirndl", [])?.ids).toContain("bodice");
   });
 

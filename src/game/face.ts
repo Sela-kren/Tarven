@@ -99,29 +99,29 @@ export const EXPRESSIONS: Readonly<Record<Expression, FaceShape>> = {
   // Squaring up to someone: brows hard down and knitted, eyes narrowed, teeth showing.
   angry: face({ brow: -0.6, browNear: 0.4, browInner: -1, browOuter: 0.6, lidUpper: 0.3, lidLower: 0.25, smile: -0.6, open: 0.12, crease: 1 }),
   // Brows arched high, curving down at the ends, eyes wide, mouth open.
-  surprised: face({ brow: 0.8, browInner: 0.3, browArch: 1, browOuter: -0.5, wide: 1, smile: -0.15, open: 0.7, blush: 0.2 }),
+  surprised: face({ brow: 0.8, browInner: 0.3, browArch: 1, browOuter: -0.5, browTip: 1, wide: 1, smile: -0.15, open: 0.7, blush: 0.2 }),
   // Too much at once: brows up and pinched, eyes squeezed, mouth stretched wide on her teeth, red.
-  overwhelmed: face({ browNear: 0.9, browInner: 0.5, browArch: -0.4, browOuter: -0.5, lidUpper: 0.8, lidLower: 0.5, smile: -0.5, open: 0.6, blush: 0.9, crease: 1 }),
+  overwhelmed: face({ browNear: 0.9, browInner: 0.5, browArch: -0.4, browOuter: -0.5, browTip: 0.7, lidUpper: 0.8, lidLower: 0.5, smile: -0.5, open: 0.6, blush: 0.9, crease: 1 }),
   // Worked up: low brows lifting in the middle, lids low, lips parted, flushed.
-  aroused: face({ brow: -0.5, browInner: 0.6, browOuter: -0.4, lidUpper: 0.45, lidLower: 0.1, smile: 0.1, open: 0.3, blush: 0.8 }),
+  aroused: face({ brow: -0.5, browInner: 0.6, browOuter: -0.4, browTip: 0.7, lidUpper: 0.45, lidLower: 0.1, smile: 0.1, open: 0.3, blush: 0.8 }),
   // Barely able to: lips pressed thin into a line drawn across her face, brows sloping down to her nose with their
   // tips flicked up, eyes down, red all over.
   bashful: face({ browNear: 0.35, browInner: -0.75, browOuter: 0.2, browTip: 1, lidUpper: 0.35, lookY: -0.9, lookX: 0.3, smile: 0.2, press: 1, blush: 1, crease: 0.4 }),
   // Breathless: mouth soft and open, tongue out over her lip, lids heavy, brows worried, flushed.
-  panting: face({ browNear: 0.8, browInner: 0.45, browArch: -0.3, browOuter: -0.4, lidUpper: 0.6, lidLower: 0.15, lookY: 0.2, smile: 0.05, open: 0.75, tongue: 1, blush: 1, crease: 0.4 }),
+  panting: face({ browNear: 0.8, browInner: 0.45, browArch: -0.3, browOuter: -0.4, browTip: 1, lidUpper: 0.6, lidLower: 0.15, lookY: 0.2, smile: 0.05, open: 0.75, tongue: 1, blush: 1, crease: 0.4 }),
   // Fighting it: mouth stretched wide on both rows of teeth, corners down, eyes squeezed shut, brows pinched.
-  strained: face({ browNear: 1, browInner: 0.5, browArch: -0.4, browOuter: -0.5, lidUpper: 1, lidLower: 0.6, smile: -0.8, open: 0.55, blush: 0.9, crease: 1 }),
+  strained: face({ browNear: 1, browInner: 0.5, browArch: -0.4, browOuter: -0.5, browTip: 0.6, lidUpper: 1, lidLower: 0.6, smile: -0.8, open: 0.55, blush: 0.9, crease: 1 }),
   // Melting: a soft smile on parted lips, dreamy half shut eyes, brows lifted and easy, flushed.
-  blissful: face({ brow: 0.25, browInner: 0.5, browArch: 0.3, browOuter: -0.3, lidUpper: 0.65, lidLower: 0.2, smile: 0.7, open: 0.25, blush: 0.9 }),
+  blissful: face({ brow: 0.25, browInner: 0.5, browArch: 0.3, browOuter: -0.3, browTip: 0.6, lidUpper: 0.65, lidLower: 0.2, smile: 0.7, open: 0.25, blush: 0.9 }),
   // Loving it: a big open smile, her upper lip straight and stretched wide on her teeth, her lower lip dropped round
   // below it, eyes crinkled from below, brows up and easy, flushed.
   delighted: face({ brow: 0.3, browInner: 0.4, browArch: 0.5, browOuter: -0.3, lidUpper: 0.35, lidLower: 0.55, smile: 0.1, open: 0.8, purse: -0.9, tongue: 0.15, blush: 0.8 }),
   // Eyes nearly shut, brows up in the middle and down at the ends, mouth open on a moan, flushed.
-  pleasure: face({ browNear: 0.8, browInner: 0.5, browArch: -0.3, browOuter: -0.5, lidUpper: 0.85, lidLower: 0.25, smile: 0.2, open: 0.55, blush: 1, crease: 0.6 }),
+  pleasure: face({ browNear: 0.8, browInner: 0.5, browArch: -0.3, browOuter: -0.5, browTip: 0.9, lidUpper: 0.85, lidLower: 0.25, smile: 0.2, open: 0.55, blush: 1, crease: 0.6 }),
   // On the edge: eyes screwed shut, brows high and pinched, mouth wide open on her tongue, as red as she gets.
-  edge: face({ browNear: 0.9, browInner: 0.55, browArch: -0.4, browOuter: -0.5, lidUpper: 1, lidLower: 0.4, smile: -0.1, open: 0.9, tongue: 0.6, blush: 1, crease: 1 }),
+  edge: face({ browNear: 0.9, browInner: 0.55, browArch: -0.4, browOuter: -0.5, browTip: 0.8, lidUpper: 1, lidLower: 0.4, smile: -0.1, open: 0.9, tongue: 0.6, blush: 1, crease: 1 }),
   // Past it: eyes rolled up under heavy lids, brows high and helpless, mouth hanging open, tongue out.
-  lost: face({ browNear: 1, browInner: 0.45, browArch: -0.5, browOuter: -0.4, lidUpper: 0.3, lidLower: 0.2, lookY: 1, smile: 0.15, open: 1, tongue: 1, blush: 1, crease: 0.6 }),
+  lost: face({ browNear: 1, browInner: 0.45, browArch: -0.5, browOuter: -0.4, browTip: 0.9, lidUpper: 0.3, lidLower: 0.2, lookY: 1, smile: 0.15, open: 1, tongue: 1, blush: 1, crease: 0.6 }),
   // Brows knitted down, eyes narrowed, mouth turned down.
   annoyed: face({ brow: -0.4, browInner: -1, browOuter: 0.3, lidUpper: 0.35, lidLower: 0.2, smile: -0.7, crease: 0.6 }),
 };
@@ -311,8 +311,8 @@ export const FACE_REACH = {
   browArch: 0.004,
   browOuter: 0.006,
   /** The tips of her brows by her nose flicked up this far, over this share of each brow from its inner end. */
-  browTip: 0.003,
-  browTipReach: 0.25,
+  browTip: 0.004,
+  browTipReach: 0.16,
   /** Her brows close over her eyes: down this far, past `browLow`, and forwards this far to stay on her brow. */
   browNear: 0.011,
   browNearForward: 0.0015,
