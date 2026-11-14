@@ -17,7 +17,7 @@ import {
   GLANS_MATERIAL, PENIS_MATERIAL, PENIS_TYPES, SCROTUM_MATERIAL, penisFrame, penisShape, readPenis, shapePenis, type PenisPatch,
   type PenisType,
 } from "./penis";
-import { faceMove, faceMoved, faceRig, REST_FACE, type FaceRig, type FaceShape } from "./face";
+import { FACE_LINES, faceMove, faceMoved, faceRig, REST_FACE, type FaceRig, type FaceShape } from "./face";
 import { coatRetroMaterial, coverCoat, solidRetroMaterial, stainRetroMaterial } from "./retro";
 import type { LegSize } from "./skirt";
 
@@ -2189,6 +2189,10 @@ const LIP_MATERIALS: readonly string[] = ["T_lip", "T_lip_lit"];
  * material: how deep it goes at most, and from how much blush it starts.
  */
 const BLUSHED = new Color(0.86, 0.2, 0.24);
+/** The lines an expression draws on her face (face.ts's FACE_LINES): two creases, the third, a blush's strokes. */
+const CREASE_MATERIAL = "T_crease";
+const CREASE_MID_MATERIAL = "T_crease_mid";
+const HATCH_MATERIAL = "T_hatch";
 const BLUSH_SPREAD: Readonly<Record<string, { depth: number; from: number }>> = {
   T_face_blush: { depth: 0.9, from: 0 },
   T_face_pink: { depth: 0.75, from: 0.1 },
@@ -2793,10 +2797,20 @@ export class Dresser {
    */
   setExpression(shape: FaceShape): void {
     if (!faceMoved(shape, this.faceShape)) return;
-    const blushed = Math.round(shape.blush * 10) !== Math.round(this.faceShape.blush * 10);
+    const lines = (f: FaceShape) => `${Math.round(f.blush * 10)}:${this.faceLines(f).join(",")}`;
+    const blushed = lines(shape) !== lines(this.faceShape);
     this.faceShape = { ...shape };
     this.refreshFace();
     if (blushed) this.showPieces();
+  }
+
+  /** Which of the lines an expression draws on her face show for this face: her creases, and a blush's strokes. */
+  private faceLines(shape: FaceShape): string[] {
+    const shown: string[] = [];
+    if (shape.crease >= FACE_LINES.creases[0]) shown.push(CREASE_MATERIAL);
+    if (shape.crease >= FACE_LINES.creases[1]) shown.push(CREASE_MID_MATERIAL);
+    if (shape.blush >= FACE_LINES.hatch) shown.push(HATCH_MATERIAL);
+    return shown;
   }
 
   /** The meshes her face is drawn in. */
@@ -3436,6 +3450,11 @@ export class Dresser {
           return painted ? averageColor(painted.worn) : new Color(1, 1, 1);
         };
         if (slot.mesh.visible) slot.mesh.material = lingerieMaterial(top, bottom, colorOf(BAND_MATERIAL), colorOf("T_smalls"));
+        continue;
+      }
+      // The lines an expression draws on her face show only while it does.
+      if (slot.part === "Body" && [CREASE_MATERIAL, CREASE_MID_MATERIAL, HATCH_MATERIAL].includes(slot.original.name)) {
+        slot.mesh.visible = this.faceLines(this.faceShape).includes(slot.original.name);
         continue;
       }
       if (slot.part === "Body") {

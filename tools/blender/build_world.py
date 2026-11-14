@@ -1145,6 +1145,20 @@ MOUTH_LOWER_TEETH = (42.2, 38.5)
 MOUTH_TEETH_THICK = 0.0012
 MOUTH_TONGUE = [(0, 0.081, 41.6), (7, 0.078, 41.0), (0, 0.07, 40.6), (6, 0.07, 40.2)]
 MOUTH_TONGUE_THICK = 0.0015
+# The lines an expression can draw on her face, each a thin dark slab just in front of it, hidden till the game shows
+# it (face.ts): the creases between her brows as she frowns or strains, two at the sides and a third in the middle;
+# and the strokes of a deep blush on her cheeks. Each stroke: from and to (x, height above the chin), all in metres.
+FACE_CREASE_SIDE = [((0.0042, 0.1015), (0.0062, 0.1095))]
+FACE_CREASE_MID = ((0.0, 0.1005), (0.0, 0.1085))
+FACE_CREASE_WIDTH = 0.00045
+FACE_HATCH = [((0.026 + 0.0045 * i, 0.0565), (0.030 + 0.0045 * i, 0.0635)) for i in range(4)]
+FACE_HATCH_WIDTH = 0.00045
+# How far the strokes stand in front of her face, and how thick they are.
+FACE_LINE_LIFT = 0.0007
+FACE_LINE_THICK = 0.0005
+# The face just between her brows, and her cheek under the blush, as planes: forward = a + b * x + c * height.
+FACE_CREASE_PLANE_POINTS = [(0.0, 0.1051, 0.098), (0.0292, 0.1051, 0.084), (0.0, 0.1528, 0.082)]
+FACE_HATCH_PLANE_POINTS = ["un1", "sd", "j5", "j4", "nb2"]
 # The socket around the eye, starting from the corner nearest the nose, and the round dot of the eye inside it:
 # centre, half width and half height in reference pixels. The dot has two points for each side of the socket.
 FACE_EYE_SOCKET = ("ein", "un1", "sd", "D6", "B6", "A6")
@@ -1449,6 +1463,49 @@ def head_grid(at, m):
         head.face((("tongue", 0, layer), ("tongue", 1, layer), ("tongue", 3, layer), ("tongue", 2, layer)), m["tongue"])
     for a, b in ((0, 1), (1, 3), (3, 2)):
         head.face((("tongue", a, 0), ("tongue", b, 0), ("tongue", b, 1), ("tongue", a, 1)), m["tongue"])
+
+    # The lines an expression draws on her face: creases between her brows, and a blush's strokes on her cheeks.
+    def plane_through(points):
+        a = np.array([[1.0, x, up] for x, up, _ in points])
+        coef, *_ = np.linalg.lstsq(a, np.array([f for _, _, f in points]), rcond=None)
+        return lambda x, up: coef[0] + coef[1] * x + coef[2] * up
+
+    crease_front = plane_through(FACE_CREASE_PLANE_POINTS)
+    hatch_front = plane_through([(FACE_POINTS[k][0] * FACE_TRACE_X, FACE_POINTS[k][1] * FACE_TRACE_UP, FACE_POINTS[k][2])
+                                 for k in FACE_HATCH_PLANE_POINTS])
+
+    def stroke(name, start, end, half, front, mat, centre=False):
+        (x0, u0), (x1, u1) = start, end
+        length = math.hypot(x1 - x0, u1 - u0)
+        nx, nu = -(u1 - u0) / length * half, (x1 - x0) / length * half
+        corners = [(x0 + nx, u0 + nu), (x1 + nx, u1 + nu), (x1 - nx, u1 - nu), (x0 - nx, u0 - nu)]
+        if centre:
+            # Straddling the middle: its corners either side of it are each other's mirrors.
+            corners = [(half, u0), (half, u1)]
+        for i, (x, up) in enumerate(corners):
+            surface = front(x, up)
+            head.add((name, i, 0), x, surface + FACE_LINE_LIFT, up)
+            head.add((name, i, 1), x, surface + FACE_LINE_LIFT - FACE_LINE_THICK, up)
+        if centre:
+            def at(i, layer, side):
+                return head.find((name, i, layer), side)
+            quads = [[(0, 0, -1), (1, 0, -1), (1, 0, 1), (0, 0, 1)], [(0, 1, 1), (1, 1, 1), (1, 1, -1), (0, 1, -1)],
+                     [(0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)], [(0, 1, -1), (1, 1, -1), (1, 0, -1), (0, 0, -1)],
+                     [(1, 0, -1), (1, 1, -1), (1, 1, 1), (1, 0, 1)], [(0, 0, 1), (0, 1, 1), (0, 1, -1), (0, 0, -1)]]
+            for quad in quads:
+                head.faces.append([at(i, layer, side) for i, layer, side in quad])
+                head.mats.append(mat)
+            return
+        for layer in (0, 1):
+            head.face(((name, 0, layer), (name, 1, layer), (name, 2, layer), (name, 3, layer)), mat)
+        for a, b in ((0, 1), (1, 2), (2, 3), (3, 0)):
+            head.face(((name, a, 0), (name, b, 0), (name, b, 1), (name, a, 1)), mat)
+
+    for i, (start, end) in enumerate(FACE_CREASE_SIDE):
+        stroke(("crease", i), start, end, FACE_CREASE_WIDTH, crease_front, m["crease"])
+    stroke("crease_mid", FACE_CREASE_MID[0], FACE_CREASE_MID[1], FACE_CREASE_WIDTH, crease_front, m["crease_mid"], centre=True)
+    for i, (start, end) in enumerate(FACE_HATCH):
+        stroke(("hatch", i), start, end, FACE_HATCH_WIDTH, hatch_front, m["hatch"])
 
     for i in range(6):
         j = (i + 1) % 6
@@ -6393,7 +6450,9 @@ def main():
                         ("face_cool", (0.8, 0.59, 0.5)), ("lip_lit", (0.9, 0.6, 0.58)),
                         # Inside her mouth.
                         ("mouth", (0.3, 0.09, 0.1)), ("teeth", (0.93, 0.9, 0.84)), ("teeth_low", (0.9, 0.87, 0.8)),
-                        ("tongue", (0.78, 0.4, 0.42))):
+                        ("tongue", (0.78, 0.4, 0.42)),
+                        # The lines an expression draws on her face.
+                        ("crease", (0.36, 0.16, 0.14)), ("crease_mid", (0.36, 0.16, 0.14)), ("hatch", (0.78, 0.2, 0.25))):
         mats[key] = material("T_" + key, tex_flat("T_" + key, colour, variation=0.03))
     rng.bit_generator.state = random_state
     # The male face colours put the random numbers back afterwards, so the textures made after them stay the same.
