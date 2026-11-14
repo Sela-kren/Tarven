@@ -106,7 +106,19 @@ import { arousalOf, easeArousal } from "./nipples";
 import { easeOpening } from "./vulva";
 import { METER_MAX } from "./passives";
 import type { ShowPart, ShowSide } from "./show";
-import { easeFace, EXPRESSIONS, EXPRESSIONS_LIST, faceFor, REST_FACE, type Expression, type FaceCause, type FaceShape } from "./face";
+import {
+  easeFace,
+  expressionFor,
+  EXPRESSIONS,
+  EXPRESSIONS_LIST,
+  faceFor,
+  MOMENT_TIME,
+  REST_FACE,
+  type Expression,
+  type FaceCause,
+  type FaceMoment,
+  type FaceShape,
+} from "./face";
 import { DialogueBox } from "./dialogue";
 import { MessageLog } from "./messagelog";
 import { UnlockToasts, type Toast } from "./unlocktoast";
@@ -2283,9 +2295,18 @@ export class Game {
     this.dressers.forEach((dresser, index) => dresser.setPull(index === this.active ? this.pullShown : null, amount));
   }
 
-  /** Her face as it shows, easing towards her expression; and whether she was showing a guest something last time. */
+  /** Her face as it shows, easing towards her expression; and the expression leading it last time. */
   private faceShown: FaceShape = { ...REST_FACE };
-  private faceShowing = false;
+  private faceLeading: Expression = "neutral";
+  /** Something that just happened, on her face for a moment, and how long it has left. */
+  private faceMoment: { kind: FaceMoment; left: number } | null = null;
+  /** Times she's said no, as last counted (null before the first count): one more, and it shows on her face. */
+  private refusalsSeen: number | null = null;
+
+  /** Puts something that just happened on her face for a moment. */
+  private faceFlash(kind: FaceMoment): void {
+    this.faceMoment = { kind, left: MOMENT_TIME[kind] };
+  }
 
   /**
    * Her face (face.ts): shy or sultry while she shows a guest something, reacting to a touch, otherwise at ease, her
@@ -2294,16 +2315,33 @@ export class Game {
    */
   private syncFace(dt: number): void {
     const { tavern } = this;
+    // Saying no shows for a moment: slapping a hand away, turning a touch down, refusing to show them.
+    const refusals = tavern.records.slapped + tavern.touchesTonight.refused + tavern.records.showsRefused;
+    if (this.refusalsSeen !== null && refusals > this.refusalsSeen) this.faceFlash("refused");
+    this.refusalsSeen = refusals;
+    // A moment holds for as long as the talk it came in lasts, so the portrait keeps it; otherwise it passes.
+    if (this.faceMoment && !tavern.inConversation) {
+      this.faceMoment.left -= dt;
+      if (this.faceMoment.left <= 0) this.faceMoment = null;
+    }
+    const duel = tavern.duel ? { state: tavern.duel.state, pleasure: tavern.duel.pleasure / 100 } : null;
     const cause: FaceCause = {
       showing: tavern.showEagerness,
       reaction: this.siblings[this.active]?.reacting ?? null,
       arousal: this.arousalShown,
       drunk: tavern.drunk,
+      slut: tavern.slutLevel,
+      will: tavern.maxWillpower > 0 ? tavern.willpower / tavern.maxWillpower : 1,
+      exposed: tavern.exposure,
+      fighting: tavern.fight !== null,
+      duel,
+      moment: this.faceMoment?.kind ?? null,
     };
     const target = DEV_FACE ? EXPRESSIONS[DEV_FACE] : faceFor(cause);
-    const showing = cause.showing !== null;
-    const snap = showing !== this.faceShowing;
-    this.faceShowing = showing;
+    // In a talk, a new expression comes on at once, so the portrait drawn for the next line has it.
+    const leading = DEV_FACE ?? expressionFor(cause);
+    const snap = leading !== this.faceLeading && tavern.inConversation;
+    this.faceLeading = leading;
     this.faceShown = snap ? target : easeFace(this.faceShown, target, dt);
     if (snap) this.playerPortrait = null;
     this.dressers.forEach((dresser, index) => dresser.setExpression(index === this.active ? this.faceShown : REST_FACE));
@@ -2991,6 +3029,9 @@ export class Game {
   private updateSound(): void {
     const { audio, tavern, focus } = this;
     for (const cue of tavern.takeCues()) {
+      // A tip puts a smile on her face; a guest walking out on her, a scowl.
+      if (cue === "tip") this.faceFlash("tipped");
+      if (cue === "walkOut") this.faceFlash("walkedOut");
       // Drinking with a guest plays out in a comic panel, which makes its own clink and gulp in time.
       if (cue === "drink") this.showDrinkComic();
       else audio.play(cue);

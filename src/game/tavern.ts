@@ -4135,6 +4135,12 @@ export class Tavern {
     return this.meters[SHOW_METER[part]] / 10 + Math.min(2, owned) - SHOW_NEED[part];
   }
 
+  /** How much of her clothes are off tonight, 0 to 1, for her face: the share of her outfit's strip ladder. */
+  get exposure(): number {
+    const ladder = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder);
+    return ladder.length ? Math.min(1, this.strippedPieces.length / ladder.length) : 0;
+  }
+
   /** How far past what it takes she is to show what she's showing a guest now (7e), for her face; null if nothing. */
   get showEagerness(): number | null {
     const shown = this.showChat?.shown;

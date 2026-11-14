@@ -10,6 +10,7 @@ import {
   faceRig,
   REST_FACE,
   SULTRY_PAST,
+  BEARING,
   type FaceCause,
   type FacePart,
 } from "../src/game/face";
@@ -32,7 +33,10 @@ const moved = (shape = REST_FACE, p: number[], part: FacePart = "skin") => {
 
 describe("her face", () => {
   it("picks her expression from what she's going through", () => {
-    expect(expressionFor(calm)).toBe("neutral");
+    // Her bearing, from her Slut Level: stern, at ease, confident.
+    expect(expressionFor(calm)).toBe("stern");
+    expect(expressionFor({ ...calm, slut: BEARING.easy })).toBe("neutral");
+    expect(expressionFor({ ...calm, slut: BEARING.confident })).toBe("confident");
     // Showing a guest something: shy, until she wants it well past what it takes.
     expect(expressionFor({ ...calm, showing: 0 })).toBe("shy");
     expect(expressionFor({ ...calm, showing: SULTRY_PAST })).toBe("sultry");
@@ -40,10 +44,37 @@ describe("her face", () => {
     expect(expressionFor({ ...calm, showing: 5, reaction: "jolt" })).toBe("surprised");
     expect(expressionFor({ ...calm, reaction: "melt" })).toBe("pleasure");
     expect(expressionFor({ ...calm, reaction: "recoil" })).toBe("annoyed");
+    // What she's in the middle of: an after-hours game, a brawl.
+    expect(expressionFor({ ...calm, duel: { state: "aroused", pleasure: 0.3 } })).toBe("aroused");
+    expect(expressionFor({ ...calm, duel: { state: "edge", pleasure: 0.9 } })).toBe("edge");
+    expect(expressionFor({ ...calm, duel: { state: "calm", pleasure: 0 } })).toBe("stern");
+    expect(expressionFor({ ...calm, fighting: true })).toBe("angry");
+    // What just happened, for a moment; a touch still comes first.
+    expect(expressionFor({ ...calm, moment: "tipped" })).toBe("smile");
+    expect(expressionFor({ ...calm, moment: "walkedOut" })).toBe("annoyed");
+    expect(expressionFor({ ...calm, moment: "refused", showing: 0 })).toBe("angry");
+    expect(expressionFor({ ...calm, moment: "tipped", reaction: "jolt" })).toBe("surprised");
+  });
+
+  it("wears her state over her bearing: tired, embarrassed, drunk", () => {
+    const at = (cause: Partial<FaceCause>) => faceFor({ ...calm, slut: BEARING.easy, ...cause });
+    const rest = at({});
+    // Worn down, her lids get heavy and her brows sag up in the middle.
+    expect(at({ will: 0 }).lidUpper).toBeGreaterThan(rest.lidUpper + 0.3);
+    expect(at({ will: 0 }).browInner).toBeGreaterThan(0.3);
+    expect(at({ will: 0.8 })).toEqual(rest);
+    // Her clothes off, she's red and looks away; less so the lewder she is, not at all once she's shameless.
+    expect(at({ exposed: 1 }).blush).toBeGreaterThan(0.6);
+    expect(at({ exposed: 1, slut: BEARING.shameless }).blush).toBe(faceFor({ ...calm, slut: BEARING.shameless }).blush);
+    // Drunk, she's flushed and smiling loosely.
+    expect(at({ drunk: 1 }).smile).toBeGreaterThan(rest.smile);
+    // Deep in an after-hours game, her pleasure takes her further.
+    const game = (pleasure: number) => faceFor({ ...calm, duel: { state: "aroused", pleasure } });
+    expect(game(1).lidUpper).toBeGreaterThan(game(0).lidUpper);
   });
 
   it("goes heavy-lidded and flushed as she's aroused or drunk", () => {
-    expect(faceFor(calm)).toEqual(REST_FACE);
+    expect(faceFor(calm)).toEqual(EXPRESSIONS.stern);
     const aroused = faceFor({ ...calm, arousal: 1 });
     expect(aroused.lidUpper).toBeGreaterThan(0);
     expect(aroused.blush).toBeGreaterThan(0);
@@ -82,6 +113,11 @@ describe("her face", () => {
     const inner = moved({ ...REST_FACE, browInner: 1 }, [0.012, 1.505, -0.08], "brow")[1] - 1.505;
     const outer = moved({ ...REST_FACE, browInner: 1 }, [0.055, 1.502, -0.06], "brow")[1] - 1.502;
     expect(inner).toBeGreaterThan(outer);
+    // Cross, they come down and knit in towards each other, and forwards so they stay on her brow.
+    const cross = moved({ ...REST_FACE, browInner: -1 }, [0.012, 1.505, -0.08], "brow");
+    expect(cross[0]).toBeLessThan(0.012);
+    expect(cross[1]).toBeLessThan(1.505);
+    expect(cross[2]).toBeLessThan(-0.08);
     // Smiling, the corners of her mouth go up; a smirk lifts only her left.
     expect(moved({ ...REST_FACE, smile: 1 }, [0.016, 1.427, -0.08])[1]).toBeGreaterThan(1.427);
     expect(moved({ ...REST_FACE, smirk: 1 }, [0.016, 1.427, -0.08])[1]).toBeCloseTo(1.427);
