@@ -185,7 +185,7 @@ describe("adult play, Karryn-style: any time, likelier the more worked up", () =
 
     const host = guest(1, "soldier", 8);
     const t2 = consentOff(host);
-    inner(t2).drunk = 0.9;
+    inner(t2).drunk = 1;
     inner(t2).maybeReach(host);
     expect(t2.takeAdultScene()).toBeNull();
 
@@ -338,7 +338,7 @@ describe("upstairs or the taproom", () => {
   it("isn't there at all when she's had too much, or the one who asked has", () => {
     const host = guest(1, "farmer", 9);
     const t = night([host, guest(2, "soldier", 8)]);
-    inner(t).drunk = 0.9;
+    inner(t).drunk = 1;
     expect(t.taproomOption(scene(host)).shown).toBe(false);
     expect(t.startTaproom(scene(host), [2], [])).toBe(false);
     const drunkHost = guest(1, "farmer", 9, "drunk");

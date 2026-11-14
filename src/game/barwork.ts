@@ -91,10 +91,10 @@ export function roomNerve(f: { fame: number; horny: boolean; wet: boolean }): nu
 /**
  * How much she can drink past the top of drunk (DRUNK_MAX) before she's done for the night, in drinks. At the top
  * she's as drunk as she gets; what she drinks after that piles up as "over the limit" and wears off first. With
- * about four drinks to reach the top, she passes out on the seventh drink in a row. Passives add more
+ * eight drinks to reach the top (too drunk to say yes at the 8th), she passes out on the 9th drink in a row. Passives add more
  * (`Effects.holdLiquor`).
  */
-export const PASS_OUT_DRINKS_PAST = 3;
+export const PASS_OUT_DRINKS_PAST = 1;
 
 /** How far over the limit she can go, in drunk points, before she passes out. */
 export function passOutLimit(drinkStrength: number, holdLiquor: number): number {
@@ -118,11 +118,17 @@ export const PASS_OUT_AFTER = "The regulars carry you up to bed and see themselv
  * a night. Passed out, nothing happens.
  */
 export const LAST_CLEAR_LINES: readonly string[] = [
-  "They catch your hand before you can reach for another cup, and hold it.",
-  "They put their hand over the top of your cup. \"Before you have another...\"",
-  "They lean in close while you can still stand up straight. Their eyes haven't left you all night.",
+  "You set your cup down, very deliberately, and look round the room at all of them. \"Why stop at one of you?\"",
+  "You climb up onto the bench, cup raised, while you can still stand on it. \"Who's had enough of just watching?\"",
+  "You put your hand over the top of your cup and turn to the room. \"Not another drink. Something else. All of you.\"",
 ];
 export const LAST_CLEAR_THOUGHT = "(One more and I won't be able to think straight. If I'm going to say yes to anything, it's now.)";
+/** The Adult play card, when she's put it to the whole room and the room's answering. */
+export const WHOLE_ROOM_LINES: readonly string[] = [
+  "The room goes quiet, then chairs scrape back all over the taproom. They're waiting on you.",
+  "Somebody bangs the table, and then everybody does. Every one of them is looking at you.",
+  "Nobody's talking about anything else now. They're waiting for you to say where.",
+];
 /** A warning, the drink before. */
 export const ONE_MORE_WARNING = "(One more and I'll be under the table.)";
 

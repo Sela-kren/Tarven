@@ -121,7 +121,7 @@ describe("after hours in the tavern", () => {
 
   it("can't start when she's had too much to drink", () => {
     const t = atBedtime();
-    t.drunk = 0.7;
+    t.drunk = 1;
     expect(t.duelBlocked).not.toBeNull();
     expect(t.startDuel([], 5)).toBe(false);
   });

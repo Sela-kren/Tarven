@@ -139,10 +139,11 @@ export function showInvitation(game: Game, scene: InviteScene): void {
   const { tavern } = game;
   const back = () => backToWork(game);
   const taproom = tavern.taproomOption(scene);
-  const buttons: Button[] = [{ label: "Upstairs, in your room", onPick: () => showUpstairs(game, scene) }];
+  const buttons: Button[] = [{ label: scene.wholeRoom ? "Just the one of them, upstairs" : "Upstairs, in your room", onPick: () => showUpstairs(game, scene) }];
   if (taproom.shown) {
     const n = taproom.joiners.length;
-    buttons.push({
+    // She put it to the whole room (barwork.ts): all of them comes first.
+    buttons[scene.wholeRoom && !taproom.blocked ? "unshift" : "push"]({
       label: taproom.blocked
         ? `Down here, in the taproom (18+) (${taproom.blocked})`
         : `Down here, in the taproom (18+): ${n} more ${n === 1 ? "wants" : "want"} to join`,

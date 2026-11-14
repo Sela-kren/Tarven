@@ -7,6 +7,7 @@ import {
   joinChance,
   LAST_CLEAR_LINES,
   LAST_CLEAR_THOUGHT,
+  WHOLE_ROOM_LINES,
   ONE_MORE_WARNING,
   PASS_OUT_AFTER,
   passOutLimit,
@@ -390,7 +391,11 @@ const FAME_WALKOUT = -2;
 const FAME_DEEDS = [-6, 8, -3];
 const RESPECT_DEEDS = [-2, 2, -1];
 /** This drunk in front of the customers, and they stop taking you seriously. */
-const SLOPPY_DRUNK = 0.6;
+/**
+ * Too drunk to say yes to anything (GAME_PATH.MD, consent rule): the 8th drink in a row (DRINK_STRENGTH 1/8). The 7th
+ * is her last clear drink (barwork.ts), and the 9th puts her under the table.
+ */
+const SLOPPY_DRUNK = 0.95;
 /**
  * Bottoms she can hold up in her hands to show a guest (they hang on the model's skirt panels, which lift), and
  * those that stay on as she does, round her waist above it all; anything else comes off.
@@ -534,7 +539,7 @@ export const TRAY_SIZE = 3;
 // Drinking. Drunkenness runs from 0 (sober) to 1 (can barely stand).
 export const DRUNK_MAX = 1;
 /** How much one drink with a table adds. */
-const DRINK_STRENGTH = 0.3;
+const DRINK_STRENGTH = 0.125;
 
 // ---- Desire, pleasure and corruption (see passives.ts) ----
 /** What a touch she lets happen adds to its own meter; the rest of her gets a third. Leaning in, half again. */
@@ -591,7 +596,7 @@ const SOBER_RATE = 0.01;
 /** How many drinks one table will pour for you. */
 const DRINKS_PER_TABLE = 2;
 /** Past this, nobody pours you another. */
-const TOO_DRUNK = 0.85;
+const TOO_DRUNK = SLOPPY_DRUNK;
 /** What each guest at a table pays towards a jug of ale. */
 const JUG_PAY = 3;
 /** How much slower ale pours when you're drunk: half as slow again at the worst. */
@@ -636,9 +641,11 @@ const you = (text: string): TalkLine => ({ speaker: "You", text });
 
 /** A word for how drunk the player is, or "" when sober. */
 export function drunkLabel(level: number): string {
-  if (level >= 0.75) return "Hammered";
+  // Eight drinks to the top (DRINK_STRENGTH): tipsy at two, drunk at four, very drunk at six, too drunk at eight.
+  if (level >= SLOPPY_DRUNK) return "Hammered";
+  if (level >= 0.7) return "Very drunk";
   if (level >= 0.45) return "Drunk";
-  if (level >= 0.15) return "Tipsy";
+  if (level >= 0.2) return "Tipsy";
   return "";
 }
 /** Serving with more than this share of patience left earns the tip. */
@@ -1245,7 +1252,17 @@ export interface TavernSave {
  * `upstairs` is adult play (GAME_PATH.MD 7f): upstairs or in the taproom. `auto`: Consent off, and her state said
  * yes, so where and what are matched to it (`autoAdultPlay`) instead of asked.
  */
-export type AdultScene = { kind: "upstairs"; guestId: number; guestKind: GuestKind; guestStats?: RoleStats; auto?: boolean } | { kind: "overwhelmed" };
+export type AdultScene =
+  | {
+      kind: "upstairs";
+      guestId: number;
+      guestKind: GuestKind;
+      guestStats?: RoleStats;
+      auto?: boolean;
+      /** She put it to the whole room, on her last clear drink (barwork.ts): the taproom, with all of them, comes first. */
+      wholeRoom?: boolean;
+    }
+  | { kind: "overwhelmed" };
 /** An invitation she's said yes to: up the stairs, or (her choice) right here in the taproom. */
 export type InviteScene = Extract<AdultScene, { kind: "upstairs" }>;
 
@@ -1312,6 +1329,8 @@ interface TouchChat {
   joined?: number[];
   /** The sibling she was when they reached, if she might still have a tray in her hands (barwork.ts). */
   sibling?: number;
+  /** Adult play she put to the whole room, on her last clear drink (barwork.ts). */
+  wholeRoom?: boolean;
 }
 
 /** Where the game after a lost brawl is played: right where she fell (the room watching), upstairs, or out back. */
@@ -3530,7 +3549,9 @@ export class Tavern {
   autoAdultPlay(scene: InviteScene): { where: "taproom" } | { where: "upstairs"; act: UpstairsAct; line: string } {
     const option = this.taproomOption(scene);
     const showsOff = this.passives.has("openHouse") || this.passives.has("wholeRoom");
-    if (matchWhere(option.shown && !option.blocked, this.strippedPieces.length, showsOff) === "taproom") {
+    // She put it to the whole room (barwork.ts): the taproom, if it's open to her, whatever else.
+    const open = option.shown && !option.blocked;
+    if ((scene.wholeRoom && open) || matchWhere(open, this.strippedPieces.length, showsOff) === "taproom") {
       const areas = this.duelAreas().filter((a) => a.ready).map((a) => a.id);
       if (this.startTaproom(scene, option.joiners.map((g) => g.id), areas, "plain", true)) return { where: "taproom" };
     }
@@ -3598,6 +3619,7 @@ export class Tavern {
   /** The invitation card's line: them waiting on her answer, and the room calling out if others want in. */
   inviteChoiceLine(scene: InviteScene): string {
     const option = this.taproomOption(scene);
+    if (scene.wholeRoom && option.shown && !option.blocked) return storyLine(WHOLE_ROOM_LINES, this.storyRoll(scene.guestId, 4));
     const lines = option.shown && !option.blocked ? INVITE_CHOICE_ROOM : INVITE_CHOICE;
     return storyLine(lines, this.storyRoll(scene.guestId, 4));
   }
@@ -4175,6 +4197,7 @@ export class Tavern {
       layer,
       joined: [...(join?.joined ?? []), guest.id],
       sibling: brawl ? undefined : (this.lastServer ?? undefined),
+      wholeRoom: lastClear !== null || undefined,
     };
     this.touchChat = chat;
     // Consent off, and they push past her hold: it lands without the question, as a yes she gave in advance.
@@ -4606,7 +4629,7 @@ export class Tavern {
       else this.cue("tip");
       if (touch.region === "invite" && guest) {
         chat.reply.push(narrate(storyLine(INVITE_ROOM_YES, this.storyRoll(guest.id, 2))));
-        this.adultScene = { kind: "upstairs", guestId: guest.id, guestKind: guest.kind, guestStats: guest.stats };
+        this.adultScene = { kind: "upstairs", guestId: guest.id, guestKind: guest.kind, guestStats: guest.stats, wholeRoom: chat.wholeRoom };
       } else if (this.pleasure >= PLEASURE_MAX && !chat.brawl) {
         this.pleasure = 0;
         r.overwhelmed++;

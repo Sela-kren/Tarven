@@ -3,6 +3,7 @@ import {
   FAME_NERVE_AT,
   JOIN_MAX,
   JOIN_NERVE,
+  LAST_CLEAR_LINES,
   joinChance,
   REDRESS_ON_AT,
   REDRESS_PATIENCE,
@@ -137,17 +138,17 @@ describe("dead drunk", () => {
     return n;
   };
 
-  it("takes seven drinks in a row, and two more with Hollow Legs", () => {
-    expect(drinksToPassOut(serving())).toBe(7);
+  it("takes nine drinks in a row, and two more with Hollow Legs", () => {
+    expect(drinksToPassOut(serving())).toBe(9);
     const t = serving();
     t.effects.holdLiquor = 2;
-    expect(drinksToPassOut(t)).toBe(9);
+    expect(drinksToPassOut(t)).toBe(11);
   });
 
   it("wears off over the limit first, before she sobers", () => {
     const t = serving();
-    for (let i = 0; i < 5; i++) inside(t).takeDrink();
-    expect(t.overLimit).toBeGreaterThan(0);
+    t.drunk = 1;
+    t.overLimit = 0.05;
     const drunk = t.drunk;
     t.tick(1, idle);
     expect(t.drunk).toBe(drunk);
@@ -182,6 +183,8 @@ describe("her last clear drink", () => {
     guest.lust = 9;
     guest.mood = "lust";
     if (consentOff) t.touchSettings = { ...t.touchSettings, autoTouch: true, agreed: true };
+    // Six drinks in: the 7th is her last clear one.
+    t.drunk = 0.75;
     (t as unknown as { takeDrink(w: Guest[]): void }).takeDrink([guest]);
     t.tick(0.1, idle);
     return { t, guest };
@@ -197,6 +200,21 @@ describe("her last clear drink", () => {
     expect(t.talkChoices.map((c) => c.label.split(" · ")[0])).toContain("Pull away");
   });
 
+  it("is her putting it to the whole room: a yes opens the Adult play card with all of them first", () => {
+    const t = serving();
+    const guest = t.guests[0];
+    guest.lust = 9;
+    guest.mood = "lust";
+    t.meters.cock = 100;
+    t.drunk = 0.75;
+    (t as unknown as { takeDrink(w: Guest[]): void }).takeDrink([guest]);
+    t.tick(0.1, idle);
+    expect(t.talkLines.some((l) => LAST_CLEAR_LINES.includes(l.text))).toBe(true);
+    t.chooseTalk(t.talkChoices.findIndex((c) => c.label.startsWith("Let it happen")));
+    const scene = t.takeAdultScene();
+    expect(scene?.kind === "upstairs" && scene.wholeRoom).toBe(true);
+  });
+
   it("with Consent off, goes by her state: ready, it happens; not ready, she's asked", () => {
     const notReady = lastClear(true).t;
     expect((notReady as unknown as { touchChat: { impulse: boolean } }).touchChat.impulse).toBe(false);
@@ -208,6 +226,7 @@ describe("her last clear drink", () => {
     guest.mood = "lust";
     t.meters.cock = 100;
     t.touchSettings = { ...t.touchSettings, autoTouch: true, agreed: true };
+    t.drunk = 0.75;
     (t as unknown as { takeDrink(w: Guest[]): void }).takeDrink([guest]);
     t.tick(0.1, idle);
     expect((t as unknown as { touchChat: { impulse: boolean } }).touchChat.impulse).toBe(true);
@@ -218,13 +237,14 @@ describe("her last clear drink", () => {
     const guest = t.guests[0];
     guest.lust = 9;
     guest.mood = "drunk";
+    t.drunk = 0.75;
     (t as unknown as { takeDrink(w: Guest[]): void }).takeDrink([guest]);
     t.tick(0.1, idle);
     expect(touchOf(t)).toBeNull();
     const again = lastClear().t;
     t.drunk = 0;
     (again as unknown as { touchChat: null }).touchChat = null;
-    again.drunk = 0;
+    again.drunk = 0.75;
     (again as unknown as { takeDrink(w: Guest[]): void }).takeDrink([again.guests[0]]);
     again.tick(0.1, idle);
     expect(again.records.lastClearAsks).toBe(1);

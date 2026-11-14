@@ -87,11 +87,11 @@ describe("parties", () => {
     expect(t.talkingTo).toBe(0);
     expect(t.talkLines.length).toBeGreaterThan(0);
     t.chooseTalk(0);
-    expect(t.drunk).toBeCloseTo(0.3);
+    expect(t.drunk).toBeCloseTo(0.125);
     expect(t.trust).toBe(trust + 1);
     expect(t.talkLines.map((line) => line.text)).toContain(t.plan.parties[0].gossip);
     t.chooseTalk(0);
-    expect(t.drunk).toBeCloseTo(0.6);
+    expect(t.drunk).toBeCloseTo(0.25);
     expect(t.trust).toBe(trust + 1);
     // Two drinks a table, then they stop pouring.
     expect(t.talkChoices[0].disabled).toBe(true);
@@ -136,8 +136,9 @@ describe("drinking", () => {
     t.interact(0, at(partyOf(t, 0)[0]));
     t.chooseTalk(0);
     t.chooseTalk(t.talkChoices.length - 1);
+    t.drunk = 0.35;
     run(t, 10);
-    expect(t.drunk).toBeCloseTo(0.2);
+    expect(t.drunk).toBeCloseTo(0.25);
     expect(drunkLabel(t.drunk)).toBe("Tipsy");
     t.drunk = 0.9;
     t.phase = "bedtime";
@@ -147,7 +148,7 @@ describe("drinking", () => {
 
   it("warns you once you've had too much, but it's yours to drink, and it goes over the limit", () => {
     const t = atNight(0, 18);
-    t.drunk = 0.9;
+    t.drunk = 0.96;
     t.interact(0, at(partyOf(t, 0)[0]));
     expect(t.talkChoices[0].label).toContain("more than enough");
     expect(t.talkChoices[0].disabled).toBe(false);
@@ -207,7 +208,7 @@ describe("a drink as a tip", () => {
     expect(t.talkChoices.map((c) => c.label)).toEqual([TIP_DRINK_LABEL, TIP_DRINK_DECLINE, "Get back to work"]);
     const gold = t.gold;
     t.chooseTalk(0);
-    expect(t.drunk).toBeCloseTo(0.3);
+    expect(t.drunk).toBeCloseTo(0.125);
     expect(t.gold).toBe(gold + 2);
     expect(t.persona.drinks).toBe(1);
     expect(t.talkReplyLines[0]).toEqual({ speaker: "You", text: "\"Cheers!\"" });

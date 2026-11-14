@@ -88,7 +88,7 @@ describe("a guest asking for a look", () => {
   });
 
   it("can't be a yes when she's too drunk", () => {
-    const { t } = asked(10, (t) => (t.drunk = 0.9));
+    const { t } = asked(10, (t) => (t.drunk = 1));
     for (const part of SHOW_PARTS) {
       expect(answer(t, part).label).toContain(SHOW_TOO_DRUNK);
       expect(answer(t, part).disabled).toBe(true);
