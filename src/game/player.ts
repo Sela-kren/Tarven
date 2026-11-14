@@ -608,10 +608,10 @@ export class Body {
     if (pose === "chestDown") {
       // Her top dragged down under her breasts, and her hands presenting them: elbows open out to her sides and back,
       // each palm turned up (the forearm's twist) right under a breast, holding it up; chest out, chin up.
-      set(this.upperArmR, -0.34, 0.14, 0.41);
-      set(this.foreArmR, 1.94, 0, -1.35);
-      set(this.upperArmL, -0.34, -0.14, -0.41);
-      set(this.foreArmL, 1.94, 0, 1.35);
+      set(this.upperArmR, -0.48, 0.27, 0.57);
+      set(this.foreArmR, 1.99, 0, -1.13);
+      set(this.upperArmL, -0.48, -0.27, -0.57);
+      set(this.foreArmL, 1.99, 0, 1.13);
       this.torso.rotation.x -= 0.12 * a;
       this.head.rotation.x -= 0.06 * a;
     } else if (pose === "chestUp") {
