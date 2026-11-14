@@ -54,6 +54,11 @@ export interface FaceShape {
    * smooth, flat line across instead of dipping to a point in the middle.
    */
   lift: number;
+  /**
+   * Her lower lip hanging free of her smile (1), so it drops away right out to her lifted corners: her open smile a
+   * D, round at the bottom, not a wedge.
+   */
+  cup: number;
   /** Her lips pressed together small, the corners drawn in (1); or stretched wide, drawn out and back (-1). */
   purse: number;
   /** Her lips pressed thin together into a line, as if drawn, 0 to 1: the mouth a touch wider, not smaller. */
@@ -71,12 +76,12 @@ export const FACE_LINES = { creases: [0.35, 0.7] as const, hatch: 0.7 };
 
 export const FACE_KEYS: readonly (keyof FaceShape)[] = [
   "brow", "browInner", "browArch", "browOuter", "browTip", "browNear", "lidUpper", "lidLower", "wide", "lookX", "lookY", "smile", "smirk", "open", "round",
-  "bare", "lift", "purse", "press", "tongue", "blush", "crease",
+  "bare", "lift", "cup", "purse", "press", "tongue", "blush", "crease",
 ];
 
 export const REST_FACE: Readonly<FaceShape> = {
   brow: 0, browInner: 0, browArch: 0, browOuter: 0, browTip: 0, browNear: 0, lidUpper: 0, lidLower: 0, wide: 0, lookX: 0, lookY: 0, smile: 0, smirk: 0,
-  open: 0, round: 0, bare: 0, lift: 0, purse: 0, press: 0, tongue: 0, blush: 0, crease: 0,
+  open: 0, round: 0, bare: 0, lift: 0, cup: 0, purse: 0, press: 0, tongue: 0, blush: 0, crease: 0,
 };
 
 export type Expression =
@@ -126,9 +131,9 @@ export const EXPRESSIONS: Readonly<Record<Expression, FaceShape>> = {
   // Melting: a wide, soft crescent of a smile on parted lips, its corners turned up to points, dreamy half shut eyes,
   // brows lifted and easy, flushed.
   blissful: face({ brow: 0.25, browInner: 0.5, browArch: 0.3, browOuter: -0.3, browTip: 0.6, lidUpper: 0.65, lidLower: 0.2, smile: 1.2, open: 0.25, lift: 0.7, purse: -1, blush: 0.9 }),
-  // Loving it: a big open smile, her upper lip straight and stretched wide on her teeth, her lower lip dropped round
-  // below it, eyes crinkled from below, brows up and easy, flushed.
-  delighted: face({ brow: 0.3, browInner: 0.4, browArch: 0.5, browOuter: -0.3, lidUpper: 0.35, lidLower: 0.55, smile: 0.1, open: 0.8, purse: -0.9, tongue: 0.15, blush: 0.8 }),
+  // Loving it: a big open D of a smile, its top flat on her teeth and its corners turned up, her lower lip dropped
+  // round below it to her tongue, eyes crinkled from below, brows up and easy, flushed.
+  delighted: face({ brow: 0.3, browInner: 0.4, browArch: 0.5, browOuter: -0.3, lidUpper: 0.35, lidLower: 0.55, smile: 1.15, open: 0.8, round: 1, lift: 0.8, cup: 0.7, purse: -0.9, tongue: 0.4, blush: 0.8 }),
   // Eyes nearly shut, brows up in the middle and down at the ends, mouth open on a moan, flushed.
   pleasure: face({ browNear: 0.8, browInner: 0.5, browArch: -0.3, browOuter: -0.5, browTip: 0.9, lidUpper: 0.85, lidLower: 0.25, smile: 0.2, open: 0.55, blush: 1, crease: 0.6 }),
   // On the edge: eyes screwed shut, brows high and pinched, mouth wide open on her tongue, as red as she gets.
@@ -425,6 +430,8 @@ export const FACE_REACH = {
   lipFade: 0.012,
   /** Her upper lip riding up with her smile (`lift`): the skin above it going less and less, none by `liftFade` up. */
   liftFade: 0.013,
+  /** Her lower lip hanging free of her smile (`cup`): all of it inside her corners, by this far in from them. */
+  cupEdge: 0.001,
   /**
    * Her tongue all the way out: how far forwards its tip comes (its root `tongueRoot` of that), lifted up over her
    * lower teeth (`tongueUp`, all of it by `tongueLifted` of the way out), its tip hanging down over her lower lip
@@ -639,8 +646,14 @@ export function faceMove(rig: FaceRig, shape: FaceShape, p: readonly number[], p
       moved = true;
     }
     if (lift === 0) return;
-    out[0] += side * FACE_REACH.smileOut * Math.max(0, lift) * w;
-    out[1] += FACE_REACH.smileUp * lift * w;
+    // Her lower lip, inside her corners, hangs free of them as they lift (cup), but spreads out evenly as they draw
+    // out, so its sides stay under them.
+    const free = shape.cup > 0 && y < rig.line - FACE_REACH.jawGap && mouthAcross(rig, x, z) > 0
+      ? shape.cup * smooth((Math.abs(corner[0]) - Math.abs(x)) / FACE_REACH.cupEdge)
+      : 0;
+    const spread = free * Math.max(0, (x * side) / Math.abs(corner[0])) + (1 - free) * w;
+    out[0] += side * FACE_REACH.smileOut * Math.max(0, lift) * spread;
+    out[1] += FACE_REACH.smileUp * lift * w * (1 - free);
     out[2] += FACE_REACH.smileBack * Math.max(0, lift) * w;
     moved = true;
   });

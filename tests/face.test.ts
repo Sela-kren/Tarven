@@ -234,6 +234,20 @@ describe("her face", () => {
     expect(cornerX(round)).toBeLessThan(cornerX(open));
   });
 
+  it("hangs her lower lip free of her smile, so her open smile is a D, round at the bottom right out to her corners", () => {
+    const smile = { ...REST_FACE, smile: 1, open: 0.8, round: 1 };
+    const cupped = { ...smile, cup: 1 };
+    // Her lower lip's edge just inside her corner: lifted with it plain, a wedge; hanging well down cupped.
+    const nearCorner = [0.0138, 1.4269, -0.0752];
+    expect(moved(smile, nearCorner)[1]).toBeGreaterThan(1.4269 - 0.002);
+    expect(moved(cupped, nearCorner)[1]).toBeLessThan(1.4269 - 0.005);
+    // Still drawn out with her corner, so the side of her mouth stays under it.
+    expect(moved(cupped, nearCorner)[0]).toBeGreaterThan(moved({ ...cupped, smile: 0 }, nearCorner)[0] + 0.002);
+    // Her corners themselves, and her cheek beside them, lift just the same.
+    expect(moved(cupped, [0.016, 1.427, -0.075])[1]).toBeCloseTo(moved(smile, [0.016, 1.427, -0.075])[1], 6);
+    expect(moved(cupped, [0.02, 1.42, -0.074])[1]).toBeCloseTo(moved(smile, [0.02, 1.42, -0.074])[1], 6);
+  });
+
   it("lifts her upper lip with her smile, so the top of her open mouth stays flat instead of dipping in the middle", () => {
     const smile = { ...REST_FACE, smile: 1, open: 0.3 };
     const lifted = { ...smile, lift: 1 };
