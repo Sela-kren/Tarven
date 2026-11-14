@@ -145,13 +145,15 @@ describe("drinking", () => {
     expect(t.drunk).toBe(0);
   });
 
-  it("refuses you more once you've had too much", () => {
+  it("warns you once you've had too much, but it's yours to drink, and it goes over the limit", () => {
     const t = atNight(0, 18);
     t.drunk = 0.9;
     t.interact(0, at(partyOf(t, 0)[0]));
-    expect(t.talkChoices[0].disabled).toBe(true);
+    expect(t.talkChoices[0].label).toContain("more than enough");
+    expect(t.talkChoices[0].disabled).toBe(false);
     t.chooseTalk(0);
-    expect(t.drunk).toBe(0.9);
+    expect(t.drunk).toBe(1);
+    expect(t.overLimit).toBeGreaterThan(0);
   });
 
   it("makes you drop what you carry when you stumble, except a cask", () => {

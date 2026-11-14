@@ -174,6 +174,53 @@ describe("dead drunk", () => {
   });
 });
 
+describe("her last clear drink", () => {
+  /** A guest she's drinking with, aroused, and her one drink from too drunk to say yes. */
+  function lastClear(consentOff = false): { t: Tavern; guest: Guest } {
+    const t = serving();
+    const guest = t.guests[0];
+    guest.lust = 9;
+    guest.mood = "lust";
+    if (consentOff) t.touchSettings = { ...t.touchSettings, autoTouch: true, agreed: true };
+    (t as unknown as { takeDrink(w: Guest[]): void }).takeDrink([guest]);
+    t.tick(0.1, idle);
+    return { t, guest };
+  }
+  const touchOf = (t: Tavern) => (t as unknown as { touchChat: { guestId: number; touch: { region: string } } | null }).touchChat;
+
+  it("has the guest she drank with ask for adult play, while she can still answer", () => {
+    const { t, guest } = lastClear();
+    expect(touchOf(t)?.guestId).toBe(guest.id);
+    expect(touchOf(t)?.touch.region).toBe("invite");
+    expect(t.records.lastClearAsks).toBe(1);
+    // Yes or No: saying no is always there.
+    expect(t.talkChoices.map((c) => c.label.split(" · ")[0])).toContain("Pull away");
+  });
+
+  it("is asked even with Consent off", () => {
+    const { t } = lastClear(true);
+    expect(t.landedTouch).toBeNull();
+    expect(t.talkChoices.map((c) => c.label.split(" · ")[0])).toContain("Pull away");
+  });
+
+  it("isn't asked by a guest who's drunk themselves, and only once a night", () => {
+    const t = serving();
+    const guest = t.guests[0];
+    guest.lust = 9;
+    guest.mood = "drunk";
+    (t as unknown as { takeDrink(w: Guest[]): void }).takeDrink([guest]);
+    t.tick(0.1, idle);
+    expect(touchOf(t)).toBeNull();
+    const again = lastClear().t;
+    t.drunk = 0;
+    (again as unknown as { touchChat: null }).touchChat = null;
+    again.drunk = 0;
+    (again as unknown as { takeDrink(w: Guest[]): void }).takeDrink([again.guests[0]]);
+    again.tick(0.1, idle);
+    expect(again.records.lastClearAsks).toBe(1);
+  });
+});
+
 describe("fixing her clothes", () => {
   it("puts the last piece back on behind the bar, and the room waits for it", () => {
     const t = serving();

@@ -5,6 +5,8 @@ import {
   JOIN_CHEERS,
   JOIN_LINES,
   joinChance,
+  LAST_CLEAR_LINES,
+  LAST_CLEAR_THOUGHT,
   ONE_MORE_WARNING,
   PASS_OUT_AFTER,
   passOutLimit,
@@ -1643,6 +1645,9 @@ export class Tavern {
   private lastServer: number | null = null;
   private joinNext: { guestId: number; prelude: TalkLine[]; joined: number[] } | null = null;
   private passingOut = false;
+  /** The guest who'll ask for adult play once she's done talking, on her last clear drink; and whether one has tonight. */
+  private lastClearFrom: number | null = null;
+  private lastClearAsked = false;
   /** How far past the top of drunk she's drunk tonight, in drunk points: it wears off before she sobers (barwork.ts). */
   overLimit = 0;
   /** Something she's just started acting out, once, for the game to play on her (player.ts `Act`). */
@@ -2536,6 +2541,7 @@ export class Tavern {
   tick(dt: number, context: TickContext): void {
     // Dead drunk: once she's done talking, she's done for the night (barwork.ts).
     if (this.passingOut && !this.inConversation) this.passOut();
+    if (this.lastClearFrom !== null && !this.inConversation && !this.passingOut) this.askLastClear();
     this.dressLeft = Math.max(0, this.dressLeft - dt);
     // Over the limit wears off first; then she starts to sober up.
     if (this.overLimit > 0) this.overLimit = Math.max(0, this.overLimit - SOBER_RATE * dt);
@@ -2855,8 +2861,10 @@ export class Tavern {
   }
 
   /** You took a drink with a guest. */
-  private takeDrink(): void {
+  private takeDrink(with_: readonly Guest[] = []): void {
     const strength = this.drinkStrength;
+    // Her last clear drink: one more and she's too drunk to say yes to anything (barwork.ts).
+    const lastClear = this.drunk < SLOPPY_DRUNK && this.drunk + 2 * strength >= SLOPPY_DRUNK && this.drunk + strength < SLOPPY_DRUNK;
     // Past the top of drunk, it piles up as over the limit (barwork.ts).
     this.overLimit += Math.max(0, this.drunk + strength - DRUNK_MAX);
     this.drunk = Math.min(DRUNK_MAX, this.drunk + strength);
@@ -2869,6 +2877,11 @@ export class Tavern {
     this.cue("drink");
     // Karryn's dead drunk: past her limit she's done for the night, once whoever she's talking to is done with her.
     // The drink before, she knows it.
+    // Whoever she drank with, aroused, asks for adult play before she has another (once a night).
+    if (lastClear && !this.lastClearAsked && this.phase === "service" && this.playerBody === "Female") {
+      const keen = [...with_].filter((g) => aroused(g.lust, g.mood === "drunk")).sort((a, b) => b.lust - a.lust)[0];
+      if (keen) this.lastClearFrom = keen.id;
+    }
     const limit = passOutLimit(strength, this.effects.holdLiquor);
     if (this.phase === "service" && this.overLimit >= limit) this.passingOut = true;
     else if (this.overLimit + strength >= limit) this.say(ONE_MORE_WARNING);
@@ -2890,6 +2903,24 @@ export class Tavern {
     this.say(PASS_OUT_AFTER);
     this.closeEarly();
     this.actMoment = "faint";
+  }
+
+  /**
+   * Her last clear drink (barwork.ts): before she has another and can't say yes to anything, the guest she drank
+   * with asks for adult play. Always asked, Yes or No; a yes needs her ready, as ever, and goes to the Adult play card.
+   */
+  private askLastClear(): void {
+    const id = this.lastClearFrom;
+    this.lastClearFrom = null;
+    const guest = this.guests.find((g) => g.id === id);
+    // Gone, or drunk themselves by now: nobody's asking.
+    if (!guest || guest.status === "leaving" || this.phase !== "service" || !aroused(guest.lust, guest.mood === "drunk")) return;
+    const pick = <T>(lines: readonly T[]) => lines[Math.floor(this.random() * lines.length) % lines.length];
+    const prelude = [{ ...narrate(pick(LAST_CLEAR_LINES)), guestId: guest.id }, you(LAST_CLEAR_THOUGHT)];
+    if (this.maybeReach(guest, false, null, null, { prelude })) {
+      this.lastClearAsked = true;
+      this.records.lastClearAsks++;
+    }
   }
 
   /** What she's just started acting out, once: the game plays it on her. */
@@ -4029,11 +4060,12 @@ export class Tavern {
     brawl = false,
     held: { prelude: TalkLine[] } | null = null,
     join: { prelude: TalkLine[]; joined: number[] } | null = null,
+    lastClear: { prelude: TalkLine[] } | null = null,
   ): boolean {
     if (this.playerBody !== "Female" || this.inConversation) return false;
     const guestNerve = this.nerveOf(guest);
-    // A tablemate joining in has already decided to (barwork.ts): no roll.
-    if (!brawl && !held && !join && this.random() >= reachChance(guestNerve) * Math.max(0, 1 + this.effects.reach)) return false;
+    // A tablemate joining in, or a guest asking on her last clear drink, has already decided to (barwork.ts): no roll.
+    if (!brawl && !held && !join && !lastClear && this.random() >= reachChance(guestNerve) * Math.max(0, 1 + this.effects.reach)) return false;
     const piece = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder)[this.stripped]?.label ?? null;
     // Mid-brawl, their hands go bolder, and for the part of her their type likes.
     const pull = { ...this.effects.pull };
@@ -4045,14 +4077,17 @@ export class Tavern {
       ? undefined
       : Object.fromEntries(LEWD_REGIONS.map((region) => [region, openness(this.desireFor(region), this.slutLevel)]));
     // The first reach of the whole run is always one of the gentlest (STORY.md 4b): she's new to all of it.
-    const firstEver = !brawl && !held && !join && this.lewdness === 0 && this.records.pulled + this.records.slapped + this.timesLet === 0;
+    const firstEver = !brawl && !held && !join && !lastClear && this.lewdness === 0 && this.records.pulled + this.records.slapped + this.timesLet === 0;
     const reachNerve = brawl ? Math.min(10, guestNerve + BRAWL_BOLDER) : firstEver ? Math.min(FIRST_REACH_MAX, guestNerve) : guestNerve;
     // Adult play (adultplay.ts), Karryn-style: once her stack is full, an aroused guest might go for it, by a chance
     // that grows with how worked up they both are. Never in a brawl, never with hold of her (they're after her
     // clothes), never the very first reach of the run.
     const askAdult =
       !brawl && !held && !firstEver && aroused(guest.lust, guest.mood === "drunk") && this.adultRandom !== null && this.adultRandom() < this.adultChance(guest);
+    // Her last clear drink (barwork.ts): they ask for adult play, whatever her stack, while she can still answer.
+    if (lastClear && !adultTouch(guest.kind, this.random)) return false;
     const touch =
+      (lastClear ? adultTouch(guest.kind, this.adultRandom ?? this.random) : null) ??
       (askAdult && this.adultRandom ? adultTouch(guest.kind, this.adultRandom) : null) ??
       pickTouch(guest.kind, reachNerve, this.random, {
         canStrip: !brawl && piece !== null,
@@ -4104,7 +4139,8 @@ export class Tavern {
     const covered = s.autoTouch && eager && touch.level <= guestNerve && autoTouchFits(s, touch, answers);
     // Adult play with Consent off (Karryn's Prison): her state decides, not a push against her hold. Ready for it
     // (a yes is there: her desire's high enough and nobody's too drunk) and them aroused, and it happens.
-    const adultAuto = adult && s.autoTouch && s.agreed && answers.includes("allow") && aroused(guest.lust, guestSloppy);
+    // Her last clear drink is always asked, Yes or No, whatever the Consent switch.
+    const adultAuto = !lastClear && adult && s.autoTouch && s.agreed && answers.includes("allow") && aroused(guest.lust, guestSloppy);
     // Consent off: weigh them against her. Worked out every time, so the dev panel can show it either way.
     const facts = { ...this.impulseFacts(guest, guestNerve, touch), held: held !== null };
     // Further in is bolder: her hold is that much the stronger for it.
@@ -4174,6 +4210,7 @@ export class Tavern {
     // How the grab went comes first; or, a tablemate joining in, how they came to.
     if (held) chat.lines.unshift(...held.prelude);
     if (join) chat.lines.unshift(...join.prelude);
+    if (lastClear) chat.lines.unshift(...lastClear.prelude);
     return true;
   }
 
@@ -4728,12 +4765,14 @@ export class Tavern {
       const tooDrunk = this.drunk >= TOO_DRUNK;
       options.push(
         {
+          // Too drunk, it says so, but it's hers to drink: drink enough and she's under the table (barwork.ts).
           label: tooDrunk ? TIP_DRINK_TOO_DRUNK : TIP_DRINK_LABEL,
-          disabled: tooDrunk,
+          disabled: false,
           run: () => {
             chat.offered = true;
             chat.drank = true;
-            this.takeDrink();
+            const guest = this.guests.find((g) => g.id === chat.guestId);
+            this.takeDrink(guest ? [guest] : []);
             this.gold += TIP_DRINK_BONUS;
             this.earned += TIP_DRINK_BONUS;
             this.changeMood(chat.guestId, (mood) => moodAfterDrink(mood, 1));
@@ -5183,7 +5222,7 @@ export class Tavern {
     else if (this.tapLeft === 0) jug = "Sell them a jug (the tap is empty)";
 
     const choices = [
-      { label: drink, disabled: pouredOut || tooDrunk },
+      { label: drink, disabled: pouredOut },
       { label: jug, disabled: state.jug || this.tapLeft === 0 },
     ];
     // Someone at the table is going for your clothes.
@@ -5232,7 +5271,7 @@ export class Tavern {
 
     if (index === 0) {
       state.drinks++;
-      this.takeDrink();
+      this.takeDrink(members);
       for (const guest of members) guest.mood = moodAfterDrink(guest.mood, state.drinks);
       if (state.drinks === 1) {
         // Drinking with people loosens their tongues. Village folk trust you more for it,
@@ -5787,6 +5826,8 @@ export class Tavern {
     this.drunk = 0;
     this.overLimit = 0;
     this.passingOut = false;
+    this.lastClearFrom = null;
+    this.lastClearAsked = false;
     this.joinNext = null;
     this.dressLeft = 0;
     this.stripped = 0;

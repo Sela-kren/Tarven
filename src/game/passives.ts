@@ -153,6 +153,8 @@ export interface Records {
   soberNights: number;
   passedOut: number;
   redressed: number;
+  /** Times a guest asked for adult play on her last clear drink (barwork.ts). */
+  lastClearAsks: number;
   /** Nights each meter reached the top. */
   maxed: Partial<Record<Meter, number>>;
   /** Nights every meter reached 60. */
@@ -236,6 +238,7 @@ export function newRecords(): Records {
     soberNights: 0,
     passedOut: 0,
     redressed: 0,
+    lastClearAsks: 0,
     maxed: {},
     allHigh: 0,
     clothesLost: 0,
@@ -2589,6 +2592,7 @@ export function readProgress(raw: unknown): ProgressSave {
       "soberNights",
       "passedOut",
       "redressed",
+      "lastClearAsks",
       "allHigh",
       "clothesLost",
       "bareNights",

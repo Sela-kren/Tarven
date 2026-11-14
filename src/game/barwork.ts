@@ -111,6 +111,17 @@ export const PASS_OUT_LINES: readonly string[] = [
   "You set the cup down, very carefully, and then you're asleep on the bar.",
 ];
 export const PASS_OUT_AFTER = "The regulars carry you up to bed and see themselves out. Nobody pays for the last round.";
+/**
+ * Her last clear drink: one more and she's too drunk to say yes to anything (sloppy drunk blocks every yes,
+ * GAME_PATH.MD). An aroused guest she drank with asks for adult play now, while she can still answer: always asked,
+ * Yes or No, whatever the Consent switch; a yes needs her ready, as ever. Once a night. Passed out, nothing happens.
+ */
+export const LAST_CLEAR_LINES: readonly string[] = [
+  "They catch your hand before you can reach for another cup, and hold it.",
+  "They put their hand over the top of your cup. \"Before you have another...\"",
+  "They lean in close while you can still stand up straight. Their eyes haven't left you all night.",
+];
+export const LAST_CLEAR_THOUGHT = "(One more and I won't be able to think straight. If I'm going to say yes to anything, it's now.)";
 /** A warning, the drink before. */
 export const ONE_MORE_WARNING = "(One more and I'll be under the table.)";
 
