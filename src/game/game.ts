@@ -106,6 +106,7 @@ import { arousalOf, easeArousal } from "./nipples";
 import { easeOpening } from "./vulva";
 import { METER_MAX } from "./passives";
 import type { ShowPart, ShowSide } from "./show";
+import { easeFace, EXPRESSIONS, EXPRESSIONS_LIST, faceFor, REST_FACE, type Expression, type FaceCause, type FaceShape } from "./face";
 import { DialogueBox } from "./dialogue";
 import { MessageLog } from "./messagelog";
 import { UnlockToasts, type Toast } from "./unlocktoast";
@@ -502,6 +503,12 @@ function showPoseOf(part: ShowPart, top: "down" | "up", side: ShowSide): ShowPos
   }
   return part === "butt" ? "backLift" : "frontLift";
 }
+
+/** In development, holds her face in an expression to look at: "?face=shy" (any of face.ts's EXPRESSIONS_LIST). */
+const DEV_FACE: Expression | null = (() => {
+  const asked = import.meta.env.DEV && typeof location !== "undefined" ? new URLSearchParams(location.search).get("face") : null;
+  return EXPRESSIONS_LIST.find((e) => e === asked) ?? null;
+})();
 
 /** A held development pose's pull: her top, off the breast the pose bares. */
 function devPull(pose: ShowPose, top: ReturnType<typeof topPull>): { ids: string[]; dir: "down" | "up"; side?: "left" | "right" } | null {
@@ -2276,6 +2283,32 @@ export class Game {
     this.dressers.forEach((dresser, index) => dresser.setPull(index === this.active ? this.pullShown : null, amount));
   }
 
+  /** Her face as it shows, easing towards her expression; and whether she was showing a guest something last time. */
+  private faceShown: FaceShape = { ...REST_FACE };
+  private faceShowing = false;
+
+  /**
+   * Her face (face.ts): shy or sultry while she shows a guest something, reacting to a touch, otherwise at ease, her
+   * lids heavier and her cheeks flushed as she's aroused or drunk. It eases from one expression to the next; starting
+   * or finishing a show it changes at once, so the portrait drawn for the next line has it.
+   */
+  private syncFace(dt: number): void {
+    const { tavern } = this;
+    const cause: FaceCause = {
+      showing: tavern.showEagerness,
+      reaction: this.siblings[this.active]?.reacting ?? null,
+      arousal: this.arousalShown,
+      drunk: tavern.drunk,
+    };
+    const target = DEV_FACE ? EXPRESSIONS[DEV_FACE] : faceFor(cause);
+    const showing = cause.showing !== null;
+    const snap = showing !== this.faceShowing;
+    this.faceShowing = showing;
+    this.faceShown = snap ? target : easeFace(this.faceShown, target, dt);
+    if (snap) this.playerPortrait = null;
+    this.dressers.forEach((dresser, index) => dresser.setExpression(index === this.active ? this.faceShown : REST_FACE));
+  }
+
   /** How aroused the player shows, easing towards what the night has done to her. */
   private arousalShown = 0;
   /** Likewise for her vulva, which follows her Pussy desire. */
@@ -2362,6 +2395,7 @@ export class Game {
     writeTouchSettings(tavern.touchSettings);
     this.syncStripped();
     this.syncShowPose();
+    this.syncFace(0);
     this.showTouch();
     this.pendingAdult ??= tavern.takeAdultScene();
     if (!tavern.inConversation) {
@@ -3010,6 +3044,7 @@ export class Game {
     this.syncShowPose();
     this.syncCoat();
     this.syncArousal(dt);
+    this.syncFace(dt);
 
     if (this.screen === "story") {
       this.updateStory(dt);

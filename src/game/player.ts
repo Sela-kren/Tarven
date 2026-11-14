@@ -583,6 +583,11 @@ export class Body {
     return this.show ? { pose: this.show, amount: MathUtils.smoothstep(this.showAmount, 0, 1) } : null;
   }
 
+  /** The touch she's reacting to right now, if any. */
+  get reacting(): Reaction | null {
+    return this.reaction?.kind ?? null;
+  }
+
   /** Holds a show pose (at once, so a picture taken now shows it), or with null lets it ease off. */
   display(pose: ShowPose | null): void {
     if (pose) {
@@ -825,6 +830,11 @@ export class Sibling {
   /** The show pose on her now, and how far it's on: see `Body.showing`. */
   get showing(): { pose: ShowPose; amount: number } | null {
     return this.body.showing;
+  }
+
+  /** The touch she's reacting to right now: see `Body.reacting`. */
+  get reacting(): Reaction | null {
+    return this.body.reacting;
   }
 
   /** Answers a touch on the floor: see `Body.react`. */

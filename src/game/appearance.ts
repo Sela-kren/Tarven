@@ -17,6 +17,7 @@ import {
   GLANS_MATERIAL, PENIS_MATERIAL, PENIS_TYPES, SCROTUM_MATERIAL, penisFrame, penisShape, readPenis, shapePenis, type PenisPatch,
   type PenisType,
 } from "./penis";
+import { faceMove, faceMoved, faceRig, REST_FACE, type FaceRig, type FaceShape } from "./face";
 import { coatRetroMaterial, coverCoat, solidRetroMaterial, stainRetroMaterial } from "./retro";
 import type { LegSize } from "./skirt";
 
@@ -2171,6 +2172,23 @@ const PRIVATE_MATERIALS: readonly string[] = [
 const FLUSHED = new Color(0.55, 0.16, 0.18);
 
 /**
+ * Her face's meshes (face.ts), by their materials: every plane of her face, her lips, her eye dots, her brows and the
+ * inside of her mouth (its pocket, her teeth and her tongue);
+ * and the ones her eyes, brows and lips are found by. Only her face is drawn this way.
+ */
+const FACE_MATERIAL = /^T_(face_|lip|soot$|hair_f$|mouth$|teeth|tongue$)/;
+const EYE_MATERIAL = "T_soot";
+/** Her upper teeth, which stay with her skull as her mouth opens. */
+const UPPER_TEETH_MATERIAL = "T_teeth";
+const BROW_MATERIAL = "T_hair_f";
+const LIP_MATERIALS: readonly string[] = ["T_lip", "T_lip_lit"];
+/** Her cheeks, and the tip of her nose half as much, flush towards this as she blushes, this far at most. */
+const BLUSH_MATERIAL = "T_face_blush";
+const NOSE_MATERIAL = "T_face_pink";
+const BLUSHED = new Color(0.9, 0.32, 0.34);
+const BLUSH_DEPTH = 0.7;
+
+/**
  * Dresses one character: owns copies of its meshes so their shape can change without touching anyone sharing
  * them, and puts a look on it. Bones are only moved, never scaled, so the animation bends the limbs cleanly.
  */
@@ -2254,6 +2272,13 @@ export class Dresser {
    * where its points go, worked out from the body as last shaped, and is dropped when the body's reshaped.
    */
   private pull: { ids: readonly string[]; dir: "down" | "up"; side?: "left" | "right"; amount: number } | null = null;
+  /** Her face's expression now (face.ts), where her eyes, brows and mouth are on her as shaped, and how far it moves
+   * each point of each of her face's meshes. */
+  private faceShape: FaceShape = { ...REST_FACE };
+  private faceRig: FaceRig | null = null;
+  /** The shape her face's rig was found on, so it's only found again once she's reshaped. */
+  private faceRigOn: unknown = null;
+  private readonly faceMoves = new Map<MeshSlot, Float32Array>();
   private readonly pullPlans = new Map<MeshSlot, PullPlan>();
   /** The pulled meshes' normals as built, to put back once the pull's let go. */
   private readonly pullNormals = new Map<MeshSlot, Float32Array>();
@@ -2702,6 +2727,7 @@ export class Dresser {
       penisSkin,
     };
     if (this.pull) this.repull(this.pullSlots());
+    this.refreshFace();
 
     for (const rest of this.bones) {
       const delta = shift.get(rest)!;
@@ -2748,6 +2774,61 @@ export class Dresser {
     const after = next ? this.pullSlots() : [];
     this.repull([...new Set([...before, ...after])]);
     this.showPieces();
+  }
+
+  /**
+   * Puts an expression on her face (face.ts): her eyes, brows and the corners of her mouth move, and her cheeks
+   * flush. Only her face's meshes change, so it can follow her from moment to moment. Only her face is built for it.
+   */
+  setExpression(shape: FaceShape): void {
+    if (!faceMoved(shape, this.faceShape)) return;
+    const blushed = Math.round(shape.blush * 10) !== Math.round(this.faceShape.blush * 10);
+    this.faceShape = { ...shape };
+    this.refreshFace();
+    if (blushed) this.showPieces();
+  }
+
+  /** The meshes her face is drawn in. */
+  private faceSlots(): MeshSlot[] {
+    return this.body === "Female" ? this.slots.filter((slot) => slot.part === "Body" && FACE_MATERIAL.test(slot.original.name)) : [];
+  }
+
+  /** Finds her eyes, brows and mouth on her as shaped now, and moves her face's points for her expression. */
+  private refreshFace(): void {
+    const { shaped } = this;
+    const slots = this.faceSlots();
+    if (!shaped || !slots.length) return;
+    const shapedAt = (slot: MeshSlot, v: number) => {
+      const total = shaped.totals[this.slots.indexOf(slot)];
+      const { bind } = slot;
+      return [bind[v * 3] + total[v * 3], bind[v * 3 + 1] + total[v * 3 + 1], bind[v * 3 + 2] + total[v * 3 + 2]];
+    };
+    const pointsOf = (names: readonly string[]) =>
+      slots.filter((slot) => names.includes(slot.original.name)).flatMap((slot) => Array.from({ length: slot.bind.length / 3 }, (_, v) => shapedAt(slot, v)));
+    if (this.faceRigOn !== shaped) {
+      this.faceRig = faceRig(pointsOf([EYE_MATERIAL]), pointsOf([BROW_MATERIAL]), pointsOf(LIP_MATERIALS));
+      this.faceRigOn = shaped;
+    }
+    const rig = this.faceRig;
+    const to = [0, 0, 0];
+    for (const slot of slots) {
+      const count = slot.bind.length / 3;
+      let moves = this.faceMoves.get(slot);
+      if (!moves) this.faceMoves.set(slot, (moves = new Float32Array(count * 3)));
+      moves.fill(0);
+      const part = slot.original.name === BROW_MATERIAL ? "brow" : slot.original.name === UPPER_TEETH_MATERIAL ? "teeth" : "skin";
+      if (rig) {
+        for (let v = 0; v < count; v++) {
+          const p = shapedAt(slot, v);
+          if (!faceMove(rig, this.faceShape, p, part, to)) continue;
+          moves[v * 3] = to[0] - p[0];
+          moves[v * 3 + 1] = to[1] - p[1];
+          moves[v * 3 + 2] = to[2] - p[2];
+        }
+      }
+      const i = this.slots.indexOf(slot);
+      this.writePositions(slot, shaped.totals[i], shaped.settled[i]);
+    }
   }
 
   /** The cloth meshes the pull takes: the pulled garments', of the outfit she has on. */
@@ -3193,6 +3274,7 @@ export class Dresser {
     // A top pulled off her breasts: its points go that far towards where the pull takes them.
     const plan = this.pull ? this.pullPlans.get(slot) : undefined;
     const amount = this.pull?.amount ?? 0;
+    const face = this.faceMoves.get(slot);
     const one = (v: number) => {
       point.set(bind[v * 3] + total[v * 3], bind[v * 3 + 1] + total[v * 3 + 1], bind[v * 3 + 2] + total[v * 3 + 2]);
       const k = plan ? plan.at[v] : -1;
@@ -3201,6 +3283,12 @@ export class Dresser {
         point.x += (plan.target[k * 3] - point.x) * w;
         point.y += (plan.target[k * 3 + 1] - point.y) * w;
         point.z += (plan.target[k * 3 + 2] - point.z) * w;
+      }
+      // Her face, as her expression moves it.
+      if (face) {
+        point.x += face[v * 3];
+        point.y += face[v * 3 + 1];
+        point.z += face[v * 3 + 2];
       }
       point.x -= settled[v * 3];
       point.y -= settled[v * 3 + 1];
@@ -3344,7 +3432,12 @@ export class Dresser {
           (slot.original.name === BAND_MATERIAL && under.top !== null) ||
           ((slot.original.name === "T_smalls" || slot.original.name === HOLE_MATERIAL) && (under.whole || under.bottom !== null));
         const bare = stripped || drawnOver || (this.undressed && covers(painted, slot.part, slot.original.name));
-        slot.mesh.material = bare && skin ? skin.worn : slot.worn;
+        // Her cheeks and the tip of her nose flush as she blushes.
+        const blush = Math.round(this.faceShape.blush * 10) / 10;
+        const flushed = slot.original.name === BLUSH_MATERIAL ? blush : slot.original.name === NOSE_MATERIAL ? blush / 2 : 0;
+        slot.mesh.material = bare && skin
+          ? skin.worn
+          : flushed > 0 ? paint(slot.original, averageColor(slot.worn).clone().lerp(BLUSHED, BLUSH_DEPTH * flushed)) : slot.worn;
         continue;
       }
       const off = pieces.some((piece) => covers(piece.parts, slot.part, slot.original.name)) || stripped || legs === "hide";

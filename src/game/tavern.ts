@@ -4126,8 +4126,19 @@ export class Tavern {
 
   /** Whether she's ready to show a guest this much of her: that part's desire, helped by her exhibition passives. */
   showReady(part: ShowPart): boolean {
+    return this.showMargin(part) >= 0;
+  }
+
+  /** How far past what it takes to show this she is (desire ÷ 10, less what her exhibition passives take off). */
+  private showMargin(part: ShowPart): number {
     const owned = [...this.passives].filter((id) => PASSIVE_BY_ID.get(id)?.group === "exhibition").length;
-    return this.meters[SHOW_METER[part]] / 10 + Math.min(2, owned) >= SHOW_NEED[part];
+    return this.meters[SHOW_METER[part]] / 10 + Math.min(2, owned) - SHOW_NEED[part];
+  }
+
+  /** How far past what it takes she is to show what she's showing a guest now (7e), for her face; null if nothing. */
+  get showEagerness(): number | null {
+    const shown = this.showChat?.shown;
+    return shown ? this.showMargin(shown) : null;
   }
 
   /** What showing this pays, to a guest who asked for `asked`: more for just what they wanted. */

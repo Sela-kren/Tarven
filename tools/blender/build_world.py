@@ -1104,7 +1104,13 @@ FACE_TRACED_ROWS = 6
 FACE_POINTS = {
     "j0": (0, 10, 0.085), "j1": (13, 10, 0.084), "j2": (38, 28, 0.0764), "j3": (60, 50, 0.0713), "j4": (78, 75, 0.0704),
     "j5": (90, 100, 0.065), "mu": (0, 28, 0.0854), "ub": (20, 28, 0.085),
-    "lb0": (0, 36, 0.0924), "lb1": (11, 37, 0.089), "ll0": (0, 43, 0.0854), "l1": (12, 44, 0.085), "lc": (24, 43, 0.083),
+    "lb0": (0, 36, 0.0924), "lb1": (11, 37, 0.089), "ll0": (0, 43, 0.0854), "l1": (12, 43, 0.085), "lc": (24, 43, 0.083),
+    # The mouth line is level, so the game can open her mouth below it (face.ts). The lower lip has its own points
+    # along it, a hair below the upper lip's, so the lips can part.
+    "ll0d": (0, 42.85, 0.0854), "l1d": (12, 42.85, 0.085),
+    # Inside her mouth, a pocket behind the lips: its roof, its back down her throat, and its floor.
+    "r0": (0, 46, 0.074), "r1": (11, 46, 0.075), "k0": (0, 40, 0.066), "k1": (10, 40, 0.068),
+    "f0": (0, 37, 0.074), "f1": (11, 37.5, 0.075),
     "lt0": (0, 48, 0.0955), "lt1": (10, 51, 0.092),
     "nb0": (0, 64, 0.096), "nb1": (10, 65, 0.092), "nb2": (11, 80, 0.093), "tip": (0, 84, 0.11), "t2": (0, 98, 0.102), "t3": (9, 96, 0.094),
     "s1": (9, 120, 0.092), "br1": (0, 120, 0.092), "s2": (14, 145, 0.093), "br2": (0, 145, 0.095), "s3": (26, 160, 0.09),
@@ -1117,14 +1123,28 @@ FACE_PLANES = [
     (("D0", "E0", "j4", "j3"), "face_mid"), (("E0", "E1", "j5", "j4"), "face_mid"), (("E1", "E2", "sd", "j5"), "face_mid"),
     (("E2", "E3", "sd"), "face_mid"), (("E3", "E4", "D6", "sd"), "face_mid"), (("E4", "E5", "E6", "D6"), "face_mid"),
     (("j0", "j1", "ub", "mu"), "face_skin"), (("j1", "j2", "ub"), "face_skin"), (("mu", "ub", "lb1", "lb0"), "face_skin"),
-    (("lb0", "lb1", "l1", "ll0"), "lip_lit"), (("lb1", "lc", "l1"), "lip"), (("ll0", "l1", "lt1", "lt0"), "lip"), (("l1", "lc", "lt1"), "lip"),
+    (("lb0", "lb1", "l1d", "ll0d"), "lip_lit"), (("lb1", "lc", "l1d"), "lip"), (("ll0", "l1", "lt1", "lt0"), "lip"), (("l1", "lc", "lt1"), "lip"),
     (("lt0", "lt1", "nb1", "nb0"), "face_skin"), (("lt1", "lc", "nb1"), "face_skin"), (("lc", "j2", "ub", "lb1"), "face_skin"),
     (("un1", "sd", "j5", "j4", "nb2"), "face_blush"), (("nb2", "j4", "j3", "j2", "lc", "nb1"), "face_skin"),
     (("t3", "s1", "un1", "nb2"), "face_skin"), (("s1", "un1", "ein", "s2"), "face_skin"), (("s2", "ein", "A6", "s3"), "face_skin"),
     (("nb0", "nb1", "nb2", "tip"), "face_pink"), (("tip", "nb2", "t3", "t2"), "face_pink"), (("t2", "t3", "s1"), ("face_white", "face_cool")),
     (("t2", "s1", "br1"), ("face_lit", "face_cool")), (("br1", "s1", "s2", "br2"), "face_lit"), (("br2", "s2", "s3", "gl"), "face_lit"),
     (("gl", "s3", "A6", "C6"), "face_lit"),
+    # The pocket of her mouth, closed off behind her lips: shut, it doesn't show.
+    (("ll0", "r0", "r1", "l1"), "mouth"), (("l1", "r1", "lc"), "mouth"),
+    (("r0", "k0", "k1", "r1"), "mouth"), (("r1", "k1", "lc"), "mouth"),
+    (("k0", "f0", "f1", "k1"), "mouth"), (("k1", "f1", "lc"), "mouth"),
+    (("f0", "ll0d", "l1d", "f1"), "mouth"), (("f1", "l1d", "lc"), "mouth"),
 ]
+# Her teeth and tongue, each a thin slab inside her mouth, out of sight until it opens. Teeth: from the middle out,
+# (pixels sideways, how far forward); their top and bottom (pixels up); and how thick. Her upper teeth hang just below
+# her mouth line, her lower teeth stand just below it; her tongue lies on the floor of her mouth.
+MOUTH_TEETH = [(0, 0.0835), (6, 0.0818), (10, 0.0785)]
+MOUTH_UPPER_TEETH = (46, 40.5)
+MOUTH_LOWER_TEETH = (42.2, 38.5)
+MOUTH_TEETH_THICK = 0.0012
+MOUTH_TONGUE = [(0, 0.081, 41.6), (7, 0.078, 41.0), (0, 0.07, 40.6), (6, 0.07, 40.2)]
+MOUTH_TONGUE_THICK = 0.0015
 # The socket around the eye, starting from the corner nearest the nose, and the round dot of the eye inside it:
 # centre, half width and half height in reference pixels. The dot has two points for each side of the socket.
 FACE_EYE_SOCKET = ("ein", "un1", "sd", "D6", "B6", "A6")
@@ -1408,6 +1428,27 @@ def head_grid(at, m):
         else:
             for sx, side_tone in zip((-1, 1), tone):
                 head.face(keys, m[side_tone], sides=(sx,))
+
+    # Her teeth, upper and lower, and her tongue: slabs with a front and a back face, closed at the ends.
+    for name, (top, bottom), tone in (("ut", MOUTH_UPPER_TEETH, "teeth"), ("lt", MOUTH_LOWER_TEETH, "teeth_low")):
+        for c, (x, forward) in enumerate(MOUTH_TEETH):
+            for h, up in enumerate((top, bottom)):
+                head.add((name, c, h, 0), x * FACE_TRACE_X, forward, up * FACE_TRACE_UP)
+                head.add((name, c, h, 1), x * FACE_TRACE_X, forward - MOUTH_TEETH_THICK, up * FACE_TRACE_UP)
+        last_column = len(MOUTH_TEETH) - 1
+        for c in range(last_column):
+            for side in (0, 1):
+                head.face(((name, c, 0, side), (name, c + 1, 0, side), (name, c + 1, 1, side), (name, c, 1, side)), m[tone])
+            for h in (0, 1):
+                head.face(((name, c, h, 0), (name, c + 1, h, 0), (name, c + 1, h, 1), (name, c, h, 1)), m[tone])
+        head.face(((name, last_column, 0, 0), (name, last_column, 1, 0), (name, last_column, 1, 1), (name, last_column, 0, 1)), m[tone])
+    for i, (x, forward, up) in enumerate(MOUTH_TONGUE):
+        head.add(("tongue", i, 0), x * FACE_TRACE_X, forward, up * FACE_TRACE_UP)
+        head.add(("tongue", i, 1), x * FACE_TRACE_X, forward, up * FACE_TRACE_UP - MOUTH_TONGUE_THICK)
+    for layer in (0, 1):
+        head.face((("tongue", 0, layer), ("tongue", 1, layer), ("tongue", 3, layer), ("tongue", 2, layer)), m["tongue"])
+    for a, b in ((0, 1), (1, 3), (3, 2)):
+        head.face((("tongue", a, 0), ("tongue", b, 0), ("tongue", b, 1), ("tongue", a, 1)), m["tongue"])
 
     for i in range(6):
         j = (i + 1) % 6
@@ -6349,7 +6390,10 @@ def main():
     random_state = rng.bit_generator.state
     for key, colour in (("face_lit", (0.92, 0.71, 0.58)), ("face_skin", (0.86, 0.63, 0.5)), ("face_mid", (0.8, 0.58, 0.47)),
                         ("face_blush", (0.87, 0.6, 0.52)), ("face_pink", (0.92, 0.55, 0.52)), ("face_white", (0.98, 0.9, 0.84)),
-                        ("face_cool", (0.8, 0.59, 0.5)), ("lip_lit", (0.9, 0.6, 0.58))):
+                        ("face_cool", (0.8, 0.59, 0.5)), ("lip_lit", (0.9, 0.6, 0.58)),
+                        # Inside her mouth.
+                        ("mouth", (0.3, 0.09, 0.1)), ("teeth", (0.93, 0.9, 0.84)), ("teeth_low", (0.9, 0.87, 0.8)),
+                        ("tongue", (0.78, 0.4, 0.42))):
         mats[key] = material("T_" + key, tex_flat("T_" + key, colour, variation=0.03))
     rng.bit_generator.state = random_state
     # The male face colours put the random numbers back afterwards, so the textures made after them stay the same.
