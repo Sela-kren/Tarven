@@ -645,6 +645,19 @@ export const DARES: Record<string, Omit<StripPiece, "id">> = {
     say: "\"Turn round, he says. As if you weren't looking already.\"",
     result: "You turn and bend a little, and someone plucks the tail off your bottom to loud cheers.",
   },
+  // The babydoll's and the corset gown's.
+  straps: {
+    dare: "\"Those little straps aren't hiding anything anyway. Unclip them!\" A finger hooks under the one at your neck.",
+    accept: "Unclip your choker and straps",
+    say: "\"You're right, they aren't. Off they come.\"",
+    result: "The choker clicks open and the straps slither down over your breasts. The table whistles.",
+  },
+  trim: {
+    dare: "\"All that lace! Let's have it, one strip at a time.\" Somebody pinches the edge and tugs.",
+    accept: "Let them tear off your lace",
+    say: "\"Slowly. It took a seamstress a week.\"",
+    result: "The lace comes away in long strips and gets wound round wrists and tankards all down the table.",
+  },
 };
 
 /** The lines for a garment: its own if it has them, otherwise ones made from what it's called. */

@@ -895,6 +895,10 @@ const FEMALE_COLORS: ColorDef[] = [
   { id: "collar", label: "Collar and cuffs", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_collar"]] },
   { id: "bowtie", label: "Bow tie", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_bowtie"]] },
   { id: "tail", label: "Tail", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_tail"]] },
+  // The babydoll's choker, straps and bow, and the lace on it and on the corset gown (the gown's laces too). The
+  // babydoll's skirt and band, and the gown's skirt, are the skirt; the gown's corset is the bodice.
+  { id: "straps", label: "Straps", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_straps"]] },
+  { id: "trim", label: "Lace", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_trim"]] },
   // The pirate's rig. Her corset is the bodice, her shirt the blouse, and her belt and corset laces the belt.
   ...pirateColors(),
   { id: "feather", label: "Feather", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_plume"]] },
@@ -942,6 +946,21 @@ const FEMALE_OUTFITS: OutfitDef[] = [
     },
     legwear: "garter",
     under: { bra: "hearts", briefs: "heart" },
+  },
+  {
+    // A pale blue babydoll: a choker with straps down the inside of her bare breasts to a bow under them, and a short
+    // skirt parted at the front, banded with white lace.
+    id: "babydoll", label: "Babydoll", mesh: "Babydoll",
+    colors: ["straps", "trim", "skirt", "stockings", "shoes", "soles", "bra", "smalls"],
+    preset: { straps: "#8fb0e0", skirt: "#a9c2ea", trim: "#eef2fa", shoes: "#e8eef8", soles: "#c9d4e6" },
+    legwear: "noshow",
+  },
+  {
+    // A white corset gown: an underbust corset laced in black, and a long skirt open at the front, edged in black lace.
+    id: "gown", label: "Corset gown", mesh: "Gown",
+    colors: ["trim", "bodice", "skirt", "stockings", "shoes", "soles", "bra", "smalls"],
+    preset: { bodice: "#f1ece0", skirt: "#f1ece0", trim: "#1c1716", shoes: "#f1ece0", soles: "#9a8f80" },
+    legwear: "noshow",
   },
   {
     // A cream shirt, an oxblood corset under a red sash, brown breeches, black boots, and a cocked hat with a white feather.

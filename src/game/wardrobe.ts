@@ -99,6 +99,9 @@ export const WARDROBE: Record<WardrobeBody, readonly Garment[]> = {
     { id: "bowtie", label: "bow tie", layer: "accessory", region: "top" },
     { id: "collar", label: "collar and cuffs", layer: "accessory", region: "top" },
     { id: "tail", label: "tail", layer: "accessory", region: "bottom" },
+    // The babydoll's straps, and the lace on it and the corset gown, which comes away before the cloth it's on.
+    { id: "straps", label: "straps", layer: "accessory", region: "top" },
+    { id: "trim", label: "lace", layer: "accessory", region: "bottom" },
     // The pirate's rig, which only guests wear for now. Her corset is the bodice and her shirt the chemise.
     ...PIRATE_GARMENTS,
     { id: "feather", label: "feather", layer: "accessory", region: "top", keep: "it's pinned in her hat, or on her arrows" },
@@ -141,8 +144,8 @@ export const WARDROBE: Record<WardrobeBody, readonly Garment[]> = {
  */
 export const TOP_PULL: Readonly<Record<string, "down" | "up">> = { blouse: "down", bodice: "down", belt: "down", ribbons: "down", top: "up" };
 
-/** Tops that sit under her breasts in an outfit, leaving them bare: the bunny set's corset. */
-const UNDER_BUST: Readonly<Record<string, readonly string[]>> = { bunny: ["bodice"] };
+/** Tops that sit under her breasts in an outfit, leaving them bare: the bunny set's and the corset gown's corsets. */
+const UNDER_BUST: Readonly<Record<string, readonly string[]>> = { bunny: ["bodice"], gown: ["bodice"] };
 
 /**
  * The tops she has on that cover her breasts, and which way they come off them: up if any of them only lifts, down

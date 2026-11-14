@@ -1174,6 +1174,45 @@ FACE_EAR = [[(0.07, 0.0105, 0.0855), (0.07, -0.002, 0.0947), (0.07, -0.0147, 0.0
             [(0.086, 0.0105, 0.0855), (0.093, -0.002, 0.0947), (0.095, -0.0147, 0.0935), (0.093, -0.0266, 0.0764), (0.088, -0.016, 0.058), (0.082, -0.0056, 0.0489)]]
 # The eyebrow from the nose outwards: x, bottom edge, top edge, how far forward.
 HEAD_BROW = [(0.0156, 0.1065, 0.1125, 0.092), (0.0398, 0.1095, 0.1149, 0.079), (0.064, 0.1008, 0.1035, 0.067)]
+# Her brows (the cute face's) drawn as brush strokes: a smooth curve through HEAD_BROW's middles, in this many
+# sections so an expression can bend it anywhere along (face.ts), and this thick along it from the nose out (share of
+# the way, metres): firm by her nose, fullest a third of the way, tapering to a point at her temple.
+HEAD_BROW_SECTIONS = 12
+HEAD_BROW_THICK = [(0.0, 0.0027), (0.3, 0.0041), (0.7, 0.0027), (1.0, 0.0004)]
+HEAD_BROW_DEPTH = 0.006
+
+
+def brow_stroke(at, sx):
+    """One brow as rings of four corners (top and bottom, front and back) from the nose out, for a loft."""
+    xs = [x for x, _, _, _ in HEAD_BROW]
+
+    def through(values, x):
+        # The smooth curve through the three HEAD_BROW values.
+        total = 0.0
+        for i, value in enumerate(values):
+            term = value
+            for j, other in enumerate(xs):
+                if j != i:
+                    term *= (x - other) / (xs[i] - other)
+            total += term
+        return total
+
+    def thick(share):
+        for (s0, t0), (s1, t1) in zip(HEAD_BROW_THICK, HEAD_BROW_THICK[1:]):
+            if share <= s1:
+                return t0 + (t1 - t0) * (share - s0) / (s1 - s0)
+        return HEAD_BROW_THICK[-1][1]
+
+    rings = []
+    for i in range(HEAD_BROW_SECTIONS + 1):
+        share = i / HEAD_BROW_SECTIONS
+        x = xs[0] + (xs[-1] - xs[0]) * share
+        middle = through([(low + top) / 2 for _, low, top, _ in HEAD_BROW], x)
+        forward = through([y for _, _, _, y in HEAD_BROW], x)
+        half = thick(share) / 2
+        rings.append([at(sx * x, forward, middle + half), at(sx * x, forward, middle - half),
+                      at(sx * x, forward - HEAD_BROW_DEPTH, middle - half), at(sx * x, forward - HEAD_BROW_DEPTH, middle + half)])
+    return rings
 # One half of the bob from the crown to the neck. Each ring runs around the outside from the front
 # edge to the centre of the back, then returns along the inside: (x, y, height above the chin).
 BOB_RINGS = [
@@ -1574,9 +1613,7 @@ def add_head(part, spec, m, hair_parts=None):
         pass  # the nose, eyes and mouth are part of the head itself
     elif spec.get("cute_face"):
         for sx in (-1, 1):
-            brow =[[at(sx * x, y, top), at(sx * x, y, low), at(sx * x, y - 0.006, low), at(sx * x, y - 0.006, top)]
-                    for x, low, top, y in HEAD_BROW]
-            part.loft(brow, hair)
+            part.loft(brow_stroke(at, sx), hair)
     else:
         part.solid([at(0, 0.096, 0.122), at(0, 0.124, 0.072), at(0.021, 0.096, 0.066),
                     at(-0.021, 0.096, 0.066), at(0, 0.093, 0.06)], nose, skin)
@@ -4332,6 +4369,144 @@ def build_bunny_extra(spec, m, fit):
     return extra
 
 
+# ---------------------------------------------------------------- the babydoll and the corset gown
+# Two brothel girls' nightwear. The babydoll: a choker with two straps from it down the inner sides of her breasts to
+# a band under them, tied with a bow, and a short flared skirt hanging from the band, parted at the front from the bow
+# down and banded with lace across the hips. The corset gown: an underbust corset laced up the front, and a long skirt
+# from the hips, wide open at the front from top to hem, its edges trimmed in lace. Both leave her breasts bare.
+NIGHTWEAR_COLOURS = (("straps", (0.62, 0.72, 0.9)), ("trim", (0.08, 0.07, 0.07)))
+BABYDOLL_BAND = (1.035, 1.075)  # under her bust, all the way round
+BABYDOLL_SKIRT = [1.05, 1.0, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7]  # from the band to the hem at the tops of her thighs
+BABYDOLL_PART = (0.1, 0.42)  # half the angle of the parting at the front: at the bow and at the hem
+BABYDOLL_LACE = (0.95, 0.915, 0.012)  # the lace band's top, its bottom and how deep its scallops go
+# The straps, from the choker down the inside of each breast to the band: (x, z) on her near side.
+BABYDOLL_STRAP = [(0.026, 1.31), (0.034, 1.27), (0.041, 1.22), (0.046, 1.17), (0.048, 1.13), (0.049, 1.09),
+                  (0.05, 1.06)]
+GOWN_CORSET = (0.875, 1.09)
+GOWN_SKIRT = [0.935, 0.88, 0.82, 0.72, 0.6, 0.48, 0.36, 0.25, 0.14]
+GOWN_OPEN = 0.46  # half the angle of the opening at the front
+GOWN_LACE = (0.07, 0.05)  # how far the lace edge lies back onto the skirt, and how far it hangs into the opening
+
+
+def underbust_cloth(spec, m, skin, mat, z0, z1, lift_point=0.0):
+    """
+    The worn faces of a garment round her trunk between two heights, dipping `lift_point` lower at her front middle,
+    and her legwear: the babydoll's band, the gown's corset.
+    """
+    faces = []
+    for f, fm in skin.faces:
+        if fm is m["stripe"] or len(f) > 4:
+            continue
+        bone, (cx, cy, cz) = face_bone(skin, f)
+        if bone in ("Hips", "Torso") and not face_leans(skin, f, "UpperArm"):
+            dip = lift_point * max(0.0, 1 - abs(cx) / 0.075) if cy > 0 else 0.0
+            if z0 - dip <= cz < z1:
+                faces.append((f, mat))
+                continue
+        if is_legwear(bone, cz):
+            faces.append((f, legwear_band(m, bone, cz)))
+    return faces
+
+
+def nightwear_lift(bone, z):
+    """Close to the skin: a band or corset just off it, stockings on it."""
+    return 0.003 if bone in ("Hips", "Torso") else 0.0
+
+
+def trunk_weights(spec):
+    """Weights for a point on her trunk by its height: the hips below the waist, the torso above."""
+    blend_start, blend_span = spec.get("trunk_blend", (0.985, 0.05))
+
+    def trunk(co):
+        t = min(1.0, max(0.0, (co[2] - blend_start) / blend_span))
+        return {"Hips": 1 - t, "Torso": t}
+    return trunk
+
+
+def hung_weights(spec, a, z):
+    """A skirt's weights where it hangs: on her trunk above the hips, then on the skirt's bones."""
+    if z > SKIRT_HANG[0]:
+        return trunk_weights(spec)((0.0, 0.0, z))
+    return skirt_weights(a % (2 * math.pi), z)
+
+
+def build_babydoll_extra(spec, m, surface):
+    """The babydoll's choker and straps, its bow, the skirt parted at the front, and the lace across it."""
+    extra = Skin()
+    neck_band(extra, spec, "choker", (1.34, 1.362), 0.006, m["straps"], sides=12)
+    for sx in (-1, 1):
+        lay_strap(extra, f"strap{sx}", surface, [(sx * x, z) for x, z in BABYDOLL_STRAP], 0.0055, 0.003, m["straps"])
+
+    # The skirt flares from the band: round each row, as wide as her widest below it, and more towards the hem.
+    top = BABYDOLL_SKIRT[0]
+
+    def outline(z):
+        zs = [z + (top - z) * i / 8 for i in range(9)]
+        w, f, b = (max(profile_at(spec, zz)[i] for zz in zs) for i in range(3))
+        t = (top - z) / (top - BABYDOLL_SKIRT[-1])
+        return w + 0.006 + 0.05 * t ** 1.3, f + 0.008 + 0.065 * t ** 1.3, b + 0.006 + 0.06 * t ** 1.3
+
+    def parted(z):
+        t = (top - z) / (top - BABYDOLL_SKIRT[-1])
+        return BABYDOLL_PART[0] + (BABYDOLL_PART[1] - BABYDOLL_PART[0]) * t
+
+    columns = 17
+
+    def at(z, k, out=0.0):
+        half = parted(z)
+        a = math.pi / 2 + half + (2 * math.pi - 2 * half) * k / (columns - 1)
+        w, f, b = outline(z)
+        co = (math.cos(a) * (w + out), math.sin(a) * ((f if math.sin(a) > 0 else b) + out), z)
+        return co, hung_weights(spec, a, z)
+
+    add_sheet(extra, "skirt", lambda r, k: at(BABYDOLL_SKIRT[r], k), len(BABYDOLL_SKIRT), columns, m["skirt"], 0.003)
+    lace_top, lace_bottom, scallop = BABYDOLL_LACE
+    add_sheet(extra, "lace", lambda r, k: at(lace_top if r == 0 else lace_bottom - scallop * (k % 2), k, 0.004),
+              2, columns, m["trim"], 0.002)
+
+    # The bow at the front of the band, between her breasts: two loops, a knot and two short tails.
+    z = sum(BABYDOLL_BAND) / 2
+    y = profile_at(spec, z)[1] + CLOTH_GAP + 0.008
+    trunk = trunk_weights(spec)
+    for i, sx in enumerate((-1, 1)):
+        corners = [(sx * 0.005, y, z - 0.003), (sx * 0.026, y, z - 0.011), (sx * 0.026, y, z + 0.011), (sx * 0.005, y, z + 0.003)]
+        add_slab(extra, f"bow{i}", corners, (0.0, 0.004, 0.0), trunk, m["straps"])
+        corners = [(sx * 0.002, y, z), (sx * 0.008, y, z), (sx * 0.02, y + 0.004, z - 0.05), (sx * 0.012, y + 0.004, z - 0.05)]
+        add_slab(extra, f"bowtail{i}", corners, (0.0, 0.003, 0.0), trunk, m["straps"])
+    facing(extra, "bowknot", (0.0, y + 0.002, z), (0.006, 0.007), (0.0, 1.0), trunk, m["straps"], depth=0.006)
+    return extra
+
+
+def build_gown_extra(spec, m):
+    """The corset gown's laces up the front of the corset, and its long skirt open at the front, edged in lace."""
+    extra = Skin()
+    trunk = trunk_weights(spec)
+    for i, z in enumerate((0.905, 0.94, 0.975, 1.01, 1.045)):
+        y = profile_at(spec, z)[1] + CLOTH_GAP + 0.006
+        for j, sx in enumerate((-1, 1)):
+            corners = [(sx * 0.02, y, z - 0.004), (sx * 0.02, y, z + 0.002), (-sx * 0.02, y, z + 0.022), (-sx * 0.02, y, z + 0.016)]
+            add_slab(extra, f"lace{i}_{j}", corners, (0.0, 0.003, 0.0), trunk, m["trim"])
+
+    columns = 15
+
+    def at(r, k, a=None, out=1.0):
+        z = GOWN_SKIRT[r]
+        if a is None:
+            a = math.pi / 2 + GOWN_OPEN + (2 * math.pi - 2 * GOWN_OPEN) * k / (columns - 1)
+        x, y, _ = skirt_point(spec, a, z)
+        return (x * out, y * out, z), hung_weights(spec, a, z)
+
+    add_sheet(extra, "skirt", at, len(GOWN_SKIRT), columns, m["skirt"], 0.004)
+    # The lace down each edge of the opening: back over the skirt, and hanging into the opening in scallops.
+    back, hang = GOWN_LACE
+    for e, (edge, onto) in enumerate(((math.pi / 2 + GOWN_OPEN, 1), (math.pi / 2 - GOWN_OPEN, -1))):
+        def lace(r, k, edge=edge, onto=onto):
+            a = edge + onto * back if k == 0 else edge - onto * hang * (1.6 if r % 2 else 0.6)
+            return at(r, k, a, 1.015)
+        add_sheet(extra, f"edge{e}", lace, len(GOWN_SKIRT), 2, m["trim"], 0.002)
+    return extra
+
+
 # ---------------------------------------------------------------- the pirate's rig
 # For both bodies: a loose shirt with full sleeves, breeches tucked into tall bucket-topped boots, a sash round the
 # waist knotted at the left hip with its ends hanging, and a cocked hat trimmed with braid. He wears a waistcoat
@@ -5814,10 +5989,14 @@ def more_outfits(spec, m, skin, normals, fit):
     }
     if spec.get("outfit") != "medieval":
         return guests
+    babydoll = (underbust_cloth(spec, m, skin, m["skirt"], *BABYDOLL_BAND), lifted(nightwear_lift))
     return {
         "Dirndl": (dirndl_cloth(spec, m, skin), lifted(dirndl_puff), build_dirndl_extra(spec, m)),
         "Priestess": (priestess_cloth(spec, m, skin), lifted(priestess_lift), build_priestess_extra(spec, m)),
         "Bunny": (bunny_cloth(spec, m, skin), lifted(bunny_lift), build_bunny_extra(spec, m, fit)),
+        "Babydoll": (*babydoll, build_babydoll_extra(spec, m, ClothSurface(skin, [(f, None) for f, _ in skin.faces], babydoll[1]))),
+        "Gown": (underbust_cloth(spec, m, skin, m["bodice"], *GOWN_CORSET, lift_point=0.03), lifted(nightwear_lift),
+                 build_gown_extra(spec, m)),
         **guests,
     }
 
@@ -6612,6 +6791,11 @@ def main():
     # Her bunny set, the same way.
     random_state = rng.bit_generator.state
     for key, colour in BUNNY_COLOURS:
+        mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
+    rng.bit_generator.state = random_state
+    # The babydoll's and the corset gown's, the same way.
+    random_state = rng.bit_generator.state
+    for key, colour in NIGHTWEAR_COLOURS:
         mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
     rng.bit_generator.state = random_state
     # What men leave on her, likewise.
