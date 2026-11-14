@@ -159,6 +159,9 @@ export interface Records {
   taproomScenes: number;
   taproomPartners: number;
   taproomMost: number;
+  /** Touches she let go inside her clothes, and on bare skin (touch layers, touch.ts). */
+  touchedInside: number;
+  touchedBare: number;
   acts: Partial<Record<UpstairsAct, number>>;
   overwhelmed: number;
   /** Times she came in an after-hours game (each one counts toward her lewdness). */
@@ -227,6 +230,8 @@ export function newRecords(): Records {
     taproomScenes: 0,
     taproomPartners: 0,
     taproomMost: 0,
+    touchedInside: 0,
+    touchedBare: 0,
     acts: {},
     overwhelmed: 0,
     climaxes: 0,
@@ -551,7 +556,7 @@ export const PASSIVE_GROUPS: readonly { id: PassiveGroup; name: string; body: bo
   { id: "pussy", name: "Pussy", body: true },
   { id: "cock", name: "Cock", body: true },
   { id: "exhibition", name: "Exhibition", body: true },
-  { id: "invitations", name: "Invitations", body: true },
+  { id: "invitations", name: "Adult Play", body: true },
   { id: "masturbation", name: "Masturbation", body: true },
   { id: "sadism", name: "Sadism", body: false },
   { id: "masochism", name: "Masochism", body: false },
@@ -1131,9 +1136,9 @@ export const PASSIVES: readonly PassiveDef[] = [
     id: "openHouse",
     name: "Open House",
     group: "exhibition",
-    need: "Answer an invitation by staying down in the taproom",
+    need: "Have adult play down in the taproom",
     progress: (f) => count(f.records.taproomScenes, 1),
-    benefit: "+20% gold from invitations, upstairs or down; guests ask for a look 25% more often",
+    benefit: "+20% gold from adult play, upstairs or down; guests ask for a look 25% more often",
     effect: (e) => {
       e.upstairsGold += 0.2;
       e.showAsk += 0.25;
@@ -1159,7 +1164,7 @@ export const PASSIVES: readonly PassiveDef[] = [
     thought: "(Half the room was in it and the other half watched. I'd do it again.)",
   },
 
-  // ---- Invitations ----
+  // ---- Adult play ----
   {
     id: "upstairsCurious",
     name: "Upstairs Curious",
@@ -1177,7 +1182,7 @@ export const PASSIVES: readonly PassiveDef[] = [
     group: "invitations",
     need: "Take guests upstairs 3 times",
     progress: (f) => count(f.records.invitations, 3),
-    benefit: "Invitations need 10 less desire; +20% gold from taking guests upstairs",
+    benefit: "Adult play needs 10 less Cock desire; +20% gold from taking guests upstairs",
     effect: (e) => {
       add(e.ease, ["invite"], 10);
       e.upstairsGold += 0.2;
@@ -2538,6 +2543,8 @@ export function readProgress(raw: unknown): ProgressSave {
       "taproomScenes",
       "taproomPartners",
       "taproomMost",
+      "touchedInside",
+      "touchedBare",
       "overwhelmed",
       "climaxes",
       "alone",

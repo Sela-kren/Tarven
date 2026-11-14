@@ -24,6 +24,17 @@ body {
   height: 100%;
   background: #000;
   overflow: hidden;
+  /* A game, not a page: clicks and drags never highlight menu text. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Text boxes (save names, the test setup) still take a cursor and selection. */
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 canvas {

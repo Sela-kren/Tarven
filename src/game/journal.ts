@@ -235,7 +235,7 @@ export interface PrivateState {
   passivesHeld: number;
 }
 
-/** The boldness scale, as the concept names it: 1 is barely there, 10 an invitation upstairs. */
+/** The boldness scale, as the concept names it: 1 is barely there, 10 adult play. */
 const BOLDNESS = [
   "",
   "Barely there",
@@ -247,7 +247,7 @@ const BOLDNESS = [
   "Over the line",
   "Heated",
   "Barely holding back",
-  "The invitation",
+  "Adult play",
 ];
 
 const REGION_NAMES: Record<TouchRegion, string> = {
@@ -264,7 +264,7 @@ const REGION_NAMES: Record<TouchRegion, string> = {
   thigh: "Thighs",
   clothes: "Clothes",
   intimate: "Intimate",
-  invite: "Invitations",
+  invite: "Adult play",
 };
 
 /** Builds the open journal at its private pages. */
@@ -521,13 +521,15 @@ export function recordsBook(state: RecordsState): HTMLElement {
   for (const spot of CUM_SPOTS) left.append(row(CUM_NAMES[spot], `${r.cum[spot] ?? 0} ml`));
   left.append(row("In all", `${ml} ml`));
 
-  right.append(el("h2", "", "Upstairs"));
-  right.append(row("Taken upstairs", String(r.invitations)));
+  right.append(el("h2", "", "Adult play"));
+  right.append(row("Upstairs, in your room", String(r.invitations)));
   for (const act of UPSTAIRS_ACTS) right.append(row(UPSTAIRS[act].label, String(r.acts[act] ?? 0)));
   right.append(row("Kinds of guest", `${r.upstairsKinds.length}/4`));
   right.append(row("Stayed down in the taproom", String(r.taproomScenes)));
   right.append(row("Joined in, all told", String(r.taproomPartners)));
   right.append(row("Most at once", String(r.taproomMost)));
+  right.append(row("Touched inside your clothes", String(r.touchedInside)));
+  right.append(row("Touched on bare skin", String(r.touchedBare)));
   right.append(el("h2", "", "Work"));
   right.append(row("Orders served", String(r.served)));
   right.append(row("Bottles poured", String(r.poured)));

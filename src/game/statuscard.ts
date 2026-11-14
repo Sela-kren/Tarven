@@ -21,6 +21,8 @@ export interface StatusState {
   meters: Readonly<Meters>;
   /** Pieces of clothing off tonight. */
   piecesOff: number;
+  /** Her adult play stack tonight, 0 to 100 (percent). */
+  adultStack: number;
   lewdness: number;
   corruption: number;
 }
@@ -153,12 +155,16 @@ export class StatusCard {
   private readonly pleasure = document.createElement("div");
   private readonly pleasureFill = document.createElement("span");
   private readonly pleasureValue = document.createElement("b");
+  private readonly stack = document.createElement("div");
+  private readonly stackFill = document.createElement("span");
+  private readonly stackValue = document.createElement("b");
   private readonly will = new Gauge("W", "Willpower", "will");
   private readonly drink = new Gauge("D", "Drink", "drink");
   private readonly tags = document.createElement("div");
   private portrait: HTMLCanvasElement | null = null;
   private shownText = "";
   private shownPleasure = -1;
+  private shownStack = -1;
 
   constructor(private readonly root: HTMLElement) {
     root.replaceChildren();
@@ -191,7 +197,19 @@ export class StatusCard {
     track.append(this.pleasureFill);
     this.pleasureValue.className = "num";
     this.pleasure.append(label, track, this.pleasureValue);
-    body.append(hearts, this.pleasure);
+    // Her adult play stack, in percent: at 100% an aroused guest can go for it (adultplay.ts).
+    this.stack.className = "pleasure stack";
+    this.stack.title = "Adult play stack: fills with desire, drinks, touches and clothes off. At 100%, an aroused guest can go for adult play.";
+    const stackLabel = document.createElement("span");
+    stackLabel.className = "label";
+    stackLabel.textContent = "Adult play";
+    const stackTrack = document.createElement("span");
+    stackTrack.className = "track";
+    this.stackFill.className = "fill";
+    stackTrack.append(this.stackFill);
+    this.stackValue.className = "num";
+    this.stack.append(stackLabel, stackTrack, this.stackValue);
+    body.append(hearts, this.pleasure, this.stack);
 
     // Drink over willpower as big slanted gauges, and how she stands as chips under them.
     const gauges = document.createElement("div");
@@ -254,6 +272,13 @@ export class StatusCard {
       this.pleasureValue.textContent = `${pleasure}%`;
       this.pleasure.classList.toggle("aroused", pleasure >= AROUSED_AT);
       this.pleasure.classList.toggle("edge", pleasure >= EDGE_AT);
+    }
+    const stack = Math.max(0, Math.min(100, Math.floor(s.adultStack)));
+    if (stack !== this.shownStack) {
+      this.shownStack = stack;
+      this.stackFill.style.width = `${stack}%`;
+      this.stackValue.textContent = `${stack}%`;
+      this.stack.classList.toggle("full", stack >= 100);
     }
     this.will.set(s.will / Math.max(1, s.willMax), String(s.will), `${s.will}/${s.willMax}`, s.will < s.willMax / 4);
     const drunk = Math.round(s.drunk * 100);

@@ -8,7 +8,14 @@ import { AREA_NAMES, DUEL_AREAS, MAX_PARTNERS, STATE_NAMES, type Duel, type Duel
 import { ROLE_PLAYS, type RolePlay } from "./duellines";
 import { GUEST_KIND_LIST, statsOf } from "./guestroles";
 import type { Button, Game } from "./game";
-import type { AdultScene, InviteScene } from "./tavern";
+import type { AdultScene, BrawlPlace, InviteScene } from "./tavern";
+
+/** Where the game after a lost brawl is played, said at the top of her rules. */
+const PLACE_WORDS: Record<BrawlPlace, string> = {
+  here: "Right here on the taproom floor, the room watching.",
+  upstairs: "Up in your room.",
+  yard: "Out back, in the yard.",
+};
 import { willLabel } from "./willpower";
 import { DESIRE_STRONG } from "./desire";
 import { METER_NAMES, METERS } from "./passives";
@@ -93,7 +100,26 @@ export function playAdultScene(game: Game, scene: AdultScene): void {
     game.panelBack = back;
     return;
   }
+  if (scene.auto) {
+    playAutoAdult(game, scene);
+    return;
+  }
   showInvitation(game, scene);
+}
+
+/**
+ * Consent off, and her state said yes (adultplay.ts): no card to choose from. Where and what are matched to her
+ * state; the taproom plays as the After Hours game (Stop still ends it), upstairs as its one card.
+ */
+function playAutoAdult(game: Game, scene: InviteScene): void {
+  const back = () => backToWork(game);
+  const result = game.tavern.autoAdultPlay(scene);
+  if (result.where === "taproom") {
+    showDuel(game);
+    return;
+  }
+  showAdultCard(game, "Adult play", result.line, result.act === "kiss" ? "candle" : "bed", [{ label: "Go back down to the bar", onPick: back }]);
+  game.panelBack = back;
 }
 
 /** Back to work from an 18+ card. */
@@ -104,7 +130,7 @@ function backToWork(game: Game): void {
 }
 
 /**
- * She's said yes to an invitation (invitetalk.ts tells it). Where is hers to choose: up the stairs with them, or
+ * She's said yes to adult play (invitetalk.ts tells it). Where is hers to choose: up the stairs with them, or
  * right here in the taproom, with them and whoever else in the room wants in (taproom.ts). The taproom isn't on
  * offer at all when either side has had too much; it's there but shut, with the reason, when nobody else wants
  * in or it's her first time. She can still change her mind.
@@ -113,19 +139,19 @@ export function showInvitation(game: Game, scene: InviteScene): void {
   const { tavern } = game;
   const back = () => backToWork(game);
   const taproom = tavern.taproomOption(scene);
-  const buttons: Button[] = [{ label: "Take them upstairs", onPick: () => showUpstairs(game, scene) }];
+  const buttons: Button[] = [{ label: "Upstairs, in your room", onPick: () => showUpstairs(game, scene) }];
   if (taproom.shown) {
     const n = taproom.joiners.length;
     buttons.push({
       label: taproom.blocked
-        ? `Stay down here, in the taproom (18+) (${taproom.blocked})`
-        : `Stay down here, in the taproom (18+): ${n} more ${n === 1 ? "wants" : "want"} to join`,
+        ? `Down here, in the taproom (18+) (${taproom.blocked})`
+        : `Down here, in the taproom (18+): ${n} more ${n === 1 ? "wants" : "want"} to join`,
       disabled: Boolean(taproom.blocked),
       onPick: () => showTaproomRules(game, scene, new Set(taproom.joiners.map((g) => g.id)), new Set(), "plain"),
     });
   }
-  buttons.push({ label: "Change your mind, gently", onPick: back });
-  showAdultCard(game, "The invitation", tavern.inviteChoiceLine(scene), "door", buttons);
+  buttons.push({ label: "Not tonight", onPick: back });
+  showAdultCard(game, "Adult play", tavern.inviteChoiceLine(scene), "door", buttons);
   game.panelBack = back;
 }
 
@@ -262,16 +288,17 @@ export function showBrawlOffer(game: Game, lost = ""): void {
     ? `"No hard feelings. Take us up to your room? All of us, if you'll have us." Behind them, ${crewWords(crew.map((c) => c.label))} ${crew.length === 1 ? "waits" : "wait"} on your answer.`
     : `"No hard feelings. Take me up to your room?"`;
   const line = `${lost ? `${lost} ` : ""}The fight's gone out of the ${who}. They offer you a hand up and hold your eye a moment too long. ${ask}`;
-  showAdultCard(game, "Knocked down", line, "door", [
-    {
-      label: blocked
-        ? `Go on, upstairs (18+) (${blocked.toLowerCase().replace(/\.$/, "")})`
-        : `Go on, upstairs (18+): ${crew.length > 0 ? `${crew.length + 1} of them asking; ` : ""}set your rules`,
-      disabled: Boolean(blocked),
-      onPick: () => showDuelRules(game, new Set(), 0, "plain", new Set(crew.map((c) => c.id))),
-    },
-    { label: "Stop: send them off, and end the night", onPick: stop },
-  ]);
+  // Adult play, wherever she chooses: right where she fell, upstairs, or out back.
+  const asking = crew.length > 0 ? `${crew.length + 1} of them asking; ` : "";
+  const places: Button[] = tavern.brawlPlaces().map((place) => {
+    const why = blocked ? blocked.toLowerCase().replace(/\.$/, "") : place.blocked;
+    return {
+      label: why ? `Adult play: ${place.label} (18+) (${why})` : `Adult play: ${place.label} (18+): ${asking}set your rules`,
+      disabled: Boolean(why),
+      onPick: () => showDuelRules(game, new Set(), 0, "plain", new Set(crew.map((c) => c.id)), place.id),
+    };
+  });
+  showAdultCard(game, "Knocked down", line, "door", [...places, { label: "Stop: send them off, and end the night", onPick: stop }]);
   game.panelBack = stop;
 }
 
@@ -407,7 +434,7 @@ export function showBedChoice(game: Game): void {
  * Her rules for an after-hours game, before it starts: which parts of her are in play (only ones she's warm
  * enough for tonight) and the stake. A kiss is always part of it.
  */
-export function showDuelRules(game: Game, areas: Set<DuelArea>, stake: number, scene: RolePlay = "plain", crew: Set<number> = new Set()): void {
+export function showDuelRules(game: Game, areas: Set<DuelArea>, stake: number, scene: RolePlay = "plain", crew: Set<number> = new Set(), place: BrawlPlace = "upstairs"): void {
   const { tavern } = game;
   const kind = tavern.duelOffer();
   if (!kind) {
@@ -423,7 +450,7 @@ export function showDuelRules(game: Game, areas: Set<DuelArea>, stake: number, s
     onPick: () => {
       if (crew.has(c.id)) crew.delete(c.id);
       else crew.add(c.id);
-      showDuelRules(game, areas, stake, scene, crew);
+      showDuelRules(game, areas, stake, scene, crew, place);
     },
   }));
   buttons.push(...tavern.duelAreas().map((area) => ({
@@ -434,13 +461,13 @@ export function showDuelRules(game: Game, areas: Set<DuelArea>, stake: number, s
     onPick: () => {
       if (areas.has(area.id)) areas.delete(area.id);
       else areas.add(area.id);
-      showDuelRules(game, areas, stake, scene, crew);
+      showDuelRules(game, areas, stake, scene, crew, place);
     },
   })));
   buttons.push({
     label: `Stake: ${stake} gold (change)`,
     disabled: stakes.length < 2,
-    onPick: () => showDuelRules(game, areas, stakes[(stakes.indexOf(stake) + 1) % stakes.length], scene, crew),
+    onPick: () => showDuelRules(game, areas, stakes[(stakes.indexOf(stake) + 1) % stakes.length], scene, crew, place),
   });
   // Role-play: steps through the ones she's ready for; the rest say what passive they need.
   const plays = tavern.rolePlays();
@@ -450,13 +477,13 @@ export function showDuelRules(game: Game, areas: Set<DuelArea>, stake: number, s
   buttons.push({
     label: `Role-play: ${current.name} (change)${locked.length > 0 ? ` · ${locked.join(", ")}` : ""}`,
     disabled: ready.length < 2,
-    onPick: () => showDuelRules(game, areas, stake, ready[(ready.findIndex((p) => p.id === scene) + 1) % ready.length].id, crew),
+    onPick: () => showDuelRules(game, areas, stake, ready[(ready.findIndex((p) => p.id === scene) + 1) % ready.length].id, crew, place),
   });
   const going = asking.filter((c) => crew.has(c.id)).map((c) => c.id);
   buttons.push({
     label: going.length > 0 ? `Begin (18+) with ${going.length + 1} of them` : "Begin (18+)",
     onPick: () => {
-      if (tavern.startDuel([...areas], stake, scene, going)) showDuel(game);
+      if (tavern.startDuel([...areas], stake, scene, going, place)) showDuel(game);
     },
   });
   // Back to whoever asked: the brawl winner's offer, or the bedside.
@@ -466,8 +493,8 @@ export function showDuelRules(game: Game, areas: Set<DuelArea>, stake: number, s
     "Your rules",
     [
       asking.length > 0
-        ? `Up in your room. Pick who comes up with the ${kind}: each of them asked, and none of them will mind a no. Then choose what's in play. A kiss always is. They'll keep to your rules, and you can stop at any time, for all of them.`
-        : `Choose what's in play with the ${kind}. A kiss always is. They'll keep to your rules, and you can stop at any time.`,
+        ? `${PLACE_WORDS[place]} Pick who joins the ${kind}: each of them asked, and none of them will mind a no. Then choose what's in play. A kiss always is. They'll keep to your rules, and you can stop at any time, for all of them.`
+        : `${tavern.brawlOffer ? `${PLACE_WORDS[place]} ` : ""}Choose what's in play with the ${kind}. A kiss always is. They'll keep to your rules, and you can stop at any time.`,
       `${current.name}: ${current.about}`,
     ],
     buttons,

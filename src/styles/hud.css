@@ -234,6 +234,20 @@ body:has(#build.open) #status-card {
   animation: strip-throb 0.9s ease-in-out infinite;
 }
 
+/* The adult play stack: a second bar under pleasure, gold, throbbing once it's full. */
+#status-card .pleasure.stack .label {
+  color: #e8b44a;
+}
+
+#status-card .pleasure.stack .fill {
+  background: linear-gradient(180deg, #ffd98a 0, #d99a2a 50%, #8a5a10 100%);
+}
+
+#status-card .pleasure.stack.full .num {
+  color: #ffd27a;
+  animation: strip-throb 0.9s ease-in-out infinite;
+}
+
 @keyframes strip-throb {
   50% {
     text-shadow:

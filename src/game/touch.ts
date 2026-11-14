@@ -101,7 +101,7 @@ export interface PickOptions {
   canStrip: boolean;
   /** Touches already tried tonight. */
   seen: ReadonlySet<string>;
-  /** Whether guests will ask her upstairs yet. */
+  /** Whether adult play is in the pool. The tavern rolls for it on its own (adultplay.ts) and leaves this off. */
   invites?: boolean;
   /** How much more often guests go for each kind of touch, as a fraction. */
   pull?: Partial<Record<TouchRegion, number>>;
@@ -115,8 +115,8 @@ export interface PickOptions {
 const BRAWL_TOUCH_WEIGHT = 3;
 
 /**
- * The touches a guest of this kind with this much nerve might go for. Invitations only once she's ready for them;
- * the scuffle's own touches only in a brawl.
+ * The touches a guest of this kind with this much nerve might go for. Adult play only when asked for (it has its
+ * own roll, `adultTouch`); the scuffle's own touches only in a brawl.
  */
 export function touchesFor(kind: GuestKind, guestNerve: number, options: PickOptions): TouchDef[] {
   return TOUCHES.filter(
@@ -153,6 +153,92 @@ export function pickTouch(kind: GuestKind, guestNerve: number, random: () => num
     if (roll < 0) return choices[i];
   }
   return choices[choices.length - 1];
+}
+
+/**
+ * A guest going for adult play (adultplay.ts decides when): one of the ways it's asked that fits their kind. It
+ * isn't held to their nerve, since the chance of it already weighs how worked up they are.
+ */
+export function adultTouch(kind: GuestKind, random: () => number): TouchDef | null {
+  const fits = TOUCHES.filter((t) => t.romance && (t.kinds.length === 0 || t.kinds.includes(kind)));
+  if (fits.length === 0) return null;
+  return fits[Math.floor(random() * fits.length) % fits.length];
+}
+
+/**
+ * How far in a touch goes, Karryn-style: over her clothes, inside them, or on bare skin. Only for the parts of her
+ * clothes cover (`LAYERED_REGIONS`). The bolder layers open up as her desire for that part runs past what the touch
+ * needs, or as her Slut Level climbs; bare skin too once two pieces are off her anyway. Her yes is decided by her
+ * desire as before; the layer is how far in they go, and pays and warms her more the further it is.
+ */
+export type TouchLayer = "over" | "inside" | "bare";
+export const LAYERED_REGIONS: ReadonlySet<TouchRegion> = new Set(["chest", "rear", "thigh", "intimate", "waist"]);
+/** Desire past what the touch needs (0-10 scale) to open each layer, or the Slut Level that does instead. */
+export const INSIDE_DESIRE = 2;
+export const INSIDE_SLUT = 2;
+export const BARE_DESIRE = 4;
+export const BARE_SLUT = 4;
+/** Pieces off her that open bare skin whatever her desire. */
+export const BARE_EXPOSED = 2;
+/** What each layer adds once it lands: gold, how much more desire it stirs, and boldness in the Consent-off check. */
+export const LAYER_BONUS: Record<TouchLayer, { gold: number; desire: number; bold: number }> = {
+  over: { gold: 0, desire: 1, bold: 0 },
+  inside: { gold: 1, desire: 1.25, bold: 1 },
+  bare: { gold: 2, desire: 1.5, bold: 2 },
+};
+export const LAYER_NAMES: Record<TouchLayer, string> = { over: "over your clothes", inside: "inside your clothes", bare: "on bare skin" };
+
+export interface LayerFacts {
+  region: TouchRegion;
+  level: number;
+  /** Her desire for that part, 0 to 10. */
+  desire: number;
+  slutLevel: number;
+  /** Pieces of clothing off her. */
+  exposed: number;
+}
+
+/** The layers a touch could go to right now, tamest first. Only "over" for parts clothes don't cover. */
+export function layersOpen(f: LayerFacts): TouchLayer[] {
+  if (!LAYERED_REGIONS.has(f.region)) return ["over"];
+  const past = f.desire - desireNeeded(f.level);
+  const layers: TouchLayer[] = ["over"];
+  const inside = past >= INSIDE_DESIRE || f.slutLevel >= INSIDE_SLUT;
+  const bare = f.exposed >= BARE_EXPOSED || past >= BARE_DESIRE || f.slutLevel >= BARE_SLUT;
+  if (inside || bare) layers.push("inside");
+  if (bare) layers.push("bare");
+  return layers;
+}
+
+/** What's said after the reach when they go further than over her clothes, by part of her. */
+export const LAYER_LINES: Partial<Record<TouchRegion, Record<"inside" | "bare", string>>> = {
+  chest: {
+    inside: "Then their hand slips inside your top, under the cloth.",
+    bare: "There's nothing in the way: it's your bare breast in their hand.",
+  },
+  rear: {
+    inside: "Their hand slides up under your clothes.",
+    bare: "Their palm finds bare skin, and stays there.",
+  },
+  thigh: {
+    inside: "Their fingers slip up under the hem.",
+    bare: "Bare thigh, all the way up, and their hand doesn't stop.",
+  },
+  intimate: {
+    inside: "Under your clothes, under your smallclothes.",
+    bare: "Nothing at all between their fingers and you.",
+  },
+  waist: {
+    inside: "Their fingers slip under the hem, onto your belly.",
+    bare: "Bare skin at your waist, warm under their hand.",
+  },
+};
+
+/** How far in they go: the boldest layer open, half the time; otherwise one of the others. `roll` is 0 to 1. */
+export function pickLayer(open: readonly TouchLayer[], roll: number): TouchLayer {
+  if (open.length === 1 || roll < 0.5) return open[open.length - 1];
+  const rest = open.slice(0, -1);
+  return rest[Math.floor(((roll - 0.5) / 0.5) * rest.length) % rest.length];
 }
 
 /** How much desire it takes to let a touch of this boldness happen. */

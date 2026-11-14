@@ -4,9 +4,9 @@
  * Consent On (the start): every touch stops and asks. Consent Off is the player saying yes in advance: when an
  * impulsive guest reaches, a check weighs them against her (`impulseCheck`), and if they push past her it plays
  * out on its own. If they don't, she's asked like any other time. Only touches she could already say yes to are
- * covered: never when either of them is too drunk, never past her desire, and never the invitation upstairs. A
- * garment goes through the same check, with her hold the stronger for it (STRIP_HOLD). Slap and Pull away are there
- * on every reach that asks.
+ * covered: never when either of them is too drunk, and never past her desire. A garment goes through the same
+ * check, with her hold the stronger for it (STRIP_HOLD). Adult play isn't weighed here: with Consent off, her state
+ * decides it (adultplay.ts, `maybeReach` in tavern.ts). Slap and Pull away are there on every reach that asks.
  */
 import type { Mood } from "./mood";
 import type { TouchAnswer, TouchDef } from "./touch";
@@ -37,7 +37,7 @@ export function impulsive(mood: Mood, nerve: number): boolean {
 
 /**
  * Whether a touch is one the setting can cover: one she could say yes to anyway, within the boldness chosen. A
- * garment counts too, weighed harder in the check (STRIP_HOLD); the invitation upstairs never does.
+ * garment counts too, weighed harder in the check (STRIP_HOLD). Adult play has its own state check instead.
  */
 export function autoTouchFits(settings: TouchSettings, touch: TouchDef, answers: readonly TouchAnswer[]): boolean {
   return touch.level <= settings.upTo && touch.region !== "invite" && answers.includes("allow");

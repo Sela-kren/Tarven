@@ -183,6 +183,26 @@ export const BRAWL_ROOM_CREW: readonly string[] = [
   "You take the stairs with {n} of them behind you. The little room has never felt so full, and every one of them is looking at you.",
 ];
 
+/** After a lost brawl, right where she fell: the room still there, and nobody heading for the door. */
+export const BRAWL_HERE_ONE: readonly string[] = [
+  "Right there on the boards where you went down, with the room still crowded round from the fight, they kneel over you and wait for you to say what's allowed.",
+  "Nobody's gone back to their seat. A bench gets shoved aside, the cheering drops to a murmur, and they wait for your word, right there in the middle of the taproom.",
+];
+export const BRAWL_HERE_CREW: readonly string[] = [
+  "Right where you fell, {n} of them close in round you, and the room that watched the fight stays to watch this. They wait for you to say what's allowed.",
+  "The tables are still knocked crooked from the brawl. {n} of them gather round you on the floor, and the whole taproom holds its breath.",
+];
+
+/** After a lost brawl, out the back door into the yard: half private, under the stars. */
+export const BRAWL_YARD_ONE: readonly string[] = [
+  "Out the back door and into the yard, against the woodpile, the noise of the taproom muffled behind the wall. They wait for you to say what's allowed.",
+  "The night air hits your hot face. Behind the water butt, in the dark of the yard, they wait for your word.",
+];
+export const BRAWL_YARD_CREW: readonly string[] = [
+  "Out the back into the yard, {n} of them crowding after you past the water butt, the stars overhead. They wait for you to say what's allowed.",
+  "{n} of them follow you out into the dark yard behind the tavern. Someone props the back door shut. They wait for your word.",
+];
+
 /** How the taproom scene ends, by how it went: one short line for the 18+ card. */
 export const TAPROOM_END = {
   won: [

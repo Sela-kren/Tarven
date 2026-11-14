@@ -36,7 +36,7 @@ When she loses a brawl:
 - The fight ends immediately.
 - A sexual content scene is offered (18+ card or short scene).
 - She gets a final choice at the start of the scene: continue or stop.
-- If she continues, it's up in her room: the one who won, and their company (their party, or else whoever shares their table, never anyone roaring drunk, never the Baron). **Each of them asks**, and she ticks who comes up (all ticked to start). It plays as the After Hours game with all of them (`startDuel(..., crewIds)` in `tavern.ts`, `showDuelRules` in `fightpanels.ts`), and Stop ends it for everyone. Desire meters and records can rise, then the night ends.
+- If she continues, she picks where (7f): right where she fell, upstairs in her room, or out back in the yard; with the one who won, and their company (their party, or else whoever shares their table, never anyone roaring drunk, never the Baron). **Each of them asks**, and she ticks who comes up (all ticked to start). It plays as the After Hours game with all of them (`startDuel(..., crewIds)` in `tavern.ts`, `showDuelRules` in `fightpanels.ts`), and Stop ends it for everyone. Desire meters and records can rise, then the night ends.
 - If she stops, the night still ends and she only loses the normal gold and respect.
 - Gold and respect are lost either way.
 - **She's Bruised** (a debuff, `src/game/debuffs.ts`) through the next night: saying no costs 25% more willpower, her hold is 1 weaker (Consent off), and guests reach for her 15% more. Losing again before it wears off makes it worse (level 2).
@@ -291,7 +291,7 @@ A lustful guest with the nerve for it (Nerve 5+) is **impulsive**; so is a worke
 - **Push at or past her hold:** it plays out as *Let it happen*: the guest's reach, an impulse line, the touch's own line, and *Get back to work* (or *Back to the fight*). The comic panel plays, and the Force bar rushes up (`fast`).
 - **Her hold stands:** she's asked like any other time.
 - **The first time** an impulsive guest reaches with Consent still on, the touch freezes as usual with two extra answers on top: *"Let it happen, and let eager guests skip asking (Consent off)"* and *"Always ask me first"*. Every usual answer stays.
-- **It only covers touches she could already say yes to:** desire high enough for *Let it happen*, nobody too drunk, within the boldness chosen, never the invitation upstairs. A garment counts, but she holds on to her clothes harder (+2 to her hold). Pull away still works on the next reach.
+- **It only covers touches she could already say yes to:** desire high enough for *Let it happen*, nobody too drunk, within the boldness chosen. Adult play isn't weighed by push and hold: her state decides it (7f). A garment counts, but she holds on to her clothes harder (+2 to her hold). Pull away still works on the next reach.
 - The dev panel (**]**, dev builds only) shows both sides of the last check and why it played out or asked.
 - The settings live in the browser (`tarven.touch`), not in a save. The code is in `src/game/touchsettings.ts`, `tavern.ts` (`maybeReach`, `impulseFacts`, `touchOptions`), `menus.ts` (`showSettingsMenu`, `showDevPanel`) and `touchtalk-givein.ts` (`IMPULSE_LINES`). The tests are in `tests/touchsettings.test.ts`.
 
@@ -325,11 +325,16 @@ A bold guest may offer coin for a look at her as she serves them (`src/game/show
 - **Records and passives:** peeks, proper looks, times she said no (records). *Peep Show* (5 peeks: +1 gold a look, asked 25% more). *Flasher* (5 proper looks: +2 gold a look, asked 50% more).
 - Tests: `tests/show.test.ts`; elsewhere the tests' setup turns asks off (`showDice.roll = null`).
 
-## 7f. Invitations: upstairs, or the taproom [built]
-A bold guest's invitation (`region: "invite"`, boldness 10, once she's Lewdness 25 or Upstairs Curious) is told as a story, and when she says yes she chooses **where**: up the stairs with them, or right here in the taproom with them and whoever else in the room wants in. The words are in `src/game/invitetalk.ts`, the taproom rules in `src/game/taproom.ts`, the tavern's side in the "Invitations" section of `tavern.ts`, and the cards in `fightpanels.ts` (`showInvitation`).
+## 7f. Adult play: upstairs, or the taproom [built]
+Adult play (`region: "invite"`, boldness 10; the code still calls it the invitation) is told as a story, and when she says yes she chooses **where**: up the stairs with them, or right here in the taproom with them and whoever else in the room wants in. The rules for when it comes up are in `src/game/adultplay.ts`, the words in `src/game/invitetalk.ts`, the taproom rules in `src/game/taproom.ts`, the tavern's side in the "Adult play" section of `tavern.ts`, and the cards in `fightpanels.ts` (`showInvitation`, `playAutoAdult`).
 
-- **The ask:** what they say, in their own kind's words (farmer, soldier, smuggler, fugitive, adventurer, bandit, noble), then their reach, then the room going quiet to hear her answer, then her thought. **Always asked** (Consent off never covers an invitation), every usual answer there, and too drunk on either side blocks the yes.
-- **Her yes:** her words, and the room's reaction (a cheer, the room pretending not to watch). Then the **invitation card**: *Take them upstairs*, *Stay down here, in the taproom (18+)*, or *Change your mind, gently*.
+- **The adult play stack (in percent, on her status card under Pleasure):** fills through the night (`adultplay.ts`, `STACK_GAIN`): +0.12% per point of desire she gains (+0.25% per point of Cock desire), **+8% a drink** (drink loosens her; sloppy drunk still blocks every yes), +3% (+0.5% per boldness) a touch she lets land, +6% a piece of clothing off, +3% a peek / +6% a proper look, +20% overwhelmed. It starts each night at **half her lewdness, at most 40%**. Saying no to adult play knocks it back 15%; adult play played out (upstairs, the taproom, or after a brawl) empties it.
+- **When (Karryn-style):** only once the stack is **full (100%)**, and only an **aroused** guest (lust 6+, not drunk). Then, each time such a guest reaches for her, there's a chance they go for adult play instead (`adultPlayChance`): 10% to start, plus her Cock desire (up to +12%), horny (+6%), wet (+4%), the guest's lust past 5 (up to +8%), a guest in the lust mood (+3%), her lewdness (up to +12%), clothes off her (+2% a piece, up to +6%), nights gone by (up to +4%) and her passives' pull; halved when the room respects her; never past 50%. Never in a brawl, never by a guest who has hold of her, never on the first reach of the run.
+- **Her yes needs her ready:** Cock desire 90, less 1 for every 5 lewdness (up to 20) and her passives (*The Back Stairs* 10); or **horny and wet** at once, whatever her Cock desire. Too drunk on either side blocks the yes.
+- **The ask:** what they say, in their own kind's words (farmer, soldier, smuggler, fugitive, adventurer, bandit, noble), then their reach, then the room going quiet to hear her answer, then her thought. With **Consent on** it's always asked, every usual answer there.
+- **Consent off (Karryn's Prison): her state decides.** If she's ready (a yes is there) and the guest is **aroused** (lust 6+, not drunk), it happens without the question: her sub talk and their crowing, then where and what are **matched to her state** (`autoAdultPlay`): down in the taproom with everyone who wants in, if the taproom's open to her (not her first time, someone else wants in) and she's already on show (clothes off, or *Open House* / *The Whole Room*); else upstairs, doing what her strongest desire wants (ties to the bolder act; a kiss at least). The taproom still has Stop. If her state isn't there, she's asked as usual.
+- **Her yes:** her words, and the room's reaction (a cheer, the room pretending not to watch). Then the **Adult play card**: *Upstairs, in your room*, *Down here, in the taproom (18+)*, or *Not tonight*.
+- **After a lost brawl:** the winner's ask is adult play too, and she picks **where** (`brawlPlaces`): *Right here, where you fell* (the room watches: the pass talks like the taproom, fame up, respect down, +1 heat; never her first time), *Upstairs, in your room* (as before), or *Out back, in the yard* (half private: fame +1, someone in the lane saw). Same rules screen, same Stop.
 - **Upstairs:** the walk up in their kind's way, and her room under the eaves (new the first time, familiar after). Then what happens there, hers to choose as before (`goUpstairs`). When she goes to bed: a **morning-after** line, by kind (wildflowers on the pillow, a folded scarf, a twist of salt...).
 - **The taproom (a group scene):** played as the After Hours game (`duel.ts`) with several partners: the one who asked, and the guests she picks from those who want in.
   - **Who wants in:** guests sat in the room whose lust shows (6+), never drunk, angry, scared or gloomy, never the Baron; keenest first, and **no cap**: everyone willing can be in it. **Six are on her at once** (as many as her body holds: two hands, mouth, breasts, butt, pussy); the rest **wait in line** and step in as each one gives in, so it piles up until the last of them is done (like Karryn's Prison). **Every one asks** (their kind's line by their name), and she ticks who joins. Nobody is pulled in.
@@ -341,8 +346,15 @@ A bold guest's invitation (`region: "invite"`, boldness 10, once she's Lewdness 
   - **Stopped:** they step back at once and go back to their seats, calm. Fame +1, respect −1, watchers +1 lust, no gold, no heat.
   - It counts as tonight's After Hours game: nobody lingers at bedtime to ask for another.
 - **Records** (journal, Records, under Upstairs): stayed down in the taproom, joined in all told (the one who asked counts), most at once. Saved with the rest of her records.
-- **Passives** (Exhibition): *Open House* (stay down once: +20% gold from invitations, upstairs or down; asked for a look 25% more often; lewd 8). *The Whole Room* (stay down 3 times, once with 4 at once: Body desire starts +10; +1 fame a serve while undressed; costs −1 respect every night; lewd 14).
+- **Passives** (Exhibition): *Open House* (stay down once: +20% gold from adult play, upstairs or down; asked for a look 25% more often; lewd 8). *The Whole Room* (stay down 3 times, once with 4 at once: Body desire starts +10; +1 fame a serve while undressed; costs −1 respect every night; lewd 14).
 - Tests: `tests/invite.test.ts`.
+
+## 7g. Touch layers: over the clothes, inside them, bare skin [built]
+Karryn-style, a touch on a part her clothes cover (chest, rear, thighs, waist, intimate) goes **over her clothes**, **inside them**, or on **bare skin** (`layersOpen`, `pickLayer` in `src/game/touch.ts`).
+- **What opens them:** *inside* once her desire for that part is 20 past what the touch needs, or Slut Level 2+; *bare* once it's 40 past, or Slut Level 4+, or two pieces of clothing are off her anyway.
+- **Which they go for:** the boldest open, half the time; otherwise one of the tamer ones (picked by who and when, not the night's dice). A line says how far in they go.
+- **Her yes** is her desire, as before. Further in pays and stirs her more once it lands: inside +1 gold and ×1.25 desire, bare +2 gold and ×1.5. In the Consent-off check it counts as bolder (+1 / +2 to her hold).
+- Never on a garment tug, in a brawl, or by a guest with hold of her. Records: touched inside your clothes, touched on bare skin (journal, Records). Tests: `tests/invite.test.ts`.
 
 ## 7c. Desire, Karryn-style [built]
 Six desires, 0–100, reset each night to what her passives start them at: **Body, Mouth, Breasts, Butt, Pussy, Cock**. Cock desire is her wanting to be intimate with someone. The rules are in `src/game/desire.ts`; the tests are in `tests/desire.test.ts`.
@@ -354,7 +366,7 @@ Six desires, 0–100, reset each night to what her passives start them at: **Bod
 - Passives raise starting desire and how fast each fills (sensitivity).
 
 **What they do**
-- **Touches:** *Let it happen* on a touch needs that part's desire ≥ (boldness − 1) × 10; *Lean in* 20 more; *Give in* 30 more. The invitation upstairs needs Cock desire.
+- **Touches:** *Let it happen* on a touch needs that part's desire ≥ (boldness − 1) × 10; *Lean in* 20 more; *Give in* 30 more. Adult play needs Cock desire (or horny and wet, 7f).
 - **Upstairs:** kiss (Mouth 0), hands (Cock 40), mouth (Cock 60), behind (Butt 60), bed (Pussy 80 **and wet**).
 - **Wet:** pleasure ≥ 50 − Pussy desire ÷ 4 (50 with none, 25 at 100).
 - **Horny:** any desire at 80+.
@@ -397,7 +409,7 @@ Six desires, 0–100, reset each night to what her passives start them at: **Bod
 | Nerve and touches | `src/game/touch.ts`, `src/game/touchtalk.ts` |
 | Brawls | `src/game/fight.ts` |
 | After hours | `src/game/duel.ts` |
-| Invitations: the story, upstairs or the taproom | `src/game/invitetalk.ts`, `src/game/taproom.ts` |
+| Adult play: when, the story, upstairs or the taproom | `src/game/adultplay.ts`, `src/game/invitetalk.ts`, `src/game/taproom.ts` |
 | What each group says | `src/game/chatter.ts`, `src/game/moodtalk.ts`, `src/game/gossip.ts`, `src/game/banter.ts` |
 | Outfits on the 3D guests | `src/game/game.ts`, `src/game/appearance.ts` |
 

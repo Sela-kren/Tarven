@@ -1510,6 +1510,7 @@ export class Game {
       drunkLabel: drunkLabel(tavern.drunk),
       meters: tavern.meters,
       piecesOff: tavern.strippedPieces.length,
+      adultStack: tavern.adultStack,
       lewdness: Math.floor(tavern.lewdness),
       corruption: Math.floor(tavern.corruption),
     });
@@ -2354,7 +2355,9 @@ export class Game {
       if (scene) {
         if (scene.kind === "upstairs") {
           this.narrator.moment(
-            `She agrees to take the ${(scene.guestStats?.label ?? scene.guestKind).toLowerCase()} upstairs to her bed, and the room watches them go.`,
+            scene.auto
+              ? `Too worked up to hold back, she gives in to the ${(scene.guestStats?.label ?? scene.guestKind).toLowerCase()} for adult play, and the room watches.`
+              : `She says yes to adult play with the ${(scene.guestStats?.label ?? scene.guestKind).toLowerCase()}, and the room watches.`,
             `upstairs:${scene.guestKind}`,
             (scene.guestStats?.label ?? scene.guestKind).toLowerCase(),
           );

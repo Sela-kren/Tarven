@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { ADULT_MAX, addStack, adultPlayChance, lewdnessEase, matchAct, matchWhere, STACK_GAIN, STACK_REFUSED, stackStart, type AdultPlayFacts } from "../src/game/adultplay";
+import { BARE_DESIRE, BARE_SLUT, INSIDE_DESIRE, INSIDE_SLUT, LAYER_BONUS, layersOpen, pickLayer } from "../src/game/touch";
 import { defaultRole, statsOf } from "../src/game/guestroles";
 import { FANS_DELIGHTED, FANS_HAPPY } from "../src/game/ledger";
 import { INVITE_ASKS, JOIN_ASKS, MORNING_AFTER, STAIRS, TAPROOM_END } from "../src/game/invitetalk";
@@ -46,11 +48,14 @@ function night(room: Guest[]): Tavern {
   t.guests.push(...room);
   for (const m of ["body", "mouth", "breasts", "butt", "pussy", "cock"] as const) t.meters[m] = 100;
   t.records.invitations = 1;
+  // Her adult play stack full: a guest worked up enough can go for it.
+  t.adultStack = 100;
   return t;
 }
 
 const scene = (g: Guest): InviteScene => ({ kind: "upstairs", guestId: g.id, guestKind: g.kind, guestStats: g.stats });
-const inner = (t: Tavern) => t as unknown as { drunk: number; maybeReach: (g: Guest) => boolean; morningAfter: string[] };
+const inner = (t: Tavern) =>
+  t as unknown as { drunk: number; pleasure: number; maybeReach: (g: Guest) => boolean; morningAfter: string[]; takeDrink: () => void; loseClothing: () => void };
 /** Plays the game out to the end, kissing and holding back, whichever way it goes. */
 function playOut(t: Tavern): void {
   for (let i = 0; i < 400 && t.duel; i++) t.duelMove(t.duel.stamina >= 4 ? "kiss" : "hold");
@@ -71,10 +76,10 @@ describe("the invitation, told as a story", () => {
   it("opens with what they say, in their kind's words, and the room going quiet", () => {
     const host = guest(1, "soldier", 10, "lust");
     const t = night([host]);
-    t.passives.add("upstairsCurious");
-    // Reach for sure (0), then the boldest touch they have the nerve for: an invitation.
-    const rolls = [0, 0.999];
+    // Reach for sure (0), and the adult play roll comes up (0).
+    const rolls = [0];
     t.random = () => rolls.shift() ?? 0.5;
+    t.adultRandom = () => 0;
     expect(inner(t).maybeReach(host)).toBe(true);
     const lines = t.talkLines;
     expect(lines[0].speaker).not.toBeNull();
@@ -101,6 +106,212 @@ describe("the invitation, told as a story", () => {
     t.phase = "bedtime";
     t.sleep();
     expect(t.takeMessages().some((l) => MORNING_AFTER.noble.includes(l))).toBe(true);
+  });
+});
+
+describe("adult play, Karryn-style: any time, likelier the more worked up", () => {
+  const calm: AdultPlayFacts = { cock: 0, horny: false, wet: false, lust: 6, lusting: false, lewdness: 0, exposed: 0, night: 0, pull: 0, respected: false, stack: 100 };
+
+  it("never before the stack is full, or with a guest who isn't aroused", () => {
+    expect(adultPlayChance({ ...calm, stack: 99, cock: 100, lust: 10 })).toBe(0);
+    expect(adultPlayChance({ ...calm, lust: 5 })).toBe(0);
+    expect(adultPlayChance(calm)).toBeGreaterThan(0);
+  });
+
+  it("once full: small to start, grows with everything that's worked up, and never passes the cap", () => {
+    const early = adultPlayChance(calm);
+    expect(early).toBeLessThan(0.15);
+    const steps: Partial<AdultPlayFacts>[] = [{ cock: 40 }, { horny: true }, { wet: true }, { lust: 9 }, { lusting: true }, { lewdness: 10 }, { exposed: 2 }, { night: 8 }, { pull: 0.5 }];
+    let facts = { ...calm };
+    let last = early;
+    for (const step of steps) {
+      facts = { ...facts, ...step };
+      const now = adultPlayChance(facts);
+      expect(now, JSON.stringify(step)).toBeGreaterThan(last);
+      last = now;
+    }
+    expect(adultPlayChance({ ...facts, cock: 100, lewdness: 500, exposed: 9, night: 99, pull: 5 })).toBe(ADULT_MAX);
+    // A respected innkeeper is asked half as often.
+    expect(adultPlayChance({ ...facts, pull: 0, respected: true })).toBeCloseTo(adultPlayChance({ ...facts, pull: 0 }) / 2);
+  });
+
+  it("needs no lewdness to be asked: an aroused guest can go for it on an early night", () => {
+    const host = guest(1, "farmer", 7);
+    const t = night([host]);
+    t.records.invitations = 0;
+    t.touchMemory.lets.hand = 1;
+    t.random = () => 0;
+    t.adultRandom = () => 0;
+    expect(t.lewdness).toBeLessThan(25);
+    expect(inner(t).maybeReach(host)).toBe(true);
+    expect(t.talkLines.some((l) => (INVITE_ASKS.farmer as readonly string[]).some((ask) => l.text === `"${ask}"`))).toBe(true);
+  });
+
+  it("is ready for it horny and wet, whatever her Cock desire; and her lewdness takes some of the need off", () => {
+    const t = night([guest(1, "farmer", 4)]);
+    for (const m of ["body", "mouth", "breasts", "butt", "pussy", "cock"] as const) t.meters[m] = 20;
+    expect(t.adultDesire()).toBeLessThan(9);
+    t.meters.pussy = 100;
+    inner(t).pleasure = 60;
+    expect(t.wet).toBe(true);
+    expect(t.adultDesire()).toBeGreaterThanOrEqual(9);
+    expect(lewdnessEase(0)).toBe(0);
+    expect(lewdnessEase(50)).toBe(10);
+    expect(lewdnessEase(999)).toBe(20);
+  });
+
+  /** Consent off, and a guest goes for adult play. */
+  function consentOff(host: Guest, room: Guest[] = []): Tavern {
+    const t = night([host, ...room]);
+    t.touchSettings.autoTouch = true;
+    t.touchSettings.agreed = true;
+    t.random = () => 0;
+    t.adultRandom = () => 0;
+    return t;
+  }
+
+  it("Consent off: her state decides. Ready, and them aroused, and it happens without the question", () => {
+    const host = guest(1, "soldier", 8);
+    const t = consentOff(host);
+    expect(inner(t).maybeReach(host)).toBe(true);
+    expect(t.takeAdultScene()).toMatchObject({ kind: "upstairs", guestId: 1, auto: true });
+  });
+
+  it("Consent off: not when they aren't aroused, or anyone's too drunk, or she isn't ready. Then she's asked", () => {
+    const cool = guest(1, "soldier", 3);
+    const t1 = consentOff(cool);
+    expect(inner(t1).maybeReach(cool)).toBe(true);
+    expect(t1.takeAdultScene()).toBeNull();
+
+    const host = guest(1, "soldier", 8);
+    const t2 = consentOff(host);
+    inner(t2).drunk = 0.9;
+    inner(t2).maybeReach(host);
+    expect(t2.takeAdultScene()).toBeNull();
+
+    const t3 = consentOff(host);
+    for (const m of ["body", "mouth", "breasts", "butt", "pussy", "cock"] as const) t3.meters[m] = 10;
+    inner(t3).maybeReach(host);
+    expect(t3.takeAdultScene()).toBeNull();
+  });
+
+  it("Consent off: what happens upstairs is matched to her strongest desire", () => {
+    const host = guest(1, "soldier", 8);
+    const t = consentOff(host);
+    for (const m of ["body", "mouth", "breasts", "butt", "pussy", "cock"] as const) t.meters[m] = 60;
+    t.meters.cock = 95;
+    const result = t.autoAdultPlay(scene(host));
+    expect(result).toMatchObject({ where: "upstairs", act: "mouth" });
+    expect(t.records.invitations).toBe(2);
+    // Ties go to the bolder act; a kiss when nothing else is ready.
+    const meters = { body: 0, mouth: 50, breasts: 0, butt: 50, pussy: 0, cock: 0 };
+    expect(matchAct([{ act: "kiss", ready: true, meter: "mouth" }, { act: "behind", ready: true, meter: "butt" }], meters)).toBe("behind");
+    expect(matchAct([{ act: "kiss", ready: true, meter: "mouth" }, { act: "behind", ready: false, meter: "butt" }], meters)).toBe("kiss");
+  });
+
+  it("Consent off: down in the taproom when it's open to her and she's already on show", () => {
+    expect(matchWhere(true, 1, false)).toBe("taproom");
+    expect(matchWhere(true, 0, true)).toBe("taproom");
+    expect(matchWhere(true, 0, false)).toBe("upstairs");
+    expect(matchWhere(false, 3, true)).toBe("upstairs");
+    const host = guest(1, "soldier", 8);
+    const t = consentOff(host, [guest(2, "bandit", 8)]);
+    t.passives.add("openHouse");
+    expect(t.autoAdultPlay(scene(host))).toEqual({ where: "taproom" });
+    expect(t.duel?.everyone).toBe(2);
+    // Stop still ends it, for everyone.
+    t.duelMove("stop");
+    expect(t.duel).toBeNull();
+  });
+});
+
+describe("the adult play stack, in percent", () => {
+  const room = () => {
+    const t = new Tavern(SEATS);
+    t.random = () => 0.99;
+    t.playerBody = "Female";
+    t.open();
+    return t;
+  };
+
+  it("starts each night from her lewdness, at most 40%", () => {
+    expect(stackStart(0)).toBe(0);
+    expect(stackStart(30)).toBe(15);
+    expect(stackStart(500)).toBe(40);
+    expect(addStack(95, 10)).toBe(100);
+    expect(addStack(5, -STACK_REFUSED)).toBe(0);
+  });
+
+  it("fills with drinks, desire, clothes off and touches she lets land", () => {
+    const t = room();
+    const at = t.adultStack;
+    inner(t).takeDrink();
+    expect(t.adultStack).toBeGreaterThanOrEqual(at + STACK_GAIN.drink);
+    const before = t.adultStack;
+    inner(t).loseClothing();
+    expect(t.adultStack).toBeCloseTo(Math.min(100, before + STACK_GAIN.piece));
+  });
+
+  it("keeps a guest from going for it until it's full; full, an aroused one can", () => {
+    const host = guest(1, "soldier", 9, "lust");
+    const t = night([host]);
+    t.adultStack = 60;
+    t.random = () => 0;
+    t.adultRandom = () => 0;
+    inner(t).maybeReach(host);
+    expect(t.talkLines.some((l) => (INVITE_ASKS.soldier as readonly string[]).some((ask) => l.text === `"${ask}"`))).toBe(false);
+    const full = night([host]);
+    full.random = () => 0;
+    full.adultRandom = () => 0;
+    inner(full).maybeReach(host);
+    expect(full.talkLines.some((l) => (INVITE_ASKS.soldier as readonly string[]).some((ask) => l.text === `"${ask}"`))).toBe(true);
+  });
+
+  it("knocks back when she says no, and empties once it's played out", () => {
+    const host = guest(1, "soldier", 9, "lust");
+    const t = night([host]);
+    t.random = () => 0;
+    t.adultRandom = () => 0;
+    inner(t).maybeReach(host);
+    // Her answers end with Slap, then Pull away.
+    t.chooseTalk(t.talkChoices.length - 1);
+    expect(t.adultStack).toBe(100 - STACK_REFUSED);
+    t.takeUpstairs(scene(host), "kiss");
+    expect(t.adultStack).toBeLessThan(10);
+  });
+});
+
+describe("touch layers: over the clothes, inside them, bare skin", () => {
+  const facts = { region: "chest" as const, level: 7, desire: 6, slutLevel: 0, exposed: 0 };
+
+  it("open up with desire past what the touch needs, or with her Slut Level", () => {
+    expect(layersOpen(facts)).toEqual(["over"]);
+    expect(layersOpen({ ...facts, desire: 6 + INSIDE_DESIRE })).toEqual(["over", "inside"]);
+    expect(layersOpen({ ...facts, slutLevel: INSIDE_SLUT })).toEqual(["over", "inside"]);
+    expect(layersOpen({ ...facts, desire: 6 + BARE_DESIRE })).toEqual(["over", "inside", "bare"]);
+    expect(layersOpen({ ...facts, slutLevel: BARE_SLUT })).toEqual(["over", "inside", "bare"]);
+    expect(layersOpen({ ...facts, exposed: 2 })).toEqual(["over", "inside", "bare"]);
+    // Parts clothes don't cover only ever go over.
+    expect(layersOpen({ ...facts, region: "hand", slutLevel: 9 })).toEqual(["over"]);
+  });
+
+  it("go for the boldest open half the time, and pay and warm her more the further in", () => {
+    expect(pickLayer(["over", "inside", "bare"], 0.1)).toBe("bare");
+    expect(["over", "inside"]).toContain(pickLayer(["over", "inside", "bare"], 0.9));
+    expect(pickLayer(["over"], 0.9)).toBe("over");
+    expect(LAYER_BONUS.bare.gold).toBeGreaterThan(LAYER_BONUS.inside.gold);
+    expect(LAYER_BONUS.inside.desire).toBeGreaterThan(LAYER_BONUS.over.desire);
+  });
+});
+
+describe("after a lost brawl: wherever she chooses", () => {
+  it("right where she fell (not her first time), upstairs, or out back", () => {
+    const t = night([]);
+    expect(t.brawlPlaces().map((p) => p.id)).toEqual(["here", "upstairs", "yard"]);
+    expect(t.brawlPlaces().every((p) => p.blocked === null)).toBe(true);
+    t.records.invitations = 0;
+    expect(t.brawlPlaces().find((p) => p.id === "here")?.blocked).toMatch(/first time/);
+    expect(t.brawlPlaces().find((p) => p.id === "yard")?.blocked).toBeNull();
   });
 });
 

@@ -24,6 +24,11 @@ const RECHASE_SECONDS = 0.35;
 /** Moves a body along a list of waypoints and animates its legs. */
 export class Walker {
   readonly group = new Group();
+  /**
+   * What turns them to face where they're going. Kept apart from the body's own root, the way a sibling's is: the
+   * body's poses set that root's turn themselves every frame (a show pose turns her round), which would undo it.
+   */
+  private readonly pivot = new Group();
   private path: Vec2[] = [];
   private next = 0;
   heading = 0;
@@ -31,7 +36,8 @@ export class Walker {
   private swing = 0;
 
   constructor(readonly body: Body) {
-    this.group.add(body.root);
+    this.pivot.add(body.root);
+    this.group.add(this.pivot);
   }
 
   setPath(path: Vec2[]): void {
@@ -68,7 +74,13 @@ export class Walker {
   turnTo(desired: number, dt: number): void {
     const delta = Math.atan2(Math.sin(desired - this.heading), Math.cos(desired - this.heading));
     this.heading += delta * Math.min(1, TURN_RATE * dt);
-    this.body.root.rotation.y = this.heading;
+    this.pivot.rotation.y = this.heading;
+  }
+
+  /** Turns to a fixed heading at once. */
+  face(heading: number): void {
+    this.heading = heading;
+    this.pivot.rotation.y = heading;
   }
 
   /** Eases the legs back to standing. */
@@ -200,8 +212,7 @@ export class GuestActor {
     this.group.visible = true;
     this.sitProgress = 1;
     this.applySit();
-    this.walker.heading = this.seat.heading;
-    this.walker.body.root.rotation.y = this.seat.heading;
+    this.walker.face(this.seat.heading);
     this.mode = "seated";
     this.arrived = true;
   }
@@ -257,8 +268,7 @@ export class GuestActor {
         this.sitProgress = Math.min(1, this.sitProgress + dt / SIT_TIME);
         this.applySit();
         if (this.sitProgress === 1) {
-          this.walker.heading = this.seat.heading;
-          this.walker.body.root.rotation.y = this.seat.heading;
+          this.walker.face(this.seat.heading);
           this.mode = "seated";
           if (!this.arrived) tavern.guestArrived(guest.id);
           this.arrived = true;
