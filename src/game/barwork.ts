@@ -113,8 +113,9 @@ export const PASS_OUT_LINES: readonly string[] = [
 export const PASS_OUT_AFTER = "The regulars carry you up to bed and see themselves out. Nobody pays for the last round.";
 /**
  * Her last clear drink: one more and she's too drunk to say yes to anything (sloppy drunk blocks every yes,
- * GAME_PATH.MD). An aroused guest she drank with asks for adult play now, while she can still answer: always asked,
- * Yes or No, whatever the Consent switch; a yes needs her ready, as ever. Once a night. Passed out, nothing happens.
+ * GAME_PATH.MD). An aroused guest she drank with goes for adult play now, while she can still answer: Consent on,
+ * it's asked, Yes or No; Consent off, her state decides, as for any adult play. A yes needs her ready, as ever. Once
+ * a night. Passed out, nothing happens.
  */
 export const LAST_CLEAR_LINES: readonly string[] = [
   "They catch your hand before you can reach for another cup, and hold it.",

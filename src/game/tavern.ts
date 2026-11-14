@@ -2907,7 +2907,8 @@ export class Tavern {
 
   /**
    * Her last clear drink (barwork.ts): before she has another and can't say yes to anything, the guest she drank
-   * with asks for adult play. Always asked, Yes or No; a yes needs her ready, as ever, and goes to the Adult play card.
+   * with goes for adult play. Consent on, it's asked, Yes or No; Consent off, her state decides, as for any adult
+   * play (7f). A yes needs her ready, as ever, and goes to the Adult play card.
    */
   private askLastClear(): void {
     const id = this.lastClearFrom;
@@ -4139,8 +4140,7 @@ export class Tavern {
     const covered = s.autoTouch && eager && touch.level <= guestNerve && autoTouchFits(s, touch, answers);
     // Adult play with Consent off (Karryn's Prison): her state decides, not a push against her hold. Ready for it
     // (a yes is there: her desire's high enough and nobody's too drunk) and them aroused, and it happens.
-    // Her last clear drink is always asked, Yes or No, whatever the Consent switch.
-    const adultAuto = !lastClear && adult && s.autoTouch && s.agreed && answers.includes("allow") && aroused(guest.lust, guestSloppy);
+    const adultAuto = adult && s.autoTouch && s.agreed && answers.includes("allow") && aroused(guest.lust, guestSloppy);
     // Consent off: weigh them against her. Worked out every time, so the dev panel can show it either way.
     const facts = { ...this.impulseFacts(guest, guestNerve, touch), held: held !== null };
     // Further in is bolder: her hold is that much the stronger for it.

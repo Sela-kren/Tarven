@@ -197,10 +197,20 @@ describe("her last clear drink", () => {
     expect(t.talkChoices.map((c) => c.label.split(" · ")[0])).toContain("Pull away");
   });
 
-  it("is asked even with Consent off", () => {
-    const { t } = lastClear(true);
-    expect(t.landedTouch).toBeNull();
-    expect(t.talkChoices.map((c) => c.label.split(" · ")[0])).toContain("Pull away");
+  it("with Consent off, goes by her state: ready, it happens; not ready, she's asked", () => {
+    const notReady = lastClear(true).t;
+    expect((notReady as unknown as { touchChat: { impulse: boolean } }).touchChat.impulse).toBe(false);
+    expect(notReady.talkChoices.map((c) => c.label.split(" · ")[0])).toContain("Pull away");
+
+    const t = serving();
+    const guest = t.guests[0];
+    guest.lust = 9;
+    guest.mood = "lust";
+    t.meters.cock = 100;
+    t.touchSettings = { ...t.touchSettings, autoTouch: true, agreed: true };
+    (t as unknown as { takeDrink(w: Guest[]): void }).takeDrink([guest]);
+    t.tick(0.1, idle);
+    expect((t as unknown as { touchChat: { impulse: boolean } }).touchChat.impulse).toBe(true);
   });
 
   it("isn't asked by a guest who's drunk themselves, and only once a night", () => {
