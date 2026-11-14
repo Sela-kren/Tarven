@@ -231,7 +231,7 @@ export const SMUTTY_GOSSIP: readonly AboutYou[] = [
   { lines: ["The innkeeper's got a price list pinned behind the bar.", "For drinks?", "Turn it over."], when: lowerStill },
   { lines: ["The baron's men don't tax this house any more.", "Why not?", "The innkeeper pays them another way, I heard."], when: lowerStill },
   { lines: ["What's the innkeeper go for, for a whole night?", "Less than a cask, these days.", "Cheaper than a bed in Harrowgate."], when: lowerStill },
-  { lines: ["Wren kept a respectable house for forty years.", "And the innkeeper?", "Undid it in a week. Lying down, mostly."], when: lowerStill },
+  { lines: ["Wren kept a respectable house for thirty years. Before that, a lantern in the window.", "And the innkeeper?", "Undid it in a week. Lying down, mostly."], when: lowerStill },
   { lines: ["A smuggler offered to buy the innkeeper by the crate.", "By the crate?", "And the innkeeper asked how big a crate."], when: lowerStill },
   { lines: ["The captain's on first-name terms with the innkeeper.", "Which name?", "The one you shout through a door at midnight."], when: lowerStill },
   { lines: ["Nobody says 'going to the tavern' any more.", "What do they say?", "'Going to see the innkeeper.' With a wink."], when: lowerStill },

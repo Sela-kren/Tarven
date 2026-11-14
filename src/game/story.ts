@@ -12,11 +12,26 @@ export interface StoryLine {
 }
 
 export const INTRO: StoryLine[] = [
-  { cg: "split", speaker: "narrator", text: "Two winters ago, your parents split up. The shouting stopped. So did the money." },
+  // STORY.md section 2 ("The intro, rewritten"), with the two sheltered lines from section 4b.
+  {
+    cg: "split",
+    speaker: "narrator",
+    text: "Two winters ago, Father went east on an errand for Grandma Wren. He never said what it was.",
+  },
   {
     cg: "coins",
     speaker: "narrator",
-    text: "Father went east looking for work and stopped writing. Mother took in washing, and every month it still came up short.",
+    text: "His letters stopped by spring. The money stopped with them. By summer, so had the marriage.",
+  },
+  {
+    cg: "coins",
+    speaker: "narrator",
+    text: "Mother took in washing. She never said Wren's name again, and she never said why.",
+  },
+  {
+    cg: "coins",
+    speaker: "narrator",
+    text: "She kept you close after that. Chapel on Sundays, washing on Mondays, and no boys at the door.",
   },
   {
     cg: "letter",
@@ -31,30 +46,26 @@ export const INTRO: StoryLine[] = [
   {
     cg: "town",
     speaker: "narrator",
-    text: "She left her tavern to you. A week later you rode the morning cart up to Tarven, a little market town under the mountains.",
+    text: "She left the tavern to you. Not to Father. To you.",
   },
   {
     cg: "town",
     speaker: "narrator",
-    text: "You're twenty-four now, a grown adult, and the deed has your name on it. Nobody else is coming to sort this out.",
-  },
-  {
-    cg: "town",
-    speaker: "narrator",
-    text: "Everything you own fits in one bag. The tavern is the biggest building on the high street, its old sign still swinging.",
+    text: "You're twenty-four now, a grown adult, and the deed has your name on it. Everything you own fits in one bag.",
   },
   { speaker: "you", text: "So this is it. Grandma's tavern." },
-  { speaker: "you", text: "It's smaller than I remember. And colder." },
+  { speaker: "you", text: "It's smaller than I remember. I was eight. Mother got us out in the night and never told me why." },
+  { speaker: "you", text: "And the bravest thing I've ever done is ride up this mountain." },
   { speaker: "you", text: "There's a letter waiting on the bar. It has the baron's seal on it." },
   {
     cg: "baron",
     speaker: "narrator",
-    text: "Grandma owed the baron {debt} gold. Now you do. He collects in three nights, or the tavern is his.",
+    text: "Grandma owed the baron {debt} gold. Now you do. He'll send his man to collect once the tavern's on its feet. Until then, every night counts.",
   },
-  { speaker: "you", text: "Mother can't help. Father won't. It's just me now." },
-  { speaker: "you", text: "Then I open tonight. Ale, bread, stew, anything I can sell." },
-  { speaker: "you", text: "And I keep my ears open. Grandma always said travellers pay more for secrets than for stew." },
-  { speaker: "you", text: "The road gets busy after dark. I'll get the place ready, then open the front door." },
+  { speaker: "you", text: "Behind the bar there's a clean square in the dust, where a book used to stand." },
+  { speaker: "you", text: "Grandma kept something here. Somebody's taken it. Or been looking for it." },
+  { speaker: "you", text: "Mother can't help. Father can't be found. It's just me now." },
+  { speaker: "you", text: "Then I open tonight. And I keep my ears open." },
 ];
 
 /** Letters revealed per second. */

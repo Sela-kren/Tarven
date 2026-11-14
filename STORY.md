@@ -1,9 +1,9 @@
 # Last Call at Tarven: Story
 
 > The story design document. It replaces the story parts of GAME_CONCEPT.md (sections 1, 8.2, 9 and 11) once it is approved.
-> **Draft 2.11, 13 Nov 2026.** See the changelog at the bottom.
+> **Draft 2.18, 14 Nov 2026.** See the changelog at the bottom.
 
-**House rules stay in force.** Every character is an adult (18+), and the game says so. Every intimate beat is her choice: the player is asked first, Slap and Pull away are always offered and always work, and being too drunk blocks every yes. No text shows a touch landing after a refusal. The Force bar only shows how bold a touch was after she said yes (GAME_PATH.MD, consent rule). Sexual scenes stay as non-graphic 18+ cards.
+**House rules stay in force.** Every character is an adult (18+), and the game says so. Every intimate beat is the player's choice. With **Consent on** (the default), every touch asks first. With **Consent off**, an impulsive guest's touch may land without the choice screen, but only a touch she could already say yes to (her desire is high enough, nobody is too drunk, it's within the boldness the player set, and never an invitation), and only when their push beats her hold (GAME_PATH.MD, 7b). Slap and Pull away always work on the next reach, and being too drunk blocks every yes. No text shows a touch landing after a refusal. A lost brawl may offer a scene, with a continue/stop choice at its start (GAME_PATH.MD, "Brawl loss"). The Force bar only shows how bold a touch was after a yes. Sexual scenes stay as non-graphic 18+ cards.
 
 > **The main goal is popularity.** She starts with one cold tavern and a debt, and aims to make it **the most popular house on the pass**. She beats the rival taverns, buys them up, and decides whether to work with the bosses she beat, the Baron included. The red book is the story underneath. It explains why the Baron wants her tavern, and it is the leverage the top house gets to use.
 
@@ -45,6 +45,8 @@ Wren's book is what broke the heroine's family, two years before the game starts
 ### The intro, rewritten (`story.ts`)
 
 The order is reversed: Father leaves first, and the split follows. Both parents stay. Lines marked **new** are new.
+
+**Built** (`story.ts` `INTRO`, 14 Nov 2026), with three small changes: the line about her age stays in (*"You're twenty-four now, a grown adult"*), and the two sheltered lines from section 4b are in (*"She kept you close after that..."* after line 3, and *"...the bravest thing I've ever done is ride up this mountain"* after line 8). The old *"He collects in three nights, or the tavern is his"* is gone, because the game has no deadline now.
 
 | # | Speaker | Line |
 |---|---|---|
@@ -101,6 +103,185 @@ Lewdness and corruption are separate, so there are four kinds of heroine instead
 |---|---|---|
 | **Low lewdness** | **The Keeper.** Wren as she ended up: protector of the village | **The Schemer.** An informant with a cold bed. Sells everyone, lets nobody touch her |
 | **High lewdness** | **The Fair Madam.** She hangs the lantern and protects her girls and her guests. Her girls stay honest | **The Rotten Madam.** Rich, feared and alone. Her girls turn rotten with her, and they're one bad night from leaving |
+
+---
+
+## 4b. Her arc: sheltered to known
+
+The systems already track how far she's come: the six desire meters, Lewdness, the records, the passives, the touch counts by guest kind and the Consent switch. The writing doesn't use them enough yet. This section turns those numbers into a slow personal arc in the style of Karryn's Prison. It starts with a sheltered woman who has never been kissed and ends with the keeper the whole pass talks about. **It adds no new core mechanic.** Every stage is read from data the game already saves.
+
+### The four stages
+
+The stage is a **writing layer** on top of the mind stage (`lewd.ts`). It reads **Lewdness only**, so section 15 fix 1 must land first. Corruption doesn't change her stage. It changes the stage's *tone* (see "Corruption colours the stage" below).
+
+| Stage | Gate (reads existing data) | Slut Level | Mind stage | Typical firsts by now |
+|---|---|---|---|---|
+| **Sheltered** | Lewdness 0–19 | 0–1 | 0 | Hands, face, hair, shoulder. No kiss, nothing on her chest, nothing below the waist |
+| **Curious** | Lewdness 20–53 | 2–5 | 1 (warming) | Her first kiss, first chest, first rear, first lap or thigh. The first invitation can come (Lewdness 25) |
+| **Willing** | Lewdness 54–106, **or** 3 nights shared upstairs (*The Back Stairs*) | 5–10 | 2 (eager) | Upstairs, After Hours, a peek or a proper look, clothes lost |
+| **Known** | Lewdness 107+ **and** touches let from 4 or more kinds of guest (`records.kinds`) | 10+ | 3 (filthy) | The taproom, *Open House*, the whole room knows her. With Lewdness 107+ but fewer kinds, she still reads as Willing |
+
+The thresholds are the old mind-stage cut-offs (30 / 80 / 160 on `lewdness × 1.5`) with corruption taken out: Lewdness 20 / 54 / 107 (`MIND_AT` in `lewd.ts`). One helper, `arcStage()` in `lewd.ts`, returns the stage, and every writing pool below picks by it.
+
+**Built (14 Nov 2026):** `mindStage()` reads Lewdness only, and `Tavern.arcStage` gives the stage. It shows next to the Force bar (where the mind stage name was). Built from this section so far:
+- the written touch line is kept, with a Curious aside or a Known body line after it (`flavorLine`);
+- the first-time thoughts for a first that lands with Consent off, and for one that comes late (`FIRSTS_UNASKED`, `FIRSTS_LATE`);
+- her own dawn line the first morning of each stage (`ARC_DAWN`, saved as `story.arc`), and the town's line when her mind stage rises (`townTalk`);
+- Pell at dawn (below), and the Act 1 beats 1, 2, 4 and 5 (below).
+
+**Not yet:** the named regulars, early and late passive thoughts, stage pools in table talk and gossip, the journal's Private voice, and who reacts (Oden, Mara, Pike, the rivals) beyond Tansy and Pell.
+
+**Stages only go up.** A night of refusals doesn't make her sheltered again. It shows up as willpower, records and Composure passives, and the text treats it as her *choosing* restraint ("I know exactly what I'd be saying yes to"), not innocence.
+
+### What each stage feels like
+
+| | **Sheltered** | **Curious** | **Willing** | **Known** |
+|---|---|---|---|---|
+| **Her inner voice** | Alarm and counting. Who saw? What would Mother say? No body words, only "there". Short, breathless thoughts | Questions to herself. "Why didn't I pull away?" She notices her own body and is embarrassed by it | Decisions and prices. She knows what she wants and names it, still non-graphic. The teasing *Confident* lines live here | Ownership. She thinks about the room, the coin and who's watching, as much as the touch. The crude body lines (`BODY_LINES`) belong here and nowhere earlier |
+| **How guests treat her** | They test her. Small touches, a lot of "just being friendly". Farmers are protective, and soldiers place bets on who gets the first smile | They've heard she *might*. The bold ones push, the shy ones get shy. Rumours run ahead of the truth | They ask by name and they come back for her. Regulars expect their usual. Strangers have heard of her before they sit down | Her name sells ale. Some come *only* for her, and some stop coming because of her (farmers' wives, chapel folk). Guests' nerve is up (+1 at Lewdness 30, +2 at 60, as built) |
+| **The room** | Watches her like a new barmaid. Quiet when a hand comes in | Whistles and nudges. A slap gets a cheer | Expects a show. A refusal gets groans, and saying no costs willpower | Plays along. A refusal surprises them, and she gets a line for it ("Not tonight, lads. Even I have nights off.") |
+| **Story beats** | Tansy's hint about the Lantern shocks her. Pell treats her as a girl out of her depth | Wren's first madam's letter lands as a mirror: "The second time, I didn't." | The lantern (lewdness 50 gate) becomes a real temptation, not a rumour. Rhea starts watching her soldiers around her | The madam's last letter. Rivals treat her as Wren come back. Pell uses her name as leverage (see "One choice that changes", below) |
+
+### Corruption colours the stage
+
+Lewdness says how far she's gone. Corruption says what she does with it. The four kinds of heroine (section 4) are the far corners. The stage picks the line pool, and the corruption tier (section 8) picks its edge:
+
+| Stage | Honest / Shady | Crooked / Rotten |
+|---|---|---|
+| **Sheltered** | Shy and decent. Her refusals are kind | Cold. She says no like she's counting coin. Guests call her "the Baron's ice" |
+| **Curious** | Flustered and warm | Calculating. She lets a touch happen and notes what it bought her |
+| **Willing** | Generous. The regulars love her | Transactional. "That'll cost you" is no longer a joke |
+| **Known** | **The Fair Madam's** voice: the room is hers and she looks after it | **The Rotten Madam's** voice: the room is hers and she uses it |
+
+### Wren is the mirror
+
+Wren walked this road forty years ago, and her letters (section 10) already split into the madam's and the keeper's. They line up with the stages, so each step the heroine takes is answered by Wren having taken it first:
+
+| Stage | Madam's letter that lands here | Keeper's letter that answers it |
+|---|---|---|
+| Sheltered → Curious | First touch she lets happen: *"The second time, I didn't."* | First tempted touch she refuses: *"Wanting it and saying no anyway is the strongest thing you'll ever do behind this bar."* |
+| Curious | Mind stage 1: how the room changes when they know you might say yes | A brawl won: the night Wren threw the Baron's father out |
+| Willing | Mind stage 2 and the first After Hours duel: the Lantern's best years, and why she started writing it all down | Trust at half: why she took the lantern down |
+| Known | Mind stage 3: where the red lantern is hidden | Willpower above half for 5 nights: Grandfather, and why she chose him |
+
+**The rule for both sets:** Wren never tells her which road is right. Each letter ends on a cost Wren paid. The madam's letters cost her the chapel and her son, and the keeper's cost her the Lantern's money and a quieter life. That keeps "no set is the wrong one" true.
+
+**Open question 6 (proposed answer):** move the madam's last letter (the lantern's hiding place) to **Willing**. Willing starts at Lewdness 54, just past the lantern's lewdness-50 gate, so the letter and the gate land together.
+
+### Who reacts, and how
+
+| Who | Sheltered / Curious | Willing / Known, low corruption | Willing / Known, high corruption |
+|---|---|---|---|
+| **Village talk** (`townTalk`) | "The new keeper blushes like a novice." | "She's Wren's granddaughter, all right. Loud in the room, quiet with a secret." | "They say she'd sell you her own bed and charge you for the sheets." |
+| **Oden** | Gentle, fatherly. He sees Wren's chin, not her trade | Sad, not cold. He stops coming in on lit nights, but still talks to her at the chapel | Stops trusting her. Confessing (section 8) costs more respect |
+| **Mara** | Wary: "My husband ran errands for this house. I know what it was." | Warms up: a keeper who's open about herself can be trusted with secrets | Withdraws. Her meeting (beat 3) is harder to learn about at the table |
+| **Tansy** (the Bakehouse, 201 fans) | Her Lantern hint is a shock. The heroine denies it: "Grandma kept a respectable house." | "You've her walk now. She'd have laughed to see it." | "You've her walk, and her eyes for coin. Be careful which half of her you turn into." |
+| **Pike and his soldiers** | Bets on the first smile. The brawl night is about her nerve | "My lads drink here for you, not your ale." Their fans come more easily | "My lads drink here for you, and I don't like what it does to them." |
+| **Rivals** (Jory Bell, later Sabine) | Underestimate her: "A girl with a dead woman's deed." | Treat her as competition, and an equal | Sabine, later: "You're doing it better than she did. That's not a compliment." |
+| **Pell / the Baron** | Patronising. He thinks she'll fold | Wary. A keeper the village likes is harder to move | Sees a business partner. The partnership (section 7) is easier to get and costs her more with the village |
+
+**One line that doesn't move:** the Baron's interest is the book and the pass, never her. Her stage changes how he *reads* her, never what he wants from her.
+
+### One choice that changes: Pell at dawn (250 fans)
+
+The Act 1 finale (section 9) is the main plot choice inside Chapter 1, so it's the one that reads her stage and her corruption. Pell's opening line changes, and two choices are gated:
+
+| She is | Pell opens with | Extra choice |
+|---|---|---|
+| Sheltered / Curious, Honest | *"You've your grandmother's chin. Not her nerve, I think."* | **"Get out of my house."** (Trust at half or more): the debt doubles anyway, Heat +2, Trust +2, sets `defiedPell`. By noon the village knows she threw the Baron's man out |
+| Sheltered / Curious, Shady or worse | *"You count like she did. Good. Then you can count to three hundred."* | none |
+| Willing / Known, Honest | *"Half the garrison has had a hand on you. Who'd take your word over the Baron's?"* | none. Her word counts for less, so in Act 3 the Known keeper needs the book itself as proof, not her testimony (a hook for later) |
+| Willing / Known, Shady or worse | *"Wren sold what men told her in bed. I hear you've the same ear."* | **"The room talks to me. You could have that instead."**: the debt stays at 150 and doesn't double, Corruption +10, Trust −1, and sets `pellsEar`. From then on, each collection is 50 gold and a name from her room (Corruption +3 and Informed +1 a name). A Ledger entry (victim: "the room") comes with the Ledger of her deeds (section 8) |
+
+Both gated choices use what's already there: debt, heat, trust, corruption and story flags. The four-way split makes the same night read as defiance, fear, shame or a deal, depending on who she's become.
+
+**Built** (`ledger.ts` `pellOpening`, `Tavern.pellChoices`, `answerPell`, `tests/arc.test.ts`). "Early" is Sheltered or Curious, "late" is Willing or Known, and "shady" is Corruption 40+.
+
+### Named guests carry the build-up
+
+Three of the cast become **named regulars** (GAME_PATH.MD, section 5): they keep their rolled sheet and remember every night with her. Each is the face of one kind of build-up.
+
+| Regular | Kind | Comes in | What they remember | How it shows |
+|---|---|---|---|---|
+| **Silas Crowe** (38) | Smuggler | From the salt beat (night 1) | Every touch she let him have, by part, and whether she leaned in | Starts with level 1–2 touches, and climbs one level for each night she let him have something, up to his nerve. Smugglers go for the thigh and the lap |
+| **Mara Holt** (29) | Farmer | From the salt beat, at the farmers' table | Whether she was kind, whether she ever refused her, and how she refused | Slow. Mara never reaches first while the heroine is Sheltered. She's the gentle touch (a hand on hers, hair behind the ear) that shows the arc from the other side |
+| **Captain Rhea Vance** (34) | Soldier | Off duty on side nights after the meeting beat (150 fans) | Every answer she gave, slaps included | **Rhea always asks.** She is never impulsive, even with Consent off and her nerve high. She's the soldier who respects the rule, set against her own men, who don't |
+
+**How memory works** (a small add to the planned regulars system, using records the game already keeps per guest):
+- **Nerve carries over a little.** +0.5 lasting nerve for each night she let them touch her (at most +2). A slap sets it back by 1 until she lets them again.
+- **Their first line of the night** picks from their memory (what they did last, how she answered) and her stage.
+- **They notice her stage changing.** The first night she's a new stage, each regular has a one-off line about it.
+
+**Example memory lines** (non-graphic):
+
+| Regular | Early (Sheltered / Curious) | Later (Willing / Known) | After a slap | After Consent off let one land |
+|---|---|---|---|---|
+| **Silas** | *"Same table, same ale. And I'll keep my hands to myself tonight. Mostly."* | *"You remember where my hand goes. Don't pretend you don't."* | *"I still feel that slap, love. Worth it."* | *"Last night you didn't pull away. I've been thinking about it all day."* |
+| **Mara** | *"You went red as a beet when that soldier took your hand. I liked you for it."* | *"You've changed. Wren changed too, they say. She was still kind."* | *"Fair enough. I'll ask next time."* | Mara never reaches impulsively, so she never has one. She says instead: *"The room's bolder with you lately. Are you all right with that?"* |
+| **Rhea** | *"Captain's orders: my lads keep their hands to themselves. Mine too, unless you say otherwise."* | *"I'm asking, which is more than they do. Yes or no?"* | *"Understood. I won't ask again tonight."* | Rhea never reaches impulsively. She says: *"I saw Corporal Dunn's hand last night. Tell me if he needs reminding."* |
+
+### Putting the systems in the writing
+
+#### The same touch at each stage, Consent on and off
+
+**Consent on** text is deliberate. The thought shows her deciding, and the player's pick is what decides it. **Consent off** text never describes her being overpowered or a touch after a no. The check only covers touches her desire is already ready for, so the writing is about her body getting there **before her mind finished deciding**. Her want outran her resolve.
+
+*Hand on her thigh* (boldness 5, Pussy desire 40 to let it happen):
+
+| Stage | Consent on (she's asked) | Consent off (it lands; only possible once her desire allows it) |
+|---|---|---|
+| **Sheltered** | *(His hand's on my leg. On my leg. Everyone can see. Say something. Say no. Or... don't?)* | Doesn't happen: her Pussy desire won't be at 40 yet, so the check can't cover it and she's asked as normal. The first time an impulsive guest reaches with Consent on, the two extra answers appear (GAME_PATH.MD 7b). That's the Sheltered moment for the switch |
+| **Curious** | *(I've been waiting all night to find out if I'd let someone. Apparently I would.)* | *(I'd told myself I'd decide when it came. It came, and I'd already decided.)* |
+| **Willing** | *"Higher costs more."* (her Confident line) | *(No asking. Fine. I'd have said yes anyway, and he knows it.)* |
+| **Known** | *(The whole table's watching his hand, not mine. Good. That's what they're paying for.)* | *(They don't ask any more. They know the answer. Half the pass knows the answer.)* |
+
+*Kisses her* (boldness 7, Mouth desire 60; above the switch's default cap of 5, so Consent off only covers it if the player raised the cap):
+
+| Stage | Consent on | Consent off |
+|---|---|---|
+| **Sheltered** | Not offered as a yes yet (desire too low). Her not-ready thought: *(No. Not here, not like this, not my first.)* | Doesn't happen |
+| **Curious** | First time: *(My first kiss. In a tavern. With the whole room watching.)* Later: *(Again. I want to know if it's always like that.)* | First time: *(My first kiss. I'd been deciding all night whether to let someone. My body decided first.)* |
+| **Willing** | *"Mm. You'll want to pay for that."* | *(They didn't ask. I didn't mind. I stopped minding a while ago.)* |
+| **Known** | *(Silas kisses better. This one tips better.)* | *(Another one who couldn't wait. They never can, with me.)* |
+
+#### First times and passives
+
+- **Firsts carry the arc.** `FIRSTS` in `touchtalk.ts` is one line per part, written for a Sheltered woman. Keep that line, and add two variants: one for a first that lands with Consent off (above), and one for a first that comes late (she's already Willing when it happens: *"Funny. I'd let them do everything else before anyone ever did this."*).
+- **A first with a named regular** gets their name in it: *(Silas. Of all people. My first kiss was a smuggler.)*
+- **Passive thoughts get an early and a late voice.** Each passive's `thought` becomes two: the one used when it's earned at Sheltered or Curious (alarm, surprise) and the one at Willing or Known (ownership). For example:
+  - *Stolen Kiss*, early: *(My first kiss. I keep touching my lips.)* Late: *(I'd forgotten I'd never been kissed. That was a long time ago now.)*
+  - *Cheeky*, early: *(Someone grabbed my... and I let them. I let them.)* Late: *(They all go for it. I've started walking so they can.)*
+  - *Upstairs Curious*, early: *(I went up those stairs. I can't take it back. I don't want to.)* Late: *(Upstairs is just another room now. My room.)*
+  - *Untouchable* (keeper side), early: *(Thirty hands, thirty times no. I'm getting good at it.)* Late: *(They know I could say yes. That's what makes the no count.)*
+
+#### Morning reports, journal and table talk
+
+| Where | Sheltered | Curious | Willing | Known |
+|---|---|---|---|---|
+| **Dawn report** (her own line, above town talk) | *"(Grandma did this every night? How?)"* | *"(I keep thinking about last night. I shouldn't.)"* | *"(Good night. Sore feet, full purse, and I didn't hate any of it.)"* | *"(They'll be back tonight. They always are.)"* |
+| **Town talk** (`townTalk`, one stage line in the pool, weight 2) | "The new keeper blushes like a novice." | "They say the keeper's warming up." | "Ask for the keeper by name, they say." | "Travellers on the road ask the way to *her* tavern." |
+| **Journal, Private tab** | A diary voice: short, guilty entries | Questions she can't answer yet | Lists: who, what, what it paid | A madam's ledger voice, matched to her corruption |
+| **Table talk** (`gossip.ts`, `tabletalk.ts`) | "Bet you a copper she slaps the first one." | "Saw her let the smuggler hold her hand. *Hold her hand.*" | "Ask her nice and she might." | "Don't waste your coin on the stew, lad." |
+
+### Act 1 beats to rewrite for more resistance
+
+These five beats come early, while most players are Sheltered. Each one should show her holding back, so the later stages read as change:
+
+1. **The intro** (`story.ts` `INTRO`, section 2). Add two lines after line 3 that make her sheltered on purpose, and explain why the firsts are firsts: *"Mother kept us close after that. Chapel on Sundays, washing on Mondays, and no boys at the door."* and *"I'm twenty-four, and the bravest thing I've ever done is ride up this mountain."*
+2. **The first reach on night 1.** The first touch of the run is always level 1–2 (fingers on the cup, a hand on hers), whatever the guest's nerve, and its not-ready thought is written as the first moment: *(Is that... allowed? Is that what people do here?)*. Her first refusal gets a one-off room reaction from the farmers' table: *"Good lass. Wren would've done the same."* That makes saying no a story moment, not just an absence.
+3. **The deserter (50 fans).** Ash, frightened, reaches for her hand (the fugitive's *Holds her hand*, level 2). It's written as the first time someone has touched her out of **need** rather than appetite, set against the soldiers at the next table. Even Sheltered, she can let it happen, and the scene shows how different that feels.
+4. **Tansy at the Bakehouse (201 fans).** The first hint of what the house was. Sheltered or Curious, she **denies it** (*"Grandma kept a respectable house."*). The line comes back at Willing in her own head: *(Respectable. I told Tansy that. I believed it.)*
+5. **Her first invitation.** It's already shut to the taproom ("behind a closed door"). Add one beat of hesitation before the card even if her desire is ready: *(I've never... with anyone. Ask me again in a minute. No, ask me now, before I lose my nerve.)* The card and all its choices stay the same. Only the line before it is new.
+
+**Built:** beats 1 (the intro), 2 (the first reach of the run is held to boldness 2 or less while her Lewdness is 0, with its thought, and the farmers' line after her first refusal ever), 4 (Tansy: denied while early, which sets `deniedLantern` and comes back on her first Willing morning; late, Tansy's line by her corruption) and 5 (the line before her first invitation's answer). **Not yet:** beat 3, Ash's hand on the deserter night.
+
+### Writing rules for this arc
+
+- **Every line stays non-graphic.** Body words stay vague until Known, and scenes stay on 18+ cards.
+- **Never write a touch after a no.** Consent off writing is her body getting there before her head, never being overpowered.
+- **Too drunk is always a no,** at every stage, in every voice (`TOO_DRUNK_TO_ALLOW`).
+- **A refusal is never "backsliding".** At Willing and Known, saying no is written as confidence, not innocence returning.
+- **Stages are earned by the player's yeses.** Nothing in the story pushes her stage up. The story only reacts to where she is.
 
 ---
 
@@ -165,7 +346,7 @@ The widow Hesk already exists in table talk (`tabletalk.ts`), where a farmer cou
 | **Respect** | Whether the fans confide in her. At low respect they still talk in front of her, as if she were furniture |
 | **Fame** | How far her name travels. Brings new faces |
 | **Fans** | The tavern's fans, fought over with the rivals. Decides the top-tavern crown (section 7) |
-| **Lewdness, mind stage** | The heroine becoming Wren the madam. Unlocks the madam's letters and, at mind stage 2, the lantern |
+| **Lewdness, mind stage** | The heroine becoming Wren the madam. Sets her arc stage (section 4b), which picks how she thinks and how the cast treats her. Unlocks the madam's letters and, at mind stage 2, the lantern |
 | **Corruption** | How evil she becomes. Recorded in the Ledger, and its victims come back (section 8) |
 | **Willpower** | Refusing to become the madam. Refusing tempted touches and holding back after hours unlock the keeper's letters |
 | **The brothel** | The lantern. Gated by lust and the madam's last letter, then shaped by corruption (section 11) |
@@ -321,7 +502,7 @@ If she promised Pell the book, he doesn't collect. He asks where it is instead, 
 
 **How Chapter 1 ends (the current build):** at 501 fans, a **"First in Tarven"** card is read at dawn. It changes with her biggest fan group (Keeper or Network) and her Act 1 flags (Mara free, Ash hidden, Oden's chapel open). Then comes a "To be continued: the pass" teaser, and the nights go on. Nothing ends the run early: missed collections and maxed heat bring debuffs (section 7, "What nights do").
 
-**Built (Chapter 1 core, `src/game/ledger.ts`):** fans counted at dawn (+5 happy, +10 delighted, −5 walkout, −15 filthy room); the Village Ledger with the five houses; beats by fans, one a morning, in order (the three written nights as beats, side nights between them with a pool of side rumours); a fallen house's boss at the door in the morning with Partner (+1 trust; +3 gold and +5 fans a night) or Ruin (+10 corruption, +1 heat, half its fans), and their clue either way; the house above her fighting back on some nights (poaching two walk-ins, talk in the square, a hired troublemaker); Pell at dawn at 250 (promise the book, or the debt doubles to 300) and his collections of 100 at 301, 401 and 501 (shortfalls carried over), then every 7 nights while anything's owed; the First in Tarven card at 501. The journal's Ledger page shows it all. **Not yet:** fan tags and the biggest-group variants of the card, Act 1's story flags, Wren's letters beyond the first, the innkeepers' models (they're cards for now), and bosses walking in at night rather than at the morning card.
+**Built (Chapter 1 core, `src/game/ledger.ts`):** fans counted at dawn (+5 happy, +10 delighted, −5 walkout, −15 filthy room); the Village Ledger with the five houses; beats by fans, one a morning, in order (the three written nights as beats, side nights between them with a pool of side rumours); a fallen house's boss at the door in the morning with Partner (+1 trust; +3 gold and +5 fans a night) or Ruin (+10 corruption, +1 heat, half its fans), and their clue either way; the house above her fighting back on some nights (poaching two walk-ins, talk in the square, a hired troublemaker); Pell at dawn at 250 (promise the book, or the debt doubles to 300) and his collections of 100 at 301, 401 and 501 (shortfalls carried over), then every 7 nights while anything's owed; the First in Tarven card at 501. The journal's Ledger page shows it all. **Also built:** Act 1's story flags and the card's lines for them (section 9). **Not yet:** fan tags and the biggest-group variants of the card, Wren's letters beyond the first, the innkeepers' models (they're cards for now), and bosses walking in at night rather than at the morning card.
 
 ### The pass rivals (later, after Tarven)
 
@@ -422,6 +603,14 @@ Act 1 keeps the three built nights as its first three **beats**. Speakers get na
 
 These are woven into Chapter 1 with the first two village houses (section 7, "Chapter 1, beat by beat"). A player who earns fans fast plays them on nights 1 to 6. A slower player gets side nights in between. "Next night" below means the next beat night.
 
+**Built** (`tavern.ts` `NIGHTS`, `src/game/plot.ts`, `tests/plot.test.ts`, 14 Nov 2026):
+- **Named last calls:** Pell, Garrick Thorne and Captain Rhea Vance, with the numbers in the tables below. Selling no longer lowers heat; only telling the truth does.
+- **Story flags**, saved with the story (`TavernSave.story.flags`; older saves start with none): `odenShut`, `silasOwes`, `silasAngry` (and `silasCame` once he has), `ashCaught`, `ashHidden`, `maraArrested`, `rheaDoubts`, `heardSilver`. Each is set by its choice, and the dawn report says what came of it. Side nights never set one.
+- **The two new choices:** *Hide him in the cellar* (heat +2, trust +2) is offered when she lied for Silas at the salt beat or her Kindness is 2+. *Tell her where the baron's silver goes* (heat +1) is offered when she has `heardSilver`: from drinking with the soldiers on the deserter night (their gossip is the clue), or from beating the Watch Canteen. Both count as protecting someone. Each choice now carries its deed (inform, protect, sell), so passives read the deed, not the button's place.
+- **What comes back:** the night after she sells the salt, Silas walks in angry and starts a brawl (once). Lying for him leaves a crate of salt: every stew pays +1. Crossing his crew (selling, or giving up Oden's floor) puts bottles up by 5 gold. The meeting night opens with talk of Ash (to hang, or quiet in the cellar) and of Oden's dark chapel. The First in Tarven card says whether Mara's free, Ash is hidden or hanged, Oden's bell rings, and Rhea has her doubts.
+
+**Not yet:** the guests at the tables aren't named (the speech bubbles show their type). That needs guests with names of their own, which comes with the named regulars (section 15, 10f). Mara arrested closes The Village Rises only as a flag for now, because no ending is played yet. The "Lie: send him down the valley" choice sets no flag, so Ash's return in Act 2 is still to write.
+
 ### Beat 1: The salt
 
 - **Who's in:** Mara Holt and a neighbour (the farmer table), Silas Crowe (the rumour guest), a soldier.
@@ -508,7 +697,7 @@ Letters are the story's reward for playing the systems. Each one unlocks at a mi
 
 **Story letters** (fixed beats): Act 1 finale (Pell), the midpoint (the poison and the forged debt), and Father's letter in Act 3.
 
-**Open:** the madam's last letter unlocks at mind stage 3, but the lantern gate in section 11 is mind stage 2. Either move that letter to stage 2, or make the gate stage 3.
+**Open:** the madam's last letter unlocks at mind stage 3, but the lantern gate in section 11 is mind stage 2. Either move that letter to stage 2, or make the gate stage 3. **Proposed** (section 4b, "Wren is the mirror"): move it to Willing, which starts at Lewdness 54, next to the lantern's lewdness-50 gate. Section 4b also lines each letter up with the stage it answers.
 
 ---
 
@@ -734,19 +923,28 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 ## 15. Changes in code
 
 **Fixes to existing code:**
-1. **Mind stage reads lewdness only.** `src/game/lewd.ts` `mindStage()` uses `max(corruption, lewdness × 1.5)`, so a greedy informant becomes "filthy".
+1. ~~**Mind stage reads lewdness only.**~~ Done: `mindStage()` in `lewd.ts` reads Lewdness alone (20 / 54 / 107), for the heroine and the Lantern's girls.
 2. **The brothel gate.** Done: `tavern.ts` `unlockBrothel()` opens the brothel at lewdness 50 or corruption 50, checked as corruption shifts and as passives are earned.
-3. **The intro.** Use the rewritten script in section 2 in `story.ts` `INTRO`.
-4. **Names and clashes.** Name the speakers in `tavern.ts` `NIGHTS`, make the meeting beat's captain Rhea, and turn gossip lines like "Wren kept a respectable house for forty years" (`gossip.ts`) into sly hints about the Lantern.
+3. ~~**The intro.**~~ Done: the rewritten script from section 2 is in `story.ts` `INTRO`.
+4. **Names and clashes.** Done: the last-call visitors are named in `NIGHTS` (the meeting's captain is Rhea), and the "forty years" gossip line in `gossip.ts` now hints at the Lantern. Still to do: name the guests at the tables (Silas, Mara, Ash), which needs the named-regulars work (10f).
 
 **New for Act 1:**
 
-5. **`src/game/plot.ts`:** story flags (`odenShut`, `silasAngry`, `silasOwes`, `ashCaught`, `ashHidden`, `maraArrested`, `rheaDoubts`, `heardSilver`) and Wren's letters with their unlock checks. Saved in `save.ts`.
-6. **`NIGHTS`:** the rewritten rumours, a last call per night with its own numbers, the two new conditional choices, and the flag each choice sets.
-7. **Flags change the next night:** Silas's brawl, Oden gone, Ash in the cellar, bottle and stew prices.
+5. **`src/game/plot.ts`:** Done for the story flags (saved in the story part of the save). Still to do: Wren's letters with their unlock checks.
+6. ~~**`NIGHTS`:**~~ Done: the rewritten rumours, a last call per night with its own numbers, the two new conditional choices, and the flag each choice sets.
+7. ~~**Flags change the next night:**~~ Done: Silas's brawl, Ash in the cellar, the meeting night's talk, bottle and stew prices. Oden isn't a guest yet, so "Oden gone" is the dawn line and the dark chapel.
 8. **`story.ts`:** the Act 1 finale scene with Pell and Wren's first letter.
 9. **Dawn and journal:** a found letter shows on the morning card. The journal gets Letters and Ledger tabs.
 10. **Endings:** The Village Rises needs Mara free. Kept, Lost and Overthrow end on the "To be continued" teaser.
+
+**Her arc (section 4b):**
+
+10a. ~~**`arcStage()` in `lewd.ts`:**~~ Done. Sheltered / Curious / Willing / Known from Lewdness (after fix 1), *The Back Stairs* and `records.kinds`. Every writing pool below picks by it.
+10b. ~~**Stop the stage-2 line swap.**~~ Done. At mind stage 2+, `tavern.ts` (around line 4017) replaces the touch's own line with a generic `bodyLine`. Keep the authored line and add the body line after it, and only at Known.
+10c. **Stage-aware writing:** done: the `FIRSTS` variants, the `townTalk` stage line and her dawn line. Still to do: each passive's `thought` gets an early and a late voice (`passives.ts`), and stage pools in table talk (`gossip.ts`, `tabletalk.ts`).
+10d. **Act 1 resistance beats:** done except Ash's hand. the two intro lines, the first reach of the run held to level 1–2, the farmers' line after her first refusal, Ash's hand, Tansy's denial, and the line before her first invitation card.
+10e. ~~**Pell at dawn by stage and corruption**~~ Done: (`ledger.ts`): four opening lines and the two gated choices (`defiedPell`, `pellsEar`).
+10f. **Named regulars** (GAME_PATH.MD, section 5): Silas, Mara and Rhea keep their sheet and their memory of her (lasting nerve, their opening line by memory and stage, a one-off line when her stage changes). Mara and Rhea are never impulsive.
 
 **New for Act 2 and later:**
 
@@ -771,7 +969,8 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 3. Should the player see the corruption number, or only the tier word?
 4. Three rivals, or two to keep the scope down?
 5. ~~Force vs. "pulling away always works"?~~ **Decided: pulling away always works** (GAME_PATH.MD, consent rule). Force became **Give in**: an extra yes, offered beside the other answers once her desire runs well past the touch, never replacing Slap or Pull away. Its lines are in `touchtalk-givein.ts`. The Force bar is feedback only, after a yes.
-6. The lantern gate is mind stage 2, but the letter that reveals the lantern unlocks at mind stage 3 (section 10). Which one moves?
+6. The lantern gate is mind stage 2, but the letter that reveals the lantern unlocks at mind stage 3 (section 10). Which one moves? **Proposed:** the letter moves to Willing (section 4b).
+9. Should Rhea and Mara be romanceable with the brother too, or are the named regulars only for the sister for now (touches only reach the sister today)?
 7. Does she run owned houses herself (walk to another map), or only through managers on a menu?
 8. Can she partner with the Baron and still get The Village Rises, if she uses the partnership to protect the village?
 
@@ -781,6 +980,10 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 
 | Date | Draft | Changes |
 |---|---|---|
+| 14 Nov 2026 | 2.18 | Her arc built in part: the mind stage reads Lewdness only, `arcStage` (shown by the Force bar), the written touch line kept with a stage layer, the Consent-off and late first-time thoughts, her dawn line and the town's line as her stage rises, Pell at dawn by stage and corruption (defy, or her ear: half the gold and a name), and Act 1 beats 2, 4 and 5. The defy choice's effect corrected: the meeting comes before Pell, so it can't open earlier |
+| 14 Nov 2026 | 2.17 | Act 1's story flags built (`plot.ts`): every written last call sets a flag, two conditional choices (hide Ash, tell Rhea about the silver), and what comes back (Silas's brawl, the salt crate, dearer bottles, the meeting night's talk, the First in Tarven card) |
+| 14 Nov 2026 | 2.16 | Story path brought up to date with the build. The intro rewrite is built (old three-night deadline removed). Act 1's three last calls have named visitors (Pell, Garrick, Rhea) and section 9's numbers. Section 15 fixes 3 and 4 done; flags and conditional choices are still to do |
+| 14 Nov 2026 | 2.15 | New section 4b, her arc: four stages (Sheltered, Curious, Willing, Known) read from Lewdness and records, with corruption as the tone. Wren's letters lined up with the stages. Who reacts and how. Pell at dawn changes with stage and corruption, with two gated choices. Silas, Mara and Rhea as named regulars who remember her. Example thoughts for the same touch at each stage, Consent on and off. Five Act 1 beats rewritten to show more resistance. House rules line updated for the Consent switch and brawl loss. Code tasks 10a–10f |
 | 13 Nov 2026 | 2.14 | Satisfaction through sex: Lantern bookings and her own played-out nights upstairs earn fans like a happy or delighted guest |
 | 13 Nov 2026 | 2.13 | Lantern Stage I built: the lantern and plain room on House Plans, lit or dark nights, Tamsin, the booking card (she can refuse any guest), the four house rules, corruption drift and the Lantern dawn line |
 | 13 Nov 2026 | 2.12 | No fail endings: Arrested and Foreclosed become debuffs (Under Watch after a raid, In the Baron's Debt, Bruised after a lost brawl). Chapter 1's core built: fans, the Village Ledger, beats by fans, partner or ruin, Pell's dawn and collections, side nights, First in Tarven |

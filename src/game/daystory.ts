@@ -4,6 +4,7 @@
  * her, how much heat she's drawn, and whether last night left a mess.
  */
 import { pixelSvg } from "./icons";
+import { mindStage } from "./lewd";
 
 const OUTLINE = "#1c140e";
 
@@ -178,7 +179,25 @@ export interface Standing {
 }
 
 /** Talk in the town, most telling first: what changed between the start of the day and the morning after. */
-const TALK: { weight: number; says: (d: (key: keyof Standing) => number) => string | null }[] = [
+/** What the town says the morning her lewdness carries her to a new mind stage (STORY.md 4b). */
+const STAGE_TALK = [
+  "",
+  "They say the new keeper's warming up.",
+  "Ask for the keeper by name, they say, and ask nicely.",
+  "Travellers on the road have started asking the way to her tavern, not the Copper Bell's.",
+];
+
+const TALK: {
+  weight: number;
+  says: (d: (key: keyof Standing) => number, before: Standing, after: Standing) => string | null;
+}[] = [
+  {
+    weight: 4,
+    says: (_d, before, after) => {
+      const stage = mindStage(after.lewdness);
+      return stage > mindStage(before.lewdness) ? STAGE_TALK[stage] ?? null : null;
+    },
+  },
   { weight: 5, says: (d) => (d("sold") > 0 ? "A secret you sold last night is already all over the valley." : null) },
   { weight: 5, says: (d) => (d("informed") > 0 ? "The baron's men are pleased with you. The village has noticed who you talk to." : null) },
   { weight: 4, says: (d) => (d("protected") > 0 ? "The ones you covered for at last call haven't forgotten it. Nor has the village." : null) },
@@ -209,7 +228,7 @@ const TALK_LINES = 3;
 /** What the town is saying about her the morning after, from what changed since the day began. */
 export function townTalk(before: Standing, after: Standing): string[] {
   const d = (key: keyof Standing) => after[key] - before[key];
-  const said = TALK.map((t) => ({ weight: t.weight, line: t.says(d) }))
+  const said = TALK.map((t) => ({ weight: t.weight, line: t.says(d, before, after) }))
     .filter((t): t is { weight: number; line: string } => t.line !== null)
     // Sorting is stable, so lines of equal weight keep their order above.
     .sort((a, b) => b.weight - a.weight)

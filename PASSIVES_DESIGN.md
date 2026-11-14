@@ -462,7 +462,7 @@ After a few full playthroughs:
 Brawls in the tavern, throwing out troublemakers, the baron's men. This is where Karryn's Prison-style combat would sit.
 
 - Fighting can add its own passives: Strength, Agility, Brawler, Bouncer.
-- **Hard line:** losing a fight never leads to sexual content, and never counts toward any sexual record or passive. Sexual records only rise from what she chooses.
+- **Losing a fight:** a lost brawl may offer a scene, with a continue/stop choice at its start, and each partner asks (GAME_PATH.MD, "Brawl loss"). Records only rise if she continues. Stopping costs only the usual gold and respect.
 
 **12. The brother**
 

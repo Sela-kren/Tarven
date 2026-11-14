@@ -54,6 +54,12 @@ const HEM_HEIGHT = 0.2;
 export const SKIRT_SWAY: SpringSettings = { frequency: 1.2, damping: 0.35, gain: 0.006, axes: [1, 0.1, 1], limit: 0.07 };
 
 const TAU = Math.PI * 2;
+/**
+ * A long skirt gathered up in her hands and folded over on itself, each part's angle out from straight down, in
+ * radians (past a quarter turn points up): from her hips the cloth rises to her hands, folds back down at
+ * mid-thigh, and its lower half folds up again over the top, so it bunches in a fold at her waist.
+ */
+const GATHER = { upper: 2.2, mid: 1.3, lower: 2.7 };
 
 /** Angle round the body, as the skirt is built: 0 at the right side, a quarter turn at the front. */
 function turnOf(x: number, z: number): number {
@@ -62,8 +68,11 @@ function turnOf(x: number, z: number): number {
 
 interface Panel {
   readonly upper: Object3D;
+  /** The joint at mid-thigh, which only bends when she gathers the skirt up; null for a model built without it. */
+  readonly mid: Object3D | null;
   readonly lower: Object3D;
   readonly upperRest: Quaternion;
+  readonly midRest: Quaternion;
   readonly lowerRest: Quaternion;
   /** Outwards, level with the floor. */
   readonly out: Vector3;
@@ -116,12 +125,12 @@ export class Skirt {
     strength = 1,
     size: LegSize = BUILT_LEGS,
   ): Skirt | null {
-    const panels: [Object3D, Object3D][] = [];
+    const panels: [Object3D, Object3D | null, Object3D][] = [];
     for (let i = 0; ; i++) {
       const upper = model.getObjectByName(`${name}_Skirt${i}`);
       const lower = model.getObjectByName(`${name}_SkirtHem${i}`);
       if (!upper || !lower) break;
-      panels.push([upper, lower]);
+      panels.push([upper, model.getObjectByName(`${name}_SkirtMid${i}`) ?? null, lower]);
     }
     return panels.length >= 3 ? new Skirt(hips, legs, panels, strength, size) : null;
   }
@@ -130,19 +139,24 @@ export class Skirt {
     private readonly hips: Object3D,
     /** Each leg's thigh and shin. */
     private readonly legs: readonly [Object3D, Object3D][],
-    bones: readonly [Object3D, Object3D][],
+    /** Each panel's upper part, its mid-thigh joint (if built), and its lower part. */
+    bones: readonly [Object3D, Object3D | null, Object3D][],
     strength = 1,
     size: LegSize = BUILT_LEGS,
   ) {
     this.samples = legSamples(size);
-    this.panels = bones.map(([upper, lower]) => {
+    this.panels = bones.map(([upper, mid, lower]) => {
       const head = upper.position;
-      const knee = lower.position.clone().applyQuaternion(upper.quaternion);
+      // From the top of the panel to its knee joint, through the mid-thigh joint where there is one.
+      const below = mid ? mid.position.clone().add(lower.position.clone().applyQuaternion(mid.quaternion)) : lower.position.clone();
+      const knee = below.applyQuaternion(upper.quaternion);
       const out = new Vector3(head.x, 0, head.z).normalize();
       return {
         upper,
+        mid,
         lower,
         upperRest: upper.quaternion.clone(),
+        midRest: mid ? mid.quaternion.clone() : new Quaternion(),
         lowerRest: lower.quaternion.clone(),
         out,
         axis: new Vector3(-out.z, 0, out.x),
@@ -161,6 +175,26 @@ export class Skirt {
     this.hemRest = this.hem.position.clone();
     hips.add(this.hem);
     this.sway = new Jiggle(this.hem, SKIRT_SWAY, strength);
+  }
+
+  /**
+   * How far her hands have the skirt lifted, at the front and at the back, from 0 (hanging) to 1 (held up, the
+   * hem gathered at her waist). The sides come up partway with whichever is lifted.
+   */
+  private lift = { front: 0, back: 0 };
+
+  /** Lifts the skirt at the front or back (0 to 1 each), as her hands would; both 0 lets it hang again. */
+  setLift(front: number, back: number): void {
+    this.lift.front = Math.max(0, Math.min(1, front));
+    this.lift.back = Math.max(0, Math.min(1, back));
+  }
+
+  /** How much of a lift reaches the panel at this angle round the body: all of it at the middle, less to the sides. */
+  private liftAt(turn: number): number {
+    // A quarter turn is the front, three quarters the back.
+    const side = Math.sin(turn);
+    const reach = (n: number) => Math.min(1, Math.max(0, n * 2.2 - 1.2));
+    return Math.max(this.lift.front * reach(side), this.lift.back * reach(-side));
   }
 
   /** Takes the hem's sway point off the hips, before the skirt is rebuilt for a reshaped body. */
@@ -255,10 +289,25 @@ export class Skirt {
     }
     panels.forEach((p, i) => {
       p.lowerEase = Number.isNaN(p.lowerEase) || need[i] > p.lowerEase ? need[i] : p.lowerEase + (need[i] - p.lowerEase) * fall;
-      const lower = Math.max(need[i], p.lowerEase + tilt[i]);
+      let lower = Math.max(need[i], p.lowerEase + tilt[i]);
+      // Hanging, the mid-thigh joint stays straight: the upper part reaches all the way to the knee.
+      let mid = upper[i];
+      // Gathered up in her hands (only with the mid-thigh joint): it folds over on itself at her waist.
+      const held = p.mid ? this.liftAt(p.turn) : 0;
+      if (held > 0) {
+        upper[i] += (GATHER.upper - upper[i]) * held;
+        mid += (GATHER.mid - mid) * held;
+        lower += (GATHER.lower - lower) * held;
+      }
       Skirt.turn(p.upper, p.upperRest, axisLocal.copy(p.axis), upper[i] - p.rest);
-      // Turning about the axis leaves it where it was, so in the upper part's frame it is only un-rested.
-      Skirt.turn(p.lower, p.lowerRest, axisLocal.copy(p.axis).applyQuaternion(inverse.copy(p.upperRest).invert()), lower - upper[i]);
+      // Turning about the axis leaves it where it was, so in each part's frame it is only un-rested.
+      const inUpper = axisLocal.copy(p.axis).applyQuaternion(inverse.copy(p.upperRest).invert()).clone();
+      if (p.mid) {
+        Skirt.turn(p.mid, p.midRest, inUpper.clone(), mid - upper[i]);
+        Skirt.turn(p.lower, p.lowerRest, inUpper.applyQuaternion(inverse.copy(p.midRest).invert()), lower - mid);
+      } else {
+        Skirt.turn(p.lower, p.lowerRest, inUpper, lower - upper[i]);
+      }
     });
   }
 
@@ -275,6 +324,7 @@ export class Skirt {
       p.upperEase = Number.NaN;
       p.lowerEase = Number.NaN;
       p.upper.quaternion.copy(p.upperRest);
+      p.mid?.quaternion.copy(p.midRest);
       p.lower.quaternion.copy(p.lowerRest);
     }
   }

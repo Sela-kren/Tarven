@@ -2419,11 +2419,13 @@ def character_joints(spec):
         joints["HairSoft"] = ("Head", (0.0, 0.0, spec["neck_z"]))
         joints["HairTail"] = ("Torso", (0.0, 0.0, spec["torso_z"]))
     if spec.get("outfit") == "medieval":
-        # The long skirt hangs from panels round the hips, each one jointed at the knee. The game swings
-        # them out of the legs' way, so the legs never pass through the cloth.
+        # The long skirt hangs from panels round the hips, each one jointed at mid-thigh and at the knee. The game
+        # swings them out of the legs' way, so the legs never pass through the cloth, keeping the mid-thigh joint
+        # straight; it bends only when she gathers the skirt up in her hands, folding the cloth over on itself.
         for i in range(SKIRT_PANELS):
             joints[f"Skirt{i}"] = ("Hips", skirt_rim(spec, i, SKIRT_PIVOT))
-            joints[f"SkirtHem{i}"] = (f"Skirt{i}", skirt_rim(spec, i, SKIRT_KNEE))
+            joints[f"SkirtMid{i}"] = (f"Skirt{i}", skirt_rim(spec, i, SKIRT_MID))
+            joints[f"SkirtHem{i}"] = (f"SkirtMid{i}", skirt_rim(spec, i, SKIRT_KNEE))
     return {f"{name}_{label}": (f"{name}_{parent}" if parent else None, head) for label, (parent, head) in joints.items()}
 
 
@@ -3373,9 +3375,10 @@ SLEEVE_PUFF = 0.012
 SKIRT_TOP, SKIRT_HEM, SKIRT_SIDES = 0.99, 0.2, 16
 # The skirt's panels: how many round the body, where they hang from (just above the hip joints) and
 # where each bends (about knee height). The skirt fades onto the panels between these heights.
-SKIRT_PANELS, SKIRT_PIVOT, SKIRT_KNEE = 8, 0.84, 0.48
+SKIRT_PANELS, SKIRT_PIVOT, SKIRT_MID, SKIRT_KNEE = 12, 0.84, 0.66, 0.48
 SKIRT_HANG = (0.9, 0.8)  # from the hips onto the panels
-SKIRT_BEND = (0.58, 0.38)  # from the upper panels onto the lower ones
+SKIRT_FOLD = (0.72, 0.6)  # from the upper panels onto their mid-thigh parts, which fold when she gathers it up
+SKIRT_BEND = (0.56, 0.4)  # from those onto the lower ones
 
 
 def profile_at(spec, z):
@@ -3610,12 +3613,13 @@ def skirt_rim(spec, panel, z):
 
 
 def skirt_weights(a, z):
-    """The skirt hangs from the hips, then from the two panels either side of it, bending at the knee."""
+    """The skirt hangs from the hips, then from the two panels either side of it, bending at mid-thigh and the knee."""
     def ease(t):
         t = min(1.0, max(0.0, t))
         return t * t * (3 - 2 * t)
 
     hang = ease((SKIRT_HANG[0] - z) / (SKIRT_HANG[0] - SKIRT_HANG[1]))
+    fold = ease((SKIRT_FOLD[0] - z) / (SKIRT_FOLD[0] - SKIRT_FOLD[1]))
     bend = ease((SKIRT_BEND[0] - z) / (SKIRT_BEND[0] - SKIRT_BEND[1]))
     at = (a / (2 * math.pi) % 1) * SKIRT_PANELS
     first = int(at) % SKIRT_PANELS
@@ -3623,8 +3627,9 @@ def skirt_weights(a, z):
     weights = {"Hips": 1 - hang}
     for panel, part in ((first, 1 - share), ((first + 1) % SKIRT_PANELS, share)):
         if part > 0:
-            weights[f"Skirt{panel}"] = weights.get(f"Skirt{panel}", 0) + hang * (1 - bend) * part
-            weights[f"SkirtHem{panel}"] = weights.get(f"SkirtHem{panel}", 0) + hang * bend * part
+            for bone, w in ((f"Skirt{panel}", 1 - fold), (f"SkirtMid{panel}", fold * (1 - bend)), (f"SkirtHem{panel}", fold * bend)):
+                if w > 0:
+                    weights[bone] = weights.get(bone, 0) + hang * w * part
     return {bone: w for bone, w in weights.items() if w > 0}
 
 
@@ -3632,7 +3637,8 @@ def build_skirt(spec, m):
     """Skirt, apron, waist belt and bodice laces, as one more skinned layer."""
     extra = Skin()
     sides = SKIRT_SIDES
-    zs = [SKIRT_TOP, 0.94, 0.88, 0.82, 0.7, 0.58, 0.46, 0.34, 0.26, SKIRT_HEM]
+    # Rows close together round the mid-thigh and knee joints, so the cloth folds cleanly there when gathered up.
+    zs = [SKIRT_TOP, 0.94, 0.88, 0.82, 0.76, 0.7, 0.66, 0.62, 0.56, 0.5, 0.46, 0.42, 0.34, 0.26, SKIRT_HEM]
     for r, z in enumerate(zs):
         for k in range(sides):
             a = 2 * math.pi * k / sides

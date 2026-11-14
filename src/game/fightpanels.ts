@@ -233,6 +233,12 @@ function closeTheNight(game: Game): void {
   game.goToSleep();
 }
 
+/** "the archer", "the archer and the mage", "the archer, the mage and the cleric". */
+function crewWords(labels: readonly string[]): string {
+  const named = labels.map((l) => `the ${l.toLowerCase()}`);
+  return named.length <= 1 ? (named[0] ?? "") : `${named.slice(0, -1).join(", ")} and ${named[named.length - 1]}`;
+}
+
 /**
  * After a lost brawl, the one who won asks her (GAME_PATH.MD, "Brawl loss"). Two plain answers: go on, to the
  * After Hours rules (her parts, her stake, and stop any time), or stop here. Stopping costs nothing past the
@@ -251,12 +257,18 @@ export function showBrawlOffer(game: Game, lost = ""): void {
     tavern.declineBrawlOffer();
     closeTheNight(game);
   };
-  const line = `${lost ? `${lost} ` : ""}The fight's gone out of the ${who}. They offer you a hand up and hold your eye a moment too long. "No hard feelings. Stay up a while with me?"`;
+  const crew = offer.crew;
+  const ask = crew.length > 0
+    ? `"No hard feelings. Take us up to your room? All of us, if you'll have us." Behind them, ${crewWords(crew.map((c) => c.label))} ${crew.length === 1 ? "waits" : "wait"} on your answer.`
+    : `"No hard feelings. Take me up to your room?"`;
+  const line = `${lost ? `${lost} ` : ""}The fight's gone out of the ${who}. They offer you a hand up and hold your eye a moment too long. ${ask}`;
   showAdultCard(game, "Knocked down", line, "door", [
     {
-      label: blocked ? `Go on (18+) (${blocked.toLowerCase().replace(/\.$/, "")})` : "Go on (18+): set your rules",
+      label: blocked
+        ? `Go on, upstairs (18+) (${blocked.toLowerCase().replace(/\.$/, "")})`
+        : `Go on, upstairs (18+): ${crew.length > 0 ? `${crew.length + 1} of them asking; ` : ""}set your rules`,
       disabled: Boolean(blocked),
-      onPick: () => showDuelRules(game, new Set(), 0),
+      onPick: () => showDuelRules(game, new Set(), 0, "plain", new Set(crew.map((c) => c.id))),
     },
     { label: "Stop: send them off, and end the night", onPick: stop },
   ]);
@@ -395,7 +407,7 @@ export function showBedChoice(game: Game): void {
  * Her rules for an after-hours game, before it starts: which parts of her are in play (only ones she's warm
  * enough for tonight) and the stake. A kiss is always part of it.
  */
-export function showDuelRules(game: Game, areas: Set<DuelArea>, stake: number, scene: RolePlay = "plain"): void {
+export function showDuelRules(game: Game, areas: Set<DuelArea>, stake: number, scene: RolePlay = "plain", crew: Set<number> = new Set()): void {
   const { tavern } = game;
   const kind = tavern.duelOffer();
   if (!kind) {
@@ -404,7 +416,17 @@ export function showDuelRules(game: Game, areas: Set<DuelArea>, stake: number, s
     return;
   }
   const stakes = tavern.duelStakes();
-  const buttons: Button[] = tavern.duelAreas().map((area) => ({
+  // After a lost brawl: the winner's companions, each asking to come up too. Hers to pick, none of them pulled in.
+  const asking = tavern.brawlCrewAsking;
+  const buttons: Button[] = asking.map((c) => ({
+    label: `${crew.has(c.id) ? "[x]" : "[ ]"} The ${c.label.toLowerCase()}: "${c.ask.replace(/^"|"$/g, "")}"`,
+    onPick: () => {
+      if (crew.has(c.id)) crew.delete(c.id);
+      else crew.add(c.id);
+      showDuelRules(game, areas, stake, scene, crew);
+    },
+  }));
+  buttons.push(...tavern.duelAreas().map((area) => ({
     label: area.ready
       ? `${areas.has(area.id) ? "[x]" : "[ ]"} ${area.name}`
       : `[ ] ${area.name} (needs ${area.need} ${area.meter} desire; you're at ${area.have})`,
@@ -412,13 +434,13 @@ export function showDuelRules(game: Game, areas: Set<DuelArea>, stake: number, s
     onPick: () => {
       if (areas.has(area.id)) areas.delete(area.id);
       else areas.add(area.id);
-      showDuelRules(game, areas, stake, scene);
+      showDuelRules(game, areas, stake, scene, crew);
     },
-  }));
+  })));
   buttons.push({
     label: `Stake: ${stake} gold (change)`,
     disabled: stakes.length < 2,
-    onPick: () => showDuelRules(game, areas, stakes[(stakes.indexOf(stake) + 1) % stakes.length], scene),
+    onPick: () => showDuelRules(game, areas, stakes[(stakes.indexOf(stake) + 1) % stakes.length], scene, crew),
   });
   // Role-play: steps through the ones she's ready for; the rest say what passive they need.
   const plays = tavern.rolePlays();
@@ -428,12 +450,13 @@ export function showDuelRules(game: Game, areas: Set<DuelArea>, stake: number, s
   buttons.push({
     label: `Role-play: ${current.name} (change)${locked.length > 0 ? ` · ${locked.join(", ")}` : ""}`,
     disabled: ready.length < 2,
-    onPick: () => showDuelRules(game, areas, stake, ready[(ready.findIndex((p) => p.id === scene) + 1) % ready.length].id),
+    onPick: () => showDuelRules(game, areas, stake, ready[(ready.findIndex((p) => p.id === scene) + 1) % ready.length].id, crew),
   });
+  const going = asking.filter((c) => crew.has(c.id)).map((c) => c.id);
   buttons.push({
-    label: "Begin (18+)",
+    label: going.length > 0 ? `Begin (18+) with ${going.length + 1} of them` : "Begin (18+)",
     onPick: () => {
-      if (tavern.startDuel([...areas], stake, scene)) showDuel(game);
+      if (tavern.startDuel([...areas], stake, scene, going)) showDuel(game);
     },
   });
   // Back to whoever asked: the brawl winner's offer, or the bedside.
@@ -442,7 +465,9 @@ export function showDuelRules(game: Game, areas: Set<DuelArea>, stake: number, s
   game.openPanel(
     "Your rules",
     [
-      `Choose what's in play with the ${kind}. A kiss always is. They'll keep to your rules, and you can stop at any time.`,
+      asking.length > 0
+        ? `Up in your room. Pick who comes up with the ${kind}: each of them asked, and none of them will mind a no. Then choose what's in play. A kiss always is. They'll keep to your rules, and you can stop at any time, for all of them.`
+        : `Choose what's in play with the ${kind}. A kiss always is. They'll keep to your rules, and you can stop at any time.`,
       `${current.name}: ${current.about}`,
     ],
     buttons,

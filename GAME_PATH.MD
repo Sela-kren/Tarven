@@ -36,7 +36,7 @@ When she loses a brawl:
 - The fight ends immediately.
 - A sexual content scene is offered (18+ card or short scene).
 - She gets a final choice at the start of the scene: continue or stop.
-- If she continues, desire meters and records can rise, then the night ends.
+- If she continues, it's up in her room: the one who won, and their company (their party, or else whoever shares their table, never anyone roaring drunk, never the Baron). **Each of them asks**, and she ticks who comes up (all ticked to start). It plays as the After Hours game with all of them (`startDuel(..., crewIds)` in `tavern.ts`, `showDuelRules` in `fightpanels.ts`), and Stop ends it for everyone. Desire meters and records can rise, then the night ends.
 - If she stops, the night still ends and she only loses the normal gold and respect.
 - Gold and respect are lost either way.
 - **She's Bruised** (a debuff, `src/game/debuffs.ts`) through the next night: saying no costs 25% more willpower, her hold is 1 weaker (Consent off), and guests reach for her 15% more. Losing again before it wears off makes it worse (level 2).
@@ -209,6 +209,7 @@ Each type has a base Nerve (section 2) and a preferred desire meter. When they r
 - Each time you beat them physically (brawl) or win an After Hours duel they grow stronger next time (higher Nerve, more brawl stamina and upstairs stamina, more aggressive weighting).
 - They remember previous nights and comment on it.
 - Optional: a "Wanted" journal tab that lists them, their type, their current stats and their preference.
+- **The first three (STORY.md, section 4b):** Silas Crowe (smuggler), Mara Holt (farmer) and Captain Rhea Vance (soldier, off duty after the meeting beat). Each keeps +0.5 lasting nerve per night she let them touch her (at most +2, −1 after a slap until she lets them again), and opens the night with a line picked by what they remember and her arc stage. **Mara and Rhea are never impulsive**, so with Consent off they still ask.
 
 ---
 
@@ -318,6 +319,7 @@ A bold guest may offer coin for a look at her as she serves them (`src/game/show
   - *"Not a chance."*
 - **How far she'll go** depends on that part's desire meter (÷10): a proper look needs 3 for breasts or behind and 5 for her pussy, a peek 3 less. Each exhibition passive takes 1 off (up to 2). Not ready, and the answer is greyed out with "(you're not ready for that)".
 - **Too drunk** on either side, and neither yes is there.
+- **She poses for it:** while the talk lasts she holds a pose (`ShowPose` in `player.ts`, shown in her portrait too): a peek at her breasts is a finger hooked in her neckline, her chemise pulled aside so her breast band shows above her bodice; a proper look is both hands holding her top open, the band off too. Her pussy: both hands gather her long skirt up at the front, folded over on itself at her waist (`Skirt.setLift`; each skirt panel has a mid-thigh joint for the fold, built in `build_world.py`), apron aside. Her behind: she turns round, looks back over her shoulder and gathers her skirt up behind the same way. A proper look of either takes her smallclothes off as well; a bottom that isn't a skirt comes off instead of lifting (`showingPieces` in `tavern.ts`). *Get back to work*, and the pose eases off and it's all back on. It never counts as stripped. In development, `?pose=chestPeek` (or chestBare, frontLift, backLift) holds a pose to look at.
 - **It stirs them up:** a peek leaves that guest +2 lust and as bold as if she'd let them touch her once more; a proper look +3 lust and twice. Her own desire for that part rises (+5 / +10).
 - **Grabs and gropes stir them up too:** each touch she lets happen is +1 lust for that guest (and, as before, bolder); letting a guest who grabbed her hold her is +1 lust and +1 bold.
 - **Records and passives:** peeks, proper looks, times she said no (records). *Peep Show* (5 peeks: +1 gold a look, asked 25% more). *Flasher* (5 proper looks: +2 gold a look, asked 50% more).

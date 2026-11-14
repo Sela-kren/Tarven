@@ -1,5 +1,5 @@
 import { cloneLayout, type HouseLayout } from "./house";
-import { bodyLine, flavorLine, mindStage, wildSensitivity } from "./lewd";
+import { ARC_DAWN, arcIndex, arcStage, ARC_STAGES, flavorLine, TANSY_CALLBACK, type ArcStage, wildSensitivity } from "./lewd";
 import { faceLine } from "./facetalk";
 import { arrivalFeelings, arrivalMood, feltMood, HIGH_RESPECT, LOW_RESPECT, MOOD_LABELS, STRONG_LUST, moodAfterDrink, moodAfterReply, moodWhenServed, moodWhileWaiting, MOOD_BEHAVIOUR, type Mood } from "./mood";
 import {
@@ -41,7 +41,18 @@ import {
   type TouchMemory,
   type TouchRegion,
 } from "./touch";
-import { GUEST_TOO_DRUNK, PULLS, SLAPS, TOO_DRUNK_TO_ALLOW, WAVERED, WORN_THIN } from "./touchtalk";
+import {
+  FIRST_INVITE_PAUSE,
+  FIRST_REACH_MAX,
+  FIRST_REACH_THOUGHT,
+  FIRST_REFUSAL,
+  GUEST_TOO_DRUNK,
+  PULLS,
+  SLAPS,
+  TOO_DRUNK_TO_ALLOW,
+  WAVERED,
+  WORN_THIN,
+} from "./touchtalk";
 import { GIVE_IN_TEXTS, IMPULSE_LINES } from "./touchtalk-givein";
 import { KINK_TALK, kinkOf, type Kink } from "./kinktalk";
 import { speakerIndex } from "./chatter";
@@ -75,6 +86,21 @@ import {
   type RivalMove,
   ordinal,
   PELL_AT_DAWN,
+  DEFY_HEAT,
+  DEFY_TRUST,
+  EAR_COLLECTION,
+  EAR_CORRUPTION,
+  EAR_TRUST,
+  NAME_CORRUPTION,
+  PELL_DEFIED,
+  PELL_DEFY,
+  PELL_EAR,
+  PELL_EARS,
+  PELL_PROMISE,
+  PELL_REFUSE,
+  pellOpening,
+  SHADY_AT,
+  type PellAnswer,
   WREN_FIRST_LETTER,
 } from "./ledger";
 import {
@@ -153,7 +179,7 @@ const CUM_WHERE: Record<CumSpot, string> = {
   ass: "deep in your ass",
   body: "all over your belly",
 };
-import { INVITE_ASKS, INVITE_CHOICE, INVITE_CHOICE_ROOM, INVITE_HUSH, INVITE_ROOM_YES, JOIN_ASKS, MORNING_AFTER, pickLine as storyLine, STAIRS, TAPROOM_END, TAPROOM_MORNING, TAPROOM_START, UPSTAIRS_ROOM_AGAIN, UPSTAIRS_ROOM_FIRST } from "./invitetalk";
+import { BRAWL_ROOM_CREW, BRAWL_ROOM_ONE, INVITE_ASKS, INVITE_CHOICE, INVITE_CHOICE_ROOM, INVITE_HUSH, INVITE_ROOM_YES, JOIN_ASKS, MORNING_AFTER, pickLine as storyLine, STAIRS, TAPROOM_END, TAPROOM_MORNING, TAPROOM_START, UPSTAIRS_ROOM_AGAIN, UPSTAIRS_ROOM_FIRST } from "./invitetalk";
 import {
   isBaron,
   isLocal,
@@ -214,6 +240,22 @@ import {
 } from "./passives";
 import { GUEST_KIND_LIST, ROLES, ROLES_OF, roleLabel, rollStats, type GuestRole, type RoleStats } from "./guestroles";
 import { ALLOW_WILL, DRINK_WILL, LEAN_WILL, maxWillpower, NAP_RESTORE, refuseCost, STEADY_WILL } from "./willpower";
+import { applyFields, captureFields } from "./moment";
+import {
+  BOTTLE_MARKUP,
+  bottlesDearer,
+  DEEDS_IN_ORDER,
+  FLAG_NEWS,
+  isPlotFlag,
+  needMet,
+  nightOpening,
+  SALT_STEW_GOLD,
+  SILAS_ARRIVES,
+  silasDue,
+  type ChoiceNeed,
+  type Deed,
+  type PlotFlag,
+} from "./plot";
 
 /**
  * The rules of the game, with no graphics. The view layer tells this class what
@@ -313,6 +355,8 @@ const FAME_DEEDS = [-6, 8, -3];
 const RESPECT_DEEDS = [-2, 2, -1];
 /** This drunk in front of the customers, and they stop taking you seriously. */
 const SLOPPY_DRUNK = 0.6;
+/** Bottoms she can hold up in her hands to show a guest (the model's skirt panels lift); anything else comes off. */
+const LIFTED_SKIRTS: ReadonlySet<string> = new Set(["skirt"]);
 /** The drink a pleased guest bought her, as an option: it says whose drink it is, whatever else they've said since. */
 export const TIP_DRINK_LABEL = "Drink the one they bought you";
 const TIP_DRINK_TOO_DRUNK = "Drink the one they bought you (you've had more than enough)";
@@ -568,6 +612,12 @@ export interface Choice {
   gold: number;
   trust: number;
   heat: number;
+  /** What a heard choice does with the secret. Without one, it's read from its place: truth, lie, sell. */
+  deed?: Deed;
+  /** The story flags it sets (plot.ts). */
+  sets?: PlotFlag[];
+  /** Only offered when this is met (plot.ts `needMet`). */
+  needs?: ChoiceNeed;
 }
 
 export interface LastCall {
@@ -601,6 +651,8 @@ export interface PartyPlan {
   offer: string;
   /** What a drink loosens out of them. If the night's rumor is at this table, it comes out too. */
   gossip: string;
+  /** A story flag their gossip gives her (plot.ts), such as the soldiers' talk of the Baron's silver. */
+  clue?: PlotFlag;
 }
 
 export interface NightPlan {
@@ -680,13 +732,14 @@ export const NIGHTS: NightPlan[] = [
       },
     ],
     lastCall: {
-      visitor: "The baron's tax collector",
-      question: "Someone is running untaxed salt over this pass. Who have you heard talking?",
-      rumor: "The smuggler muttered that the salt is hidden under the chapel floor.",
+      // STORY.md section 9, beat 1. Each choice sets a story flag (plot.ts), and the nights after read it.
+      visitor: "Pell, the baron's tax collector",
+      question: "Wren and I were old friends, you know. Someone is running untaxed salt over this pass. Who have you heard talking?",
+      rumor: "Silas the smuggler told Mara Holt the salt is safe under Oden's floor, at the chapel.",
       heard: [
-        { label: "Tell the truth: the chapel floor", result: "He smiles and writes it down. By morning the village knows who talked.", gold: 5, trust: -3, heat: -2 },
-        { label: "Lie: send him to the empty quarry", result: "He leaves for the quarry. The smugglers quietly leave you a thank-you.", gold: 0, trust: 2, heat: 1 },
-        { label: "Sell it: name your price", result: "He pays well and despises you for it.", gold: 25, trust: -2, heat: -1 },
+        { label: "Tell the truth: the chapel floor", result: "Pell smiles and writes it down. By morning the village knows who talked, and Brother Oden's door is shut.", gold: 5, trust: -3, heat: -2, sets: ["odenShut"] },
+        { label: "Lie: send him to the empty quarry", result: "Pell leaves for the quarry. Silas's crew quietly leave you a thank-you.", gold: 0, trust: 2, heat: 1, sets: ["silasOwes"] },
+        { label: "Sell it: name your price", result: "Pell pays well and despises you for it. Only three people knew. Silas can count.", gold: 25, trust: -2, heat: 0, sets: ["silasAngry"] },
       ],
       unheard: [
         { label: "Say you heard nothing", result: "He doesn't believe you, and he makes a note of your name.", gold: 0, trust: 0, heat: 1 },
@@ -741,12 +794,13 @@ export const NIGHTS: NightPlan[] = [
           "Other soldier: \"Then the other half's on double watch.\"",
           "Soldier: \"Who's even coming over the ridge in this?\"",
           "Other soldier: \"Somebody's got the captain in a sweat.\"",
-          "Soldier: \"The captain sweats if you hand him a spoon.\"",
+          "Soldier: \"The captain sweats if you hand her a spoon.\"",
           "Other soldier: \"Keep that to yourself.\"",
           "Soldier: \"I keep everything to myself. It's all I've been paid in.\"",
         ],
         offer: "The soldier bangs a cup down in front of you. \"To the baron! May he choke on it.\"",
         gossip: "\"Word is the baron's short of silver himself. That's why he's squeezing every inn on the road.\"",
+        clue: "heardSilver",
       },
       {
         chat: [
@@ -770,13 +824,24 @@ export const NIGHTS: NightPlan[] = [
       },
     ],
     lastCall: {
-      visitor: "A bounty hunter",
-      question: "I'm tracking a deserter from the baron's army. Did one come through tonight?",
-      rumor: "The pale stranger whispered that they deserted and are heading for the border at dawn.",
+      // STORY.md section 9, beat 2. Hiding Ash is only offered if she protected Silas, or has a kind heart (plot.ts).
+      visitor: "Garrick Thorne, a bounty hunter",
+      question: "I'm tracking a deserter from the baron's army. Calls himself Ash. Did he come through tonight?",
+      rumor: "Ash, the pale stranger, whispered that he deserted and crosses the border at dawn.",
       heard: [
-        { label: "Tell the truth: the border, at dawn", result: "He rides out at once. Nobody speaks to you at the well the next day.", gold: 5, trust: -3, heat: -2 },
-        { label: "Lie: point him back down the valley", result: "He rides the wrong way. Someone leaves flowers on your step.", gold: 0, trust: 2, heat: 1 },
-        { label: "Sell it: name your price", result: "He counts the coins onto the bar without looking at you.", gold: 25, trust: -2, heat: -1 },
+        { label: "Tell the truth: the border, at dawn", result: "Garrick pays you the bounty and rides out at once. Nobody speaks to you at the well the next day.", gold: 10, trust: -2, heat: -2, sets: ["ashCaught"] },
+        { label: "Lie: point him back down the valley", result: "Garrick rides the wrong way. Someone leaves flowers on your step.", gold: 0, trust: 1, heat: 1 },
+        { label: "Sell it: name your price", result: "Garrick counts the coins onto the bar without looking at you.", gold: 25, trust: -2, heat: 0, sets: ["ashCaught"] },
+        {
+          label: "Hide him in the cellar",
+          result: "You take Ash down the cellar steps before Garrick has finished his ale. Garrick leaves with nothing, and a long look back at you.",
+          gold: 0,
+          trust: 2,
+          heat: 2,
+          deed: "protect",
+          sets: ["ashHidden"],
+          needs: "shelter",
+        },
       ],
       unheard: [
         { label: "Say you heard nothing", result: "He shrugs and tells you the baron hates a blind innkeeper.", gold: 0, trust: 0, heat: 1 },
@@ -881,17 +946,29 @@ export const NIGHTS: NightPlan[] = [
       },
     ],
     lastCall: {
-      visitor: "The baron's captain",
-      question: "The villagers are meeting in secret against my lord. Where?",
-      rumor: "An old farmer said the village meets at the mill, the night after the debt falls due.",
+      // STORY.md section 9, beat 3. She asks, but she half hopes she won't get an answer. Telling her where the
+      // baron's silver goes is only offered if she heard the soldiers' talk of it (plot.ts, `heardSilver`).
+      visitor: "Captain Rhea Vance",
+      question: "The villagers are meeting in secret against the baron. I'm ordered to ask you where.",
+      rumor: "An old farmer said Mara Holt is gathering the village at the mill, the night after the debt falls due.",
       heard: [
-        { label: "Tell the truth: the old mill", result: "Soldiers march for the mill before sunrise.", gold: 5, trust: -3, heat: -2 },
-        { label: "Lie: the ruins on the north road", result: "The captain marches his men into the snow, away from the mill.", gold: 0, trust: 2, heat: 1 },
-        { label: "Sell it: name your price", result: "He pays in the baron's own silver. It feels heavier than it should.", gold: 25, trust: -2, heat: -1 },
+        { label: "Tell the truth: the old mill", result: "Rhea closes her eyes for a moment. Her soldiers march for the mill before sunrise, and Mara is taken.", gold: 0, trust: -3, heat: -3, sets: ["maraArrested"] },
+        { label: "Lie: the ruins on the north road", result: "Rhea marches her soldiers into the snow, away from the mill. She doesn't look back.", gold: 0, trust: 2, heat: 2 },
+        { label: "Sell it: name your price", result: "Rhea pays in the baron's own silver, and won't meet your eye. It feels heavier than it should.", gold: 25, trust: -2, heat: 0, sets: ["maraArrested"] },
+        {
+          label: "Tell her where the baron's silver goes",
+          result: "Rhea doesn't march. She sits a long while over a cup she doesn't drink, and leaves without a word.",
+          gold: 0,
+          trust: 0,
+          heat: 1,
+          deed: "protect",
+          sets: ["rheaDoubts"],
+          needs: "heardSilver",
+        },
       ],
       unheard: [
-        { label: "Say you heard nothing", result: "\"Tomorrow,\" he says, \"you'll wish you had.\"", gold: 0, trust: 0, heat: 1 },
-        { label: "Make something up", result: "He pays you and sends a rider to check.", gold: 5, trust: 0, heat: 2 },
+        { label: "Say you heard nothing", result: "\"Good,\" Rhea says, too quickly. \"Then I've nothing to report.\"", gold: 0, trust: 0, heat: 1 },
+        { label: "Make something up", result: "Rhea pays you and sends a rider to check.", gold: 5, trust: 0, heat: 2 },
       ],
     },
   },
@@ -1054,6 +1131,10 @@ export interface StorySave {
   /** The written night tonight plays, or -1 for a night between beats. */
   storyNight: number;
   sideRumor: number;
+  /** Act 1's story flags (plot.ts). Older saves have none. */
+  flags?: string[];
+  /** The furthest stage of her arc the dawn report has spoken of (STORY.md 4b). */
+  arc?: number;
 }
 
 /** How Pell's collection went: what was due, what he took, and what she still owes. */
@@ -1070,6 +1151,8 @@ interface ShowChat {
   lines: TalkLine[];
   answered: boolean;
   reply: TalkLine[];
+  /** What she's showing them, while the talk lasts: the model shows it too (`shownPieces`). */
+  shown?: "peek" | "bare";
 }
 
 /** The state that lasts between nights. */
@@ -1182,8 +1265,25 @@ interface TouchChat {
 export interface BrawlOffer {
   kind: GuestKind;
   stats: RoleStats;
+  female: boolean;
   /** They were roaring drunk: too drunk to say yes to. */
   drunk: boolean;
+  /**
+   * Who they came in with (their party, or else whoever shares their table), still in the room and sober enough to
+   * ask too. Each asks to come upstairs; she picks who does. Nobody is brought along unasked.
+   */
+  crew: BrawlCrewMate[];
+}
+
+/** One of the brawl winner's companions, asking to come up too. */
+export interface BrawlCrewMate {
+  id: number;
+  kind: GuestKind;
+  female: boolean;
+  stats: RoleStats;
+  label: string;
+  /** What they say to ask. */
+  ask: string;
 }
 
 /** A touch that's just been answered, for the game to play out on screen. */
@@ -1264,6 +1364,32 @@ const STATION_OF_ITEM: Record<Item, Station> = {
   cask: "barrel",
 };
 
+/**
+ * What a saved moment leaves alone: the dice, the rules the tests change, the player's settings and looks (kept
+ * elsewhere), the room's shape (from the world), the Lantern (saved on its own), and the tub's sparkle (a clock time).
+ */
+const MOMENT_SKIP = [
+  "random",
+  "rollRandom",
+  "crowdRandom",
+  "grabRandom",
+  "showRandom",
+  "storyBeats",
+  "takeOrders",
+  "touchSettings",
+  "playerBody",
+  "playerOutfit",
+  "playerLegwear",
+  "playerUnder",
+  "seatCount",
+  "seatTables",
+  "dustSpots",
+  "cobwebSpots",
+  "lantern",
+  "washedAt",
+] as const satisfies readonly (keyof Tavern | "seatCount" | "seatTables" | "dustSpots" | "cobwebSpots")[];
+const LANTERN_MOMENT_SKIP = ["random"] as const;
+
 export class Tavern {
   phase: Phase = "day";
   nightIndex = 0;
@@ -1294,6 +1420,10 @@ export class Tavern {
   fansTonight = 0;
   /** The beats played so far, by id. The first night is the salt. */
   readonly beatsDone = new Set<string>(["salt"]);
+  /** Act 1's story flags (plot.ts): what she did at the written nights' last calls, and what she's heard. */
+  readonly plotFlags = new Set<PlotFlag>();
+  /** The furthest stage of her arc the dawn report has spoken of (-1 for none yet): each is spoken of once. */
+  arcSeen = -1;
   /** The written night tonight plays (a beat night), or -1 for a night between beats. */
   storyNight = 0;
   /** The houses she's passed, and what she did with each (partner or ruin; "fallen" until its boss has come). */
@@ -1621,12 +1751,31 @@ export class Tavern {
     this.adjust(0, nightly.trust, nightly.heat);
     if (nightly.respect) this.shift({ respect: nightly.respect });
     this.awardPassives();
+    this.arcDawn();
     this.countFans();
     // A night gone off every debuff that lasts for nights.
     this.debuffs = this.debuffs.filter((d) => d.nights === 0 || --d.nights > 0);
     this.refreshEffects();
     // The baron's heard enough: the garrison comes in the night. Not the end of her, but it costs.
     if (this.heat >= HEAT_MAX) this.raid();
+  }
+
+  /**
+   * The first morning she's a new stage on her arc (STORY.md 4b), she has her own line on the dawn report, and at
+   * Willing, the words she said to Tansy come back to her.
+   */
+  private arcDawn(): void {
+    const stage = this.arcStage;
+    const at = arcIndex(stage);
+    if (at <= this.arcSeen) return;
+    this.arcSeen = at;
+    this.news.push(ARC_DAWN[stage]);
+    if (stage === "willing" && this.plotFlags.has("deniedLantern")) this.news.push(TANSY_CALLBACK);
+  }
+
+  /** How many touches she's let happen, all told. */
+  private get timesLet(): number {
+    return Object.values(this.touchMemory.lets).reduce((sum, n) => sum + (n ?? 0), 0);
   }
 
   /** The night's fans, counted at dawn: the guests', a filthy room against her, and her partner houses'. */
@@ -1687,6 +1836,22 @@ export class Tavern {
       arrivals.sort((a, b) => a.at - b.at);
     }
     this.say(rivalMoveLine(move, house));
+  }
+
+  /**
+   * What comes back of Act 1 as a night opens (plot.ts): Silas walks in angry the night after she sold the salt,
+   * and the written nights open with what the room's saying about what she did.
+   */
+  private plotNight(arrivals: Arrival[]): void {
+    if (!this.storyBeats) return;
+    if (silasDue(this.plotFlags)) {
+      this.plotFlags.add("silasCame");
+      const last = Math.max(0, ...arrivals.map((a) => a.at));
+      arrivals.push({ at: Math.max(EXTRA_FIRST, last / 3), kind: "smuggler", order: "ale", hired: true });
+      arrivals.sort((a, b) => a.at - b.at);
+      this.say(SILAS_ARRIVES);
+    }
+    for (const line of nightOpening(this.storyNight, this.plotFlags)) this.say(line);
   }
 
   /** Soldiers turn the place over in the night: a fine, the heat let off a little, and they'll be watching. */
@@ -1807,7 +1972,9 @@ export class Tavern {
     const beat = this.pendingBeat;
     if (!beat) return null;
     if (beat.kind === "pell") {
-      return { title: "Pell at dawn", lines: [...PELL_LINES] };
+      // He reads who she's become (STORY.md 4b): his opening changes with her arc and her corruption.
+      const [arrives, ...terms] = PELL_LINES;
+      return { title: "Pell at dawn", lines: [arrives, pellOpening(this.lateArc, this.corruption >= SHADY_AT), ...terms] };
     }
     if (beat.kind === "house") {
       const house = HOUSE_BY_ID.get(beat.house)!;
@@ -1820,19 +1987,49 @@ export class Tavern {
     return null;
   }
 
+  /** Willing or Known: far enough along her arc that the room's talk of her reaches Pell. */
+  private get lateArc(): boolean {
+    return arcIndex(this.arcStage) >= arcIndex("willing");
+  }
+
+  /** What she can say to Pell at dawn: promise or refuse always; throwing him out, or her ear, only for some of her. */
+  get pellChoices(): { answer: PellAnswer; label: string }[] {
+    const choices: { answer: PellAnswer; label: string }[] = [
+      { answer: "promise", label: PELL_PROMISE },
+      { answer: "refuse", label: PELL_REFUSE },
+    ];
+    const shady = this.corruption >= SHADY_AT;
+    if (!this.lateArc && !shady && this.trust * 2 >= TRUST_MAX) choices.push({ answer: "defy", label: PELL_DEFY });
+    if (this.lateArc && shady) choices.push({ answer: "ear", label: PELL_EAR });
+    return choices;
+  }
+
   /**
    * Her answer to Pell at dawn: promise him the book (the debt's "forgotten", for now: he'll ask after it instead of
-   * collecting), or refuse, and the debt doubles, collected in three parts.
+   * collecting), or refuse, and the debt doubles, collected in three parts. Or, for some of her: throw him out (the
+   * debt doubles, the village loves her for it), or give him her ear (the debt stays, paid half in names).
    */
-  answerPell(promise: boolean): void {
+  answerPell(answer: PellAnswer | boolean): void {
     if (this.pendingBeat?.kind !== "pell") return;
+    const said: PellAnswer = answer === true ? "promise" : answer === false ? "refuse" : answer;
+    if (!this.pellChoices.some((c) => c.answer === said)) return;
     this.pendingBeat = null;
-    if (promise) {
+    if (said === "promise") {
       this.bookPromised = true;
       this.news.push("You promised Pell the book. The debt is forgotten, for now. He'll be back to ask where it is.");
-    } else {
+    } else if (said === "refuse") {
       this.owed = DOUBLED_DEBT;
       this.news.push(`You told Pell there's no book. The debt is ${DOUBLED_DEBT} now, and he'll collect it in three parts.`);
+    } else if (said === "defy") {
+      this.owed = DOUBLED_DEBT;
+      this.adjust(0, DEFY_TRUST, DEFY_HEAT);
+      this.plotFlags.add("defiedPell");
+      this.news.push(PELL_DEFIED, `The debt is ${DOUBLED_DEBT} now, and he'll collect it in three parts.`);
+    } else {
+      this.corruption += EAR_CORRUPTION;
+      this.adjust(0, EAR_TRUST, 0);
+      this.plotFlags.add("pellsEar");
+      this.news.push(PELL_EARS);
     }
     this.news.push(WREN_LETTER);
   }
@@ -1859,6 +2056,19 @@ export class Tavern {
       this.news.push(`${house.name} closes its doors. +${gained} fans walk up the hill to you.`);
     }
     this.news.push(house.clue);
+    // Tansy's hint about the Lantern lands by who she's become (STORY.md 4b).
+    if (house.id === "bakehouse") {
+      if (!this.lateArc) {
+        this.plotFlags.add("deniedLantern");
+        this.news.push("\"Grandma kept a respectable house,\" you tell her. Tansy only smiles, and doesn't argue.");
+      } else if (this.corruption < SHADY_AT) {
+        this.news.push("Tansy looks you up and down. \"You've her walk now. She'd have laughed to see it.\"");
+      } else {
+        this.news.push("Tansy looks you up and down. \"You've her walk, and her eyes for coin. Be careful which half of her you turn into.\"");
+      }
+    }
+    // Pike's soldiers talk about the silver wagons: she's heard it now, if she missed it on the deserter night.
+    if (house.id === "canteen") this.plotFlags.add("heardSilver");
     if (house.id === "copperBell") this.firstInTarven = true;
   }
 
@@ -1870,7 +2080,9 @@ export class Tavern {
   }
 
   get lastCallChoices(): Choice[] {
-    return this.heardRumor ? this.plan.lastCall.heard : this.plan.lastCall.unheard;
+    if (!this.heardRumor) return this.plan.lastCall.unheard;
+    const facts = { flags: this.plotFlags, kindness: this.persona.kindness };
+    return this.plan.lastCall.heard.filter((choice) => !choice.needs || needMet(choice.needs, facts));
   }
 
   /** Text waiting to be shown to the player. Reading it empties the queue. */
@@ -2256,6 +2468,7 @@ export class Tavern {
         this.say(this.plan.intro);
         const { arrivals, extra } = this.rollArrivals();
         this.rivalNight(arrivals);
+        this.plotNight(arrivals);
         // A lit lantern changes who walks in, and what the night costs her (lantern.ts).
         this.arrivals = this.lantern.openNight(arrivals, this.lanternHost);
         if (extra > 0) {
@@ -2319,6 +2532,8 @@ export class Tavern {
     const base =
       rules.pay +
       (bottle ? BOTTLES[bottle].extraPay + e.bottleGold : 0) +
+      // Silas's crate of salt (plot.ts): stew sells for more.
+      (guest.order === "stew" && this.plotFlags.has("silasOwes") ? SALT_STEW_GOLD : 0) +
       (tipped ? rules.tip + behaviour.tipBonus + e.serveTip + charmBonus(this.level("charm")).tip : 0) +
       (this.stripped > 0 ? e.strippedGold : 0);
     // Her Level: a little more on everything, the more she's grown.
@@ -2444,12 +2659,45 @@ export class Tavern {
    * shift, then everything). The dares are what count for anything else.
    */
   get shownPieces(): string[] {
-    const off = this.strippedPieces;
+    const off = [...this.strippedPieces, ...this.showingPieces()];
     const undressed = Math.max(this.duel?.undressed ?? 0, this.endedTest?.undressed ?? 0, this.undressedTonight);
-    if (undressed === 0) return off;
+    if (undressed === 0) return [...new Set(off)];
     const ladder = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder);
     const more = undressed >= 2 ? ladder : ladder.filter((g) => g.layer !== "under" && g.layer !== "smallclothes");
     return [...new Set([...off, ...more.map((g) => g.id)])];
+  }
+
+  /** What she's showing a guest right now, while the talk lasts (7e): the game poses her for it. */
+  get showingOff(): { part: ShowPart; how: "peek" | "bare" } | null {
+    const chat = this.showChat;
+    return chat?.shown ? { part: chat.part, how: chat.shown } : null;
+  }
+
+  /**
+   * What's out of the way while she shows a guest what they paid to see (7e), for as long as the talk lasts; the
+   * game poses her too (a hand at her neckline, her skirt lifted). Her top half: a peek is her chemise pulled
+   * aside, showing her breast band above her bodice (her outer top, if there's no chemise); a proper look, all of
+   * it and the band. Her bottom half: a skirt stays on, lifted in her hands; anything else there comes off, with
+   * her apron for her front, and for a proper look her smallclothes. Back to work, and it's all back on.
+   */
+  private showingPieces(): string[] {
+    const chat = this.showChat;
+    if (!chat?.shown) return [];
+    const bare = chat.shown === "bare";
+    const ladder = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder);
+    if (chat.part === "breasts") {
+      const tops = ladder.filter((g) => g.region === "top" && (g.layer === "outer" || g.layer === "under"));
+      const chemise = tops.filter((g) => g.layer === "under");
+      const band = ladder.filter((g) => g.region === "top" && g.layer === "smallclothes");
+      return (bare ? [...tops, ...band] : chemise.length > 0 ? chemise : tops).map((g) => g.id);
+    }
+    return ladder
+      .filter((g) => {
+        if (g.layer === "smallclothes") return bare && g.region === "bottom";
+        if (g.layer === "accessory") return chat.part === "pussy" && g.region === "waist";
+        return g.layer === "outer" && g.region === "bottom" && !LIFTED_SKIRTS.has(g.id);
+      })
+      .map((g) => g.id);
   }
 
   /**
@@ -2522,6 +2770,12 @@ export class Tavern {
   get lewdness(): number {
     const total = Object.values(this.touchMemory.lets).reduce((sum, n) => sum + (n ?? 0), 0);
     return lewdnessOf(this.passives, total, this.records);
+  }
+
+  /** Where she is on her arc (STORY.md 4b): Sheltered, Curious, Willing or Known. The writing picks by it. */
+  get arcStage(): ArcStage {
+    const kinds = new Set(Object.values(this.records.kinds).flatMap((k) => k ?? [])).size;
+    return arcStage({ lewdness: this.lewdness, backStairs: this.passives.has("backStairs"), kinds });
   }
 
   /** Her desire for a kind of touch in the moment, 0 to 10: its meter, and whatever her passives take off. */
@@ -2641,7 +2895,7 @@ export class Tavern {
     const delta = this.meters[meter] - prev;
     if (delta >= 1) {
       const name = METER_NAMES[meter];
-      this.say(wildSensitivity(name, delta, this.corruption, this.lewdness, this.houseMode.current === "brothel"));
+      this.say(wildSensitivity(name, delta, this.lewdness, this.houseMode.current === "brothel"));
       // Both true now (desire.ts): from 50 it gets in her way in a brawl, from 80 twice as much.
       if (this.meters[meter] >= DESIRE_STRONG && prev < DESIRE_STRONG)
         this.say(`${name} desire is getting strong: bolder touches there are on the table, and it'll get in your way in a brawl`);
@@ -3003,12 +3257,27 @@ export class Tavern {
       text = `Knocked down. They grab ${taken} gold from the till. You'll be feeling it tomorrow.`;
       // She'll carry it into tomorrow night: bruised (a debuff).
       this.addDebuff("bruised");
-      // The one who won asks her. Hers to answer; the night ends either way (see BrawlOffer).
-      if (guest && this.playerBody === "Female") this.brawlOffer = { kind: guest.kind, stats: guest.stats, drunk: fight.drunk };
+      // The one who won asks her, and their companions ask too. Hers to answer; the night ends either way (see BrawlOffer).
+      if (guest && this.playerBody === "Female") {
+        this.brawlOffer = { kind: guest.kind, stats: guest.stats, female: guest.female, drunk: fight.drunk, crew: this.brawlCrew(guest) };
+      }
     }
     this.lastFight = { outcome: fight.outcome!, text };
     this.say(text);
     this.fight = null;
+  }
+
+  /**
+   * The brawl winner's companions: their party if they came in with one, or else whoever shares their table. Only
+   * those sat in the room, sober enough to know what they're doing, and never the Baron. Each will ask; she picks.
+   */
+  private brawlCrew(winner: Guest): BrawlCrewMate[] {
+    const table = this.tableOf(winner.seat);
+    return this.guests
+      .filter((g) => g.id !== winner.id && (g.status === "waiting" || g.status === "eating"))
+      .filter((g) => (winner.party !== null ? g.party === winner.party : this.tableOf(g.seat) === table))
+      .filter((g) => g.mood !== "drunk" && !isBaron(this.roomGuest(g)))
+      .map((g) => ({ id: g.id, kind: g.kind, female: g.female, stats: g.stats, label: g.stats.label ?? g.kind, ask: this.joinAsk(g.id) }));
   }
 
   /** How the last brawl ended, once. */
@@ -3036,6 +3305,8 @@ export class Tavern {
   private tellInvitation(guest: Guest, lines: TalkLine[]): void {
     lines.unshift(this.guestSays(guest, storyLine(INVITE_ASKS[guest.kind], this.storyRoll(guest.id, 0))));
     lines.splice(2, 0, narrate(storyLine(INVITE_HUSH, this.storyRoll(guest.id, 1))));
+    // Her first invitation: a beat of nerves, however ready she is (STORY.md 4b). Every answer stays the same.
+    if (this.records.invitations === 0) lines.push(you(FIRST_INVITE_PAUSE));
   }
 
   /** Someone in the room, as the taproom rules see them. */
@@ -3276,19 +3547,37 @@ export class Tavern {
     return DUEL_STAKES.filter((n) => n <= this.gold);
   }
 
-  /** She says yes, on her rules: only parts she's warm enough for, and a stake she can pay. */
-  startDuel(areas: readonly DuelArea[], stake: number, scene: RolePlay = "plain"): boolean {
+  /**
+   * She says yes, on her rules: only parts she's warm enough for, and a stake she can pay. After a lost brawl it's
+   * up in her room, with the one who won and whichever of their companions she's said yes to (`crewIds`, each of
+   * whom asked); anyone else isn't part of it.
+   */
+  startDuel(areas: readonly DuelArea[], stake: number, scene: RolePlay = "plain", crewIds: readonly number[] = []): boolean {
     const kind = this.duelOffer();
     if (!kind || this.duelBlocked) return false;
     const ready = new Set(this.duelAreas().filter((a) => a.ready).map((a) => a.id));
     if (areas.some((a) => !ready.has(a)) || stake < 0 || stake > this.gold) return false;
     if (!this.rolePlays().some((p) => p.id === scene && p.ready)) return false;
+    const offer = this.brawlOffer;
+    const picked = new Set(crewIds);
+    if (picked.size > 0 && (!offer || [...picked].some((id) => !offer.crew.some((c) => c.id === id)))) return false;
     this.duelTonight = true;
-    const stats = this.brawlOffer?.stats ?? this.duelPartner()?.stats;
-    this.brawlDuel = this.brawlOffer !== null;
+    const partners = offer
+      ? [{ kind, female: offer.female, stats: offer.stats }, ...offer.crew.filter((c) => picked.has(c.id)).map((c) => ({ kind: c.kind, female: c.female, stats: c.stats }))]
+      : [{ kind, female: false, stats: this.duelPartner()?.stats }];
+    this.brawlDuel = offer !== null;
     this.brawlOffer = null;
-    this.duel = new Duel(kind, new Set(areas), stake, this.duelistStats(), this.random, [{ kind, female: false, stats }], scene);
+    this.duel = new Duel(kind, new Set(areas), stake, this.duelistStats(), this.random, partners, scene);
+    if (offer) {
+      this.duel.note(storyLine(partners.length > 1 ? BRAWL_ROOM_CREW : BRAWL_ROOM_ONE, this.storyRoll(this.nightIndex, 11)).replaceAll("{n}", String(partners.length)));
+      this.say(partners.length > 1 ? `You take ${partners.length} of them up to your room.` : "You take them up to your room.");
+    }
     return true;
+  }
+
+  /** The brawl winner's companions, each asking to come up too (empty with no lost brawl to answer). */
+  get brawlCrewAsking(): readonly BrawlCrewMate[] {
+    return this.brawlOffer?.crew ?? [];
   }
 
   /** The role-plays she could choose, and whether she's ready for each: the bolder ones need a passive first. */
@@ -3410,6 +3699,12 @@ export class Tavern {
     const taproom = this.taproom ? this.finishTaproom(duel) : null;
     if (taproom) ({ text, line, gold: change } = taproom);
     const brawl = this.brawlDuel;
+    // Up in her room with the winner's whole company: the line for all of them.
+    if (brawl && duel.partners.length > 1 && duel.outcome !== "stopped") {
+      line = duel.outcome === "won"
+        ? `One by one, all ${duel.partners.length} of them give in. You win, and they go down the stairs quieter than they came up.`
+        : `It's too much, all ${duel.partners.length} of them, and you go first. They see themselves out, and you sleep where you lie.`;
+    }
     // Played out, every partner goes home satisfied and talks the place up (fans at dawn): delighted if they gave
     // in first, happy if she did. Called off, nobody's anything. Whoever robbed the till after a brawl isn't a fan.
     if (!brawl && duel.outcome !== "stopped") {
@@ -3468,7 +3763,10 @@ export class Tavern {
     // Mid-brawl, their hands go bolder, and for the part of her their type likes.
     const pull = { ...this.effects.pull };
     if (brawl) for (const region of REGIONS_OF_AREA[guest.stats.prefers] ?? []) pull[region] = (pull[region] ?? 0) + BRAWL_PREFER_PULL;
-    const touch = pickTouch(guest.kind, brawl ? Math.min(10, guestNerve + BRAWL_BOLDER) : guestNerve, this.random, {
+    // The first reach of the whole run is always one of the gentlest (STORY.md 4b): she's new to all of it.
+    const firstEver = !brawl && !held && this.lewdness === 0 && this.records.pulled + this.records.slapped + this.timesLet === 0;
+    const reachNerve = brawl ? Math.min(10, guestNerve + BRAWL_BOLDER) : firstEver ? Math.min(FIRST_REACH_MAX, guestNerve) : guestNerve;
+    const touch = pickTouch(guest.kind, reachNerve, this.random, {
       canStrip: !brawl && piece !== null,
       seen: this.touchSeen,
       invites: !brawl && (this.lewdness >= INVITES_AT || this.passives.has("upstairsCurious")),
@@ -3486,13 +3784,14 @@ export class Tavern {
     const fill = (text: string) => fillPiece(text, piece);
     const tempted = thoughtTier(touch, desire, leanMargin);
     let thought = fill(touch.thoughts[tempted]);
-    // Past "warming", flavorLine swaps in a body-specific line outright.
-    thought = flavorLine(thought, this.corruption, this.lewdness, touch.region, true);
+    // Her stage layers on the written thought (STORY.md 4b): never replaces it.
+    thought = flavorLine(thought, this.arcStage, touch.region, true);
     if (sloppy) thought = TOO_DRUNK_TO_ALLOW;
     else if (guestSloppy) thought = GUEST_TOO_DRUNK;
     // Too drunk on either side, and it can't happen anyway: saying no takes nothing out of her.
     const tier = sloppy || guestSloppy ? 0 : tempted;
     const lines: TalkLine[] = [{ ...narrate(fill(touch.reach)), guestId: guest.id }, you(thought)];
+    if (firstEver && !sloppy && !guestSloppy) lines.push(you(FIRST_REACH_THOUGHT));
     if (tier > 0 && this.willpower < this.refuseWill(tier, touch.level)) lines.push(narrate(WORN_THIN));
     if (touch.region === "invite") this.tellInvitation(guest, lines);
     const answers = touchAnswers(touch, { desire, sloppy, guestSloppy, leanMargin });
@@ -3675,6 +3974,7 @@ export class Tavern {
     const { part } = chat;
     const gold = SHOW_GOLD[part][how] + this.effects.showGold;
     chat.answered = true;
+    chat.shown = how;
     this.adjust(gold, 0, 0);
     this.earned += gold;
     if (how === "peek") this.records.peeks++;
@@ -3891,14 +4191,10 @@ export class Tavern {
       const givenInLines = answer === "givein" ? GIVE_IN_TEXTS[touch.id] : undefined;
       const givenIn = givenInLines?.length ? pick(givenInLines) : undefined;
       let line = fill(answer === "lean" ? touch.lean : givenIn ?? touch.allow);
-      // Her giving in is its own beat, so its line stays; otherwise a far-gone mind speaks in the body's words.
-      if (!givenIn) {
-        line = mindStage(this.corruption, this.lewdness) >= 2
-          ? bodyLine(touch.region, mindStage(this.corruption, this.lewdness), false)
-          : flavorLine(line, this.corruption, this.lewdness, touch.region, false);
-      }
+      // Her giving in is its own beat, so its line stays; otherwise her stage layers on the written line.
+      if (!givenIn) line = flavorLine(line, this.arcStage, touch.region, false);
       chat.reply = [narrate(line + tip)];
-      const after = afterLine(touch.region, before);
+      const after = afterLine(touch.region, before, { unasked: chat.impulse, late: arcIndex(this.arcStage) >= arcIndex("willing") });
       if (after) chat.reply.push(you(after.text));
       if (touch.strip) {
         this.loseClothing();
@@ -3921,6 +4217,8 @@ export class Tavern {
       const { say, result } = pick(answer === "slap" ? SLAPS : PULLS);
       chat.reply = [you(say), narrate(result)];
       if (shaky) chat.reply.push(narrate(WAVERED));
+      // The first time she ever says no, the room approves (STORY.md 4b): saying no is a story moment too.
+      else if (!chat.brawl && r.pulled + r.slapped === 1) chat.reply.push(narrate(FIRST_REFUSAL));
     }
     this.touchHistory.set(chat.guestId, history);
     this.touchMoment = { id: touch.id, region: touch.region, level: touch.level, answer, kind: guest?.kind ?? "farmer" };
@@ -4490,6 +4788,8 @@ export class Tavern {
         // Drinking with people loosens their tongues. Village folk trust you more for it,
         // and soldiers who've drunk with you speak well of you to the garrison.
         this.talkReply = [you("\"Don't mind if I do.\""), this.partySays(plan.offer), this.partySays(plan.gossip)];
+        // Some talk is a clue the story remembers (plot.ts), such as the soldiers on the Baron's silver.
+        if (plan.clue) this.plotFlags.add(plan.clue);
         if (members.some((g) => g.stats.trust > 0)) {
           this.adjust(0, 1, 0);
           this.talkReply.push(narrate("They like an innkeeper who drinks with them. (+1 trust)"));
@@ -4582,16 +4882,26 @@ export class Tavern {
     this.adjust(choice.gold, choice.trust, choice.heat);
     // What you did gets round, and changes how people talk to you.
     if (this.heardRumor) {
+      // What she did with the secret: its own deed if it has one, or the usual by its place (truth, lie, sell).
+      const deed = choice.deed ?? DEEDS_IN_ORDER[index] ?? "protect";
+      const at = DEEDS_IN_ORDER.indexOf(deed);
       // Passives that pay off for informing, keeping secrets and selling them.
       const e = this.effects;
-      if (index === 0) this.adjust(0, -e.informTrust, -e.informHeat);
-      if (index === 1) this.adjust(0, e.protectTrust, e.protectHeat);
-      if (index === 2) {
+      if (deed === "inform") this.adjust(0, -e.informTrust, -e.informHeat);
+      if (deed === "protect") this.adjust(0, e.protectTrust, e.protectHeat);
+      if (deed === "sell") {
         this.adjust(e.secretGold, 0, 0);
         this.earned += e.secretGold;
       }
       const deeds: Partial<Persona>[] = [{ informed: 1, kindness: -1 }, { protected: 1, kindness: 1 }, { sold: 1, greed: 2 }];
-      this.shift({ ...deeds[index], fame: FAME_DEEDS[index], respect: RESPECT_DEEDS[index] });
+      this.shift({ ...deeds[at], fame: FAME_DEEDS[at], respect: RESPECT_DEEDS[at] });
+      // The story remembers (plot.ts), and the morning says what came of it.
+      for (const flag of choice.sets ?? []) {
+        if (this.plotFlags.has(flag)) continue;
+        this.plotFlags.add(flag);
+        const news = FLAG_NEWS[flag];
+        if (news) this.news.push(news);
+      }
     } else if (index === 1) {
       this.shift({ greed: 1 });
     }
@@ -4711,12 +5021,17 @@ export class Tavern {
 
   /** A new drink for the shelf, bought once. */
   canBuyBottle(bottle: Bottle): boolean {
-    return this.phase === "day" && !this.bottles.has(bottle) && this.gold >= BOTTLES[bottle].cost;
+    return this.phase === "day" && !this.bottles.has(bottle) && this.gold >= this.bottleCost(bottle);
+  }
+
+  /** What a bottle costs her: more once Silas's crew have been crossed (plot.ts). */
+  bottleCost(bottle: Bottle): number {
+    return BOTTLES[bottle].cost + (bottlesDearer(this.plotFlags) ? BOTTLE_MARKUP : 0);
   }
 
   buyBottle(bottle: Bottle): void {
     if (!this.canBuyBottle(bottle)) return;
-    this.gold -= BOTTLES[bottle].cost;
+    this.gold -= this.bottleCost(bottle);
     this.bottles.add(bottle);
     this.cue("buy");
   }
@@ -4733,7 +5048,14 @@ export class Tavern {
       return;
     }
     if (this.owed === 0) return;
-    const due = Math.min(this.owed, COLLECTION + this.arrears);
+    // With her ear (plot.ts `pellsEar`), he takes half the gold, and a name from her room.
+    const ear = this.plotFlags.has("pellsEar");
+    if (ear) {
+      this.corruption += NAME_CORRUPTION;
+      this.shift({ informed: 1 });
+      this.news.push("Pell wanted a name from your room before he'd count the gold. You gave him one.");
+    }
+    const due = Math.min(this.owed, (ear ? EAR_COLLECTION : COLLECTION) + this.arrears);
     const paid = Math.min(this.gold, due);
     this.gold -= paid;
     this.owed -= paid;
@@ -4837,6 +5159,8 @@ export class Tavern {
         promised: this.bookPromised,
         storyNight: this.storyNight,
         sideRumor: 0,
+        flags: [...this.plotFlags],
+        arc: this.arcSeen,
       },
       bottles: [...this.bottles],
       name: this.name,
@@ -4855,6 +5179,21 @@ export class Tavern {
       ...(this.layout ? { layout: cloneLayout(this.layout) } : {}),
       ...(this.lantern.hung ? { lantern: this.lantern.save() } : {}),
     };
+  }
+
+  /**
+   * Everything about the tavern right now, mid-day or mid-night, for a save of this very moment (moment.ts). Taken
+   * alongside a snapshot: the snapshot loads first, and this puts the night as it stood back on top.
+   */
+  captureMoment(): { tavern: Record<string, unknown>; lantern: Record<string, unknown> } {
+    return { tavern: captureFields(this, MOMENT_SKIP), lantern: captureFields(this.lantern, LANTERN_MOMENT_SKIP) };
+  }
+
+  /** Puts a captured moment back, after `restore` has loaded the snapshot taken with it. Throws on a broken one. */
+  resumeMoment(moment: { tavern?: unknown; lantern?: unknown }): void {
+    applyFields(this, moment.tavern, MOMENT_SKIP);
+    if (moment.lantern !== undefined) applyFields(this.lantern, moment.lantern, LANTERN_MOMENT_SKIP);
+    this.refreshEffects();
   }
 
   /** Puts the tavern back at the start of a saved night, with no guests yet. */
@@ -4918,6 +5257,12 @@ export class Tavern {
     this.fans = count(story?.fans, 0);
     this.beatsDone.clear();
     for (const id of story?.beats ?? ["salt"]) if (BEATS.some((b) => b.id === id)) this.beatsDone.add(id);
+    // Act 1's flags: only ones that exist. Older saves have none.
+    this.plotFlags.clear();
+    for (const flag of story?.flags ?? []) if (isPlotFlag(flag)) this.plotFlags.add(flag);
+    // Older saves don't know which stage she's heard of: the one she's at, so nothing's announced twice.
+    const arc = story?.arc;
+    this.arcSeen = typeof arc === "number" && arc >= -1 && arc < ARC_STAGES.length ? Math.floor(arc) : arcIndex(this.arcStage);
     this.houses = {};
     for (const h of HOUSES) {
       const fate = story?.houses?.[h.id];

@@ -240,6 +240,52 @@ describe("brawls in the tavern", () => {
     expect(t.phase).toBe("bedtime");
   });
 
+  it("on a loss, the winner's company each ask to come up too, and only those she picks are in it", () => {
+    const { t, id } = withGuest();
+    t.gold = 50;
+    t.playerBody = "Female";
+    for (let i = 0; i < 250; i++) t.tick(0.1, { listeningTo: null, night: true });
+    const others = t.guests.filter((g) => g.id !== id).slice(0, 3);
+    expect(others.length).toBe(3);
+    for (const g of others) {
+      t.guestArrived(g.id);
+      g.status = "waiting";
+      g.mood = "calm";
+      g.party = 7;
+    }
+    t.guests.find((g) => g.id === id)!.party = 7;
+    // One of them is roaring drunk: they don't ask.
+    others[2].mood = "drunk";
+    lose(t, id);
+    const crew = t.brawlCrewAsking.map((c) => c.id);
+    expect(crew.sort()).toEqual([others[0].id, others[1].id].sort());
+    expect(t.brawlCrewAsking.every((c) => c.ask.length > 0)).toBe(true);
+    // Nobody who didn't ask can be brought along.
+    expect(t.startDuel([], 0, "plain", [others[2].id])).toBe(false);
+    expect(t.startDuel([], 0, "plain", [others[0].id])).toBe(true);
+    expect(t.duel?.partners.length).toBe(2);
+    t.duelMove("stop");
+    expect(t.takeDuelResult()).toMatchObject({ outcome: "stopped", brawl: true });
+    expect(t.phase).toBe("bedtime");
+  });
+
+  it("on a loss, all of the winner's company can come up at once", () => {
+    const { t, id } = withGuest();
+    t.gold = 50;
+    t.playerBody = "Female";
+    for (let i = 0; i < 250; i++) t.tick(0.1, { listeningTo: null, night: true });
+    const others = t.guests.filter((g) => g.id !== id).slice(0, 3);
+    for (const g of [...others, t.guests.find((g) => g.id === id)!]) {
+      t.guestArrived(g.id);
+      g.status = "waiting";
+      g.mood = "calm";
+      g.party = 7;
+    }
+    lose(t, id);
+    expect(t.startDuel([], 0, "plain", t.brawlCrewAsking.map((c) => c.id))).toBe(true);
+    expect(t.duel?.partners.length).toBe(4);
+  });
+
   it("on a loss to a roaring drunk, going on isn't possible", () => {
     const { t, id } = withGuest();
     t.playerBody = "Female";

@@ -311,7 +311,7 @@ export function isDrunk(guest: Guest): boolean {
  * of all, more when she's tired or sore with the house, less with her own sort. New girls are shy of rough ones.
  */
 export function refuseChance(girl: Girl, guest: { rough: boolean; drunk: boolean; kind: GuestKind }, tired: boolean): number {
-  const shy = mindStage(girl.corruption, girlLewdness(girl)) === 0 ? 0.1 : 0;
+  const shy = mindStage(girlLewdness(girl)) === 0 ? 0.1 : 0;
   let chance = 0.05;
   if (guest.rough) chance += 0.45 + shy;
   if (guest.drunk) chance += 0.25 + shy;
@@ -660,7 +660,7 @@ export class Lantern {
 
   /** Her mind stage, by the heroine's thresholds, for the house plans. */
   stageOf(girl: Girl): string {
-    return mindStageName(mindStage(girl.corruption, girlLewdness(girl))) || "new";
+    return mindStageName(mindStage(girlLewdness(girl))) || "new";
   }
 
   save(): LanternSave {

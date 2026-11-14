@@ -171,6 +171,18 @@ export const JOIN_ASKS: Record<GuestKind, readonly string[]> = {
   noble: ["How delightfully improper. May I?", "I've never done anything of the sort. May I begin tonight?"],
 };
 
+/** After a lost brawl, she's said yes to the one who won: up the stairs to her room, just the two of them. */
+export const BRAWL_ROOM_ONE: readonly string[] = [
+  "You lead them up the stairs to your room under the eaves, sore and still breathing hard, and bar the door behind you.",
+  "Up in your room, the noise of the taproom far below, they wait for you to say what's allowed.",
+];
+
+/** After a lost brawl, she's said yes to the one who won and their companions: {n} of them, up in her room. */
+export const BRAWL_ROOM_CREW: readonly string[] = [
+  "Up in your room under the eaves, {n} of them crowd in after you, and the door bangs shut. They wait for you to say what's allowed.",
+  "You take the stairs with {n} of them behind you. The little room has never felt so full, and every one of them is looking at you.",
+];
+
 /** How the taproom scene ends, by how it went: one short line for the 18+ card. */
 export const TAPROOM_END = {
   won: [

@@ -148,6 +148,41 @@ export const PELL_AT_DAWN = [
 ];
 export const PELL_PROMISE = "Promise him the book";
 export const PELL_REFUSE = "\"There is no book.\" (the debt doubles)";
+
+/**
+ * Pell reads who she's become (STORY.md section 4b, "One choice that changes"): her arc stage (early is Sheltered or
+ * Curious, late is Willing or Known) and whether she's honest or shady and worse. His opening line changes, and two
+ * answers are only there for some of her.
+ */
+export type PellAnswer = "promise" | "refuse" | "defy" | "ear";
+
+/** Corruption from which she counts as shady (STORY.md section 8). */
+export const SHADY_AT = 40;
+
+export function pellOpening(late: boolean, shady: boolean): string {
+  if (!late && !shady) return "\"You've your grandmother's chin. Not her nerve, I think.\"";
+  if (!late) return "\"You count like she did. Good. Then you can count to three hundred.\"";
+  if (!shady) return "\"Half the garrison has had a hand on you. Who'd take your word over the Baron's?\"";
+  return "\"Wren sold what men told her in bed. I hear you've the same ear.\"";
+}
+
+/** Early and honest, with the village behind her (trust at half or more): she throws him out. */
+export const PELL_DEFY = "\"Get out of my house.\" (the debt doubles; heat +2, trust +2)";
+export const DEFY_HEAT = 2;
+export const DEFY_TRUST = 2;
+export const PELL_DEFIED =
+  "You tell Pell to get out of your house, loud enough for the street. He goes. By noon the whole village knows the new keeper threw the Baron's man out, and the farmers are buying each other drinks over it.";
+
+/** Late and shady: she offers him what the room tells her, instead of the book. */
+export const PELL_EAR = "\"The room talks to me. You could have that instead.\" (the debt stays; corruption)";
+export const EAR_CORRUPTION = 10;
+export const EAR_TRUST = -1;
+export const PELL_EARS =
+  "Pell smiles for the first time. \"Names, then. A name at every collection, and the Baron will take half the gold.\" The debt stays as it was.";
+/** With his ear, each collection is this much gold, and a name. */
+export const EAR_COLLECTION = 50;
+/** Each name she gives him: informing, and it costs her. */
+export const NAME_CORRUPTION = 3;
 export const WREN_FIRST_LETTER =
   "Later, in the hollow leg of the stool Grandma always sat on, you find a letter in her hand: \"If Pell is asking you about my book, then I'm already dead, and it wasn't my heart. Don't drink anything he pours.\"";
 

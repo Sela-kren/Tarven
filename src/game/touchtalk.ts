@@ -787,6 +787,19 @@ export const GUEST_TOO_DRUNK = "(They're too drunk to know what they're doing. N
 export const WORN_THIN = "You're worn thin tonight. You can still say no, but it won't come out steady.";
 export const WAVERED = "Your voice wobbles. The table saw how close you came, and nobody's impressed.";
 
+/**
+ * The first reach of the whole run (STORY.md 4b, "Act 1 beats to rewrite"): always one of the gentlest touches, and
+ * she doesn't know yet what the rules are here.
+ */
+export const FIRST_REACH_MAX = 2;
+export const FIRST_REACH_THOUGHT = "(Is that... allowed? Is that what people do here?)";
+
+/** The room, the first time she ever says no: the farmers approve. */
+export const FIRST_REFUSAL = "From the farmers' table by the fire: \"Good lass. Wren would've done the same.\"";
+
+/** Before her first invitation's answer, however ready she is: one beat of nerves. */
+export const FIRST_INVITE_PAUSE = "(I've never... with anyone. Ask me again in a minute. No, ask me now, before I lose my nerve.)";
+
 /** What she thinks the first time she lets something like it happen, by where it lands. */
 export const FIRSTS: Record<TouchRegion, string> = {
   hand: "(Nobody's ever held my hand like that.)",
@@ -803,6 +816,48 @@ export const FIRSTS: Record<TouchRegion, string> = {
   clothes: "(I've never let anyone take my clothes off.)",
   intimate: "(Nobody's ever touched me there. Not ever. Not even me, much.)",
   invite: "(I've never... with anyone.)",
+};
+
+/**
+ * A first that lands with Consent off (STORY.md section 4b): her body got there before her head had finished
+ * deciding. Only ever a touch her desire was already ready for: never her being overpowered, never after a no.
+ */
+export const FIRSTS_UNASKED: Record<TouchRegion, string> = {
+  hand: "(I'd been wondering if I'd let anyone. My hand answered first.)",
+  face: "(I'd have said yes. I didn't get to say it. I'm not sorry.)",
+  hair: "(I didn't decide to lean into it. I just did.)",
+  shoulder: "(I meant to think about it. I was already tucked against them.)",
+  waist: "(I'd made up my mind to be careful tonight. My waist hadn't.)",
+  rear: "(I'd been daring myself all night. Seems I took the dare.)",
+  chest: "(The first time. No asking. And I didn't move away. I know I didn't.)",
+  lap: "(I'd been deciding whether I would. I'm sitting here, so I suppose I did.)",
+  lips: "(My first kiss. I'd been deciding all night whether to let someone. My body decided first.)",
+  neck: "(I didn't know my neck could do my thinking for me.)",
+  thigh: "(I'd told myself I'd decide when it came. It came, and I'd already decided.)",
+  clothes: "(I'd always thought I'd choose the moment. It chose me, and I let it.)",
+  intimate: "(Nobody's ever... and I didn't stop it. I didn't want to. That's the part that scares me.)",
+  invite: "(I've never... with anyone.)",
+};
+
+/**
+ * A first that comes late, once she's Willing or Known (STORY.md section 4b): everything else has happened, and
+ * somehow never this.
+ */
+export const FIRSTS_LATE: Record<TouchRegion, string> = {
+  hand: "(Funny. Half the pass has had their hands on me, and nobody's ever just held mine.)",
+  face: "(All this time, and nobody's ever touched my face like it mattered.)",
+  hair: "(Of all the things. Nobody's ever played with my hair.)",
+  shoulder: "(Nobody's ever just put an arm round me. Not without wanting more.)",
+  waist: "(I'd let them do everything else before anyone ever did this.)",
+  rear: "(I'd have thought someone would have, by now. Well. Now someone has.)",
+  chest: "(Funny. I'd let them do everything else before anyone ever did this.)",
+  lap: "(A lap. After everything. I'm blushing over a lap.)",
+  lips: "(My first real kiss, after all that. I'd almost forgotten I'd never had one.)",
+  neck: "(Everything else, and my neck was the thing nobody tried.)",
+  thigh: "(I'd let them do everything else before anyone ever did this.)",
+  clothes: "(All those nights, and this is the first time I've let one come off.)",
+  intimate: "(Everything else, and never this. Until now.)",
+  invite: "(I thought I'd been asked every way there is. Not like this.)",
 };
 
 /** What she says once she's used to it, by where it lands: she's stopped being shocked and started teasing. */

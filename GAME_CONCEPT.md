@@ -158,7 +158,7 @@ When she serves a guest, they may reach for her. **Three numbers** decide what h
 | **Slap them** | Always | Respect +1 (boldness 3+) or +2 (6+). The guest turns Angry and their nerve drops |
 | **Pull away** | Always (listed last, so Esc is always safe) | Respect +1 from boldness 5. No change in mood |
 
-**Her thoughts:** each touch has three inner thoughts: *not ready* (Desire below what it needs), *torn* (just enough), and *wanting it* (2 or more over). The first time she lets each kind of touch happen she has a "first time" thought ("My first kiss. In a tavern. With the whole room watching."). After 3 times she's confident and teasing ("That'll cost you extra.").
+**Her thoughts:** each touch has three inner thoughts: *not ready* (Desire below what it needs), *torn* (just enough), and *wanting it* (2 or more over). The first time she lets each kind of touch happen she has a "first time" thought ("My first kiss. In a tavern. With the whole room watching."). After 3 times she's confident and teasing ("That'll cost you extra."). How her voice changes over the whole run (Sheltered, Curious, Willing, Known) is in STORY.md, section 4b.
 
 **Safety rules (in code):** if she or the guest is sloppy drunk, only Slap and Pull away are offered. Boldness-10 invitations are for romance partners only and are never picked in the room. For now only the sister is reached for.
 

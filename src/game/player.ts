@@ -43,6 +43,14 @@ export type Reaction = "jolt" | "melt" | "recoil";
 export type SoftPart = "Bust" | "Glute";
 const REACTION_TIME: Record<Reaction, number> = { jolt: 0.4, melt: 1.8, recoil: 0.55 };
 
+/**
+ * How she stands to show a guest what they paid to see (show.ts): a finger hooked in her neckline, both hands
+ * holding her top open, her skirt lifted at the front, or turned round with it lifted behind.
+ */
+export type ShowPose = "chestPeek" | "chestBare" | "frontLift" | "backLift";
+/** How quickly a show pose eases off once it's over, per second. It comes on at once. */
+const SHOW_EASE = 3;
+
 const WALK_SPEED = 3.2;
 const RUN_SPEED = 5.2;
 const PLAYER_RADIUS = 0.3;
@@ -276,6 +284,9 @@ function feminine(level: number): Gait {
  */
 const HAND_ON_HIP = { upper: new Vector3(-1.747, 0.845, 1.34), elbow: 1.506 };
 
+/** Turned round to show her behind: most of the way, so she can still look back over her shoulder. */
+const BACK_TURN = Math.PI * 0.95;
+
 const BREATH_PERIOD = 3.8;
 const SWAY_PERIOD = 7;
 /** The standing side's elbow bends a little more. */
@@ -380,11 +391,18 @@ export class Body {
   /** Added to the walk style's arch, from the look's Back arch slider; the arch never goes below none. */
   /** Her Posture sliders' settings, on top of the walk style's own arch. */
   private posture: Posture = { arch: 0, chest: 0 };
+  /** A show pose held over the standing pose, and how far it's on (0 to 1); `showHeld` false lets it ease off. */
+  private show: ShowPose | null = null;
+  private showAmount = 0;
+  private showHeld = false;
+  /** The root's own turn as loaded, for a pose that turns her round to add to. */
+  private readonly rootTurn: number;
 
   constructor(model: Object3D, name: string) {
     this.name = name;
     const part = (label: string) => requirePart(model, `${name}_${label}`);
     this.root = requirePart(model, name);
+    this.rootTurn = this.root.rotation.y;
     this.hips = part("Hips");
     this.hipsBaseY = this.hips.position.y;
     this.hipsBaseZ = this.hips.position.z;
@@ -544,8 +562,79 @@ export class Body {
     }
   }
 
+  /** Holds a show pose (at once, so a picture taken now shows it), or with null lets it ease off. */
+  display(pose: ShowPose | null): void {
+    if (pose) {
+      this.show = pose;
+      this.showAmount = 1;
+    }
+    this.showHeld = pose !== null;
+  }
+
+  /**
+   * Lays a show pose over the pose just set, and lifts the skirt for one that needs it. Arm angles are set outright
+   * (blended from wherever the standing pose had them); the body's lean and turn are added on top.
+   */
+  private poseShow(): void {
+    const pose = this.show;
+    const a = pose ? MathUtils.smoothstep(this.showAmount, 0, 1) : 0;
+    this.skirt?.setLift(pose === "frontLift" ? a : 0, pose === "backLift" ? a : 0);
+    this.root.rotation.y = this.rootTurn + (pose === "backLift" ? BACK_TURN * a : 0);
+    if (!pose || a <= 0) return;
+    const set = (bone: Object3D, x: number, z: number, y = 0) => {
+      bone.rotation.x = MathUtils.lerp(bone.rotation.x, x, a);
+      bone.rotation.y = MathUtils.lerp(bone.rotation.y, y, a);
+      bone.rotation.z = MathUtils.lerp(bone.rotation.z, z, a);
+    };
+    const bend = (bone: Object3D, x: number) => (bone.rotation.x = MathUtils.lerp(bone.rotation.x, x, a));
+    // Positive Z swings the left arm in and the right arm out.
+    if (pose === "chestPeek") {
+      // Her right hand comes up and hooks a finger in her neckline; she leans in a little, head tipped, coy.
+      set(this.upperArmR, 0.5, -0.15, 0.9);
+      bend(this.foreArmR, 1.9);
+      set(this.upperArmL, 0.05, 0.08);
+      bend(this.foreArmL, 0.35);
+      this.torso.rotation.x += 0.1 * a;
+      this.head.rotation.x += 0.08 * a;
+      this.head.rotation.z += 0.16 * a;
+    } else if (pose === "chestBare") {
+      // Both hands hold her top open at the sides of her chest; chest out, chin up.
+      set(this.upperArmR, 0.4, -0.1, 0.5);
+      bend(this.foreArmR, 1.7);
+      set(this.upperArmL, 0.4, 0.1, -0.5);
+      bend(this.foreArmL, 1.7);
+      this.torso.rotation.x -= 0.12 * a;
+      this.head.rotation.x -= 0.06 * a;
+    } else if (pose === "frontLift") {
+      // Both hands at her waist, the front of her skirt gathered up and folded over in them; she looks down.
+      set(this.upperArmR, 0.45, -0.1, 0.4);
+      bend(this.foreArmR, 1.2);
+      set(this.upperArmL, 0.45, 0.1, -0.4);
+      bend(this.foreArmL, 1.2);
+      this.torso.rotation.x += 0.06 * a;
+      this.head.rotation.x += 0.14 * a;
+    } else {
+      // Turned round, bent a little forwards, both hands behind holding her skirt up, looking back over her shoulder.
+      set(this.upperArmR, -0.55, 0.15);
+      bend(this.foreArmR, 1.1);
+      set(this.upperArmL, -0.55, -0.15);
+      bend(this.foreArmL, 1.1);
+      this.torso.rotation.x += 0.3 * a;
+      this.torso.rotation.y += 0.3 * a;
+      this.head.rotation.y += 0.85 * a;
+      this.head.rotation.x -= 0.15 * a;
+    }
+  }
+
   advance(dt: number): void {
     this.clock += dt;
+    if (this.show && !this.showHeld) {
+      this.showAmount -= dt * SHOW_EASE;
+      if (this.showAmount <= 0) {
+        this.showAmount = 0;
+        this.show = null;
+      }
+    }
     if (this.reaction) {
       this.reaction.done += dt / REACTION_TIME[this.reaction.kind];
       if (this.reaction.done >= 1) this.reaction = null;
@@ -655,6 +744,7 @@ export class Body {
     }
     this.upperArmR.rotation.y = HAND_ON_HIP.upper.y * hand;
 
+    this.poseShow();
     this.poseReaction();
     this.swayHair(stride, moving);
     this.skirt?.solve(this.skirtTime);
@@ -693,6 +783,11 @@ export class Sibling {
     if (style === null) return null;
     this.body.setWalkStyle((style % 5) + 1);
     return this.body.walkStyle;
+  }
+
+  /** Holds a show pose, or lets it ease off: see `Body.display`. */
+  display(pose: ShowPose | null): void {
+    this.body.display(pose);
   }
 
   /** Answers a touch on the floor: see `Body.react`. */
@@ -749,6 +844,11 @@ export class Sibling {
 
   rest(dt: number): void {
     this.animate(dt, false, false);
+  }
+
+  /** Which way she faces, in radians about the vertical. */
+  get facing(): number {
+    return this.heading;
   }
 
   /** Turns to a fixed heading at once. */

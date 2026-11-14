@@ -1,7 +1,7 @@
 import type { Mood } from "./mood";
 import { statsOf, type GuestRole, type RoleStats } from "./guestroles";
 import type { GuestKind } from "./tavern";
-import { CONFIDENT, FIRSTS, TOUCHES, type TouchDef, type TouchRegion } from "./touchtalk";
+import { CONFIDENT, FIRSTS, FIRSTS_LATE, FIRSTS_UNASKED, TOUCHES, type TouchDef, type TouchRegion } from "./touchtalk";
 
 /**
  * Guests who reach for the innkeeper. Each touch has a boldness from 1 to 10 (`TouchDef.level`); each guest has a
@@ -266,9 +266,19 @@ export function answerLabel(touch: TouchDef, answer: TouchAnswer): string {
   }
 }
 
-/** What she thinks, or says, after letting it: shocked the first time, teasing once she's used to it. */
-export function afterLine(region: TouchRegion, timesBefore: number): { thought: boolean; text: string } | null {
-  if (timesBefore === 0) return { thought: true, text: FIRSTS[region] };
+/**
+ * What she thinks, or says, after letting it: shocked the first time, teasing once she's used to it. A first that
+ * landed unasked (Consent off) or came late (she's Willing or Known already) has its own thought (STORY.md 4b).
+ */
+export function afterLine(
+  region: TouchRegion,
+  timesBefore: number,
+  first: { unasked?: boolean; late?: boolean } = {},
+): { thought: boolean; text: string } | null {
+  if (timesBefore === 0) {
+    const text = first.unasked ? FIRSTS_UNASKED[region] : first.late ? FIRSTS_LATE[region] : FIRSTS[region];
+    return { thought: true, text };
+  }
   if (timesBefore >= CONFIDENT_AFTER) return { thought: false, text: CONFIDENT[region] };
   return null;
 }

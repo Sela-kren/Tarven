@@ -102,6 +102,24 @@ describe("a guest asking for a look", () => {
     for (const g of others) expect(g.lust).toBe(1);
   });
 
+  it("shows on her while she shows them: a peek down to her breast band, a proper look bare, and all back on after", () => {
+    const peeked = asked(10).t;
+    expect(peeked.shownPieces).toEqual([]);
+    pick(peeked, SHOW_PEEK_LABEL);
+    const peek = peeked.shownPieces;
+    expect(peek.length).toBeGreaterThan(0);
+    expect(peek).not.toContain("bra");
+    expect(peek).not.toContain("skirt");
+    pick(peeked, "Get back to work");
+    expect(peeked.shownPieces).toEqual([]);
+
+    const bared = asked(10).t;
+    pick(bared, SHOW_BARE_LABEL);
+    expect(bared.shownPieces).toEqual(expect.arrayContaining([...peek, "bra"]));
+    // Nothing counts as stripped: it's only out of the way while she shows them.
+    expect(bared.strippedPieces).toEqual([]);
+  });
+
   it("no is just no: nothing shown, nothing paid", () => {
     const { t } = asked(10);
     const gold = t.gold;

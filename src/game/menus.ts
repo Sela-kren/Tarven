@@ -1,7 +1,7 @@
 /** The settings, save and load menus, and the yes/no question they ask before overwriting or losing progress. */
 import type { Game } from "./game";
 import { pixelSvg } from "./icons";
-import { MANUAL_SLOTS, readSave, slotName, SLOTS, writeSave } from "./save";
+import { MANUAL_SLOTS, readSave, slotName, SLOTS } from "./save";
 import { desirePenalties, horny, WET_PLEASURE, type DesirePenalties } from "./desire";
 import { KINK_NAMES } from "./kinktalk";
 import { METER_NAMES, METERS, PASSIVE_BY_ID, PASSIVE_GROUPS } from "./passives";
@@ -227,7 +227,7 @@ function experience(lets: Partial<Record<string, number>>): string {
   return parts.length ? parts.join(" · ") : "none yet";
 }
 
-/** Lists the save slots; picking one saves the start of today there. */
+/** Lists the save slots; picking one saves this very moment there, day or night. */
 export function showSaveMenu(game: Game, back: () => void, notice?: string): void {
   game.openMenu(
     "Save game",
@@ -236,7 +236,7 @@ export function showSaveMenu(game: Game, back: () => void, notice?: string): voi
       const existing = readSave(slot);
       const label = existing ? slotName(slot) : `${slotName(slot)}: empty`;
       const save = () => {
-        const saved = writeSave(slot, game.active, game.checkpoint, game.looks);
+        const saved = game.saveNow(slot);
         showSaveMenu(game, back, saved ? `Saved to ${slotName(slot)}.` : "Could not save: game browser is blocking storage.");
       };
       return {
@@ -251,7 +251,7 @@ export function showSaveMenu(game: Game, back: () => void, notice?: string): voi
   );
 }
 
-/** Lists every save; picking one loads it. Mid-night, it asks first, since tonight's progress is lost. */
+/** Lists every save; picking one loads it. Mid-game, it asks first, since anything not saved is lost. */
 export function showLoadMenu(game: Game, back: () => void): void {
   const midNight = game.screen === "paused";
   game.openMenu(
@@ -266,7 +266,7 @@ export function showLoadMenu(game: Game, back: () => void): void {
         disabled: !data,
         onPick:
           midNight && data
-            ? () => confirmMenu(game, `Load ${slotName(slot)}?`, "Anything you have done since today began will be lost.", load, () => showLoadMenu(game, back))
+            ? () => confirmMenu(game, `Load ${slotName(slot)}?`, "Anything you have done since you last saved will be lost.", load, () => showLoadMenu(game, back))
             : load,
       };
     }),

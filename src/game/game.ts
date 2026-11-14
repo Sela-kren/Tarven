@@ -75,7 +75,8 @@ import { StatusCard } from "./statuscard";
 import { DRINK_COLORS, Icon, type IconName } from "./icons";
 import type { Input } from "./input";
 import { DEBUFFS } from "./debuffs";
-import { FIRST_IN_TARVEN, ordinal, PELL_PROMISE, PELL_REFUSE } from "./ledger";
+import { FIRST_IN_TARVEN, ordinal } from "./ledger";
+import { firstInTarvenLines } from "./plot";
 import { findCobwebSpots, findDustSpots, MessLayer } from "./mess";
 import { Outline, outlineMaterial } from "./outline";
 import { renderPortrait, renderThumbnail } from "./portraits";
@@ -83,7 +84,9 @@ import {
   describeSave,
   latestSave,
   writeSave,
+  type Moment,
   type SaveData,
+  type SlotId,
 } from "./save";
 import { INTRO, StoryBox } from "./story";
 import { Chatter } from "./chatter";
@@ -91,7 +94,7 @@ import { DrinkComic } from "./comic";
 import { showJournal } from "./journalpanel";
 import { showBedChoice, showDuelTest, showFight, playAdultScene } from "./fightpanels";
 import { confirmMenu, showDevPanel, showLoadMenu, showSaveMenu, showSettingsMenu } from "./menus";
-import { mindStage, mindStageName } from "./lewd";
+import { arcStageName } from "./lewd";
 import { PASSIVE_ICONS } from "./passiveicons";
 import { saveBadges } from "./saveicons";
 import { SkyDial } from "./skydial";
@@ -101,7 +104,8 @@ import { readTouchSettings, writeTouchSettings } from "./touchsettings";
 import { arousalOf, easeArousal } from "./nipples";
 import { easeOpening } from "./vulva";
 import { METER_MAX } from "./passives";
-import type { Reaction, SoftPart } from "./player";
+import type { Reaction, ShowPose, SoftPart } from "./player";
+import type { ShowPart } from "./show";
 import { DialogueBox } from "./dialogue";
 import { MessageLog } from "./messagelog";
 import { UnlockToasts, type Toast } from "./unlocktoast";
@@ -485,6 +489,20 @@ function devFlag(name: string): boolean {
   return import.meta.env.DEV && typeof location !== "undefined" && new URLSearchParams(location.search).has(name);
 }
 
+/** How she poses to show each part (7e): a peek and a proper look of her breasts differ; a skirt lifts either way. */
+const SHOW_POSE_OF: Record<ShowPart, Record<"peek" | "bare", ShowPose>> = {
+  breasts: { peek: "chestPeek", bare: "chestBare" },
+  butt: { peek: "backLift", bare: "backLift" },
+  pussy: { peek: "frontLift", bare: "frontLift" },
+};
+
+/** In development, holds her in a show pose to look at: "?pose=backLift" (chestPeek, chestBare, frontLift, backLift). */
+const DEV_SHOW_POSE: ShowPose | null = (() => {
+  const asked = import.meta.env.DEV && typeof location !== "undefined" ? new URLSearchParams(location.search).get("pose") : null;
+  const poses: readonly ShowPose[] = ["chestPeek", "chestBare", "frontLift", "backLift"];
+  return poses.find((p) => p === asked) ?? null;
+})();
+
 /**
  * In development, shows her at set stages to look at without playing for it: "?coat=2" puts every part of her at
  * stage 2, and "?coat=Face:1,Back:3" only those parts at those stages. Null without it.
@@ -766,10 +784,12 @@ export class Game {
   panelBack: (() => void) | null = null;
   /** An 18+ moment the last answer led to, shown once the conversation closes. */
   private pendingAdult: AdultScene | null = null;
-  /** Tonight as it opened: what a save holds. */
+  /** Today as it opened: what the autosave holds. */
   checkpoint: TavernSave;
   /** Where she stood as today began, for the morning after to say what changed. */
   private dayStart: Standing | null = null;
+  /** Just loaded a saved moment: guests already sitting are put straight in their seats, not walked in again. */
+  private seatGuestsOnSight = false;
   private visitor: Walker | null = null;
   private visitorWalking = false;
   private visitorWait = 0;
@@ -1085,7 +1105,23 @@ export class Game {
       sibling.position.setX(clear.x).setZ(clear.z);
     }
     this.checkpoint = this.tavern.snapshot();
-    writeSave("auto", this.active, this.checkpoint, this.looks);
+    writeSave("auto", this.active, this.checkpoint, this.looks, this.captureMoment());
+  }
+
+  /** This very moment, for a save: the time on the clock, where she stands, and the tavern as it is. */
+  captureMoment(): Moment {
+    const player = this.siblings[this.active];
+    return {
+      time: this.clock.time,
+      at: { x: player.position.x, z: player.position.z, facing: player.facing },
+      dayStart: this.dayStart ? { ...this.dayStart } : null,
+      ...this.tavern.captureMoment(),
+    };
+  }
+
+  /** Saves this very moment, day or night, to a slot. False when the browser won't store it. */
+  saveNow(slot: SlotId): boolean {
+    return writeSave(slot, this.active, this.tavern.snapshot(), this.looks, this.captureMoment());
   }
 
   private makeItem(item: Item): Object3D {
@@ -1228,6 +1264,8 @@ export class Game {
   private syncGuests(dt: number): void {
     const { tavern, actors } = this;
     this.doorQueue = Math.max(0, this.doorQueue - dt);
+    const seatOnSight = this.seatGuestsOnSight;
+    this.seatGuestsOnSight = false;
     for (const guest of [...tavern.guests]) {
       let actor = actors.get(guest.id);
       if (!actor) {
@@ -1244,6 +1282,7 @@ export class Game {
           this.guestLayer,
           wait,
         );
+        if (seatOnSight && guest.status !== "arriving") actor.seatNow();
         actors.set(guest.id, actor);
         this.guestLayer.add(actor.group);
       }
@@ -1831,6 +1870,16 @@ export class Game {
       this.doorQueue = 0;
       this.chatter.reset();
       this.tavern.restore(data.tavern);
+      // A save of the very moment puts the day (or night) back as it stood on top; a broken one opens its day.
+      let moment = data.moment ?? null;
+      if (moment) {
+        try {
+          this.tavern.resumeMoment(moment);
+        } catch {
+          this.tavern.restore(data.tavern);
+          moment = null;
+        }
+      }
       this.plan = new HousePlan(cloneLayout(data.tavern.layout ?? this.defaultLayout));
       this.nav = this.applyPlan();
       this.tavern.setSeats(this.world.seats.map((seat) => seat.table));
@@ -1848,8 +1897,27 @@ export class Game {
       this.playerPortrait = null;
       this.log.clear();
       this.narrator.clear();
-      this.enterTavern();
+      this.enterTavern(moment);
     });
+  }
+
+  /** Back to the very moment a save was made: the clock where it was, she where she stood, the guests sat down. */
+  private resumeMoment(moment: Moment): void {
+    this.closePanel();
+    this.screen = "play";
+    const day = Math.floor(moment.time / 24);
+    this.clock.setTime(day, moment.time - day * 24);
+    // The day runs on to the late afternoon; a bell just rung takes the sun down; the night holds where it is.
+    const { phase } = this.tavern;
+    if (phase === "day" && this.clock.hour < AFTERNOON_HOLD_HOUR) this.clock.run(DAY_HOURS_PER_SECOND, AFTERNOON_HOLD_HOUR);
+    else if (phase === "dusk") this.clock.transitionTo(NIGHT_HOUR, SUNSET_SECONDS);
+    const player = this.siblings[this.active];
+    const clear = resolveCircle({ x: moment.at.x, z: moment.at.z }, SIBLING_RADIUS, this.world.colliders, 8);
+    player.position.setX(clear.x).setZ(clear.z);
+    player.face(moment.at.facing);
+    this.checkpoint = this.tavern.snapshot();
+    this.dayStart = moment.dayStart;
+    this.seatGuestsOnSight = true;
   }
 
   /** Both siblings stand facing the camera; the player picks one to start as. */
@@ -1947,7 +2015,8 @@ export class Game {
     this.story.update(dt);
   }
 
-  private enterTavern(): void {
+  /** Into the tavern: at the start of a day, with its card, or (loading a saved moment) right where it was saved. */
+  private enterTavern(moment: Moment | null = null): void {
     this.staging = false;
     this.tavern.playerBody = this.active === 1 ? "Female" : "Male";
     this.tavern.playerOutfit = this.looks[this.tavern.playerBody].outfit;
@@ -1962,7 +2031,8 @@ export class Game {
     });
     // Removed while the screen is black, so the shader rebuild for one less light is not seen.
     this.stageLight.removeFromParent();
-    this.showDayCard();
+    if (moment) this.resumeMoment(moment);
+    else this.showDayCard();
   }
 
   /** Stops the night and opens the pause menu. Only works mid-night. */
@@ -2137,9 +2207,9 @@ export class Game {
       const modeEl = el.querySelector(".house-mode");
       if (fill) fill.style.width = `${(level / 10) * 100}%`;
       if (val) val.textContent = `${level}/10`;
-      const stage = mindStage(this.tavern.corruption, this.tavern.lewdness);
+      // Where she is on her arc (STORY.md 4b), next to the Force bar.
       const mode = this.tavern.houseMode.current;
-      if (modeEl) modeEl.textContent = `${mode === "brothel" ? "[Brothel] " : ""}${mindStageName(stage)}`;
+      if (modeEl) modeEl.textContent = `${mode === "brothel" ? "[Brothel] " : ""}${arcStageName(this.tavern.arcStage)}`;
       el.setAttribute("aria-hidden", "false");
     } else {
       el.classList.remove("visible", "high", "extreme", "fast");
@@ -2157,6 +2227,26 @@ export class Game {
     if (key === this.strippedShown) return;
     this.strippedShown = key;
     this.dressers.forEach((dresser, index) => dresser.setStripped(index === this.active ? off : []));
+    this.playerPortrait = null;
+  }
+
+  /** The show pose last put on the player, as "part:how"; "" for none. */
+  private showPoseShown = "";
+
+  /**
+   * Poses her while she shows a guest what they paid to see (7e), and lets the pose ease off after. It comes on at
+   * once, so the portrait drawn for the next line has it.
+   */
+  private syncShowPose(): void {
+    const showing = this.tavern.showingOff;
+    const pose: ShowPose | null = DEV_SHOW_POSE ?? (showing ? SHOW_POSE_OF[showing.part][showing.how] : null);
+    const key = `${this.active}:${pose ?? ""}`;
+    if (key === this.showPoseShown) return;
+    this.showPoseShown = key;
+    this.siblings.forEach((sibling, index) => {
+      sibling.display(index === this.active ? pose : null);
+      sibling.rest(0);
+    });
     this.playerPortrait = null;
   }
 
@@ -2245,6 +2335,7 @@ export class Game {
     // The first impulsive guest's offer can change the touch settings: remember the answer.
     writeTouchSettings(tavern.touchSettings);
     this.syncStripped();
+    this.syncShowPose();
     this.showTouch();
     this.pendingAdult ??= tavern.takeAdultScene();
     if (!tavern.inConversation) {
@@ -2367,18 +2458,18 @@ export class Game {
         buy: () => tavern.buyStock(ware),
       }),
     );
-    // What she broke, to buy back one at a time.
+    // What she broke, to buy back one at a time, under its own heading. The count is how many are still broken.
     const repairs = (Object.keys(WARE_NAMES) as Ware[])
       .filter((ware) => tavern.broken[ware] > 0)
       .map(
         (ware): Supply => ({
-          name: `Replace a broken ${WARE_NAMES[ware].replace(/e?s$/, "")}`,
+          name: `Buy back a broken ${WARE_NAMES[ware].replace(/e?s$/, "")}`,
           icon: ware,
+          group: "Buy back",
           price: REPLACE_COST,
-          detail: `You've broken ${tavern.broken[ware]} ${WARE_NAMES[ware]}. Buy them back here, ${REPLACE_COST} gold each.`,
+          detail: `You've broken ${tavern.broken[ware]} ${WARE_NAMES[ware]} (${tavern.stock[ware]} left on the shelf). Buy them back here, ${REPLACE_COST} gold each.`,
           owned: false,
-          count: tavern.stock[ware],
-          max: tavern.stock[ware] + tavern.broken[ware],
+          count: tavern.broken[ware],
           canBuy: tavern.canReplace(ware),
           buy: () => tavern.replaceBroken(ware),
         }),
@@ -2388,7 +2479,7 @@ export class Game {
         name: BOTTLES[bottle].name,
         icon: bottle,
         group: "Drinks",
-        price: BOTTLES[bottle].cost,
+        price: tavern.bottleCost(bottle),
         detail: BOTTLES[bottle].detail,
         owned: tavern.bottles.has(bottle),
         canBuy: tavern.canBuyBottle(bottle),
@@ -2396,7 +2487,7 @@ export class Game {
       }),
     );
     // The Lantern's builds, switches and girls, once the brothel is open to her (lanternplans.ts).
-    return [...upgrades, ...repairs, ...wares, ...drinks, ...lanternSupplies(tavern)];
+    return [...upgrades, ...wares, ...repairs, ...drinks, ...lanternSupplies(tavern)];
   }
 
   /** The night's report. Spending happens at the house plans, during the day. */
@@ -2517,15 +2608,16 @@ export class Game {
             { label: `Partner with ${card.house.boss}`, onPick: () => answer(() => tavern.answerHouse("partner")) },
             { label: `Ruin ${card.house.name} (corruption, heat)`, onPick: () => answer(() => tavern.answerHouse("ruin")) },
           ]
-        : [
-            { label: PELL_PROMISE, onPick: () => answer(() => tavern.answerPell(true)) },
-            { label: PELL_REFUSE, onPick: () => answer(() => tavern.answerPell(false)) },
-          ];
+        : // Pell's answers change with who she's become (STORY.md 4b): two more for some of her.
+          tavern.pellChoices.map((c) => ({ label: c.label, onPick: () => answer(() => tavern.answerPell(c.answer)) }));
       this.openPanel(card.title, card.lines, buttons);
       return;
     }
     if (tavern.takeFirstInTarven()) {
-      this.openPanel("First in Tarven", [...FIRST_IN_TARVEN], [{ label: "Start the day", onPick: again }]);
+      // The card changes with what she did in Act 1 (plot.ts): Mara free or taken, Ash hidden, Oden's chapel.
+      const [opening, ...rest] = FIRST_IN_TARVEN;
+      const lines = [opening, ...firstInTarvenLines(tavern.plotFlags), ...rest];
+      this.openPanel("First in Tarven", lines, [{ label: "Start the day", onPick: again }]);
       this.panelBack = again;
       return;
     }
@@ -2862,6 +2954,7 @@ export class Game {
     // Time stands still while you're looking at the plans.
     if (this.screen !== "build") this.clock.update(dt);
     this.syncStripped();
+    this.syncShowPose();
     this.syncCoat();
     this.syncArousal(dt);
 

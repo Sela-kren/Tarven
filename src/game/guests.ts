@@ -194,6 +194,18 @@ export class GuestActor {
     }
   }
 
+  /** Puts them straight in their seat, already arrived: a guest who was sitting when the game was saved. */
+  seatNow(): void {
+    this.wait = 0;
+    this.group.visible = true;
+    this.sitProgress = 1;
+    this.applySit();
+    this.walker.heading = this.seat.heading;
+    this.walker.body.root.rotation.y = this.seat.heading;
+    this.mode = "seated";
+    this.arrived = true;
+  }
+
   /** Where they are on the floor right now. */
   private get here(): Vec2 {
     return { x: this.group.position.x, z: this.group.position.z };

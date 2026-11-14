@@ -4,7 +4,7 @@
  */
 import { COIN } from "./hud";
 import { pixelSvg } from "./icons";
-import type { SaveData } from "./save";
+import { saveHour, type SaveData } from "./save";
 
 const OUTLINE = "#1c140e";
 
@@ -89,6 +89,10 @@ export function saveBadges(data: SaveData, playerLabels: readonly string[]): HTM
   who.title = playerLabels[data.active] ?? "";
   const gold = badge(COIN, String(data.tavern.gold));
   gold.title = `${data.tavern.gold} gold`;
+  // The in-game time it was saved at, for a save made mid-day or mid-night.
+  const hour = saveHour(data);
+  const clock = hour === null ? null : badge("", hour);
+  if (clock) clock.title = `Saved at ${hour}`;
   const when = document.createElement("span");
   when.className = "when";
   when.textContent = new Date(data.savedAt).toLocaleString(undefined, {
@@ -97,6 +101,6 @@ export function saveBadges(data: SaveData, playerLabels: readonly string[]): HTM
     hour: "2-digit",
     minute: "2-digit",
   });
-  row.append(night, who, gold, when);
+  row.append(night, ...(clock ? [clock] : []), who, gold, when);
   return row;
 }

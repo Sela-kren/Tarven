@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { latestSave, readSave, writeSave } from "../src/game/save";
 import { Tavern } from "../src/game/tavern";
+import { METERS } from "../src/game/passives";
 
 const SEATS = 11;
 
@@ -132,5 +133,73 @@ describe("save slots", () => {
       },
     });
     expect(writeSave(1, 0, new Tavern(SEATS).snapshot())).toBe(false);
+  });
+});
+
+describe("saving the moment", () => {
+  const night = { listeningTo: null, night: true };
+  const moment = (t: Tavern) => ({ time: 45.5, at: { x: 1, z: -2, facing: 0.5 }, dayStart: null, ...t.captureMoment() });
+
+  it("brings a night back as it stood: the guests, her hands, the clock", () => {
+    const t = new Tavern(SEATS);
+    t.gold = 30;
+    t.open();
+    for (let i = 0; i < 200; i++) t.tick(0.1, night);
+    for (const guest of t.guests) if (guest.status === "arriving") t.guestArrived(guest.id);
+    t.carrying[0] = "ale";
+    t.carryCount[0] = 2;
+    t.meters[METERS[0]] = 40;
+    expect(t.phase).toBe("service");
+    expect(t.guests.length).toBeGreaterThan(0);
+    expect(writeSave(2, 1, t.snapshot(), undefined, moment(t))).toBe(true);
+
+    const data = readSave(2)!;
+    expect(data.moment?.time).toBe(45.5);
+    const loaded = new Tavern(SEATS);
+    loaded.restore(data.tavern);
+    loaded.resumeMoment(data.moment!);
+
+    expect(loaded.phase).toBe("service");
+    expect(loaded.clock).toBe(t.clock);
+    expect(loaded.guests).toEqual(t.guests);
+    expect(loaded.carrying).toEqual(["ale", null]);
+    expect(loaded.carryCount).toEqual([2, 0]);
+    expect(loaded.meters[METERS[0]]).toBe(40);
+    expect(loaded.gold).toBe(t.gold);
+    expect(loaded.tonight).toEqual(t.tonight);
+    // The night carries on from there: the same guests are still due, not a fresh crowd.
+    for (let i = 0; i < 50; i++) {
+      t.tick(0.1, night);
+      loaded.tick(0.1, night);
+    }
+    expect(loaded.guests.map((g) => g.id)).toEqual(t.guests.map((g) => g.id));
+  });
+
+  it("keeps a day's progress: a mess cleaned, gold spent", () => {
+    const t = new Tavern(SEATS);
+    t.gold = 50;
+    t.napped = true;
+    t.drunk = 3;
+    const loaded = new Tavern(SEATS);
+    loaded.restore(t.snapshot());
+    loaded.resumeMoment(t.captureMoment());
+    expect(loaded.phase).toBe("day");
+    expect(loaded.napped).toBe(true);
+    expect(loaded.drunk).toBe(3);
+  });
+
+  it("drops a broken moment, and the save still opens at the start of its day", () => {
+    const t = new Tavern(SEATS);
+    expect(writeSave(1, 1, t.snapshot(), undefined, { ...moment(t), at: { x: "here" } } as never)).toBe(true);
+    const data = readSave(1)!;
+    expect(data).not.toBeNull();
+    expect(data.moment).toBeUndefined();
+  });
+
+  it("refuses a moment whose fields are the wrong kind, rather than half-loading it", () => {
+    const t = new Tavern(SEATS);
+    const loaded = new Tavern(SEATS);
+    expect(() => loaded.resumeMoment({ tavern: { ...t.captureMoment().tavern, gold: "lots" } })).toThrow();
+    expect(() => loaded.resumeMoment({ tavern: { ...t.captureMoment().tavern, guests: 3 } })).toThrow();
   });
 });
