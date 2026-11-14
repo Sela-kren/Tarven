@@ -1924,9 +1924,19 @@ BARE_LOOPS = [
     ("w0", {"C": (1.009, 0), "F": (1.009, 0.064), "S": (1.009, None), "B": (1.02, 0.0625), "N": (1.02, 0.0115), "P": (1.02, 0)}),
     ("w1", {"C": (1.062, 0), "F": (1.062, 0.0575), "S": (1.062, None), "B": (1.06, 0.0625), "N": (1.06, 0.0115), "P": (1.06, 0)}),
 ] + TRUNK_LOOPS[6:]
-# How far the front pushes forward at the bust, as a multiple of the plain outline.
-BUST = {"crease": {"C": 0.95, "F": 1.05}, "under": {"C": 0.93, "F": 1.12}, "low": {"C": 0.925, "F": 1.17},
-        "bust": {"C": 0.92, "F": 1.2}, "high": {"C": 0.935, "F": 1.16}, "chest": {"C": 0.95, "F": 1.12}}
+# How far the front pushes forward at the bust, as a multiple of the plain outline. The outline swells at the bust
+# all the way across; these take that back out, so the rings make a plain chest wall and the breasts are laid on
+# it afterwards, each its own round dome (BREAST_DOME). Pushed out ring by ring, the breasts came out as one shelf
+# across the chest with a flat, upright front, and the light drew two curves under each breast instead of one.
+BUST = {"crease": {"C": 1.0, "F": 1.0}, "under": {"C": 0.86, "F": 1.0}, "low": {"C": 0.775, "F": 0.85},
+        "bust": {"C": 0.715, "F": 0.715}, "high": {"C": 0.76, "F": 0.76}, "chest": {"C": 0.81, "F": 0.81}}
+# Each breast, laid on the chest wall once the soft parts have their extra faces: a dome over (x, height), standing
+# `out` forwards at its middle. It reaches `inner` and `outer` across, `up` and `down` (metres). How it meets the
+# chest at its edge, as a power of (1 - distance squared): under 0.5 it turns in sharply, the fold beneath; above 1
+# it runs on smoothly, the slope down from the collarbone. In between round the sides. `lean`: how far the outer
+# half moves outwards as well as forwards, at its edge (1 is as far out as forwards).
+BREAST_DOME = {"x": 0.068, "z": 1.14, "out": 0.05, "inner": 0.06, "outer": 0.045, "up": 0.078, "down": 0.05,
+               "fold": 0.45, "flank": 0.85, "slope": 1.6, "lean": 0.8}
 # Through the bust each loop has two more columns: M between the centre and front columns, G between the front
 # and side. They give the bust a round underside and enough corners to grow much larger in the game.
 BUST_ZONE = ("crease", "under", "low", "bust", "high")
@@ -2458,6 +2468,15 @@ JIGGLE_LOBES = {
 # the game grows the rear a long way, and a weight flat through the middle and steep at the edge grows it into a
 # shelf at the top and a point at the bottom instead of a rounder curve.
 JIGGLE_RISE = {"Bust": 1.0, "Glute_L": 1.0, "Glute_R": 1.0}
+# The bust's weight follows each breast's own outline (bust_weight): `most` all over the middle of the breast, out
+# to `full` of the way to its edge, then easing to nothing at `spread` times the breast's size, a little onto the
+# chest so its root widens with it. Towards the sides of the trunk (by how far forwards, `front`, in metres) it
+# eases off too, so the ribs under her arms stay put. `most` keeps each cup size as the game measured them
+# (appearance.ts): at Q the front of the breast stands 28 cm out, as it did with the old weights. Towards the
+# middle it reaches further, `cleavage` times, so the skin between the breasts comes forwards with them and a full
+# bust presses together in one line down the middle; easing out there as on the other sides, the cleavage stayed
+# back as they grew and opened into a flat V between them, as if they were held apart.
+BUST_WEIGHT = {"Bust": {"most": 0.58, "full": 0.5, "spread": 1.3, "cleavage": 2.4, "front": (0.02, 0.06)}}
 
 
 # Where the soft parts get extra faces: (lobe centres, radii, side: 1 front, -1 back). A little larger
@@ -2566,6 +2585,68 @@ def refine_soft_parts(obj, name, regions=REFINE_REGIONS, smooth=None, touching=F
     bm.to_mesh(obj.data)
     bm.free()
     obj.data.update()
+
+
+def breast_rise(x, z, dome=BREAST_DOME):
+    """How far forward the breast stands over the chest wall at this point (either side), from BREAST_DOME."""
+    dx, dz = abs(x) - dome["x"], z - dome["z"]
+    a = dx / (dome["inner"] if dx < 0 else dome["outer"])
+    b = dz / (dome["up"] if dz > 0 else dome["down"])
+    reach = a * a + b * b
+    if reach >= 1.0:
+        return 0.0
+    upward = b / math.sqrt(reach) if reach > 1e-12 else 0.0
+    edge = dome["flank"] + (dome["slope"] - dome["flank"]) * upward if upward > 0 else \
+        dome["flank"] + (dome["fold"] - dome["flank"]) * -upward
+    return dome["out"] * (1.0 - reach) ** edge
+
+
+def round_breasts(body, layers):
+    """
+    Lays each breast on the plain chest the rings make: every corner over the bust moves forwards by the breast's
+    rise at the nearest point of the skin, so the clothes keep their place over it. Past the middle of the breast
+    it moves outwards too, so the outer side rounds off towards the arm. Where the skin faces sideways it eases
+    off, by the skin's smoothed normal there, so the sides of the trunk stay where they are.
+    """
+    bm = bmesh.new()
+    bm.from_mesh(body.data)
+    bm.normal_update()
+    bm.faces.ensure_lookup_table()
+    tree = BVHTree.FromBMesh(bm)
+    dome = BREAST_DOME
+    reach_x = dome["x"] + dome["outer"]
+    low, high = dome["z"] - dome["down"], dome["z"] + dome["up"]
+
+    def smoothed_normal(face, spot):
+        """The skin's normal at a point on a face, blended from its corners' normals."""
+        weights = [1.0 / max(1e-6, (spot - corner.co).length) for corner in face.verts]
+        total = sum(weights)
+        return sum((corner.normal * w for corner, w in zip(face.verts, weights)), Vector()) / total
+
+    moves = []
+    for obj in (body, *layers):
+        shift = {}
+        for v in obj.data.vertices:
+            co = v.co
+            if co.y <= 0.0 or abs(co.x) >= reach_x or not low < co.z < high:
+                continue
+            spot, _, index, _ = tree.find_nearest(co)
+            if spot is None:
+                continue
+            rise = breast_rise(spot.x, spot.z)
+            if rise <= 0.0:
+                continue
+            facing = min(1.0, max(0.0, smoothed_normal(bm.faces[index], spot).y / 0.5))
+            rise *= facing * facing * (3 - 2 * facing)
+            outwards = min(1.0, max(0.0, (abs(spot.x) - dome["x"]) / dome["outer"]))
+            side = 1.0 if co.x >= 0 else -1.0
+            shift[v.index] = Vector((side * outwards * dome["lean"], 1.0, 0.0)).normalized() * rise
+        moves.append((obj, shift))
+    bm.free()
+    for obj, shift in moves:
+        for index, move in shift.items():
+            obj.data.vertices[index].co += move
+        obj.data.update()
 
 
 # ---------------------------------------------------------------- nipples
@@ -3341,11 +3422,39 @@ def add_jiggle_weights(name, layers):
                     d2 = ((z - cz) / rz) ** 2 if ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 < 1 else 1.0
                 else:
                     d2 = min(((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 + ((z - cz) / rz) ** 2 for cx, cy, cz in centres)
+                if label in BUST_WEIGHT:
+                    share = bust_weight(x, y, z)
+                    if share > 0:
+                        move_weight(obj, v.index, f"{name}_{label}", share)
+                    continue
                 if d2 < 1:
                     # Full weight through the middle of the mass, fading smoothly to nothing at its edge.
                     t = 1 - math.sqrt(d2)
                     rise = JIGGLE_RISE.get(label, 1.6)
                     move_weight(obj, v.index, f"{name}_{label}", most * min(1.0, t * t * (3 - 2 * t) * rise))
+
+
+def bust_weight(x, y, z, spec=None):
+    """
+    The bust's weight at a point: even over each breast, as BREAST_DOME lays it, so the game grows the whole breast
+    alike and it keeps its round shape at any cup; easing out past its edge, and on to nothing towards the sides of
+    the trunk. Weighted by distance from one middle point instead, the inner, lower side of each breast took a
+    quarter of the front's weight, and a large cup grew round it, leaving it a flat diagonal under the cleavage.
+    """
+    spec = spec or BUST_WEIGHT["Bust"]
+    dome = BREAST_DOME
+    dx, dz = abs(x) - dome["x"], z - dome["z"]
+    a = dx / (dome["inner"] * spec["cleavage"] if dx < 0 else dome["outer"] * spec["spread"])
+    b = dz / ((dome["up"] if dz > 0 else dome["down"]) * spec["spread"])
+    reach = math.sqrt(a * a + b * b)
+    if reach >= 1.0:
+        return 0.0
+
+    def ease(t):
+        t = min(1.0, max(0.0, t))
+        return t * t * (3 - 2 * t)
+
+    return spec["most"] * ease((1.0 - reach) / (1.0 - spec["full"])) * ease((y - spec["front"][0]) / (spec["front"][1] - spec["front"][0]))
 
 
 # ---------------------------------------------------------------- the medieval outfit
@@ -3914,8 +4023,7 @@ def build_dirndl_extra(spec, m):
             corners = [(sx * 0.022, y, z - 0.004), (sx * 0.022, y, z + 0.002), (-sx * 0.022, y, z + 0.022), (-sx * 0.022, y, z + 0.016)]
             add_slab(extra, f"lace{i}_{j}", corners, (0.0, 0.003, 0.0), trunk, m["ribbon"])
 
-    # A green gem hanging from the necklace's pendant, set into its front.
-    facing(extra, "gem", (0.0, spec.get("pendant_front", 0.094) + 0.003, 1.245), (0.008, 0.01), (0.0, 1.0), lambda co: {"Torso": 1.0}, m["gem"])
+    # The green gem on her necklace's pendant is set into the necklace itself (build_necklace).
     return extra
 
 
@@ -5555,12 +5663,13 @@ NECKLACE_LIFT = 0.0006  # clear of the skin under it
 NECKLACE_PENDANT = [(1.24, 0.008, 0.004), (1.265, 0.003, 0.003)]
 
 
-def build_necklace(c, m, name, body_obj):
+def build_necklace(c, m, name, body_obj, surface=None):
     """
     The necklace on the finished body, each point weighted as the skin under it, so it moves with her neck, chest
-    and bust and never lifts off. Returns the object and how far forward the pendant's front is at its tip.
+    and bust and never lifts off. Its own mesh, "<name>_JewelNecklace", so the game can take it off and put it on
+    like any other piece of jewellery, with a green gem set into the front of its pendant.
     """
-    surface = CoatSurface(body_obj)
+    surface = surface or CoatSurface(body_obj)
     piece = Skin()
 
     def weights(point):
@@ -5608,9 +5717,135 @@ def build_necklace(c, m, name, body_obj):
     for r in range(2):
         piece.face([f"pendant{r}_{k}" for k in range(4)], 0, m["pewter"])
     front = max(co[1] for co in rings[0])
+    # The gem, set into the pendant's front (it used to be sewn on the dirndl, and floated there without the necklace).
+    gem_at = Vector((0.0, front + 0.003, 1.245))
+    facing(piece, "gem", tuple(gem_at), (0.008, 0.01), (0.0, 1.0), lambda co: weights(gem_at), m["gem"])
 
-    mesh, kept = piece.mesh(f"{name}_Necklace", piece.faces)
-    return piece.link(c, mesh, kept, name, f"{name}_Necklace"), front
+    mesh, kept = piece.mesh(f"{name}_JewelNecklace", piece.faces)
+    return piece.link(c, mesh, kept, name, f"{name}_JewelNecklace")
+
+
+# Her piercings, each its own mesh the game shows only once she's chosen it and nothing covers it: rings through her
+# nipples, a bar through her navel and a ring through her clitoral hood. Each lies on the finished skin, weighted as
+# the skin under it. The game moves the nipple rings out with her nipples as they stand, and the hood ring with her
+# vulva as it shapes (appearance.ts), so they're built on the flat discs and the flat grid.
+PIERCING_RING = {"Nipples": (0.0085, 0.0009), "Hood": (0.0055, 0.0008)}  # (radius, half the wire's thickness)
+PIERCING_BEAD = {"Nipples": 0.0022, "Hood": 0.0019}
+NAVEL_BAR = {"top": 0.0024, "gem": 0.0042}  # the ball above its rim and the gem in the pit, their radii
+# Where along her vulva's grid (a row, from the top) the hood is as built: the shape's hood (vulvaAt in vulva.ts)
+# at the default size, 0.5 + (0.5 - 0.85 * 0.36 - 0.5) * 0.84 of the way down, of 12 rows.
+HOOD_ROW = 12 * (0.5 - 0.85 * 0.36 * 0.84)
+
+
+def add_torus(piece, key, centre, a, b, radius, wire, weights, mat, n=16, k=6):
+    """A closed ring in the plane of a and b (unit, square to each other) about centre."""
+    normal = a.cross(b)
+    for i in range(n):
+        t = 2 * math.pi * i / n
+        out = a * math.cos(t) + b * math.sin(t)
+        for j in range(k):
+            s = 2 * math.pi * j / k
+            co = centre + out * radius + (out * math.cos(s) + normal * math.sin(s)) * wire
+            piece.add(f"{key}{i}_{j}", 0, tuple(co), weights(co))
+    for i in range(n):
+        for j in range(k):
+            i2, j2 = (i + 1) % n, (j + 1) % k
+            piece.face((f"{key}{i}_{j}", f"{key}{i2}_{j}", f"{key}{i2}_{j2}", f"{key}{i}_{j2}"), 0, mat)
+
+
+def add_ball(piece, key, centre, radius, weights, mat, n=8, rings=5):
+    """A small closed ball about centre."""
+    piece.add(f"{key}_s", 0, tuple(centre - Vector((0, 0, radius))), weights(centre))
+    piece.add(f"{key}_n", 0, tuple(centre + Vector((0, 0, radius))), weights(centre))
+    for r in range(1, rings):
+        lat = math.pi * r / rings - math.pi / 2
+        for i in range(n):
+            lon = 2 * math.pi * i / n
+            co = centre + Vector((math.cos(lat) * math.cos(lon), math.cos(lat) * math.sin(lon), math.sin(lat))) * radius
+            piece.add(f"{key}{r}_{i}", 0, tuple(co), weights(centre))
+    for i in range(n):
+        i2 = (i + 1) % n
+        piece.face((f"{key}_s", f"{key}1_{i2}", f"{key}1_{i}"), 0, mat)
+        piece.face((f"{key}_n", f"{key}{rings - 1}_{i}", f"{key}{rings - 1}_{i2}"), 0, mat)
+        for r in range(1, rings - 1):
+            piece.face((f"{key}{r}_{i}", f"{key}{r}_{i2}", f"{key}{r + 1}_{i2}", f"{key}{r + 1}_{i}"), 0, mat)
+
+
+def build_piercings(c, m, name, spec, body_obj, surface):
+    """Her piercings, each its own "<name>_Jewel<Kind>" mesh. Returns the objects."""
+    built = []
+
+    def weights_near(point):
+        return {g[len(name) + 1:]: w for g, w in surface.weights_at(point).items()}
+
+    def finish(piece, kind):
+        mesh, kept = piece.mesh(f"{name}_Jewel{kind}", piece.faces)
+        built.append(piece.link(c, mesh, kept, name, f"{name}_Jewel{kind}"))
+
+    if spec.get("nipples"):
+        # A ring through each nipple from side to side, hanging down flat in front of the areola, a bead at its foot.
+        piece = Skin()
+        radius, wire = PIERCING_RING["Nipples"]
+        for side, (start, aim) in zip("RL", NIPPLE_AIM):
+            tip, normal, _, _ = surface.tree.ray_cast(Vector(start), Vector(aim).normalized())
+            if normal.dot(Vector(aim)) < 0:
+                normal = -normal
+            across = Vector((0, 0, 1)).cross(normal).normalized()
+            up = normal.cross(across).normalized()
+            # Each point weighted like the skin at the nipple, so the ring moves as one with it.
+            held = weights_near(tip)
+            ring_at = tip - up * radius
+            add_torus(piece, f"ring{side}", ring_at, across, up, radius, wire, lambda co: held, m["silver"])
+            add_ball(piece, f"bead{side}", ring_at - up * radius, PIERCING_BEAD["Nipples"], lambda co: held, m["silver"])
+        finish(piece, "Nipples")
+
+    if spec.get("navel"):
+        # A bar through the skin over her navel: a ball above its rim and a gem sitting in the pit.
+        piece = Skin()
+        hit, normal, _, _ = surface.tree.ray_cast(Vector((0.0, 0.0, spec["navel"] + NAVEL_SIZE[1] + 0.006)), Vector((0.0, 1.0, 0.0)))
+        if normal.y < 0:
+            normal = -normal
+        held = weights_near(hit)
+        top = hit + normal * (NAVEL_BAR["top"] * 0.7)
+        gem = Vector((0.0, hit.y, spec["navel"] - NAVEL_LOW)) + normal * (NAVEL_BAR["gem"] * 0.35)
+        add_ball(piece, "top", top, NAVEL_BAR["top"], lambda co: held, m["silver"])
+        # The bar between them runs under the skin, into the pit under its upper rim.
+        add_ball(piece, "gem", gem, NAVEL_BAR["gem"], lambda co: held, m["gem"], n=10, rings=6)
+        finish(piece, "Navel")
+
+    if spec.get("vulva"):
+        # A ring through her hood from top to bottom, standing out from her in her middle, a bead resting below it.
+        names = [mat.name for mat in body_obj.data.materials]
+        grid = {names.index(n) for n in ("T_labia", "T_vulva") if n in names}
+        if grid:
+            mesh = body_obj.data
+            uv = mesh.uv_layers.active.data
+            rows = {}
+            for poly in mesh.polygons:
+                if poly.material_index not in grid:
+                    continue
+                for li in poly.loop_indices:
+                    u, v = uv[li].uv
+                    if abs(u - 0.5) < 1e-4:
+                        rows[round(v * 12)] = mesh.vertices[mesh.loops[li].vertex_index].co.copy()
+            low = int(HOOD_ROW)
+            if low in rows and low + 1 in rows:
+                f = HOOD_ROW - low
+                hood = rows[low].lerp(rows[low + 1], f)
+                down = (rows[low + 1] - rows[low]).normalized()  # along her slit, down and back
+                across = Vector((1.0, 0.0, 0.0))
+                normal = across.cross(down).normalized()
+                if normal.y < 0:
+                    normal = -normal
+                radius, wire = PIERCING_RING["Hood"]
+                held = weights_near(hood)
+                # Through the hood at its back, the rest of the ring out in front of her, the bead at its foot.
+                ring_at = hood + normal * (radius * 0.7) + down * (radius * 0.35)
+                piece = Skin()
+                add_torus(piece, "ring", ring_at, normal, down, radius, wire, lambda co: held, m["silver"])
+                add_ball(piece, "bead", ring_at + down * radius, PIERCING_BEAD["Hood"], lambda co: held, m["silver"])
+                finish(piece, "Hood")
+    return built
 
 
 def build_coat(c, m, name, body_obj, clothes=()):
@@ -5820,9 +6055,6 @@ def skin_character(c, m, spec, root):
     for key in limbs:
         bind(parts[label(key)], label(key))
     join(body_obj, [parts[label(key)] for key in ["Head", "Torso"] + limbs])
-    if spec.get("necklace"):
-        necklace, spec["pendant_front"] = build_necklace(c, m, name, body_obj)
-        join(body_obj, [necklace])
     if medieval:
         # The track pants' drawstring goes; the skirt, apron, belt and laces take its place.
         bpy.data.objects.remove(parts[label("Hips")])
@@ -5919,6 +6151,8 @@ def skin_character(c, m, spec, root):
                 for share in VULVA_REFINE:
                     refine_soft_parts(layer, name, vulva_regions(share))
                 refine_soft_parts(layer, name, OPENING_REFINE, smooth=0.0, touching=True)
+        # On the refined faces, so each breast is one round dome however finely it's cut.
+        round_breasts(body_obj, (cloth_obj, *outfits))
         add_jiggle_weights(name, (body_obj, cloth_obj, *outfits))
     for dress in dresses:
         join(dress, [build_garter(c, m, name, dress)])
@@ -5947,6 +6181,12 @@ def skin_character(c, m, spec, root):
     if spec.get("lingerie"):
         # Last, so it copies only the finished skin, never the pubic patch or the nipple discs.
         add_lingerie(m, name, body_obj)
+    # Her jewellery, each piece its own mesh on the finished skin, so the game can put it on and take it off.
+    jewels = []
+    if spec.get("necklace"):
+        surface = CoatSurface(body_obj)
+        jewels.append(build_necklace(c, m, name, body_obj, surface))
+        jewels += build_piercings(c, m, name, spec, body_obj, surface)
 
     armature = bpy.data.armatures.new(f"{name}_Bones")
     rig = bpy.data.objects.new(f"{name}_Armature", armature)
@@ -5965,7 +6205,7 @@ def skin_character(c, m, spec, root):
             armature.edit_bones[bone_name].parent = armature.edit_bones[parent]
     bpy.ops.object.mode_set(mode="OBJECT")
 
-    for layer in (body_obj, cloth_obj, *outfits, shoes, *shoe_styles, hair, *styles, *coat):
+    for layer in (body_obj, cloth_obj, *outfits, shoes, *shoe_styles, hair, *styles, *coat, *jewels):
         layer.parent = rig
         layer.modifiers.new("Bones", "ARMATURE").object = rig
 
@@ -6119,6 +6359,10 @@ def main():
     # Her underwear styles' patch, likewise: plain white, which the game draws each style on in its own colours.
     random_state = rng.bit_generator.state
     mats["lingerie"] = material("T_lingerie", tex_flat("T_lingerie", (1.0, 1.0, 1.0), variation=0.0))
+    rng.bit_generator.state = random_state
+    # Her piercings' bright metal, likewise.
+    random_state = rng.bit_generator.state
+    mats["silver"] = material("T_silver", tex_flat("T_silver", (0.82, 0.82, 0.86), variation=0.0))
     rng.bit_generator.state = random_state
     for spec, blender_x in ((MALE, -0.6), (FEMALE, 0.6)):
         coll = bpy.data.collections.new(spec["name"] + "Rig")

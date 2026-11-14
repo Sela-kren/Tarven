@@ -28,7 +28,7 @@ import type { LegSize } from "./skirt";
 export type BodyName = "Male" | "Female";
 export const BODY_NAMES: readonly BodyName[] = ["Male", "Female"];
 /** "Cum" is what men leave on her: splats in stages, shown by the night's state, never part of the look. */
-export type MeshPart = "Body" | "Cloth" | "Hair" | "Shoes" | "Cum";
+export type MeshPart = "Body" | "Cloth" | "Hair" | "Shoes" | "Cum" | "Jewel";
 export type LookTab = "body" | "face" | "hair" | "skin" | "clothes";
 
 export interface Look {
@@ -62,6 +62,8 @@ export interface Look {
   bra?: string;
   /** Her briefs' style's id. Missing means her braies. */
   briefs?: string;
+  /** The jewellery she has on, by id. Missing means what she's built wearing: her necklace, and no piercings. */
+  jewellery?: string[];
 }
 
 export function newLook(): Look {
@@ -82,6 +84,7 @@ export function copyLook(look: Look): Look {
   if (look.shoes) copy.shoes = look.shoes;
   if (look.bra) copy.bra = look.bra;
   if (look.briefs) copy.briefs = look.briefs;
+  if (look.jewellery) copy.jewellery = [...look.jewellery];
   return copy;
 }
 
@@ -208,6 +211,45 @@ export interface PieceDef {
 }
 
 /**
+ * A piece of jewellery: its own mesh, "<Body>_Jewel<mesh>", which she puts on and takes off like an accessory
+ * rather than it being part of her body.
+ */
+export interface JewelDef {
+  id: string;
+  label: string;
+  mesh: string;
+  /** She's built wearing it: on until the look takes it off. */
+  worn: boolean;
+  /**
+   * Where she's pierced for it, which must be bare for it to show, as it would poke through anything over it:
+   * her nipples, her belly or her groin. Null for one worn over her clothes, such as a necklace.
+   */
+  bare: "chest" | "belly" | "groin" | null;
+}
+
+export const FEMALE_JEWELLERY: JewelDef[] = [
+  { id: "necklace", label: "Necklace", mesh: "Necklace", worn: true, bare: null },
+  { id: "nippleRings", label: "Nipple rings", mesh: "Nipples", worn: false, bare: "chest" },
+  { id: "navelBar", label: "Belly ring", mesh: "Navel", worn: false, bare: "belly" },
+  { id: "hoodRing", label: "Clit hood ring", mesh: "Hood", worn: false, bare: "groin" },
+];
+
+/** The ids of the jewellery a look has on: its own list, or what the body is built wearing. */
+export function jewelleryOf(body: BodyName, look: Pick<Look, "jewellery">): string[] {
+  return look.jewellery ?? LOOK_OPTIONS[body].jewellery.filter((def) => def.worn).map((def) => def.id);
+}
+
+/** The jewellery a jewel mesh is, by the mesh name after "<Body>_Jewel"; null for any other mesh. */
+export function jewelOf(object: Object3D, body: BodyName): JewelDef | null {
+  const pattern = new RegExp(`^${body}_Jewel([A-Z][a-z]+)`);
+  for (let node: Object3D | null = object; node; node = node.parent) {
+    const match = pattern.exec(node.name);
+    if (match) return LOOK_OPTIONS[body].jewellery.find((def) => def.mesh === match[1]) ?? null;
+  }
+  return null;
+}
+
+/**
  * A legwear style: which bands of the legs it covers, by their materials on the cloth, and whether the sock cuff
  * at the top of the shoes shows. Without it, the cuff is painted over in skin.
  */
@@ -264,6 +306,8 @@ export interface LookOptions {
   outfits: OutfitDef[];
   /** Lengths of stockings and socks, for the outfits that have legwear. */
   legwear: LegwearDef[];
+  /** Her necklace and piercings, for a body built with them. */
+  jewellery: JewelDef[];
   /** Types of nipple, for a body built with them; the first is the default. */
   nipples: NippleType[];
   /** Shapes of bust; the first is the default, the model as built. */
@@ -809,7 +853,8 @@ const FEMALE_COLORS: ColorDef[] = [
   { id: "girdle", label: "Girdle", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_girdle"]] },
   { id: "drapes", label: "Drapes", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_drape"]] },
   { id: "jewels", label: "Jewellery", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_jewel"]] },
-  { id: "gems", label: "Gems", tab: "clothes", mode: "dye", palette: GEM_COLORS, parts: [["Cloth", "T_gem"]] },
+  // The gems on her clothes, and those set in her necklace and her belly ring.
+  { id: "gems", label: "Gems", tab: "clothes", mode: "dye", palette: GEM_COLORS, parts: [["Cloth", "T_gem"], ["Jewel", "T_gem"]] },
   // The pirate's rig. Her corset is the bodice, her shirt the blouse, and her belt and corset laces the belt.
   ...pirateColors(),
   { id: "feather", label: "Feather", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_plume"]] },
@@ -980,6 +1025,7 @@ export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
     ],
     outfits: FEMALE_OUTFITS,
     legwear: FEMALE_LEGWEAR,
+    jewellery: FEMALE_JEWELLERY,
     nipples: NIPPLE_TYPES,
     bustShapes: BUST_SHAPES,
     pubes: PUBIC_STYLES,
@@ -1082,6 +1128,7 @@ export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
       },
     ],
     legwear: [],
+    jewellery: [],
     nipples: [],
     bustShapes: [],
     pubes: [],
@@ -1274,7 +1321,7 @@ export function materialFor(
 
 /** The mesh part a mesh belongs to, from its own name or its parents'. */
 export function partOf(object: Object3D, body: BodyName): MeshPart | null {
-  const pattern = new RegExp(`^${body}_(Body|Cloth|Hair|Shoes|Cum)`);
+  const pattern = new RegExp(`^${body}_(Body|Cloth|Hair|Shoes|Cum|Jewel)`);
   for (let node: Object3D | null = object; node; node = node.parent) {
     const match = pattern.exec(node.name);
     if (match) return match[1] as MeshPart;
@@ -1616,6 +1663,8 @@ export function dressColors(
     // Only the outfit they wear shows; the others' meshes stay hidden.
     if (slot.part === "Cloth") slot.mesh.visible = outfitMeshOf(slot.mesh, body) === worn;
     if (slot.part === "Cum") slot.mesh.visible = false;
+    // Only the jewellery they're built wearing, worn over their clothes: never a piercing.
+    if (slot.part === "Jewel") slot.mesh.visible = jewelOf(slot.mesh, body)?.worn ?? false;
     // Only the legwear bands their style reaches show.
     const covered = legwearSlot(legs, slot.part, slot.original.name);
     if (covered === "hide") slot.mesh.visible = false;
@@ -1838,7 +1887,16 @@ const FOLLOW_POINTS = 4;
  */
 const FOLLOW_NEAR = 0.03;
 const FOLLOW_FAR = 0.09;
-const FOLLOWING_PARTS: readonly MeshPart[] = ["Cloth", "Shoes", "Cum"];
+const FOLLOWING_PARTS: readonly MeshPart[] = ["Cloth", "Shoes", "Cum", "Jewel"];
+/**
+ * How far round a piercing a piece of clothing reaches to cover it: any of its points this near, and the piercing
+ * stays hidden while it's on, as it would poke through it.
+ */
+const JEWEL_COVER = 0.012;
+/** How far from her vulva's grid a piercing's points are measured to ride it: all of a ring through her hood. */
+const JEWEL_RIDE = 0.03;
+/** How far out a ring through a standing nipple sits, as a share of how far the nipple stands. */
+const NIPPLE_PIERCE = 0.5;
 /** How far from a nipple's tip, as built, the clothes over it can tent out: past the widest areola there is. */
 const RIDE = 0.04;
 
@@ -1854,6 +1912,8 @@ interface Riders {
   verts: Int32Array;
   disc: Uint8Array;
   r: Float32Array;
+  /** A piercing: it moves out as one with the nipple it goes through, instead of tenting over it like cloth. */
+  rigid: boolean;
 }
 
 const point = new Vector3();
@@ -1919,7 +1979,13 @@ export class Dresser {
    * and the points of other meshes lying over it (her coat, clothes and pubic hair), which rise over its shape,
    * `over` more on top of it.
    */
-  private readonly vulva: { slots: MeshSlot[]; patch: VulvaPatch; riders: Map<MeshSlot, { riders: VulvaRiders; over: number }> } | null = null;
+  private readonly vulva: {
+    slots: MeshSlot[];
+    patch: VulvaPatch;
+    riders: Map<MeshSlot, { riders: VulvaRiders; over: number; rigid: boolean }>;
+  } | null = null;
+  /** The clothes near each piercing, which hide it while any of them is on. */
+  private readonly jewelCovers = new Map<MeshSlot, MeshSlot[]>();
   /** Her anus's disc, for a body built with it: its two meshes (the rim and canal, the skin around them). */
   private readonly anus: { slots: MeshSlot[]; patch: AnusPatch } | null = null;
   /** His penis's tube and sack, for a body built with them: the shaft, the glans, then the sack. */
@@ -2040,7 +2106,11 @@ export class Dresser {
             }
           });
         }
-        if (verts.length) riders.set(slot, { verts: Int32Array.from(verts), disc: Uint8Array.from(which), r: Float32Array.from(from) });
+        if (verts.length) {
+          riders.set(slot, {
+            verts: Int32Array.from(verts), disc: Uint8Array.from(which), r: Float32Array.from(from), rigid: slot.part === "Jewel",
+          });
+        }
       }
       discSlot.shapeFrom = skinUnder(discs, discSlot.bind);
       this.nipples = { slot: discSlot, discs, riders };
@@ -2053,13 +2123,14 @@ export class Dresser {
     if (patch?.canal && canalSlot) vulvaSlots.push(canalSlot);
     if (patch) {
       const grid = gridOf(patch, vulvaSlots.map((slot) => slot.bind));
-      const riders = new Map<MeshSlot, { riders: VulvaRiders; over: number }>();
+      const riders = new Map<MeshSlot, { riders: VulvaRiders; over: number; rigid: boolean }>();
       for (const slot of this.slots) {
         const pubic = slot === pubicSlot;
         if (!slot.follow && !pubic) continue;
-        const found = vulvaRiders(slot.bind, grid);
+        const rigid = slot.part === "Jewel";
+        const found = vulvaRiders(slot.bind, grid, rigid ? JEWEL_RIDE : undefined);
         // Her pubic hair lies under the grid as built; it rises clear over it, so a full bush still covers her.
-        if (found) riders.set(slot, { riders: found, over: pubic ? PUBIC_OVER_VULVA : 0 });
+        if (found) riders.set(slot, { riders: found, over: pubic ? PUBIC_OVER_VULVA : 0, rigid });
       }
       this.vulva = { slots: vulvaSlots, patch, riders };
     }
@@ -2085,6 +2156,34 @@ export class Dresser {
         .sort((a, b) => a.d - b.d)
         .map(({ slot }) => slot);
       this.penis = { slots: penisSlots, patch: penis, groin };
+    }
+
+    // The clothes over each piercing: any of them on, it stays hidden. Measured round each side of her apart, so
+    // what covers one nipple doesn't hide the ring through the other.
+    for (const slot of this.slots) {
+      if (slot.part !== "Jewel" || !jewelOf(slot.mesh, body)?.bare) continue;
+      const boxes = [-1, 0, 1].flatMap((side) => {
+        const low = [Infinity, Infinity, Infinity], high = [-Infinity, -Infinity, -Infinity];
+        for (let v = 0; v < slot.bind.length; v += 3) {
+          const x = slot.bind[v];
+          if ((side < 0 && x >= -0.01) || (side > 0 && x <= 0.01) || (side === 0 && Math.abs(x) > 0.01)) continue;
+          for (let k = 0; k < 3; k++) {
+            low[k] = Math.min(low[k], slot.bind[v + k] - JEWEL_COVER);
+            high[k] = Math.max(high[k], slot.bind[v + k] + JEWEL_COVER);
+          }
+        }
+        return low[0] === Infinity ? [] : [{ low, high }];
+      });
+      const inside = (bind: Float32Array) => {
+        for (let v = 0; v < bind.length; v += 3) {
+          for (const { low, high } of boxes) {
+            if (bind[v] >= low[0] && bind[v] <= high[0] && bind[v + 1] >= low[1] && bind[v + 1] <= high[1] &&
+              bind[v + 2] >= low[2] && bind[v + 2] <= high[2]) return true;
+          }
+        }
+        return false;
+      };
+      this.jewelCovers.set(slot, this.slots.filter((other) => other.part === "Cloth" && inside(other.bind)));
     }
 
     // Measured on the own shoes: the other styles' heels reach below it, which is what lifts her onto them.
@@ -2545,10 +2644,18 @@ export class Dresser {
       const total = totals[this.slots.indexOf(slot)];
       for (let i = 0; i < slot.bind.length; i++) total[i] = out[m][i] - slot.bind[i];
     });
-    for (const [slot, { riders, over }] of vulva.riders) {
+    for (const [slot, { riders, over, rigid }] of vulva.riders) {
       const own = totals[this.slots.indexOf(slot)];
       const before = flat.get(slot)!;
       const rise = rideVulva(riders, frame, shape, over);
+      // A ring through her hood rises as one, by the shape's rise under it on average, so it keeps its round.
+      if (rigid && riders.verts.length) {
+        const mean = [0, 0, 0];
+        for (let k = 0; k < riders.verts.length; k++) for (let axis = 0; axis < 3; axis++) mean[axis] += rise[k * 3 + axis];
+        for (let k = 0; k < riders.verts.length; k++) {
+          for (let axis = 0; axis < 3; axis++) rise[k * 3 + axis] = mean[axis] / riders.verts.length;
+        }
+      }
       riders.verts.forEach((v, k) => {
         for (let axis = 0; axis < 3; axis++) own[v * 3 + axis] = before[k * 3 + axis] + rise[k * 3 + axis];
       });
@@ -2595,7 +2702,10 @@ export class Dresser {
         const { normal: [nx, ny, nz], lift } = frames[riders.disc[k]];
         // The clothes clear the disc's own lift too, over the areola and fading out a little past it.
         const t = Math.min(1, riders.r[k] / (profile[profile.length - 1].r * 1.3 + 0.004));
-        const h = tentHeight(profile, riders.r[k]) + lift * (1 - t * t * (3 - 2 * t));
+        // A ring goes through the nipple partway out from its foot, and moves out as one with it.
+        const h = riders.rigid
+          ? lift + Math.max(0, profile[0].h) * NIPPLE_PIERCE
+          : tentHeight(profile, riders.r[k]) + lift * (1 - t * t * (3 - 2 * t));
         own[v * 3] = before[k * 3] + nx * h;
         own[v * 3 + 1] = before[k * 3 + 1] + ny * h;
         own[v * 3 + 2] = before[k * 3 + 2] + nz * h;
@@ -2706,7 +2816,7 @@ export class Dresser {
       this.refreshAnus();
     }
     for (const slot of this.slots) {
-      if (slot.part === "Cum") continue;
+      if (slot.part === "Cum" || slot.part === "Jewel") continue;
       // Only the shoes she has on; never undressed, as nothing is modelled under them.
       if (slot.part === "Shoes" && shoeMeshOf(slot.mesh, this.body) !== shoes) {
         slot.mesh.visible = false;
@@ -2783,6 +2893,18 @@ export class Dresser {
         (slot.part === "Cloth" && outfitMeshOf(slot.mesh, this.body) !== outfit);
       slot.mesh.visible = !off && !otherStyle && !((this.undressed || this.underwear) && slot.part === "Cloth");
       if (slot.part === "Cloth" || slot.part === "Shoes") coverCoat(slot.mesh.material as Material);
+    }
+    // Her jewellery, once she has it on. A piercing shows only while she's bare there: no clothes over it, nor her
+    // bra over her nipples, her one-piece over her belly or her briefs over her groin.
+    const jewellery = jewelleryOf(this.body, this.look);
+    for (const slot of this.slots) {
+      if (slot.part !== "Jewel") continue;
+      const def = jewelOf(slot.mesh, this.body);
+      const bare =
+        !def?.bare ||
+        ((def.bare === "chest" ? !under.nipplesCovered : def.bare === "belly" ? !(under.whole && under.topOn) : vulvaShown) &&
+          !(this.jewelCovers.get(slot) ?? []).some((cloth) => cloth.mesh.visible));
+      slot.mesh.visible = def !== null && jewellery.includes(def.id) && bare;
     }
     // What's on her skin shows by its stage; what landed on her clothes shows too, while she has that piece on.
     const worn = new Set<string>();
@@ -3101,6 +3223,9 @@ export function readLook(raw: unknown, body: BodyName): Look | null {
   if (options.shoes.slice(1).some((style) => style.id === data.shoes)) look.shoes = data.shoes;
   if (options.tops.slice(1).some((style) => style.id === data.bra)) look.bra = data.bra;
   if (options.bottoms.slice(1).some((style) => style.id === data.briefs)) look.briefs = data.briefs;
+  if (Array.isArray(data.jewellery) && options.jewellery.length) {
+    look.jewellery = options.jewellery.map((def) => def.id).filter((id) => (data.jewellery as unknown[]).includes(id));
+  }
   return look;
 }
 

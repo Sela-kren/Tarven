@@ -1,5 +1,5 @@
 import {
-  copyLook, legwearOf, LOOK_OPTIONS, nearestStop, outfitOf, playerOutfits, stopValue, underOf, wearOutfit,
+  copyLook, jewelleryOf, legwearOf, LOOK_OPTIONS, nearestStop, outfitOf, playerOutfits, stopValue, underOf, wearOutfit,
   type BodyName, type Look, type LookTab, type SliderStops,
 } from "./appearance";
 
@@ -152,6 +152,7 @@ export class Customizer {
       delete this.look.outfit;
       delete this.look.legwear;
       delete this.look.shoes;
+      delete this.look.jewellery;
     }
     if (tab === null || tab === "hair") delete this.look.hairstyle;
     if (tab === null || tab === "body") {
@@ -255,6 +256,11 @@ export class Customizer {
     const colors = options.colors.filter((def) => def.tab === tab && worn(def.id)).sort((a, b) => order(a.id) - order(b.id));
     for (const def of colors) rows.push(this.colorRow(def.id, def.label, def.palette));
     if (tab === "clothes") for (const piece of options.pieces) if (worn(piece.id)) rows.push(this.pieceRow(piece.id, piece.label));
+    // Her jewellery goes with any outfit.
+    if (tab === "clothes" && options.jewellery.length) {
+      rows.push(make("h3", "group", "Jewellery"));
+      for (const def of options.jewellery) rows.push(this.jewelRow(def.id, def.label));
+    }
     this.paneEl.replaceChildren(...rows);
     this.hooks.tab(tab);
   }
@@ -548,6 +554,20 @@ export class Customizer {
       this.changed();
     });
     row.append(box, make("span", "name", `Wear the ${label.toLowerCase()}`));
+    return row;
+  }
+
+  private jewelRow(id: string, label: string): HTMLElement {
+    const row = make("label", "row piece");
+    const box = make("input");
+    box.type = "checkbox";
+    box.checked = jewelleryOf(this.body, this.look).includes(id);
+    box.addEventListener("change", () => {
+      const on = jewelleryOf(this.body, this.look).filter((other) => other !== id);
+      this.look.jewellery = box.checked ? [...on, id] : on;
+      this.changed();
+    });
+    row.append(box, make("span", "name", label));
     return row;
   }
 }
