@@ -183,6 +183,7 @@ import {
   type GrabAnswerLines,
 } from "./grab";
 import { START_TITLE, TITLE_BY_ID, TITLES, titleEarned, TWO_SLOTS_FAME } from "./titles";
+import { TAVERN_RULE_BY_ID, type TavernRuleId } from "./tavernrules";
 import { FOLLOW_UP_BY_ID, followUpsAfter, type FollowUp } from "./favors";
 import { Lantern, LANTERN_COST, ROOM_COST, type HouseRule, type LanternHost, type LanternSave, type RuleChoice } from "./lantern";
 
@@ -1620,6 +1621,9 @@ export class Tavern {
   newPassives: PassiveDef[] = [];
   /** Titles she's earned, and the ones she's wearing (titles.ts): one slot, two once she's famous enough. */
   titles = new Set<string>([START_TITLE]);
+  /** Tavern rules (tavernrules.ts): the ones she's paid to adopt, and the ones on right now. */
+  readonly rulesAdopted = new Set<TavernRuleId>();
+  readonly rules = new Set<TavernRuleId>();
   worn: string[] = [START_TITLE];
   /** She eased the ache herself before sleeping last night. */
   eased = false;
@@ -1852,7 +1856,7 @@ export class Tavern {
     // Anyone still upstairs comes down and pays, and the night has its say on the girls (lantern.ts).
     this.lantern.endNight(this.lanternHost);
     const nightly = this.effects.perNight;
-    this.adjust(0, nightly.trust, nightly.heat);
+    this.adjust(nightly.gold, nightly.trust, nightly.heat);
     if (nightly.respect) this.shift({ respect: nightly.respect });
     this.awardPassives();
     this.arcDawn();
@@ -2984,7 +2988,9 @@ export class Tavern {
   /** Her lewdness: worked out from her passives and records, never raised directly. */
   get lewdness(): number {
     const total = Object.values(this.touchMemory.lets).reduce((sum, n) => sum + (n ?? 0), 0);
-    return lewdnessOf(this.passives, total, this.records);
+    // Her tavern rules count too, while they're on (a shorter apron says something about her).
+    const rules = [...this.rules].reduce((sum, id) => sum + (TAVERN_RULE_BY_ID.get(id)?.lewd ?? 0), 0);
+    return lewdnessOf(this.passives, total, this.records) + rules;
   }
 
   /** Where she is on her arc (STORY.md 4b): Sheltered, Curious, Willing or Known. The writing picks by it. */
@@ -3246,6 +3252,7 @@ export class Tavern {
     const e = effectsOf(this.passives);
     for (const id of this.worn) TITLE_BY_ID.get(id)?.wear(e);
     for (const d of this.debuffs) DEBUFFS[d.id].effect(e, d.level);
+    for (const id of this.rules) TAVERN_RULE_BY_ID.get(id)?.effect(e);
     this.effects = e;
   }
 
@@ -5445,6 +5452,28 @@ export class Tavern {
     this.cue("buy");
   }
 
+  /** Whether she can switch a tavern rule now: by day, and if it's new, with the gold to adopt it. */
+  canSetRule(id: TavernRuleId): boolean {
+    const def = TAVERN_RULE_BY_ID.get(id);
+    return this.phase === "day" && def !== undefined && (this.rulesAdopted.has(id) || this.gold >= def.cost);
+  }
+
+  /** Switches a tavern rule on or off; the first time, she pays to adopt it (and any corruption that comes with it). */
+  setRule(id: TavernRuleId, on: boolean): void {
+    const def = TAVERN_RULE_BY_ID.get(id);
+    if (!def || !this.canSetRule(id) || this.rules.has(id) === on) return;
+    if (on && !this.rulesAdopted.has(id)) {
+      this.gold -= def.cost;
+      this.corruption = Math.min(1000, this.corruption + (def.corruption ?? 0));
+      this.rulesAdopted.add(id);
+      this.cue("buy");
+    }
+    if (on) this.rules.add(id);
+    else this.rules.delete(id);
+    this.refreshEffects();
+    this.say(on ? `New rule in the tavern: ${def.name}.` : `${def.name}: not any more.`);
+  }
+
   /** Cups and dishes can be bought again and again, until the shelves are full. */
   /** The lantern, once the brothel is open to her (lantern.ts). Bought and set from the house plans, by day. */
   canHangLantern(): boolean {
@@ -5696,6 +5725,8 @@ export class Tavern {
         xp: { ...this.xp } as Record<string, number>,
         titles: [...this.titles],
         worn: [...this.worn],
+        rulesAdopted: [...this.rulesAdopted],
+        rules: [...this.rules],
       },
       favors: { asked: [...this.askedFavors], due: this.favorsDue.map((d) => ({ ...d })) },
       ...(this.layout ? { layout: cloneLayout(this.layout) } : {}),
@@ -5738,6 +5769,11 @@ export class Tavern {
     // Titles: only ones that exist, the first one always; worn only if earned, and no more than she has slots for.
     this.titles = new Set([START_TITLE, ...(progress.titles ?? []).filter((id) => TITLE_BY_ID.has(id))]);
     this.worn = (progress.worn ?? [START_TITLE]).filter((id, i, all) => this.titles.has(id) && all.indexOf(id) === i);
+    // Tavern rules: only ones that exist, and on only if adopted.
+    this.rulesAdopted.clear();
+    this.rules.clear();
+    for (const id of progress.rulesAdopted ?? []) if (TAVERN_RULE_BY_ID.has(id)) this.rulesAdopted.add(id as TavernRuleId);
+    for (const id of progress.rules ?? []) if (this.rulesAdopted.has(id as TavernRuleId)) this.rules.add(id as TavernRuleId);
     // The brothel isn't saved: it opens again from what she's become.
     this.houseMode = { current: "tavern", unlocked: new Set(["tavern"]), brothel: 0 };
     this.unlockBrothel(true);
@@ -5872,7 +5908,7 @@ export class Tavern {
     for (const m of METERS) this.meters[m] = this.peak[m] = Math.min(METER_MAX, this.effects.start[m] + start);
     this.pleasure = 0;
     // Her adult play stack starts again too, with a head start from how lewd she is.
-    this.adultStack = stackStart(this.lewdness);
+    this.adultStack = Math.min(STACK_FULL, stackStart(this.lewdness) + this.effects.stackStart);
     // A night's sleep, and she has all her willpower back.
     this.willSpent = 0;
     this.adultScene = null;

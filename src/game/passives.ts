@@ -373,7 +373,9 @@ export interface Effects {
   protectTrust: number;
   protectHeat: number;
   /** What happens to trust, heat and respect every night. */
-  perNight: { trust: number; heat: number; respect: number };
+  perNight: { trust: number; heat: number; respect: number; gold: number };
+  /** Points her adult play stack starts each night above where her lewdness puts it (tavernrules.ts). */
+  stackStart: number;
   /** Levels given outright to stats and skills. */
   skill: Partial<Record<StatId | SkillId, number>>;
   /** In a fight: extra damage, and extra chance to dodge, talk them down and stare them down. */
@@ -466,7 +468,8 @@ export function noEffects(): Effects {
     informTrust: 0,
     protectTrust: 0,
     protectHeat: 0,
-    perNight: { trust: 0, heat: 0, respect: 0 },
+    perNight: { trust: 0, heat: 0, respect: 0, gold: 0 },
+    stackStart: 0,
     skill: {},
     fightDamage: 0,
     fightDodge: 0,
@@ -2539,6 +2542,9 @@ export interface ProgressSave {
   /** Titles earned, and the ones worn (titles.ts). */
   titles?: string[];
   worn?: string[];
+  /** Tavern rules she's adopted, and the ones on (tavernrules.ts). */
+  rulesAdopted?: string[];
+  rules?: string[];
 }
 
 const DUEL_MOVES: readonly DuelMove[] = ["kiss", "caress", "tease", "undress", "hands", "mouth", "tits", "ride", "anal", "hold", "stop"];
@@ -2558,6 +2564,8 @@ export function readProgress(raw: unknown): ProgressSave {
   const ids = (list: unknown) => (Array.isArray(list) ? list.filter((id): id is string => typeof id === "string") : undefined);
   out.titles = ids(fields.titles);
   out.worn = ids(fields.worn);
+  out.rulesAdopted = ids(fields.rulesAdopted);
+  out.rules = ids(fields.rules);
   if (Array.isArray(fields.passives)) out.passives = [...new Set(fields.passives.filter((id): id is string => typeof id === "string" && PASSIVE_BY_ID.has(id)))];
   const r = fields.records;
   if (r && typeof r === "object") {

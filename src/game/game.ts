@@ -137,6 +137,7 @@ import type { CumSpot } from "./cum";
 import type { DuelArea, DuelLogEntry, DuelState } from "./duel";
 import type { HerMove } from "./duelmoves";
 import { SMACK_TOUCHES, type TouchRegion } from "./touchtalk";
+import { TAVERN_RULES } from "./tavernrules";
 import { horny } from "./desire";
 import { FAINT_HOLD, FAINT_SECONDS } from "./barwork";
 import type { TouchShow } from "./touchcomic";
@@ -2610,8 +2611,23 @@ export class Game {
         buy: () => tavern.buyBottle(bottle),
       }),
     );
+    // Tavern rules, Karryn's edicts (tavernrules.ts): paid for once, then switched on or off any day.
+    const rules = TAVERN_RULES.map((rule): Supply => {
+      const on = tavern.rules.has(rule.id);
+      const adopted = tavern.rulesAdopted.has(rule.id);
+      return {
+        name: `${rule.name}${adopted ? (on ? ": on" : ": off") : ""}`,
+        icon: "rule",
+        group: "Tavern rules",
+        ...(adopted ? {} : { price: rule.cost }),
+        detail: `${rule.does}.${rule.costs ? ` Costs: ${rule.costs}.` : ""} ${adopted ? `Click to switch it ${on ? "off" : "on"}.` : "Adopt it once, then switch it on or off any day."}`,
+        owned: on,
+        canBuy: tavern.canSetRule(rule.id),
+        buy: () => tavern.setRule(rule.id, !on),
+      };
+    });
     // The Lantern's builds, switches and girls, once the brothel is open to her (lanternplans.ts).
-    return [...upgrades, ...wares, ...repairs, ...drinks, ...lanternSupplies(tavern)];
+    return [...upgrades, ...wares, ...repairs, ...drinks, ...rules, ...lanternSupplies(tavern)];
   }
 
   /** The night's report. Spending happens at the house plans, during the day. */

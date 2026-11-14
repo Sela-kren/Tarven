@@ -326,13 +326,18 @@ Key:
 
 ---
 
-## 6. House Rules (Karryn's Prison's Edicts): later
+## 6. Tavern rules (Karryn's Prison's Edicts) [built]
 
-Rules bought at the plans table. Some raise Corruption or Lewdness:
-- **Shorter Apron:** +tips, guests' lust up, Lewdness +5.
-- **Back Room:** unlocks invitations during service.
-- **Water the Ale:** +gold, Corruption +5, guests' mood down.
-- **Pay the Baron's Sergeant:** Heat −1 per night, Corruption +10.
+Set at the house plans by day, under **Tavern rules** (`src/game/tavernrules.ts`; not the Lantern's house rules upstairs). Each costs gold to adopt the first time, and any corruption it carries comes then, once. After that it's hers to switch on or off any day, for free. Tests: `tests/tavernrules.test.ts`.
+
+| Rule | Adopt | While it's on | Costs |
+|---|---|---|---|
+| Shorter Apron | 15 gold | +1 gold on every tipped serve; asked for a look 25% more | Guests reach 15% more; lewdness +5 while on |
+| The Back Room | 30 gold | Adult play stack starts every night 20% fuller | Corruption +5 (once) |
+| Water the Ale | free | +10% on everything she's paid | Guests wait 10% less; corruption +5 (once) |
+| Pay the Baron's Sergeant | 10 gold | −1 heat every night | 3 gold every night; corruption +10 (once) |
+| Hands Off the Staff | 10 gold | Guests reach and grab 30% less; +1 respect every night | −1 gold on every tipped serve |
+| Hire a Bouncer | 20 gold | Trouble starts 40% less often | 4 gold every night |
 
 ---
 
