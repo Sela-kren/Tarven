@@ -2178,15 +2178,26 @@ const FLUSHED = new Color(0.55, 0.16, 0.18);
  */
 const FACE_MATERIAL = /^T_(face_|lip|soot$|hair_f$|mouth$|teeth|tongue$)/;
 const EYE_MATERIAL = "T_soot";
-/** Her upper teeth, which stay with her skull as her mouth opens. */
+/** Her upper teeth, which stay with her skull as her mouth opens; her tongue, which can come out. */
 const UPPER_TEETH_MATERIAL = "T_teeth";
+const TONGUE_MATERIAL = "T_tongue";
 const BROW_MATERIAL = "T_hair_f";
 const LIP_MATERIALS: readonly string[] = ["T_lip", "T_lip_lit"];
-/** Her cheeks, and the tip of her nose half as much, flush towards this as she blushes, this far at most. */
-const BLUSH_MATERIAL = "T_face_blush";
-const NOSE_MATERIAL = "T_face_pink";
-const BLUSHED = new Color(0.9, 0.32, 0.34);
-const BLUSH_DEPTH = 0.7;
+/**
+ * As she blushes, the red spreads over her face towards this colour: her cheeks first, then the tip of her nose, then
+ * across the bridge of her nose and her brow, and at its deepest all over her face. Each plane of her face, by its
+ * material: how deep it goes at most, and from how much blush it starts.
+ */
+const BLUSHED = new Color(0.86, 0.2, 0.24);
+const BLUSH_SPREAD: Readonly<Record<string, { depth: number; from: number }>> = {
+  T_face_blush: { depth: 0.9, from: 0 },
+  T_face_pink: { depth: 0.75, from: 0.1 },
+  T_face_lit: { depth: 0.65, from: 0.3 },
+  T_face_white: { depth: 0.65, from: 0.3 },
+  T_face_cool: { depth: 0.65, from: 0.3 },
+  T_face_skin: { depth: 0.45, from: 0.55 },
+  T_face_mid: { depth: 0.45, from: 0.55 },
+};
 
 /**
  * Dresses one character: owns copies of its meshes so their shape can change without touching anyone sharing
@@ -2816,7 +2827,8 @@ export class Dresser {
       let moves = this.faceMoves.get(slot);
       if (!moves) this.faceMoves.set(slot, (moves = new Float32Array(count * 3)));
       moves.fill(0);
-      const part = slot.original.name === BROW_MATERIAL ? "brow" : slot.original.name === UPPER_TEETH_MATERIAL ? "teeth" : "skin";
+      const name = slot.original.name;
+      const part = name === BROW_MATERIAL ? "brow" : name === UPPER_TEETH_MATERIAL ? "teeth" : name === TONGUE_MATERIAL ? "tongue" : "skin";
       if (rig) {
         for (let v = 0; v < count; v++) {
           const p = shapedAt(slot, v);
@@ -3432,12 +3444,13 @@ export class Dresser {
           (slot.original.name === BAND_MATERIAL && under.top !== null) ||
           ((slot.original.name === "T_smalls" || slot.original.name === HOLE_MATERIAL) && (under.whole || under.bottom !== null));
         const bare = stripped || drawnOver || (this.undressed && covers(painted, slot.part, slot.original.name));
-        // Her cheeks and the tip of her nose flush as she blushes.
+        // Her face flushes as she blushes, the red spreading the deeper it goes.
         const blush = Math.round(this.faceShape.blush * 10) / 10;
-        const flushed = slot.original.name === BLUSH_MATERIAL ? blush : slot.original.name === NOSE_MATERIAL ? blush / 2 : 0;
+        const spread = this.body === "Female" ? BLUSH_SPREAD[slot.original.name] : undefined;
+        const flushed = spread ? spread.depth * Math.max(0, (blush - spread.from) / (1 - spread.from)) : 0;
         slot.mesh.material = bare && skin
           ? skin.worn
-          : flushed > 0 ? paint(slot.original, averageColor(slot.worn).clone().lerp(BLUSHED, BLUSH_DEPTH * flushed)) : slot.worn;
+          : flushed > 0 ? paint(slot.original, averageColor(slot.worn).clone().lerp(BLUSHED, flushed)) : slot.worn;
         continue;
       }
       const off = pieces.some((piece) => covers(piece.parts, slot.part, slot.original.name)) || stripped || legs === "hide";

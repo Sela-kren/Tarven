@@ -54,6 +54,11 @@ describe("her face", () => {
     expect(expressionFor({ ...calm, moment: "walkedOut" })).toBe("annoyed");
     expect(expressionFor({ ...calm, moment: "refused", showing: 0 })).toBe("angry");
     expect(expressionFor({ ...calm, moment: "tipped", reaction: "jolt" })).toBe("surprised");
+    // Jolted while she's worked up, she's overwhelmed; on the edge with her pleasure past it, she loses herself.
+    expect(expressionFor({ ...calm, reaction: "jolt", arousal: 0.8 })).toBe("overwhelmed");
+    const edge = (pleasure: number) => faceFor({ ...calm, duel: { state: "edge", pleasure } });
+    expect(edge(1).tongue).toBeGreaterThan(0.9);
+    expect(edge(0.5).tongue).toBe(0);
   });
 
   it("wears her state over her bearing: tired, embarrassed, drunk", () => {
@@ -118,6 +123,15 @@ describe("her face", () => {
     expect(cross[0]).toBeLessThan(0.012);
     expect(cross[1]).toBeLessThan(1.505);
     expect(cross[2]).toBeLessThan(-0.08);
+    // Arched, the middle of a brow rises most; curving down, its outer end drops.
+    const middle = [0.033, 1.506, -0.07];
+    const arched = moved({ ...REST_FACE, browArch: 1 }, middle, "brow")[1] - 1.506;
+    expect(arched).toBeGreaterThan(moved({ ...REST_FACE, browArch: 1 }, [0.055, 1.502, -0.06], "brow")[1] - 1.502);
+    expect(moved({ ...REST_FACE, browOuter: -1 }, [0.055, 1.502, -0.06], "brow")[1]).toBeLessThan(1.502);
+    expect(moved({ ...REST_FACE, browOuter: -1 }, [0.012, 1.505, -0.08], "brow")[1]).toBeCloseTo(1.505, 4);
+    // Her tongue comes out forwards, onto her lower lip.
+    const tip = moved({ ...REST_FACE, tongue: 1 }, [0, 1.42, -0.08], "tongue");
+    expect(tip[2]).toBeLessThan(-0.088);
     // Smiling, the corners of her mouth go up; a smirk lifts only her left.
     expect(moved({ ...REST_FACE, smile: 1 }, [0.016, 1.427, -0.08])[1]).toBeGreaterThan(1.427);
     expect(moved({ ...REST_FACE, smirk: 1 }, [0.016, 1.427, -0.08])[1]).toBeCloseTo(1.427);
