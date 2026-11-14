@@ -2964,7 +2964,7 @@ export class Tavern {
     this.stripped--;
     const piece = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder)[this.stripped]?.label ?? "clothes";
     for (const guest of this.guests) {
-      if (guest.status === "waiting" || guest.status === "arriving") guest.patience = Math.max(1, guest.patience - guest.maxPatience * REDRESS_PATIENCE);
+      if (guest.status === "waiting" || guest.status === "arriving") guest.patience = Math.max(1, guest.patience - guest.maxPatience * REDRESS_PATIENCE * Math.max(0, 1 - this.effects.redress));
     }
     this.records.redressed++;
     this.dressLeft = REDRESS_SECONDS;

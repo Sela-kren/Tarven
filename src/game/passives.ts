@@ -337,6 +337,8 @@ export interface Effects {
   steady: number;
   /** How much more (or, negative, less) often a tablemate joins in, as a fraction (barwork.ts). */
   join: number;
+  /** How much less of the room's patience goes while she puts a piece back on, as a fraction (barwork.ts). */
+  redress: number;
   /** How much more (or, negative, less) often guests grab her as she serves them (grab.ts), as a fraction. */
   grab: number;
   /** Gold she gets each time she lets a guest who grabbed her hold her. */
@@ -444,6 +446,7 @@ export function noEffects(): Effects {
     reach: 0,
     steady: 0,
     join: 0,
+    redress: 0,
     grab: 0,
     grabGold: 0,
     showAsk: 0,
@@ -1527,8 +1530,71 @@ export const PASSIVES: readonly PassiveDef[] = [
     effect: (e) => (e.holdLiquor += 3),
     thought: "(The whole table's under it. I'm still pouring.)",
   },
+  {
+    id: "dutchCourage",
+    name: "Dutch Courage",
+    group: "drink",
+    need: "Be asked for adult play on your last clear drink 3 times",
+    progress: (f) => count(f.records.lastClearAsks, 3),
+    benefit: "Each drink adds +3 more to every desire",
+    effect: (e) => (e.drinkMeters += 3),
+    lewd: 4,
+    thought: "(A cup or two in me and I know what I want. And I say it.)",
+  },
 
   // ---- Bar work ----
+  // Karryn's bar (barwork.ts): the tray, the table joining in, fixing her clothes behind the bar.
+  {
+    id: "tuckedTray",
+    name: "Tucked Tray",
+    group: "bar",
+    need: "Drop your tray 5 times with a hand on you",
+    progress: (f) => count(f.records.traysDropped, 5),
+    benefit: "You drop the tray 30% less often with a hand on you",
+    effect: (e) => (e.steady += 0.3),
+    thought: "(Tray in tight against my hip. Let them grab. The cups stay put.)",
+  },
+  {
+    id: "passedRound",
+    name: "Passed Round",
+    group: "bar",
+    need: "Have 5 tablemates join in after you let someone's hand stay",
+    progress: (f) => count(f.records.tableJoins, 5),
+    benefit: "Tablemates join in 25% more often; +1 gold on every touch to your breasts or behind you allow",
+    effect: (e) => {
+      e.join += 0.25;
+      e.touchGold.chest = (e.touchGold.chest ?? 0) + 1;
+      e.touchGold.rear = (e.touchGold.rear ?? 0) + 1;
+    },
+    lewd: 4,
+    thought: "(One of them starts it, and then the whole table wants a turn. I keep letting them.)",
+  },
+  {
+    id: "wholeTable",
+    name: "The Whole Table",
+    group: "bar",
+    need: "Have 20 tablemates join in",
+    progress: (f) => count(f.records.tableJoins, 20),
+    benefit: "Tablemates join in 25% more often still; +1 gold on every touch you allow",
+    effect: (e) => {
+      e.join += 0.25;
+      for (const r of ["hand", "face", "hair", "shoulder", "waist", "rear", "chest", "lap", "lips", "neck", "thigh", "clothes", "intimate"] as const) {
+        e.touchGold[r] = (e.touchGold[r] ?? 0) + 1;
+      }
+    },
+    lewd: 8,
+    thought: "(Tables fight over who gets me next. I like that more than I should.)",
+  },
+  {
+    id: "quickChange",
+    name: "Quick Change",
+    group: "bar",
+    need: "Put a piece back on behind the bar 5 times",
+    progress: (f) => count(f.records.redressed, 5),
+    benefit: "Putting a piece back on costs the room half as much patience",
+    effect: (e) => (e.redress += 0.5),
+    thought: "(Behind the bar, back in it, and out again before anyone's called for me.)",
+  },
   {
     id: "steadyTray",
     name: "Steady Tray",
