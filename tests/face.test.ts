@@ -143,6 +143,9 @@ describe("her face", () => {
     expect(arched).toBeGreaterThan(moved({ ...REST_FACE, browArch: 1 }, [0.055, 1.502, -0.06], "brow")[1] - 1.502);
     expect(moved({ ...REST_FACE, browOuter: -1 }, [0.055, 1.502, -0.06], "brow")[1]).toBeLessThan(1.502);
     expect(moved({ ...REST_FACE, browOuter: -1 }, [0.012, 1.505, -0.08], "brow")[1]).toBeCloseTo(1.505, 4);
+    // Flicked, only the very tips of her brows by her nose lift.
+    expect(moved({ ...REST_FACE, browTip: 1 }, [0.012, 1.505, -0.08], "brow")[1]).toBeGreaterThan(1.507);
+    expect(moved({ ...REST_FACE, browTip: 1 }, [0.033, 1.506, -0.07], "brow")[1]).toBe(1.506);
     // Her tongue comes out forwards, its tip furthest, hanging down over her lower lip; its root less, and lifted.
     const tip = moved({ ...REST_FACE, tongue: 1 }, [0, 1.4245, -0.081], "tongue");
     const root = moved({ ...REST_FACE, tongue: 1 }, [0.006, 1.4235, -0.07], "tongue");

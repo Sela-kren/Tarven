@@ -23,6 +23,8 @@ export interface FaceShape {
   browArch: number;
   /** The outer ends of her brows up (1) or curving down towards her temples (-1). */
   browOuter: number;
+  /** The very tips of her brows by her nose flicked up (1), as a brow drawn down to them curls at the end. */
+  browTip: number;
   /** The upper edge of each eye come down, 0 open to 1 shut. */
   lidUpper: number;
   /** The lower edge come up, 0 to 1 shut. */
@@ -54,12 +56,12 @@ export interface FaceShape {
 export const FACE_LINES = { creases: [0.35, 0.7] as const, hatch: 0.7 };
 
 export const FACE_KEYS: readonly (keyof FaceShape)[] = [
-  "brow", "browInner", "browArch", "browOuter", "lidUpper", "lidLower", "wide", "lookX", "lookY", "smile", "smirk", "open", "purse",
+  "brow", "browInner", "browArch", "browOuter", "browTip", "lidUpper", "lidLower", "wide", "lookX", "lookY", "smile", "smirk", "open", "purse",
   "press", "tongue", "blush", "crease",
 ];
 
 export const REST_FACE: Readonly<FaceShape> = {
-  brow: 0, browInner: 0, browArch: 0, browOuter: 0, lidUpper: 0, lidLower: 0, wide: 0, lookX: 0, lookY: 0, smile: 0, smirk: 0,
+  brow: 0, browInner: 0, browArch: 0, browOuter: 0, browTip: 0, lidUpper: 0, lidLower: 0, wide: 0, lookX: 0, lookY: 0, smile: 0, smirk: 0,
   open: 0, purse: 0, press: 0, tongue: 0, blush: 0, crease: 0,
 };
 
@@ -100,8 +102,9 @@ export const EXPRESSIONS: Readonly<Record<Expression, FaceShape>> = {
   overwhelmed: face({ brow: 0.3, browInner: 1, browOuter: -0.8, lidUpper: 0.8, lidLower: 0.5, smile: -0.5, open: 0.6, blush: 0.9, crease: 1 }),
   // Worked up: low brows lifting in the middle, lids low, lips parted, flushed.
   aroused: face({ brow: -0.5, browInner: 0.6, browOuter: -0.4, lidUpper: 0.45, lidLower: 0.1, smile: 0.1, open: 0.3, blush: 0.8 }),
-  // Barely able to: lips pressed thin into a line drawn across her face, brows low and flat, eyes down, red all over.
-  bashful: face({ brow: -0.35, browInner: 0.25, browOuter: -0.1, lidUpper: 0.35, lookY: -0.9, lookX: 0.3, smile: 0.2, press: 1, blush: 1, crease: 0.4 }),
+  // Barely able to: lips pressed thin into a line drawn across her face, brows sloping down to her nose with their
+  // tips flicked up, eyes down, red all over.
+  bashful: face({ browInner: -0.75, browOuter: 0.2, browTip: 1, lidUpper: 0.35, lookY: -0.9, lookX: 0.3, smile: 0.2, press: 1, blush: 1, crease: 0.4 }),
   // Breathless: mouth soft and open, tongue out over her lip, lids heavy, brows worried, flushed.
   panting: face({ brow: 0.2, browInner: 0.9, browArch: 0.2, browOuter: -0.7, lidUpper: 0.6, lidLower: 0.15, lookY: 0.2, smile: 0.05, open: 0.75, tongue: 1, blush: 1, crease: 0.4 }),
   // Fighting it: mouth stretched wide on both rows of teeth, corners down, eyes squeezed shut, brows pinched.
@@ -305,6 +308,9 @@ export const FACE_REACH = {
   browInner: 0.009,
   browArch: 0.004,
   browOuter: 0.006,
+  /** The tips of her brows by her nose flicked up this far, over this share of each brow from its inner end. */
+  browTip: 0.003,
+  browTipReach: 0.25,
   browLow: 0.006,
   browForward: 0.5,
   browKnit: 0.003,
@@ -457,7 +463,8 @@ export function faceMove(rig: FaceRig, shape: FaceShape, p: readonly number[], p
       shape.brow * FACE_REACH.brow +
       shape.browInner * FACE_REACH.browInner * (1 - t) +
       shape.browArch * FACE_REACH.browArch * 4 * t * (1 - t) +
-      shape.browOuter * FACE_REACH.browOuter * t * t;
+      shape.browOuter * FACE_REACH.browOuter * t * t +
+      shape.browTip * FACE_REACH.browTip * Math.max(0, 1 - t / FACE_REACH.browTipReach) ** 2;
     const up = Math.max(-FACE_REACH.browLow, raised);
     const knit = Math.max(0, -shape.browInner) * FACE_REACH.browKnit * (1 - t);
     out[0] = x - Math.sign(x) * knit;
