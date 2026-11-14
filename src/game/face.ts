@@ -349,13 +349,13 @@ export const FACE_REACH = {
    * (`tongueDroop`, from `tongueBend` along it, more the further out it is), and spread wider (`tongueWide`, share of
    * its width). Lifting first and hanging down last, it comes out over her lip rather than through it.
    */
-  tongueOut: 0.017,
+  tongueOut: 0.019,
   tongueRoot: 0.45,
   tongueUp: 0.003,
   tongueLifted: 0.4,
-  tongueDroop: 0.0065,
+  tongueDroop: 0.0102,
   tongueBend: 0.35,
-  tongueWide: 0.3,
+  tongueWide: 0.45,
 };
 
 /**

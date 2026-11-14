@@ -1145,8 +1145,9 @@ MOUTH_LOWER_TEETH = (42.2, 38.5)
 MOUTH_TEETH_THICK = 0.0012
 # Her tongue, rounded at the tip: rows from its tip back, each its middle (how far forward, pixels up) and its edge
 # (pixels sideways, how far forward, pixels up).
-MOUTH_TONGUE = [((0.081, 41.7), (5, 0.0798, 41.6)), ((0.0785, 41.5), (8.5, 0.0772, 41.2)),
-                ((0.0745, 41.0), (10, 0.074, 40.7)), ((0.069, 40.4), (9.5, 0.069, 40.2))]
+MOUTH_TONGUE = [((0.081, 41.7), (4, 0.08, 41.65)), ((0.0795, 41.6), (7, 0.0785, 41.4)),
+                ((0.0775, 41.4), (9, 0.0765, 41.15)), ((0.075, 41.1), (10, 0.0745, 40.8)),
+                ((0.072, 40.75), (10, 0.072, 40.5)), ((0.069, 40.4), (9.5, 0.069, 40.2))]
 MOUTH_TONGUE_THICK = 0.0015
 # The lines an expression can draw on her face, each a thin dark slab just in front of it, hidden till the game shows
 # it (face.ts): the creases between her brows as she frowns or strains, two at the sides and a third in the middle;
