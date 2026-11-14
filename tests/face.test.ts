@@ -233,4 +233,19 @@ describe("her face", () => {
     expect(cornerX(bare)).toBeGreaterThan(cornerX(open) + 0.003);
     expect(cornerX(round)).toBeLessThan(cornerX(open));
   });
+
+  it("lifts her upper lip with her smile, so the top of her open mouth stays flat instead of dipping in the middle", () => {
+    const smile = { ...REST_FACE, smile: 1, open: 0.3 };
+    const lifted = { ...smile, lift: 1 };
+    const rise = (shape: typeof smile, x: number) => moved(shape, [x, 1.427, -0.085])[1] - 1.427;
+    // Plain, her corners go up and the middle of her upper lip hardly at all: a V.
+    expect(rise(smile, 0)).toBeLessThan(rise(smile, 0.016) * 0.1);
+    // Lifted, it rides up with them, flat across.
+    expect(rise(lifted, 0)).toBeCloseTo(rise(lifted, 0.016), 4);
+    expect(rise(lifted, 0.008)).toBeCloseTo(rise(lifted, 0.016), 4);
+    // Her nose stays put.
+    expect(moved(lifted, [0, 1.427 + 0.014, -0.085])[1]).toBeCloseTo(1.427 + 0.014, 6);
+    // No smile, no lift.
+    expect(rise({ ...REST_FACE, open: 0.3, lift: 1 }, 0)).toBe(0);
+  });
 });
