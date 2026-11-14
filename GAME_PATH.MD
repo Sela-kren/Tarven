@@ -203,14 +203,15 @@ Each type has a base Nerve (section 2) and a preferred desire meter. When they r
 
 ---
 
-## 5. Named regulars & "Wanted" system [planned]
-- 1–2 named guests per type can become permanent regulars if they take a "first" (first kiss, first intimate, first upstairs, etc.) or cause enough defeats in After Hours / brawls.
-- A regular **keeps their rolled sheet** (section 3) from night to night, so they're always the same person.
-- They reappear later nights with rising Nerve and a fixed preferred meter.
-- Each time you beat them physically (brawl) or win an After Hours duel they grow stronger next time (higher Nerve, more brawl stamina and upstairs stamina, more aggressive weighting).
-- They remember previous nights and comment on it.
-- Optional: a "Wanted" journal tab that lists them, their type, their current stats and their preference.
-- **The first three (STORY.md, section 4b):** Silas Crowe (smuggler), Mara Holt (farmer) and Captain Rhea Vance (soldier, off duty after the meeting beat). Each keeps +0.5 lasting nerve per night she let them touch her (at most +2, −1 after a slap until she lets them again), and opens the night with a line picked by what they remember and her arc stage. **Mara and Rhea are never impulsive**, so with Consent off they still ask.
+## 5. Named regulars & "Wanted" system [built]
+The rules are in `src/game/regulars.ts`; the tavern marks what happens with each guest through the night and settles it at the end (`mark`, `settleRegulars`, `regularsTonight` in `tavern.ts`). Tests: `tests/regulars.test.ts`.
+- **Becoming one:** a guest who takes a **first** with her (adult play, or three touches she let land in one night) or **settles a brawl** with her (either way) becomes a named regular, at most **2 per kind**. They get a name of their kind (no two alike), and the morning news says so.
+- **Always the same person:** they keep the sheet, body and look they had that night (section 3), from then on.
+- **Coming back:** each night every regular has a chance to walk in (50%, +5% per night she's let them, at most 85%), at most 3 a night. They walk in with a line in the log by what they remember most (`REGULAR_RETURNS`): she let them, slapped them, adult play, they beat her, she beat them. Their name shows when they speak.
+- **Bolder:** +0.5 lasting nerve per night she let them touch her (at most +2); **−1 after a slap** until she lets them again.
+- **Stronger:** each time she beats them in a brawl, they come back with +0.5 nerve, +2 brawl stamina, +1 attack and +1 after-hours stamina.
+- **Wanted** (journal, last tab): every regular, with their kind, nerve (theirs and what she's built up), the part they go for, what they remember, their history with her, and their brawl and after-hours numbers.
+- Saved with the tavern. Not yet: regulars after After Hours duels, and the first three (Silas, Mara, Rhea) as regulars from the story (they're still story characters only).
 
 ---
 

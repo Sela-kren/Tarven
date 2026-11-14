@@ -184,6 +184,20 @@ import {
 } from "./grab";
 import { START_TITLE, TITLE_BY_ID, TITLES, titleEarned, TWO_SLOTS_FAME } from "./titles";
 import { TAVERN_RULE_BY_ID, type TavernRuleId } from "./tavernrules";
+import {
+  earnsRegular,
+  newMarks,
+  nextName,
+  readRegulars,
+  REGULAR_RETURNS,
+  REGULARS_A_NIGHT,
+  REGULARS_PER_KIND,
+  regularNerve,
+  returnChance,
+  settleNight,
+  type NightMarks,
+  type Regular,
+} from "./regulars";
 import { FOLLOW_UP_BY_ID, followUpsAfter, type FollowUp } from "./favors";
 import { Lantern, LANTERN_COST, ROOM_COST, type HouseRule, type LanternHost, type LanternSave, type RuleChoice } from "./lantern";
 
@@ -691,6 +705,8 @@ export interface Arrival {
   role?: GuestRole;
   /** Paid by the house above her on the Ledger to start a fight (ledger.ts). */
   hired?: boolean;
+  /** A named regular coming back (regulars.ts): they come as themselves, sheet and all. */
+  regular?: string;
 }
 
 /** A group of guests who come in together and talk over a table. */
@@ -1072,6 +1088,8 @@ export interface Guest {
   desires: number;
   /** The state they're in, which changes how they talk and behave. */
   mood: Mood;
+  /** A named regular (regulars.ts), by id. */
+  regular?: string;
 }
 
 /**
@@ -1246,6 +1264,8 @@ export interface TavernSave {
   favors?: { asked: string[]; due: { id: string; night: number }[] };
   /** The Lantern (lantern.ts): the lamp, the room, the house rules and the girls. Older saves have none. */
   lantern?: LanternSave;
+  /** Named regulars (regulars.ts). Older saves have none. */
+  regulars?: Regular[];
 }
 
 /** A moment that wants an 18+ card: a guest she's agreed to take upstairs, or being overwhelmed. */
@@ -1623,6 +1643,9 @@ export class Tavern {
   titles = new Set<string>([START_TITLE]);
   /** Tavern rules (tavernrules.ts): the ones she's paid to adopt, and the ones on right now. */
   readonly rulesAdopted = new Set<TavernRuleId>();
+  /** Named regulars (regulars.ts), and what's happened with each guest tonight, settled at the end of the night. */
+  regulars: Regular[] = [];
+  private readonly nightMarks = new Map<number, { guest: Pick<Guest, "kind" | "role" | "female" | "look" | "stats" | "regular">; marks: NightMarks }>();
   readonly rules = new Set<TavernRuleId>();
   worn: string[] = [START_TITLE];
   /** She eased the ache herself before sleeping last night. */
@@ -1858,6 +1881,7 @@ export class Tavern {
     const nightly = this.effects.perNight;
     this.adjust(nightly.gold, nightly.trust, nightly.heat);
     if (nightly.respect) this.shift({ respect: nightly.respect });
+    this.settleRegulars();
     this.awardPassives();
     this.arcDawn();
     this.countFans();
@@ -2324,7 +2348,9 @@ export class Tavern {
       this.nextArrival++;
       const { kind, rumor, party } = next;
       const role = next.role ?? this.nextRole(kind, party);
-      const stats = rollStats(role, this.rollRandom);
+      // A regular comes as themselves: the sheet, body and look they've always had (regulars.ts).
+      const regular = next.regular ? this.regulars.find((r) => r.id === next.regular) : undefined;
+      const stats = regular ? structuredClone(regular.stats) : rollStats(role, this.rollRandom);
       const order = this.chooseOrder(role, next.order);
       const maxPatience =
         stats.patience *
@@ -2340,8 +2366,8 @@ export class Tavern {
         role,
         stats,
         ordered: !this.takeOrders,
-        female: this.rollRandom() < 0.5,
-        look: 1 + Math.floor(this.rollRandom() * GUEST_LOOK_SEEDS),
+        female: regular ? regular.female : this.rollRandom() < 0.5,
+        look: regular ? regular.look : 1 + Math.floor(this.rollRandom() * GUEST_LOOK_SEEDS),
         order,
         seat,
         status: "arriving",
@@ -2355,8 +2381,14 @@ export class Tavern {
         desires,
         mood: next.hired ? "angry" : arrivalMood(context, filth, this.random, lust),
         ...(next.hired ? { hired: true } : {}),
+        ...(regular ? { regular: regular.id } : {}),
       });
       this.cue("guestIn");
+      if (regular) {
+        const lines = REGULAR_RETURNS[regular.last];
+        this.say(lines[Math.floor(this.random() * lines.length) % lines.length].replaceAll("{name}", regular.name));
+        this.mark(this.guests[this.guests.length - 1], () => {});
+      }
     }
   }
 
@@ -2582,6 +2614,7 @@ export class Tavern {
         this.phase = "service";
         this.say(this.plan.intro);
         const { arrivals, extra } = this.rollArrivals();
+        this.regularsTonight(arrivals);
         this.rivalNight(arrivals);
         this.plotNight(arrivals);
         // A lit lantern changes who walks in, and what the night costs her (lantern.ts).
@@ -3456,6 +3489,9 @@ export class Tavern {
     r.grapplesTaken += fight.grapplesTaken;
     r.timesHeld += fight.timesHeld;
     const guest = this.guests.find((g) => g.id === fight.guestId);
+    // For the regulars (regulars.ts): a brawl settles who's stronger, either way.
+    if (fight.outcome === "won") this.mark(guest, (m) => (m.lostToHer = true));
+    else if (fight.outcome === "lost") this.mark(guest, (m) => (m.beatHer = true));
     let text: string;
     if (fight.outcome === "won" && fight.spent) {
       // Worn out by her hands, mouth or the rest: the room talks about it, if not with respect.
@@ -4256,7 +4292,8 @@ export class Tavern {
       lowRespect: LOW_RESPECT,
       highRespect: HIGH_RESPECT,
       ...history,
-      bonus: this.nerveBonus,
+      // A regular walks in bolder for what she's let them before, and cooler after a slap (regulars.ts).
+      bonus: this.nerveBonus + this.regularNerveOf(guest),
       slapStops: this.effects.slapStops,
     });
   }
@@ -4655,6 +4692,12 @@ export class Tavern {
       else if (!chat.brawl && r.pulled + r.slapped === 1) chat.reply.push(narrate(FIRST_REFUSAL));
     }
     this.touchHistory.set(chat.guestId, history);
+    // For the regulars (regulars.ts): what she let them, or a slap. Not a brawl's touches.
+    if (!chat.brawl) {
+      if (took && touch.region === "invite") this.mark(guest, (m) => m.adult++);
+      else if (took) this.mark(guest, (m) => m.lets++);
+      else if (answer === "slap") this.mark(guest, (m) => (m.slapped = true));
+    }
     this.touchMoment = { id: touch.id, region: touch.region, level: touch.level, answer, kind: guest?.kind ?? "farmer" };
     // Karryn's bar (barwork.ts): a hand on her may cost her the tray, and the rest of their table was watching.
     if (took && !chat.brawl) {
@@ -5640,7 +5683,77 @@ export class Tavern {
   }
 
   /** What a guest is called: their type (a maid or footman for a servant, by body). */
+  /** Notes something that happened with a guest tonight, for the regulars, settled at the end of the night. */
+  private mark(guest: Guest | undefined, change: (m: NightMarks) => void): void {
+    if (!guest) return;
+    let entry = this.nightMarks.get(guest.id);
+    if (!entry) {
+      const { kind, role, female, look, stats, regular } = guest;
+      entry = { guest: { kind, role, female, look, stats: structuredClone(stats), regular }, marks: newMarks() };
+      this.nightMarks.set(guest.id, entry);
+    }
+    change(entry.marks);
+  }
+
+  /** The lasting nerve a regular walks in with (regulars.ts); 0 for anyone else. */
+  private regularNerveOf(guest: Guest): number {
+    const regular = guest.regular ? this.regulars.find((r) => r.id === guest.regular) : undefined;
+    return regular ? regularNerve(regular) : 0;
+  }
+
+  /** Which regulars come in tonight: each by their own chance, at most REGULARS_A_NIGHT. */
+  private regularsTonight(arrivals: Arrival[]): void {
+    let coming = 0;
+    const last = Math.max(EXTRA_FIRST + 1, ...arrivals.map((a) => a.at));
+    for (const regular of this.regulars) {
+      if (coming >= REGULARS_A_NIGHT) break;
+      if (this.random() >= returnChance(regular)) continue;
+      arrivals.push({ at: EXTRA_FIRST + this.random() * (last - EXTRA_FIRST), kind: regular.kind, order: "ale", role: regular.role, regular: regular.id });
+      coming++;
+    }
+    arrivals.sort((a, b) => a.at - b.at);
+  }
+
+  /**
+   * The end of the night, for the regulars (regulars.ts): each regular who came settles what happened; a guest who
+   * took a first with her, or settled a brawl with her, becomes a regular, if there's room for their kind.
+   */
+  private settleRegulars(): void {
+    for (const [guestId, { guest, marks }] of this.nightMarks) {
+      const index = guest.regular ? this.regulars.findIndex((r) => r.id === guest.regular) : -1;
+      if (index >= 0) {
+        this.regulars[index] = settleNight(this.regulars[index], marks);
+        continue;
+      }
+      if (!earnsRegular(marks) || this.regulars.filter((r) => r.kind === guest.kind).length >= REGULARS_PER_KIND) continue;
+      const name = nextName(guest.kind, new Set(this.regulars.map((r) => r.name)));
+      const fresh: Regular = {
+        id: `r${this.nightIndex}-${guestId}`,
+        name,
+        kind: guest.kind,
+        role: guest.role,
+        female: guest.female,
+        look: guest.look,
+        stats: guest.stats,
+        nerve: 0,
+        slapped: false,
+        nights: 0,
+        lets: 0,
+        adult: 0,
+        beatHer: 0,
+        lostToHer: 0,
+        since: this.nightIndex,
+        last: "met",
+      };
+      this.regulars.push(settleNight(fresh, marks));
+      this.news.push(`A face you'll see again: the ${roleLabel(guest.role, guest.female).toLowerCase()} goes by ${name}. (Wanted, in your journal.)`);
+    }
+    this.nightMarks.clear();
+  }
+
   nameOf(guest: Guest): string {
+    const regular = guest.regular ? this.regulars.find((r) => r.id === guest.regular) : undefined;
+    if (regular) return regular.name;
     return roleLabel(guest.role, guest.female);
   }
 
@@ -5731,6 +5844,7 @@ export class Tavern {
       favors: { asked: [...this.askedFavors], due: this.favorsDue.map((d) => ({ ...d })) },
       ...(this.layout ? { layout: cloneLayout(this.layout) } : {}),
       ...(this.lantern.hung ? { lantern: this.lantern.save() } : {}),
+      ...(this.regulars.length > 0 ? { regulars: structuredClone(this.regulars) } : {}),
     };
   }
 
@@ -5769,6 +5883,7 @@ export class Tavern {
     // Titles: only ones that exist, the first one always; worn only if earned, and no more than she has slots for.
     this.titles = new Set([START_TITLE, ...(progress.titles ?? []).filter((id) => TITLE_BY_ID.has(id))]);
     this.worn = (progress.worn ?? [START_TITLE]).filter((id, i, all) => this.titles.has(id) && all.indexOf(id) === i);
+    this.regulars = readRegulars(save.regulars);
     // Tavern rules: only ones that exist, and on only if adopted.
     this.rulesAdopted.clear();
     this.rules.clear();

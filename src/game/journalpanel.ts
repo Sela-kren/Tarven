@@ -1,6 +1,8 @@
 /** The journal on the chest, opened over the game: ribbon tabs across the top, one spread per tab. */
 import type { Game } from "./game";
-import { journalBook, passivesBook, privateBook, recordsBook, skillsBook, titlesBook } from "./journal";
+import { journalBook, passivesBook, privateBook, recordsBook, skillsBook, titlesBook, wantedBook } from "./journal";
+import { roleLabel } from "./guestroles";
+import { MEMORY_WORDS, regularNerve, REGULARS_PER_KIND } from "./regulars";
 import { lewdWord } from "./passives";
 import { TWO_SLOTS_FAME } from "./titles";
 import { DEBUFFS } from "./debuffs";
@@ -8,7 +10,7 @@ import { HOUSES } from "./ledger";
 import { HEAT_MAX, TRUST_MAX, TRUST_TO_OVERTHROW } from "./tavern";
 
 /** The journal's spreads, in tab order. */
-export type JournalPage = "ledger" | "private" | "passives" | "titles" | "skills" | "records";
+export type JournalPage = "ledger" | "private" | "passives" | "titles" | "skills" | "records" | "wanted";
 export const JOURNAL_PAGES: readonly { id: JournalPage; label: string }[] = [
   { id: "ledger", label: "Ledger" },
   { id: "private", label: "Private" },
@@ -16,6 +18,7 @@ export const JOURNAL_PAGES: readonly { id: JournalPage; label: string }[] = [
   { id: "titles", label: "Titles" },
   { id: "skills", label: "Skills" },
   { id: "records", label: "Records" },
+  { id: "wanted", label: "Wanted" },
 ];
 
 /**
@@ -88,6 +91,26 @@ export function showJournal(game: Game, page: JournalPage = "ledger"): void {
       slutWord: lewdWord(tavern.lewdness),
       onWear: (id) => tavern.wearTitle(id) && showJournal(game, "titles"),
       onTakeOff: (id) => tavern.takeOffTitle(id) && showJournal(game, "titles"),
+    });
+  } else if (page === "wanted") {
+    book = wantedBook({
+      perKind: REGULARS_PER_KIND,
+      regulars: tavern.regulars.map((r) => ({
+        name: r.name,
+        who: roleLabel(r.role, r.female),
+        since: r.since,
+        nights: r.nights,
+        nerve: r.stats.nerve,
+        lasting: regularNerve(r),
+        prefers: r.stats.prefers,
+        memory: MEMORY_WORDS[r.last],
+        lets: r.lets,
+        adult: r.adult,
+        beatHer: r.beatHer,
+        lostToHer: r.lostToHer,
+        fight: { stamina: r.stats.fight.stamina, attack: r.stats.fight.attack },
+        partner: { stamina: r.stats.partner.stamina, skill: r.stats.partner.skill },
+      })),
     });
   } else if (page === "skills") {
     book = skillsBook({ xp: tavern.xp, bonus: tavern.effects.skill, touchable: tavern.playerBody === "Female" });

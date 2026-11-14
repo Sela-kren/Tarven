@@ -472,6 +472,89 @@ export function titlesBook(state: TitlesState): HTMLElement {
   return book;
 }
 
+// ---------- Wanted: her regulars ----------
+
+/** One regular, as the Wanted page shows them (regulars.ts). */
+export interface WantedEntry {
+  name: string;
+  /** Their kind and type, in words ("Soldier, warrior"). */
+  who: string;
+  since: number;
+  nights: number;
+  /** Their own nerve, and what they've built up with her on top (negative after a slap). */
+  nerve: number;
+  lasting: number;
+  /** The part of her they go for first. */
+  prefers: string;
+  /** What they remember, in words. */
+  memory: string;
+  lets: number;
+  adult: number;
+  beatHer: number;
+  lostToHer: number;
+  /** In a brawl, and after hours. */
+  fight: { stamina: number; attack: number };
+  partner: { stamina: number; skill: number };
+}
+
+export interface WantedState {
+  regulars: readonly WantedEntry[];
+  perKind: number;
+}
+
+/**
+ * Wanted, Karryn's Prison style: the regulars, named and remembered. On the left, how someone becomes one; on the
+ * right, a card for each, with their sheet, what they remember, and how they've grown.
+ */
+export function wantedBook(state: WantedState): HTMLElement {
+  const book = el("div", "journal-book private passives titles");
+  const left = el("div", "page left");
+  const right = el("div", "page right");
+  book.append(left, el("div", "spine"), right);
+
+  left.append(el("h1", "title", "Wanted"));
+  left.append(el("h2", "", "The regulars"));
+  left.append(row("Regulars", String(state.regulars.length)));
+  left.append(
+    el(
+      "p",
+      "note",
+      `A guest becomes a regular when they take a first with you (adult play, or three touches you let land in one night), or when a brawl settles who's stronger. At most ${state.perKind} of each kind.`,
+    ),
+  );
+  left.append(
+    el(
+      "p",
+      "note",
+      "They keep the same face and the same sheet. Every night you let them, they come back bolder (+0.5 nerve, up to +2); after a slap, cooler (-1) until you let them again. Every time you beat them, they come back stronger.",
+    ),
+  );
+
+  const cards = el("div", "pcards");
+  if (state.regulars.length === 0) cards.append(el("p", "note", "Nobody yet. Faces come and go."));
+  for (const r of state.regulars) {
+    const card = el("div", "pcard ready");
+    const head = el("div", "phead");
+    head.append(el("b", "pname", r.name), el("span", "pstate", r.who));
+    card.append(head);
+    const lasting = r.lasting === 0 ? "" : ` (${r.lasting > 0 ? "+" : ""}${r.lasting} from you)`;
+    card.append(row("Nerve", `${(r.nerve + r.lasting).toFixed(1)}${lasting}`, { bar: meter(r.nerve + r.lasting, 0, 10, "red") }));
+    card.append(el("p", "thought", r.memory));
+    card.append(el("p", "benefit", `Goes for your ${r.prefers} first. Seen ${r.nights} night${r.nights === 1 ? "" : "s"}, since night ${r.since + 1}.`));
+    const history = [
+      r.lets ? `you let them ${r.lets} night${r.lets === 1 ? "" : "s"}` : "",
+      r.adult ? `adult play ${r.adult}x` : "",
+      r.beatHer ? `beat you ${r.beatHer}x` : "",
+      r.lostToHer ? `lost to you ${r.lostToHer}x` : "",
+    ].filter(Boolean);
+    if (history.length > 0) card.append(el("p", "benefit", `With you: ${history.join(", ")}.`));
+    card.append(el("p", "cost", `Brawl: ${r.fight.stamina} stamina, ${r.fight.attack} attack. After hours: ${r.partner.stamina} stamina, ${r.partner.skill} skill.`));
+    cards.append(card);
+  }
+  right.append(el("h2", "", "Every regular"), cards);
+  return book;
+}
+
 // ---------- The records ----------
 
 export interface RecordsState {
