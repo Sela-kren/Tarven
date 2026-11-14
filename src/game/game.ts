@@ -100,6 +100,7 @@ import { PASSIVE_ICONS } from "./passiveicons";
 import { saveBadges } from "./saveicons";
 import { SkyDial } from "./skydial";
 import { TouchComic } from "./touchcomic";
+import { duelHeat } from "./comicfx";
 import { touchLands } from "./touch";
 import { readTouchSettings, writeTouchSettings } from "./touchsettings";
 import { arousalOf, easeArousal } from "./nipples";
@@ -2903,7 +2904,7 @@ export class Game {
     sibling.react(reaction, soft, moment.id === "smack" ? 0.9 : 0.6);
     const name = BODY_NAMES[this.active];
     const body = sibling.root.getObjectByName(name);
-    if (body) this.touchComic.play(body, name, { id: moment.id, region: moment.region, answer: moment.answer, kind: moment.kind });
+    if (body) this.touchComic.play(body, name, { id: moment.id, region: moment.region, answer: moment.answer, kind: moment.kind, level: moment.level });
   }
 
   /**
@@ -2922,7 +2923,9 @@ export class Game {
     const name = BODY_NAMES[this.active];
     const body = this.siblings[this.active].root.getObjectByName(name);
     if (!body) return;
-    this.touchComic.play(body, name, { ...shot, answer: state === "calm" ? "allow" : "lean", kind: entry.kind ?? "farmer", hold: true });
+    // Steam, moans and hearts by how worked up she is; where a man finished, she's at her peak whatever her state.
+    const heat = entry.spot ? Math.max(0.9, duelHeat(state)) : duelHeat(state);
+    this.touchComic.play(body, name, { ...shot, answer: state === "calm" ? "allow" : "lean", kind: entry.kind ?? "farmer", hold: true, heat });
   }
 
   /**

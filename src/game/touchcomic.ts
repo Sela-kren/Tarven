@@ -21,6 +21,7 @@ import {
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import type { Effect } from "./audio";
 import { PANEL_SHAPE } from "./comic";
+import { ComicFx, fxPlan, makeMoanBubble, touchHeat, type FxPlan, type FxSpots } from "./comicfx";
 import { Jiggle } from "./jiggle";
 import { chestOverHips } from "./player";
 import { touchLands, type TouchAnswer, type TouchRegion } from "./touch";
@@ -158,7 +159,14 @@ interface Lettering {
   el: HTMLElement;
   from: number;
   to: number;
+  /** Trembles while it's up: a moan she can't hold in. */
+  shake?: boolean;
 }
+
+/** Where her mouth is from the head bone, for the breath steaming out of it. */
+const MOUTH = new Vector3(0, 0.075, -0.11);
+/** Either temple, from the head bone (the left one mirrored), for sweat. */
+const TEMPLE = new Vector3(0.075, 0.16, -0.03);
 
 function linearToSrgb(c: number): number {
   return c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
@@ -314,6 +322,10 @@ export interface TouchShow {
    */
   words?: { hit: string; voice: string };
   fist?: boolean;
+  /** How bold the touch was, 1 to 10: a bolder one works her up more. */
+  level?: number;
+  /** How worked up she is, 0 to 1, when it's known outright (a duel's state); otherwise worked out from the touch. */
+  heat?: number;
 }
 
 export class TouchComic {
@@ -354,8 +366,15 @@ export class TouchComic {
   private scale = 1;
 
   private time = 0;
+  /** Runs on even while a held panel stands still, so the steam and hearts keep going. */
+  private clock = 0;
   private active = false;
   private readonly played = new Set<string>();
+  /** The comic effects over the picture, and which of them play for this moment. */
+  private readonly fx = new ComicFx(WIDTH, HEIGHT);
+  private plan: FxPlan | null = null;
+  /** When the effects start: the touch landing, or the slap. */
+  private fxFrom: number = T.contact;
 
   constructor(
     private readonly renderer: WebGLRenderer,
@@ -377,7 +396,7 @@ export class TouchComic {
     const picture = document.createElement("div");
     picture.className = "picture";
     picture.style.clipPath = PANEL_SHAPE;
-    picture.append(this.canvas);
+    picture.append(this.canvas, this.fx.canvas);
     this.root.append(rim, picture);
     document.body.append(this.root);
 
@@ -478,8 +497,21 @@ export class TouchComic {
     this.scene.add(hand);
     this.hand = hand;
 
+    // A smack or a slap lands hard; in a brawl, her blow or his fist does.
+    const brawl = Boolean(show.words);
+    const hard = show.answer === "slap" || (!brawl && shot.gesture === "smack" && touchLands(show.answer)) || (brawl && show.fist === true && show.answer === "allow");
+    this.plan = fxPlan({
+      answer: show.answer,
+      region: show.region,
+      heat: show.heat ?? touchHeat(show.answer, show.level ?? 4),
+      brawl,
+      hard,
+      face: shot.view !== "behind" || show.region === "rear",
+    });
+    this.fxFrom = show.answer === "slap" ? T.swing + 0.15 : brawl && show.answer === "pull" ? T.contact + 0.2 : T.contact;
     this.makeLetters(show);
     this.time = 0;
+    this.clock = 0;
     this.active = true;
     this.played.clear();
     this.root.classList.add("open");
@@ -489,6 +521,7 @@ export class TouchComic {
   update(dt: number): void {
     if (!this.active || !this.show) return;
     this.time += dt;
+    this.clock += dt;
     // Held: the moment stays, hand still on her, and only her soft parts keep moving.
     if (this.show.hold) this.time = Math.min(this.time, HOLD_AT);
     const t = this.time;
@@ -522,6 +555,8 @@ export class TouchComic {
     this.hand = null;
     this.arm = null;
     this.jiggles = [];
+    this.plan = null;
+    this.fx.clear();
     for (const { el } of this.letters) el.remove();
     this.letters = [];
   }
@@ -535,6 +570,7 @@ export class TouchComic {
       this.root.append(el);
       this.letters.push({ el, from, to });
     };
+    const moan = this.plan?.moan;
     const after = T.contact;
     // A brawl's own words, timed like the touch they look like.
     if (show.words) {
@@ -565,8 +601,15 @@ export class TouchComic {
         // A kiss is a kiss, whatever the guest's hand is doing meanwhile.
         const word = show.region === "lips" && show.id !== "feed" && show.id !== "scuffleMouth" ? "mwah" : words[this.shot.gesture];
         letter(word, "hit", after, after + 0.9);
-        letter(show.answer === "lean" ? "mmh~" : show.answer === "givein" ? "ah~" : "eep!", "voice", after + 0.35, T.popOut);
-        if (show.answer === "lean") letter("♥", "heart", after + 0.6, T.popOut);
+        // Her voice in a cloud bubble, the more worked up the louder; the hearts float up round her on their own.
+        if (moan) {
+          const el = makeMoanBubble(moan.text, moan.loud);
+          this.root.append(el);
+          this.letters.push({ el, from: after + 0.3, to: T.popOut, shake: moan.loud });
+        } else {
+          letter(show.answer === "lean" ? "mmh~" : show.answer === "givein" ? "ah~" : "eep!", "voice", after + 0.35, T.popOut);
+        }
+        if (show.answer === "lean" && !this.plan?.hearts) letter("♥", "heart", after + 0.6, T.popOut);
         break;
       }
       case "slap":
@@ -783,6 +826,38 @@ export class TouchComic {
     this.drawPicture();
     this.ctx.putImageData(this.image, 0, 0);
     this.animate(this.time);
+    this.drawFx();
+  }
+
+  /** Where her mouth, cheeks, temple and the touch are on the panel, and how big things are there. */
+  private fxSpots(): FxSpots | null {
+    const { bones, model } = this;
+    if (!bones || !model) return null;
+    const head = bones.head;
+    const at = (local: Vector3) => this.onPanel(head.localToWorld(local.clone()));
+    const temples = [at(TEMPLE), at(TEMPLE.clone().setX(-TEMPLE.x))];
+    // Sweat on the side away from the hand, which comes in from the left.
+    const temple = temples[0].x > temples[1].x ? temples[0] : temples[1];
+    const cheeks = this.cheeks.map((c) => this.onPanel(c));
+    const edge = this.onPanel(this.cheeks[0].clone().add(new Vector3(0.028 * this.scale, 0, 0)));
+    const cheekSize = Math.max(4, Math.hypot(edge.x - cheeks[0].x, edge.y - cheeks[0].y));
+    const contact = this.onPanel(this.contact);
+    const reach = this.onPanel(this.contact.clone().add(new Vector3(0.1 * this.scale, 0, 0)));
+    const bodySize = MathUtils.clamp(Math.hypot(reach.x - contact.x, reach.y - contact.y), 8, 40);
+    return { mouth: at(MOUTH), temple, cheeks, cheekSize, contact, bodySize };
+  }
+
+  private drawFx(): void {
+    const spots = this.plan ? this.fxSpots() : null;
+    if (!this.plan || !spots) {
+      this.fx.clear();
+      return;
+    }
+    // Blush lines only on a face that's turned to the camera.
+    const plan = this.faceShowing ? this.plan : { ...this.plan, blushLines: false };
+    const fade = 1 - ease(span(this.time, T.release, T.popOut));
+    // A held panel stops its own time just before the release: the effects carry on by the clock.
+    this.fx.draw(plan, spots, this.clock - this.fxFrom, this.clock, fade);
   }
 
   private onPanel(point: Vector3): { x: number; y: number } {
@@ -860,13 +935,19 @@ export class TouchComic {
     const hard = answer === "slap" || this.show?.id === "smack" || this.show?.region === "chest";
     const shake = answer !== "pull" && t > hitAt && t < hitAt + 0.15 ? Math.sin(t * 90) * (hard ? 5 : 2) : 0;
     this.root.style.transform = `translate(${shake}px, 0) rotate(${2 + (1 - opening) * 10}deg) scale(${scale})`;
-    for (const { el, from, to } of this.letters) {
+    for (const { el, from, to, shake } of this.letters) {
       const on = t >= from && t < to;
       el.classList.toggle("on", on);
       if (!on) continue;
       const pop = span(t, from, from + 0.18);
       const size = pop < 1 ? 0.3 + pop * 0.95 : 1.25 - Math.min(0.25, (t - from - 0.18) * 1.2);
       el.style.setProperty("--pop", String(size));
+      // A loud moan trembles, by the clock so it keeps going on a held panel.
+      if (shake) {
+        const c = this.clock;
+        el.style.setProperty("--jx", `${(Math.sin(c * 53) * 1.6).toFixed(2)}px`);
+        el.style.setProperty("--jy", `${(Math.cos(c * 41) * 1.2).toFixed(2)}px`);
+      }
     }
   }
 
