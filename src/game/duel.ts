@@ -257,6 +257,11 @@ export class Duel {
     private readonly random: () => number,
     partners: readonly PartnerSetup[] = [{ kind, female: false }],
     scene: RolePlay = "plain",
+    /**
+     * Consent off, after a brawl she lost (Karryn's Prison's defeat): it just happens, and there's no Stop. It ends
+     * when they're all spent, or she gives in.
+     */
+    readonly forced = false,
   ) {
     this.areas = new Set(areas);
     this.scene = scene;
@@ -267,7 +272,8 @@ export class Duel {
     const all = this.everyone;
     const who = all === 1 ? `The ${this.partners[0].kind} grins.` : `${all} of them gather round.${this.waiting.length > 0 ? ` ${this.waiting.length} wait their turn.` : ""}`;
     // No stake (the taproom game): nobody pays, so nobody says so.
-    this.note(`${who} "${stake > 0 ? `Loser pays ${stake} gold. ` : ""}Say stop whenever you like."`);
+    if (forced) this.note(`${who} Nobody's asking any more.`);
+    else this.note(`${who} "${stake > 0 ? `Loser pays ${stake} gold. ` : ""}Say stop whenever you like."`);
     const lines = this.lines();
     if (lines) this.note(this.pick(lines.opening, ""));
   }
@@ -461,7 +467,7 @@ export class Duel {
       label: `Hold back (Mind) · -${this.holdAmount()} to you · ${cost} will${spent ? " (no willpower left)" : ""}`,
       disabled: spent,
     });
-    out.push({ move: "stop", label: "Stop", disabled: false });
+    if (!this.forced) out.push({ move: "stop", label: "Stop", disabled: false });
     return out;
   }
 
@@ -478,6 +484,7 @@ export class Duel {
   /** She makes her move on a partner (the first still in, if none is named); then everyone still in makes theirs. */
   act(move: DuelMove, target?: number): void {
     if (this.outcome) return;
+    if (move === "stop" && this.forced) return;
     if (move === "stop") {
       this.used.stop = (this.used.stop ?? 0) + 1;
       this.entries.push({ side: "her", actor: "You", action: "Stop", text: "You call it off. They nod, and step back.", effects: [] });

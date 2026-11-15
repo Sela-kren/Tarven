@@ -1,6 +1,6 @@
 import type { DuelArea, DuelLogEntry } from "./duel";
 import type { HerMove } from "./duelmoves";
-import { defeatedScene, HOLDING_SCENES, SCENE_JOINS, sceneForEntry, type JoinSlot, type ScenePoseName } from "./sexpose";
+import { defeatedScene, HOLDING_SCENES, onTable, SCENE_JOINS, sceneForEntry, type JoinSlot, type ScenePoseName } from "./sexpose";
 import type { GuestKind } from "./tavern";
 
 /**
@@ -14,6 +14,8 @@ import type { GuestKind } from "./tavern";
  *   mouth, or at one of her hands. With three or more of them and nothing holding her, they all take her together.
  * - A game after a brawl she lost starts with her down on the floor where she fell, the winner over her.
  * - With her willpower gone, she can't hold herself up: the scenes become their limp, defeated ones.
+ * - On a table in the taproom (KP's Waitress Sex), it starts with her on her back across it, the one who asked between
+ *   her legs and the others at her head and hands, and the scenes stay on it (sexpose.ts `onTable`); a crowd on her is all of them at her slots there.
  */
 
 /** A partner, as the stage needs them. */
@@ -50,6 +52,8 @@ export class DuelStage {
   private lead: number | null = null;
   /** Partner id to the spot they've joined at. */
   private readonly joined = new Map<number, number>();
+  /** A game on a table in the taproom: the scenes are on it. */
+  private table = false;
 
   /** Who's in the picture now, or null before anything's happened. */
   get cast(): StageCast | null {
@@ -61,11 +65,19 @@ export class DuelStage {
    * A new game. After a brawl she lost (`fromBrawl`) she starts down on the floor, the one who won standing over her
    * and his crew round her; otherwise there's no picture of them together until something happens.
    */
-  start(fromBrawl: boolean, partners: readonly StagePartner[]): void {
+  start(fromBrawl: boolean, partners: readonly StagePartner[], table = false): void {
     this.scene = null;
     this.lead = null;
     this.joined.clear();
+    this.table = table;
     const first = partners.find((p) => !p.done);
+    // On the table: she's on her back across it with the one who asked, from the start.
+    if (table && first && !first.female) {
+      this.scene = "tableBack";
+      this.lead = first.id;
+      for (const p of partners) if (p !== first && !p.done && !p.female) this.join(p.id, "kiss");
+      return;
+    }
     if (!fromBrawl || !first) return;
     this.scene = "downed";
     this.lead = first.id;
@@ -86,7 +98,8 @@ export class DuelStage {
     // Whoever's given in is out of it.
     for (const id of [...this.joined.keys()]) if (byId(id)?.done !== false) this.joined.delete(id);
     const partner = byId(entry.partner ?? null);
-    const want = partner && !partner.done ? sceneForEntry(entry, partner.female, options.alt) : null;
+    const found = partner && !partner.done ? sceneForEntry(entry, partner.female, options.alt) : null;
+    const want = found && this.table && !partner!.female ? onTable(found) : found;
     if (partner && want) this.take(partner, options.defeated ? defeatedScene(want) : want, entry, partners);
     return JSON.stringify(this.cast) !== before;
   }
@@ -103,7 +116,7 @@ export class DuelStage {
     if (holding && !HOLDING_SCENES.has(want)) return;
     const active = partners.filter((p) => !p.done && !p.female);
     if (!HOLDING_SCENES.has(want) && !partner.female && active.length >= GANGBANG_FROM && active.some((p) => p.id === partner.id)) {
-      this.set("gangbang", partner.id);
+      this.set(this.table ? "tableBack" : "gangbang", partner.id);
       for (const p of active) if (p.id !== partner.id) this.join(p.id, undefined);
       return;
     }

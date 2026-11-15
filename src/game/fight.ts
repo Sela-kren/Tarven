@@ -44,6 +44,8 @@ import {
   FIX_CLOTHES_ENERGY,
   FIX_LINES,
   type FightClothes,
+  GRAPPLE_TEAR,
+  GRAPPLE_TEAR_LINES,
   HER_STRIPPED_LINES,
   MATE_STRIPPED_LINES,
   STRIP_CHANCE,
@@ -306,6 +308,11 @@ export interface FighterStats {
    * her exposure goes by them as they come off through the fight (and `exposure` is left out); a foe may go for them.
    */
   clothes?: FightClothes;
+  /**
+   * Consent off: Karryn's Prison (GAME_PATH.MD consent rule). A foe going for her clothes tears them off, with no
+   * question, and a grapple of theirs can too.
+   */
+  forceful?: boolean;
 }
 
 /** Someone who may be in the brawl: who they are, their own numbers, the part of her they go for, worked up or not. */
@@ -602,6 +609,16 @@ export class Fight {
   }
 
   /** What happened, then, if the AI has written one, a line of colour for it. */
+  /** A line from outside the fight's own moves (an invasion's door), into the log. */
+  narrate(event: string, text: string): void {
+    this.say(event, text);
+  }
+
+  /** Everyone still waiting to pile in comes in now (an invasion: they come through the door together). */
+  allIn(): void {
+    while (this.joinQueue.length > 0 && this.standing.length < MAX_FOES) this.foes.push(this.makeFoe(this.joinQueue.shift()!));
+  }
+
   private say(event: string, text: string): void {
     this.log.push(text);
     this.events.push(event);
@@ -1190,6 +1207,14 @@ export class Fight {
     this.dodging = false;
   }
 
+  /** Consent off (KP): the next piece is torn off her, and it's said as any piece coming off is. */
+  private tearPiece(): void {
+    if (!this.nextPiece) return;
+    this.clothesAtReach = this.clothesOff;
+    this.clothesOff++;
+    this.clothesCameOff();
+  }
+
   /** How many pieces are off her now, as the tavern has it once she's answered a reach (7l). */
   setClothes(off: number): void {
     if (!this.stats.clothes) return;
@@ -1535,8 +1560,10 @@ export class Fight {
     // KP's stripping: he goes for her clothes, asked like any reach (7l). Only while she has any left to lose.
     if (canGrope && this.reaches < MAX_REACHES_WANTING && this.nextPiece && this.random() < STRIP_CHANCE) {
       this.reaches++;
-      this.reach("clothes");
       this.say("their:strip", withPiece(line(STRIP_REACH_LINES, this.textRoll(), this.name), this.nextPiece));
+      // Consent off (KP): it's torn off her, no question.
+      if (this.stats.forceful) this.tearPiece();
+      else this.reach("clothes");
       return true;
     }
     const exposure = this.exposure;
@@ -1741,6 +1768,17 @@ export class Fight {
     }
     // Thick Skin: their grapples hurt less.
     hurt(this.foeAttack + def.damage - (this.stats.grappleGuard ?? 0), HIT_WILL * def.will, `their:${pick}`, def.text);
+    // Consent off (KP's clothing damage): the grapple can tear the next piece off her.
+    if (this.stats.forceful && this.nextPiece && this.random() < GRAPPLE_TEAR) {
+      const piece = this.nextPiece;
+      this.clothesAtReach = this.clothesOff;
+      this.clothesOff++;
+      this.torn++;
+      this.say("their:stripped", withPiece(line(GRAPPLE_TEAR_LINES, this.textRoll(), this.name), piece));
+      if (!this.nextPiece) this.say("bare", line(BARE_LINES, this.textRoll(), this.name));
+      this.crowdSaysFrom(CROWD_STRIPPED_LINES);
+      this.raiseFoe(FOE_PLEASURE.strip);
+    }
   }
 
   /** Their hands wander in a grapple: her desire for the part their type goes for rises, and a little all over. */

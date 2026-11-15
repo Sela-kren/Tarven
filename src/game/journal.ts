@@ -605,10 +605,10 @@ export function recordsBook(state: RecordsState): HTMLElement {
   left.append(row("In all", `${ml} ml`));
 
   right.append(el("h2", "", "Adult play"));
-  right.append(row("Upstairs, in your room", String(r.invitations)));
+  right.append(row("Adult play, all told", String(r.invitations)));
   for (const act of UPSTAIRS_ACTS) right.append(row(UPSTAIRS[act].label, String(r.acts[act] ?? 0)));
   right.append(row("Kinds of guest", `${r.upstairsKinds.length}/4`));
-  right.append(row("Stayed down in the taproom", String(r.taproomScenes)));
+  right.append(row("On a table in the taproom", String(r.taproomScenes)));
   right.append(row("Joined in, all told", String(r.taproomPartners)));
   right.append(row("Most at once", String(r.taproomMost)));
   right.append(row("Touched inside your clothes", String(r.touchedInside)));
@@ -681,7 +681,7 @@ export function skillsBook(state: SkillsState): HTMLElement {
   const body = el("div", "skill-grid");
   for (const skill of BODY_SKILLS) body.append(skillLine(skill.name, xp(skill.id), bonus(skill.id), skillBonusText(skill.id, level(skill.id))));
   right.append(body);
-  right.append(el("h2", "", "Upstairs"));
+  right.append(el("h2", "", "Adult play skills"));
   const acts = el("div", "skill-grid");
   for (const skill of ACT_SKILLS) acts.append(skillLine(skill.name, xp(skill.id), bonus(skill.id), skillBonusText(skill.id, level(skill.id))));
   right.append(acts);

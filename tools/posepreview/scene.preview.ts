@@ -12,6 +12,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { poseBones } from "../../src/game/battlepose";
 import { Dresser, newLook } from "../../src/game/appearance";
 import { placeBody, SCENE_JOINS, SCENE_POSE_LIST, SCENE_POSES, sceneFraming, type Posed, type ScenePoseName } from "../../src/game/sexpose";
+import { makeTable } from "../../src/game/scenetable";
 import { colourOf, drawAll, H, stripImages, W } from "./raster";
 
 async function load(file: string, name: "Female" | "Male", nude: boolean): Promise<Posed> {
@@ -61,6 +62,8 @@ test("render the after-hours scenes", async () => {
       placeBody(others[i], spot.body, spot.place);
       items.push({ model: others[i].model, name: "Male" });
     });
+    // The table under her, if the scene has one: in the picture, and framed with them.
+    if (scene.table) items.push({ model: makeTable(scene.table), name: "Table" });
     const box = new Box3();
     for (const { model } of items) {
       model.updateMatrixWorld(true);

@@ -1,14 +1,13 @@
 /**
- * The words for an invitation, told as a little story: what the guest says to ask her, how the room takes it,
- * the walk up the stairs and the room at the top, or (her choice) staying down in the taproom with them and
- * whoever else in the room wants in, and the morning after.
+ * The words for adult play, Karryn's Prison style (KP's Waitress Sex, GAME_PATH.MD 7f): mid-shift, a guest with his
+ * hands on her wants her down on a table right here in the taproom, and the room wants in. What they say to ask her,
+ * how the room takes it, the table, and the morning after.
  *
- * House rules hold here as everywhere (STORY.md, top): everyone is an adult, every beat is asked and hers to
- * answer, and nothing here is graphic. The scenes themselves stay as 18+ cards with one short line each.
- * Guests are "they": the room is full of all sorts. She's a grown woman who never had anyone court her.
+ * Every beat is still asked and hers to answer (the consent rule): everyone is an adult, Pull away is always there,
+ * and too drunk on either side, nobody asks. The lines are as raw as KP's.
  *
  * Lines a guest says are written without quote marks: the tavern adds them, as it does for every guest line.
- * The rules for who joins and what it costs are in `taproom.ts`.
+ * The rules for when it comes up are in `adultplay.ts`; who joins and what it costs, `taproom.ts`.
  */
 import type { GuestKind } from "./tavern";
 
@@ -17,42 +16,49 @@ export function pickLine(lines: readonly string[], roll: number): string {
   return lines[Math.min(lines.length - 1, Math.max(0, Math.floor(roll * lines.length)))];
 }
 
-/** What they say to ask her up, by kind of guest: said before they reach for her hand (or her ear, or a key). */
+/** What they say to ask her onto the table, by kind of guest: said as they get their hands on her. */
 export const INVITE_ASKS: Record<GuestKind, readonly string[]> = {
   farmer: [
-    "I've been working up to this all night, so I'll just say it plain. There's a room upstairs, and I'd like to spend the night in it with you.",
-    "Ma always said, if you want something, ask for it. So I'm asking. Will you come up with me?",
-    "I'm up at dawn for the plough. I'd rather not sleep at all, if you'd have me.",
+    "Missus, I can't take it no more. Lie back on this table and let me have you, right here.",
+    "I'll clear the plates off myself. Just you get up there and open them legs for me.",
+    "You've been wiggling past me all night. Bend over this table, missus, and I'll plough you proper.",
+    "Never had a woman on a table before. Let me have you on this one?",
   ],
   soldier: [
-    "I've leave till first bell. I'd rather spend it upstairs with you than down here with this lot.",
-    "Tomorrow they march us up the pass again. Tonight I'd like to be with you. If you'll have me.",
-    "The sergeant says take what's offered. Nobody's offered. So I'm asking: come up?",
+    "On the table, innkeeper. Legs apart. That's not an order. Yet.",
+    "I've been staring at that arse all night. Bend over the table and let me have it.",
+    "We march at dawn. Tonight I want you on this table, in front of the whole squad.",
+    "Lie back. I'll have you here and now, and the lads can wait their turn.",
   ],
   smuggler: [
-    "I deal in things nobody needs to know about. You'd be the best of them. Your room, or mine?",
-    "I'd trade a whole cargo for one night upstairs with you. And I don't say that about cargo.",
-    "Quiet word. The stairs, you and me, and nobody down here any the wiser.",
+    "Here's the deal, sweetheart: you on this table, me between your legs, and the room gets a show.",
+    "Why waste coin on a room? This table's sturdy enough. Lie back.",
+    "Everyone's watching anyway. Let's give them something worth the price of the ale.",
+    "I'll pay double for the table. Spread out on it for me.",
   ],
   fugitive: [
-    "I don't know where I'll sleep tomorrow. I'd like to know where I'll sleep tonight. With you, if you'll have me.",
-    "I've been running a long time. Let me stop, just for one night. Upstairs?",
-    "Nobody here knows my name. You could. Come up with me.",
+    "I can't wait. Not another minute. Get on the table. Please.",
+    "Been so long. Let me have you right here, on the table, I don't care who sees.",
+    "Lie back for me. I need to be inside you, now.",
+    "They'll hang me tomorrow anyway. Tonight, let me have you on this table.",
   ],
   adventurer: [
-    "We're off to the ruins at dawn, and not all of us come back. Give me a night worth coming back for?",
-    "I've faced worse than my own nerves. Barely. Come upstairs with me?",
-    "Every inn on the road has a story. I'd like ours to be the best one.",
+    "I've conquered dungeons. Now let me conquer you, right here on the table!",
+    "Every tavern has a legend. Be mine: on this table, in front of everyone.",
+    "Lie back, beautiful. I'll give this room a tale they'll tell for years.",
+    "A hero takes his reward where he finds it. Up on the table with you.",
   ],
   bandit: [
-    "I take what I want, mostly. Not this. This I'm asking for. Upstairs?",
-    "Say no and I'll go quiet as a mouse. Say yes and I'll make it worth your while.",
-    "The road's cold and the boss is colder. You're neither. Come up with me.",
+    "Table. Now. On your back, legs open, and don't make me ask twice.",
+    "I've been wanting to fuck you since I walked in. Bend over that table.",
+    "Get up there, whore, and spread 'em. Unless you say no, and you won't.",
+    "Shove the tankards off. I'm having you on this table, if you'll let me.",
   ],
   noble: [
-    "Forgive the directness; I'm told it's the custom here. I've taken the best room. Will you join me in it?",
-    "At court this would take a month of letters. I'd rather simply ask. Will you come up?",
-    "I'm used to having things brought to me. Tonight I'd rather walk up those stairs beside you.",
+    "How rustic. I find I want you bent over one of your own tables. Will you oblige?",
+    "Lie back on the table, girl. I want the peasants to watch what their betters get.",
+    "I could have you in silk sheets. I'd rather have you on this filthy table, in front of them all.",
+    "On the table, my dear. Consider it a command performance.",
   ],
 };
 
@@ -61,114 +67,53 @@ export const INVITE_HUSH: readonly string[] = [
   "The table beside them has gone quiet. Nobody's pretending not to listen.",
   "A cup stops halfway to someone's mouth. The whole room has heard.",
   "Somebody whistles low across the room, and somebody else shushes them so they can hear your answer.",
+  "Every head in the taproom turns your way. Somebody's already clearing a table.",
 ];
 
-/** The room, once she's said yes: some cheer, some pretend not to watch. */
+/** The room, once she's said yes: they cheer, they clear a table, they crowd in. */
 export const INVITE_ROOM_YES: readonly string[] = [
-  "A cheer goes up from the far table, and someone bangs a cup on the boards.",
-  "The room pretends not to watch, and watches anyway.",
-  "Someone at the bar grumbles about who'll pour the ale now. Someone else tells them to hush.",
+  "A cheer goes up from the far table, and someone sweeps the tankards off the nearest one.",
+  "The room pretends not to watch for all of a breath, then gives up and crowds round.",
+  "Someone shouts \"She said yes!\" and the whole taproom roars.",
+  "Plates and cups go crashing to the floor as they clear a table for you.",
 ];
 
-/** On the invitation card, when nobody else in the room is up for more: just the stairs. */
+/** On the card, when nobody else in the room is up for it yet: just the two of them, on the table. */
 export const INVITE_CHOICE: readonly string[] = [
-  "They wait at the foot of the stairs with a hand held out. It's still yours to take, or not.",
-  "They're on the bottom step, waiting for you. Nobody's going to rush you.",
+  "They've cleared a table and they're waiting, hands on your hips. It's still yours to say.",
+  "They lift you onto the edge of the table and wait for your word.",
 ];
 
-/** On the invitation card, when others in the room want in: someone calls out, and the taproom's an answer too. */
+/** On the card, when others in the room want in: they're already crowding round the table. */
 export const INVITE_CHOICE_ROOM: readonly string[] = [
-  "\"Why go up?\" someone calls from across the room. \"Stay down here with the rest of us!\" A few cups bang the tables in agreement.",
-  "Nobody's looking at their drink any more. \"No need for the stairs,\" somebody says. \"There's room enough down here, and company.\"",
+  "They have you on the edge of the table, and the room is crowding round. \"Us too!\" somebody calls, and cups bang on every board.",
+  "Nobody's looking at their drink any more. A ring of them closes round the table, cocks already out, waiting on your word.",
 ];
 
-/** The walk up the stairs, by kind of guest. */
-export const STAIRS: Record<GuestKind, readonly string[]> = {
-  farmer: [
-    "They take the stairs like they're walking into chapel, cap in their hands, and at the top they wait for you to lead.",
-    "They climb behind you, careful on every step, as if the stairs might tell on them.",
-  ],
-  soldier: [
-    "They take the stairs two at a time, then remember themselves and wait at the top, very nearly at attention.",
-    "Their boots are loud on every step. At the top they unbuckle their sword belt and hang it on your door.",
-  ],
-  smuggler: [
-    "They know which step creaks and skip it, and smile when you notice.",
-    "They follow you up without a sound. You only know they're there by the hand at the small of your back.",
-  ],
-  fugitive: [
-    "They glance back at the door once, then not again. Their hand doesn't leave yours all the way up.",
-    "Halfway up they stop and just breathe, as if it's the first time in weeks nobody's been behind them.",
-  ],
-  adventurer: [
-    "They bring their pack up out of habit, and drop it in the doorway with a laugh.",
-    "They take the stairs like a dungeon, mock-careful, and make you laugh all the way to the top.",
-  ],
-  bandit: [
-    "They let you go up first. You can feel them watching you climb, and you find you don't mind.",
-    "They check the window before anything else, out of habit, then turn back to you and stop checking anything.",
-  ],
-  noble: [
-    "They climb your narrow stairs as if they were a palace staircase, and bow you in through your own door.",
-    "They duck under the low beam, laugh at themselves, and for once look nothing like a lord.",
-  ],
-};
-
-/** The room at the top: the first time, and every time after. */
-export const UPSTAIRS_ROOM_FIRST =
-  "Your room under the eaves: a narrow bed, one candle, and the noise of the bar coming up through the boards. You've never brought anyone up here.";
-export const UPSTAIRS_ROOM_AGAIN: readonly string[] = [
-  "The same narrow bed, the same candle. The noise of the bar comes up through the boards, and you hardly hear it now.",
-  "You know this room in the dark by now. You light the candle anyway, so you can see them.",
+/** As the table opens up: drunk enough, or she's come enough this shift (adultplay.ts). */
+export const TABLE_OPEN_LINES: readonly string[] = [
+  "The room's gone warm and blurry at the edges. The way they're looking at you, any one of them could get you down on a table now.",
+  "You can't stop thinking about the tables, and what could happen on one. Neither can they.",
+  "Your legs feel loose and your head's swimming. If a guest pulled you down onto a table now, you're not sure you'd stop them.",
 ];
 
-/** The morning after a night upstairs, by kind of guest: said as she wakes. */
-export const MORNING_AFTER: Record<GuestKind, readonly string[]> = {
-  farmer: [
-    "Morning. The farmer left before dawn for the fields, and there's a fistful of wildflowers on your pillow.",
-    "Morning. The farmer's mended your shutter on the way out. It hasn't closed properly in years.",
-  ],
-  soldier: [
-    "Morning. The soldier's gone to muster. Their scarf is on your chair, folded neat as a uniform.",
-    "Morning. You hear the garrison horn down the valley, and the soldier's side of the bed is still warm.",
-  ],
-  smuggler: [
-    "Morning. The smuggler's long gone. There's a twist of good salt by the candle, and no note.",
-    "Morning. The smuggler left a coin on the sill, and a map of the back roads scratched into the dust beside it.",
-  ],
-  fugitive: [
-    "Morning. The stranger is still asleep when you get up: the first sound sleep they've had in weeks, by the look of them.",
-    "Morning. The stranger's gone, but they've written a name on the back of your hand in ink. Their real one, maybe.",
-  ],
-  adventurer: [
-    "Morning. The adventurer's carved a little mark into your bedpost, for luck, they said, and gone off toward the ruins.",
-    "Morning. The adventurer left a strange old coin on your pillow, \"from the ruins\", and a promise to come back.",
-  ],
-  bandit: [
-    "Morning. The bandit's gone out of the window, the way you half expected. Your purse is still there. You check twice.",
-    "Morning. The bandit's left a red scarf knotted round your bedpost. Nobody on the road will trouble this house now.",
-  ],
-  noble: [
-    "Morning. A servant brings up a note on heavy paper: thanks in a fine hand, and a pressed flower.",
-    "Morning. The noble's gone before you wake, and paid for the room twice over, with a word to the servant about discretion.",
-  ],
-};
-
-/** The taproom, as she stays down: the room makes space, and the door gets barred. */
+/** On the table, as it starts: the room makes space, and the door gets barred. */
 export const TAPROOM_START: readonly string[] = [
-  "Nobody heads for the stairs. Somebody drags a table aside, somebody else bars the door, and the fire is banked up high.",
-  "Benches scrape back. Someone bars the door and someone lights another candle, and the taproom's all yours.",
+  "Tankards go flying as they sweep a table clear and lay you back across it. Somebody bars the door.",
+  "They lift you up onto the nearest table, its boards sticky with ale, and the room crowds in round you.",
+  "You're pushed down over a table, cheek against the wood, and the whole taproom gathers to watch.",
+  "They clear a table with one swipe of an arm and you're on your back on it before you've caught your breath.",
 ];
 
-/** What a guest who wants in says, by kind: every one asks, and she chooses who. */
+/** What a guest who wants in says, by kind (KP's patrons joining): every one asks, and she chooses who. */
 export const JOIN_ASKS: Record<GuestKind, readonly string[]> = {
-  farmer: ["Room for one more? I'll mind my manners.", "If you'll have me too, I'd like that. If not, I'll just cheer."],
-  soldier: ["Permission to join? Only if you say so.", "Make room. If she'll have me, that is."],
-  smuggler: ["Mind if I deal myself in?", "I could watch. I'd rather not. Your call, sweet."],
-  fugitive: ["Only if you want me there. Do you?", "Could I... join you? You can say no."],
-  adventurer: ["A party's a party. Can I join?", "We never leave anyone out on the road. Room for me?"],
-  bandit: ["Got room for a rogue? Ask nicely and I'll behave.", "I'm asking, not taking. Me too?"],
-  noble: ["How delightfully improper. May I?", "I've never done anything of the sort. May I begin tonight?"],
+  farmer: ["Room for one more on that table, missus? I'll be quick.", "Let me have a go too? Please? I'll cheer either way.", "Cor. Can I put it in your hand while he's at you?"],
+  soldier: ["Permission to join? I'll take her mouth.", "Make room, private. If she'll have me, that is.", "Second in line, ma'am. Say the word."],
+  smuggler: ["Mind if I deal myself in? Plenty of you to go round.", "I could watch. I'd rather not. Your call, sweet.", "Two for the price of one? Let me in."],
+  fugitive: ["Me too. Please. Let me touch you too.", "Could I... could I have your mouth? You can say no.", "I'll wait my turn. Just let me have one."],
+  adventurer: ["A party's a party! Room on the table for me?", "Never leave a comrade out. Can I join in?", "Saving the best for last. Me next?"],
+  bandit: ["Got a hole free for me, girl? I'm asking. This once.", "Move over, mate. If she says I can.", "Open that pretty mouth for me too?"],
+  noble: ["How delightfully improper. May I partake?", "I've never shared before. May I begin tonight?", "Your other hand looks idle, my dear. May I?"],
 };
 
 /** After a lost brawl, she's said yes to the one who won: up the stairs to her room, just the two of them. */
@@ -201,6 +146,19 @@ export const BRAWL_YARD_ONE: readonly string[] = [
 export const BRAWL_YARD_CREW: readonly string[] = [
   "Out the back into the yard, {n} of them crowding after you past the water butt, the stars overhead. They wait for you to say what's allowed.",
   "{n} of them follow you out into the dark yard behind the tavern. Someone props the back door shut. They wait for your word.",
+];
+
+/** Consent off, a brawl she lost (KP's defeat): nobody asks. Right where she fell, the one who won. */
+export const FORCED_HERE_ONE: readonly string[] = [
+  "You're still on the boards where you went down when they drag you up onto your knees. Nobody asks you anything.",
+  "They pin you to the floor where you fell, one knee on your skirt, and the room closes in to watch.",
+  "Too dazed to get up, you feel them haul your hips back. \"You lost, innkeeper. Now you pay.\"",
+];
+/** Consent off, a brawl she lost, with the winner's whole company: {n} of them. */
+export const FORCED_HERE_CREW: readonly string[] = [
+  "{n} of them close in round you on the floor where you fell. Hands everywhere. Nobody's asking.",
+  "\"Spoils, lads!\" {n} of them drag you into the middle of the taproom, and the room roars.",
+  "You try to crawl away. {n} pairs of hands pull you back into the middle of them.",
 ];
 
 /** How the taproom scene ends, by how it went: one short line for the 18+ card. */

@@ -3,8 +3,8 @@
  * (KP's stripping), and once a piece is off, she's barer for the rest of the fight: they stare, and scenes open up.
  * Fix Clothes (an energy skill) gets the last piece they had off her back on.
  *
- * Her clothes only ever come off through a reach she's asked about (Consent on) or the push-vs-hold check
- * (Consent off), like any brawl touch: Pull away always works. Nothing is torn off her unasked.
+ * Consent on, her clothes only ever come off through a reach she's asked about, like any brawl touch: Pull away
+ * always works. Consent off, it's Karryn's Prison: a foe going for them tears them off, and a grapple can too.
  *
  * The log's lines, as raw as KP's: what he does, what he says (by his type), what she says (by her voice, brawlher.ts),
  * the room and the other foes. `{Name}` / `{name}` is the foe, `{piece}` the garment, `{Who}` someone in the room,
@@ -17,6 +17,18 @@ import type { GuestKind } from "./tavern";
 export const FIX_CLOTHES_ENERGY = 4;
 /** How often a foe who wants her goes for her clothes instead of a grope, talk or a stare, while she has any on. */
 export const STRIP_CHANCE = 0.3;
+
+/** Consent off (KP's clothing damage): the chance a grapple of theirs tears the next piece off her. */
+export const GRAPPLE_TEAR = 0.3;
+
+/** A piece torn off her in a grapple (Consent off). */
+export const GRAPPLE_TEAR_LINES: readonly string[] = [
+  "In the scuffle, {name}'s fist closes on your {piece} and it tears away.",
+  "You twist out of {name}'s grip, and leave your {piece} behind in it.",
+  "{Name} hauls you round by your {piece}, and it rips clean off.",
+  "Something tears. Your {piece} is hanging from {name}'s hand.",
+  "{Name} gets a grip on your {piece} and doesn't let go. It does.",
+];
 
 /** Clothes in a fight: the garments she has, in the order they come off, and how many are off going in. */
 export interface FightClothes {

@@ -1620,7 +1620,7 @@ export class Game {
       drunkLabel: drunkLabel(tavern.drunk),
       meters: tavern.meters,
       piecesOff: tavern.strippedPieces.length,
-      adultStack: tavern.adultStack,
+      tableProgress: tavern.tableProgress,
       lewdness: Math.floor(tavern.lewdness),
       corruption: Math.floor(tavern.corruption),
       energy: tavern.energy,
@@ -2406,7 +2406,7 @@ export class Game {
     const partners = duel.partners.map((p) => ({ id: p.id, kind: p.kind, female: p.female, done: p.done }));
     if (this.stagedDuel !== duel) {
       this.stagedDuel = duel;
-      this.duelStage.start(this.tavern.duelAfterBrawl, partners);
+      this.duelStage.start(this.tavern.duelAfterBrawl, partners, this.tavern.onTable);
     }
     if (entry) {
       const alt = entry.partner !== undefined && (entry.partner + duel.climaxes) % 2 === 1;
@@ -2608,12 +2608,12 @@ export class Game {
       const scene = this.pendingAdult;
       this.pendingAdult = null;
       if (scene) {
-        if (scene.kind === "upstairs") {
+        if (scene.kind === "table") {
           this.narrator.moment(
             scene.auto
-              ? `Too worked up to hold back, she gives in to the ${(scene.guestStats?.label ?? scene.guestKind).toLowerCase()} for adult play, and the room watches.`
-              : `She says yes to adult play with the ${(scene.guestStats?.label ?? scene.guestKind).toLowerCase()}, and the room watches.`,
-            `upstairs:${scene.guestKind}`,
+              ? `Too worked up to hold back, she lets the ${(scene.guestStats?.label ?? scene.guestKind).toLowerCase()} lay her back on a table, and the room crowds in.`
+              : `She says yes to the ${(scene.guestStats?.label ?? scene.guestKind).toLowerCase()}, on a table in the taproom, and the room crowds in.`,
+            `table:${scene.guestKind}`,
             (scene.guestStats?.label ?? scene.guestKind).toLowerCase(),
           );
         } else this.narrator.moment("Her pleasure boils over and she is overwhelmed in front of the whole room.", "overwhelmed");
@@ -3469,7 +3469,7 @@ function levelLine(id: StatId | SkillId): string {
   const stat = STATS.find((s) => s.id === id);
   if (stat) return `+ ${stat.does}`;
   if (BODY_SKILLS.some((s) => s.id === id)) return "+ Touches there need less desire, warm you faster and pay more";
-  return "+ Better at it upstairs and After Hours";
+  return "+ Better at it on the table and After Hours";
 }
 
 /** The passive group whose picture fits a stat or skill. */

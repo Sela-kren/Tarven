@@ -104,13 +104,13 @@ export function showSettingsMenu(game: Game, back: () => void): void {
   const note = document.createElement("p");
   note.className = "settings-note";
   note.textContent =
-    "On: every touch stops and asks you, at the bar and in a brawl. Off: when a lustful, bold guest (or a worked-up brawler) reaches, their push (nerve, their taste, how much of you is on show) is checked against your hold (the touch's boldness, less your desire, passives and experience). If they push past it, the touch plays out on its own; if not, you're asked. Only touches you'd say yes to anyway, never when anyone's too drunk, and Pull away still works on the next reach. Your clothes go through the same check, but you hold on to them harder.";
+    "On: every touch stops and asks you, at the bar and in a brawl; Pull away always works; nothing happens when you're too drunk; after a lost brawl you're asked, and can always stop. Off is Karryn's Prison: at the bar, a lustful, bold guest's push is checked against your hold, and if they push past it the touch plays out on its own. In a brawl their hands just land, and they tear your clothes off. Dead drunk, a guest can have you on a table whether you're ready or not. Lose a brawl, and the one who won and their friends take you where you fell, with no Stop. Passed out, nothing happens to you either way.";
   const toggle = document.createElement("button");
   toggle.className = "settings-toggle";
   // Consent off is the player saying yes in advance: eager guests' touches play out on their own.
   const auto = () => touch.autoTouch && touch.agreed;
   const showToggle = () => {
-    toggle.textContent = auto() ? "Consent: Off (eager guests don't ask)" : "Consent: On (always ask me)";
+    toggle.textContent = auto() ? "Consent: Off (Karryn's Prison: nobody asks)" : "Consent: On (always ask me)";
     toggle.classList.toggle("on", !auto());
   };
   showToggle();

@@ -17,6 +17,7 @@ import { applyPose, BATTLE_POSES, blendPose, NO_EXTRA, poseBones, type BattlePos
 import { chestOverHips } from "./player";
 import { cardFraming, facingTurn } from "./battleframe";
 import type { BrawlBeat } from "./brawlscene";
+import { makeTable } from "./scenetable";
 import { blendScene, placeBody, SCENE_JOINS, SCENE_POSES, sceneFraming, type Body, type Posed, type ScenePose, type ScenePoseName } from "./sexpose";
 
 /**
@@ -97,6 +98,8 @@ export class BattleView {
   private female = false;
   private readonly cheeks = [new Vector3(), new Vector3()];
   private scale = 1;
+  /** The table under her in a table scene (KP's waitress_table), while there is one. */
+  private table: Object3D | null = null;
   private mode: BattleMode = "duel";
   private time = 0;
   private active = false;
@@ -376,9 +379,11 @@ export class BattleView {
     if (!scene || !this.posed || !this.model) {
       this.sceneName = null;
       this.fromScene = null;
+      this.setTable(null);
       return;
     }
     if (scene === this.sceneName && !changed) return;
+    this.setTable(SCENE_POSES[scene].table ?? null);
     const first = this.sceneName === null;
     this.fromScene = first || scene === this.sceneName ? null : this.currentScene();
     this.fromCam.position.copy(this.camera.position);
@@ -391,6 +396,13 @@ export class BattleView {
       this.fromCam.position.copy(this.toCam.position);
       this.fromCam.target.copy(this.toCam.target);
     }
+  }
+
+  /** Puts the scene's table on the stage under her, or takes it away. */
+  private setTable(table: ScenePose["table"] | null): void {
+    if (this.table) this.scene.remove(this.table);
+    this.table = table ? makeTable(table, this.scale) : null;
+    if (this.table) this.scene.add(this.table);
   }
 
   /** Whether the picture is her with someone, in a scene. */

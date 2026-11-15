@@ -21,8 +21,8 @@ export interface StatusState {
   meters: Readonly<Meters>;
   /** Pieces of clothing off tonight. */
   piecesOff: number;
-  /** Her adult play stack tonight, 0 to 100 (percent). */
-  adultStack: number;
+  /** How near the table is to opening tonight, 0 to 100 (KP's Waitress Sex, adultplay.ts): open at 100. */
+  tableProgress: number;
   lewdness: number;
   corruption: number;
   /** Her energy and its top (7k); her fatigue, as a word ("" when she's fresh). */
@@ -202,12 +202,12 @@ export class StatusCard {
     track.append(this.pleasureFill);
     this.pleasureValue.className = "num";
     this.pleasure.append(label, track, this.pleasureValue);
-    // Her adult play stack, in percent: at 100% an aroused guest can go for it (adultplay.ts).
+    // How near the table is (adultplay.ts): open, an aroused guest can go for it.
     this.stack.className = "pleasure stack";
-    this.stack.title = "Adult play stack: fills with desire, drinks, touches and clothes off. At 100%, an aroused guest can go for adult play.";
+    this.stack.title = "The table: once you're drunk enough, or you've come enough times this shift, an aroused guest can ask to have you on a table in the taproom. Too drunk, and nobody asks.";
     const stackLabel = document.createElement("span");
     stackLabel.className = "label";
-    stackLabel.textContent = "Adult play";
+    stackLabel.textContent = "Table";
     const stackTrack = document.createElement("span");
     stackTrack.className = "track";
     this.stackFill.className = "fill";
@@ -279,11 +279,11 @@ export class StatusCard {
       this.pleasure.classList.toggle("aroused", pleasure >= AROUSED_AT);
       this.pleasure.classList.toggle("edge", pleasure >= EDGE_AT);
     }
-    const stack = Math.max(0, Math.min(100, Math.floor(s.adultStack)));
+    const stack = Math.max(0, Math.min(100, Math.floor(s.tableProgress)));
     if (stack !== this.shownStack) {
       this.shownStack = stack;
       this.stackFill.style.width = `${stack}%`;
-      this.stackValue.textContent = `${stack}%`;
+      this.stackValue.textContent = stack >= 100 ? "Open" : `${stack}%`;
       this.stack.classList.toggle("full", stack >= 100);
     }
     this.will.set(s.will / Math.max(1, s.willMax), String(s.will), `${s.will}/${s.willMax}`, s.will < s.willMax / 4);

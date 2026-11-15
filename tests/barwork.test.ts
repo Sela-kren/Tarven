@@ -212,7 +212,7 @@ describe("her last clear drink", () => {
     expect(t.talkLines.some((l) => LAST_CLEAR_LINES.includes(l.text))).toBe(true);
     t.chooseTalk(t.talkChoices.findIndex((c) => c.label.startsWith("Let it happen")));
     const scene = t.takeAdultScene();
-    expect(scene?.kind === "upstairs" && scene.wholeRoom).toBe(true);
+    expect(scene?.kind === "table" && scene.wholeRoom).toBe(true);
   });
 
   it("with Consent off, goes by her state: ready, it happens; not ready, she's asked", () => {

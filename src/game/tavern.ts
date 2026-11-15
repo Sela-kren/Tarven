@@ -1,4 +1,5 @@
 import { fightTier } from "./fightface";
+import { DOOR_CREW_LINES, DOOR_LINES, FORCED_ROOM_CREW, FORCED_ROOM_ONE, invaderCount, invasionChance, NOISE_LINES, TALKED_LINES, WON_LINES } from "./invasion";
 import { brawlFatigue, duelFatigue, FATIGUE_MAX, FATIGUE_REST, fatigueLevel, maxEnergy, NAP_ENERGY } from "./herstate";
 import { cloneLayout, type HouseLayout } from "./house";
 import { ARC_DAWN, arcIndex, arcStage, ARC_STAGES, flavorLine, TANSY_CALLBACK, type ArcStage, wildSensitivity } from "./lewd";
@@ -208,7 +209,7 @@ function oneOf(lines: readonly string[], roll: number): string {
   return lines[Math.floor(roll * lines.length) % lines.length];
 }
 import { DESIRE_STRONG, HORNY_AT, horny, wet } from "./desire";
-import { addStack, adultPlayChance, aroused, lewdnessEase, matchAct, matchWhere, STACK_FULL, STACK_GAIN, STACK_REFUSED, stackStart } from "./adultplay";
+import { adultPlayChance, aroused, lewdnessEase, TABLE_COMES, TABLE_DRUNK, tableOpen } from "./adultplay";
 import {
   autoTouchFits,
   defaultTouchSettings,
@@ -221,19 +222,9 @@ import {
 } from "./touchsettings";
 import { Fight, MAX_FOES, TROUBLE_SHOUTS, type Foe, type FighterStats, type FightMove, type FightOutcome, type FoeSpec } from "./fight";
 import { ROLE_PLAYS, type RolePlay } from "./duellines";
-import { coatStages, loadOf, type CoatSection, type CumSpot } from "./cum";
+import { coatStages, type CoatSection, type CumSpot } from "./cum";
 
-/** Where the guest finishes after each thing she does upstairs; a kiss and a cuddle leaves none. */
-const UPSTAIRS_CUM: Record<UpstairsAct, CumSpot | null> = { kiss: null, hands: "body", mouth: "mouth", bed: "pussy", behind: "ass" };
-const CUM_WHERE: Record<CumSpot, string> = {
-  mouth: "in your mouth, and you swallow",
-  face: "on your face",
-  breasts: "on your tits",
-  pussy: "inside you",
-  ass: "deep in your ass",
-  body: "all over your belly",
-};
-import { BRAWL_HERE_CREW, BRAWL_HERE_ONE, BRAWL_ROOM_CREW, BRAWL_ROOM_ONE, BRAWL_YARD_CREW, BRAWL_YARD_ONE, INVITE_ASKS, INVITE_CHOICE, INVITE_CHOICE_ROOM, INVITE_HUSH, INVITE_ROOM_YES, JOIN_ASKS, MORNING_AFTER, pickLine as storyLine, STAIRS, TAPROOM_END, TAPROOM_MORNING, TAPROOM_START, UPSTAIRS_ROOM_AGAIN, UPSTAIRS_ROOM_FIRST } from "./invitetalk";
+import { BRAWL_HERE_CREW, BRAWL_HERE_ONE, BRAWL_ROOM_CREW, BRAWL_ROOM_ONE, BRAWL_YARD_CREW, BRAWL_YARD_ONE, INVITE_ASKS, INVITE_CHOICE, INVITE_CHOICE_ROOM, INVITE_HUSH, INVITE_ROOM_YES, JOIN_ASKS, pickLine as storyLine, FORCED_HERE_CREW, FORCED_HERE_ONE, TABLE_OPEN_LINES, TAPROOM_END, TAPROOM_MORNING, TAPROOM_START } from "./invitetalk";
 import {
   isBaron,
   isLocal,
@@ -251,7 +242,6 @@ import { Duel, DUEL_AREAS, type DuelArea, type DuelistStats, type DuelMove, type
 import {
   ACT_SKILL_OF,
   ACT_SKILLS,
-  actSkillBonus,
   BODY_SKILLS,
   bodySkillBonus,
   charmBonus,
@@ -281,8 +271,6 @@ import {
   noEffects,
   readProgress,
   ROUGH_TOUCHES,
-  UPSTAIRS,
-  UPSTAIRS_ACTS,
   type Effects,
   type Meter,
   type Meters,
@@ -588,12 +576,12 @@ export function applyTestPartner(partner: Partner, setup: { pleasure: number; st
 
 /** How often, in seconds, passives are checked during the night. */
 const PASSIVE_CHECK_SECONDS = 0.5;
-/** How much of their patience everyone waiting loses while she's upstairs. */
-const UPSTAIRS_PATIENCE = 0.35;
 /** The stakes she can play an after-hours game for. */
 const DUEL_STAKES = [0, 5, 10, 20];
-/** Experience for each time she does something upstairs. */
+/** Experience for each time she does something intimate: with a foe mid-brawl, or on the table (each act once a scene). */
 const UPSTAIRS_XP = 5;
+/** What she did in a game on the table counts toward her records like her own acts (riding them, like the bed). */
+const ACT_OF_DUEL_MOVE: Partial<Record<string, UpstairsAct>> = { kiss: "kiss", hands: "hands", mouth: "mouth", ride: "bed", anal: "behind" };
 /** How likely an angry or roaring drunk guest is to start a brawl, each second; at most this many a night. */
 const TROUBLE_PER_SECOND = 0.012;
 const MAX_FIGHTS = 2;
@@ -1270,24 +1258,24 @@ export interface TavernSave {
   regulars?: Regular[];
 }
 
-/** A moment that wants an 18+ card: a guest she's agreed to take upstairs, or being overwhelmed. */
+/** A moment that wants an 18+ card: a guest she's said yes to on the table, or being overwhelmed. */
 /**
- * `upstairs` is adult play (GAME_PATH.MD 7f): upstairs or in the taproom. `auto`: Consent off, and her state said
- * yes, so where and what are matched to it (`autoAdultPlay`) instead of asked.
+ * `table` is adult play (GAME_PATH.MD 7f, KP's Waitress Sex): on a table in the taproom, the room joining in.
+ * `auto`: Consent off, and her state said yes, so it starts at once (`autoAdultPlay`) instead of her setting it up.
  */
 export type AdultScene =
   | {
-      kind: "upstairs";
+      kind: "table";
       guestId: number;
       guestKind: GuestKind;
       guestStats?: RoleStats;
       auto?: boolean;
-      /** She put it to the whole room, on her last clear drink (barwork.ts): the taproom, with all of them, comes first. */
+      /** She put it to the whole room, on her last clear drink (barwork.ts): all of them, and the room left open. */
       wholeRoom?: boolean;
     }
   | { kind: "overwhelmed" };
-/** An invitation she's said yes to: up the stairs, or (her choice) right here in the taproom. */
-export type InviteScene = Extract<AdultScene, { kind: "upstairs" }>;
+/** Adult play she's said yes to: on a table, right here in the taproom. */
+export type InviteScene = Extract<AdultScene, { kind: "table" }>;
 
 /** An invitation she's answering in the taproom while the game's on: who's in it, and how the rest of the room took it. */
 interface TaproomGame {
@@ -1611,11 +1599,8 @@ export class Tavern {
   private readonly peak: Meters = emptyMeters();
   /** Pleasure tonight, 0 to 100. At the top, she's overwhelmed. */
   pleasure = 0;
-  /**
-   * Her adult play stack tonight, in percent (adultplay.ts): fills with desire, drinks, touches she lets land and
-   * clothes off. At 100% an aroused guest can go for adult play. Starts each night at a head start from her lewdness.
-   */
-  adultStack = 0;
+  /** Times she's come this shift (KP's orgasms in a bar shift): overwhelmed at a table, mid-brawl, in a game. */
+  comesTonight = 0;
   /** Willpower she's spent since she last slept (see willpower.ts). Kept as what's spent, so it's right whatever her Mind does. */
   private willSpent = 0;
   /** Energy she's spent since she last slept (herstate.ts, GAME_PATH.MD 7k), kept the same way. */
@@ -1660,7 +1645,7 @@ export class Tavern {
   private adultScene: AdultScene | null = null;
   /** An invitation she's answering in the taproom, while the game's on (taproom.ts); see `startTaproom`. */
   private taproom: TaproomGame | null = null;
-  /** What she'll find in the morning after tonight's invitations: said as she goes to bed. */
+  /** What she'll find in the morning after tonight's adult play: said as she goes to bed. */
   private morningAfter: string[] = [];
   /** Experience in every stat and skill. Lasts. */
   xp: Experience = {};
@@ -1669,7 +1654,14 @@ export class Tavern {
   /** A brawl in progress, or null. While set, the game shows the fight and the night waits. */
   fight: Fight | null = null;
   /** How the last brawl ended, for the game to show once. */
-  lastFight: { outcome: FightOutcome; text: string } | null = null;
+  lastFight: { outcome: FightOutcome; text: string; invasion?: boolean } | null = null;
+  /**
+   * Guests who left tonight wanting her (lust that showed, sober, never the Baron), latest last: who might come back
+   * while she eases the ache (invasion.ts, Consent off).
+   */
+  leftWanting: { kind: GuestKind; stats: RoleStats }[] = [];
+  /** The brawl going on came in through her door at night (invasion.ts). */
+  invading = false;
   /** What the winner of a brawl she lost is asking, until she answers. */
   brawlOffer: BrawlOffer | null = null;
   /** An after-hours game in progress, or null; and how the last one ended, for the game to show once. */
@@ -2569,6 +2561,9 @@ export class Tavern {
    */
   private sendOff(guest: Guest): void {
     if (guest.status === "eating") this.leaveDirty(guest);
+    if (guest.status !== "leaving" && !guest.female && guest.lust >= STRONG_LUST && guest.mood !== "drunk" && !isBaron(this.roomGuest(guest))) {
+      this.leftWanting.push({ kind: guest.kind, stats: guest.stats });
+    }
     guest.status = "leaving";
   }
 
@@ -2906,7 +2901,6 @@ export class Tavern {
   /** You let a guest have a piece of your clothing. */
   private loseClothing(): void {
     this.stripped++;
-    this.fillStack(STACK_GAIN.piece);
     this.cue("tip");
   }
 
@@ -2934,6 +2928,8 @@ export class Tavern {
   /** You took a drink with a guest. */
   private takeDrink(with_: readonly Guest[] = []): void {
     const strength = this.drinkStrength;
+    // Drunk enough, and a guest could get her down on a table (adultplay.ts; too drunk still blocks every yes).
+    const wasOpen = this.tableOpen;
     // Her last clear drink: one more and she's too drunk to say yes to anything (barwork.ts).
     const lastClear = this.drunk < SLOPPY_DRUNK && this.drunk + 2 * strength >= SLOPPY_DRUNK && this.drunk + strength < SLOPPY_DRUNK;
     // Past the top of drunk, it piles up as over the limit (barwork.ts).
@@ -2941,10 +2937,9 @@ export class Tavern {
     this.drunk = Math.min(DRUNK_MAX, this.drunk + strength);
     this.shift({ drinks: 1, fame: 1, respect: this.drunk >= SLOPPY_DRUNK ? -1 : 0 });
     this.raiseAll(DRINK_DESIRE + this.effects.drinkMeters);
-    // Drink loosens her: it fills her adult play stack (too drunk still blocks every yes).
-    this.fillStack(STACK_GAIN.drink);
     this.spendWill(DRINK_WILL);
     this.drinksTonight++;
+    this.noteTable(wasOpen);
     this.cue("drink");
     // Karryn's dead drunk: past her limit she's done for the night, once whoever she's talking to is done with her.
     // The drink before, she knows it.
@@ -3065,52 +3060,9 @@ export class Tavern {
     return scene;
   }
 
-  /** What she can do upstairs: everything she's warm enough for. A kiss is always there. */
-  upstairsChoices(): { act: UpstairsAct; label: string; ready: boolean }[] {
-    return UPSTAIRS_ACTS.map((act) => ({
-      act,
-      label: UPSTAIRS[act].label,
-      ready: this.meters[UPSTAIRS[act].meter] >= UPSTAIRS[act].need && (!UPSTAIRS[act].wet || this.wet),
-    }));
-  }
-
   /** Wet: pleasure enough, sooner the higher her Pussy desire (desire.ts). */
   get wet(): boolean {
     return wet(this.meters.pussy, this.pleasure);
-  }
-
-  /**
-   * She takes the guest upstairs. The bar runs on without her meanwhile, and everyone still waiting gets
-   * shorter of patience; the guest pays well, and goes back down besotted.
-   */
-  goUpstairs(scene: Extract<AdultScene, { kind: "upstairs" }>, act: UpstairsAct): string {
-    const def = UPSTAIRS[act];
-    const r = this.records;
-    r.invitations++;
-    // Adult play played out: her stack is spent, and fills again from nothing.
-    this.adultStack = 0;
-    r.acts[act] = (r.acts[act] ?? 0) + 1;
-    if (!r.upstairsKinds.includes(scene.guestKind)) r.upstairsKinds.push(scene.guestKind);
-    const gold = Math.round(def.gold * (1 + this.effects.upstairsGold + actSkillBonus(this.level(ACT_SKILL_OF[act]))));
-    this.gainXp(ACT_SKILL_OF[act], UPSTAIRS_XP);
-    this.gainXp("charm", 3);
-    this.adjust(gold, 0, this.effects.upstairsHeat);
-    this.earned += gold;
-    this.shift({ fame: 2, respect: -1, flirt: 1 });
-    this.raise(def.meter, 20);
-    for (const guest of this.guests) {
-      if (guest.id === scene.guestId) guest.mood = "idolize";
-      else if (guest.status === "waiting" || guest.status === "arriving") guest.patience = Math.max(1, guest.patience - guest.maxPatience * UPSTAIRS_PATIENCE);
-    }
-    this.say(`+${gold} gold. The bar waited for you, not happily.`);
-    const where = UPSTAIRS_CUM[act];
-    if (where) {
-      const ml = loadOf(scene.guestKind, this.random, scene.guestStats);
-      this.addCum({ [where]: ml }, 1);
-      this.say(`The ${(scene.guestStats?.label ?? scene.guestKind).toLowerCase()} finishes ${CUM_WHERE[where]}. +${ml} ml.`);
-    }
-    this.cue("tip");
-    return def.line;
   }
 
   /** Loads into her records, by where they landed. */
@@ -3148,13 +3100,87 @@ export class Tavern {
     return coatStages(both);
   }
 
-  /** She eases the ache herself before she sleeps. Her meters settle, and she sleeps easy. */
-  easeAche(): void {
-    if (!this.restless) return;
+  /**
+   * She eases the ache herself before she sleeps. Her meters settle, and she sleeps easy; unless (Consent off, KP's
+   * invasion) the noise draws someone who left tonight wanting her back through her door: then she's still worked up,
+   * reeling from coming, and it's a brawl in her room. Returns whether they came in.
+   */
+  easeAche(): boolean {
+    if (!this.restless) return false;
     this.records.alone++;
+    this.cameTonight();
+    if (this.maybeInvaded()) return true;
     this.eased = true;
     Object.assign(this.meters, emptyMeters());
     this.pleasure = 0;
+    return false;
+  }
+
+  /** How likely her noise easing the ache draws someone in tonight (invasion.ts): never with Consent on. */
+  get invasionChance(): number {
+    if (!this.consentOff || this.playerBody !== "Female") return 0;
+    return invasionChance({
+      desire: Math.max(...METERS.map((m) => this.meters[m])),
+      slutLevel: this.slutLevel,
+      fame: this.persona.fame,
+      candidates: this.leftWanting.length,
+    });
+  }
+
+  /**
+   * KP's invasion: the roll, and if it comes, the brawl. Still worked up (her desire stays), just come (she's reeling,
+   * so they get the first move), and bare on her bed; nobody's watching. The ones who come in are the latest who left
+   * wanting her, more the louder she was.
+   */
+  private maybeInvaded(): boolean {
+    const chance = this.invasionChance;
+    if (chance <= 0 || this.random() >= chance) return false;
+    const desire = Math.max(...METERS.map((m) => this.meters[m]));
+    const n = invaderCount(this.leftWanting.length, desire, this.random());
+    const who = this.leftWanting.slice(-n).reverse();
+    this.pleasure = 0;
+    const ladder = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder);
+    const lead = who[0];
+    const id = (i: number) => -1000 - i;
+    const stats: FighterStats = {
+      ...this.fighterStats(),
+      workedUp: true,
+      desire: { ...this.meters },
+      sens: { ...this.effects.sens },
+      pleasure: 0,
+      prefers: lead.stats.prefers,
+      forceful: true,
+      clothes: { pieces: ladder.map((g) => g.label), off: ladder.length },
+      sexOk: true,
+      tier: fightTier(this.slutLevel),
+      experience: {
+        hands: this.records.acts.hands ?? 0,
+        mouth: this.records.acts.mouth ?? 0,
+        breasts: this.records.acts.hands ?? 0,
+        pussy: this.records.acts.bed ?? 0,
+        butt: this.records.acts.behind ?? 0,
+      },
+      crowd: [],
+      joiners: who.slice(1).map((g, i) => ({ guestId: id(i + 1), kind: g.kind, drunk: false, rolled: g.stats, prefers: g.stats.prefers, horny: true })),
+    };
+    const fight = new Fight(id(0), lead.kind, false, stats, this.random, lead.stats);
+    fight.allIn();
+    const pick = <T>(lines: readonly T[]) => lines[Math.floor(this.random() * lines.length) % lines.length];
+    const name = (lead.stats.label ?? lead.kind).toLowerCase();
+    const door = (who.length > 1 ? pick(DOOR_CREW_LINES) : pick(DOOR_LINES))
+      .replaceAll("{Name}", `The ${name}`)
+      .replaceAll("{name}", `the ${name}`)
+      .replaceAll("{more}", String(who.length - 1));
+    fight.narrate("noise", pick(NOISE_LINES));
+    fight.narrate("invade", door);
+    // She's just come: they get the first move (KP's sneak attack).
+    fight.dazed = true;
+    this.fight = fight;
+    this.invading = true;
+    this.fightsTonight++;
+    this.records.invaded++;
+    this.say(`Someone heard you. ${who.length > 1 ? `${who.length} of them` : `The ${name}`} came back in.`);
+    return true;
   }
 
   /** Tonight's desire goes up on one meter, faster with passives that make it so. */
@@ -3164,8 +3190,6 @@ export class Tavern {
     this.meters[meter] = clamp(this.meters[meter] + gain, 0, METER_MAX);
     this.peak[meter] = Math.max(this.peak[meter], this.meters[meter]);
     const delta = this.meters[meter] - prev;
-    // Every point of desire she gains fills her adult play stack a little; Cock desire, more.
-    if (delta > 0) this.fillStack(delta * (meter === "cock" ? STACK_GAIN.cock : STACK_GAIN.desire));
     if (delta >= 1) {
       const name = METER_NAMES[meter];
       this.say(wildSensitivity(name, delta, this.lewdness, this.houseMode.current === "brothel"));
@@ -3181,11 +3205,44 @@ export class Tavern {
     for (const meter of METERS) this.raise(meter, n);
   }
 
-  /** Her adult play stack goes up (or down), in percentage points, between 0 and 100%. */
-  private fillStack(gain: number): void {
-    const before = this.adultStack;
-    this.adultStack = addStack(before, gain);
-    if (before < STACK_FULL && this.adultStack >= STACK_FULL) this.say("Your adult play stack is full (100%). A guest worked up enough could go for it now.");
+  /**
+   * How much her passives ease the table (adultplay.ts), KP's waitress-sex passives: Open House and The Whole Room,
+   * and the house rule The Back Room.
+   */
+  private get tableEase(): number {
+    return (this.passives.has("openHouse") ? 1 : 0) + (this.passives.has("wholeRoom") ? 1 : 0) + this.effects.tableEase;
+  }
+
+  /** Whether a guest could get her down on a table tonight (KP's Waitress Sex): drunk enough, or come enough this shift. */
+  get tableOpen(): boolean {
+    // Consent off (KP): dead drunk doesn't shut it. Passed out is another matter: the night's over by then.
+    const tooDrunk = this.consentOff ? Infinity : SLOPPY_DRUNK;
+    return this.playerBody === "Female" && tableOpen({ drunk: this.drunk, tooDrunk, comes: this.comesTonight, ease: this.tableEase });
+  }
+
+  /**
+   * How near the table is to opening, 0 to 100, for her status card: the drink or the times she's come this shift,
+   * whichever's nearer. Too drunk, it's shut (0).
+   */
+  get tableProgress(): number {
+    if (this.drunk >= SLOPPY_DRUNK && !this.consentOff) return 0;
+    if (this.tableOpen) return 100;
+    const ease = Math.max(0, Math.min(TABLE_COMES.length - 1, Math.floor(this.tableEase)));
+    const drink = this.drunk / (ease > 0 ? TABLE_DRUNK.eased : TABLE_DRUNK.base);
+    return Math.floor(Math.min(1, Math.max(drink, this.comesTonight / TABLE_COMES[ease])) * 100);
+  }
+
+  /** Says so as the table opens up (it wasn't before). */
+  private noteTable(wasOpen: boolean): void {
+    if (!wasOpen && this.tableOpen) this.say(storyLine(TABLE_OPEN_LINES, this.storyRoll(this.nightIndex, 30 + this.comesTonight)));
+  }
+
+  /** She came, this shift: counted toward the table (KP's orgasms in a bar shift). */
+  private cameTonight(n = 1): void {
+    if (n <= 0) return;
+    const wasOpen = this.tableOpen;
+    this.comesTonight += n;
+    this.noteTable(wasOpen);
   }
 
   /** Changes her reputation, and with greed, cold choices and secrets sold or told, her corruption. */
@@ -3459,7 +3516,9 @@ export class Tavern {
           pleasure: this.pleasure,
           prefers: guest.stats.prefers,
           exposure: this.exposure,
-          // Her clothes, as they are going in (7l): a foe may go for them, asked like any reach.
+          // Her clothes, as they are going in (7l): a foe may go for them, asked like any reach; Consent off, torn
+          // off her (KP).
+          forceful: this.consentOff,
           clothes: {
             pieces: stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder).map((g) => g.label),
             off: this.stripped,
@@ -3577,6 +3636,11 @@ export class Tavern {
     this.settleWill(fight.will);
     this.settleDesire(fight);
     // Going for her clothes (7l): a garment, asked like any reach; nothing to take, and she twists clear.
+    // Come in through her door (invasion.ts): nobody in the room to ask about, and Consent's off, so it lands.
+    if (!guest && this.invading) {
+      fight.afterReach("yes", this.willpower);
+      return;
+    }
     if (!guest || !this.maybeReach(guest, true, null, null, null, fight.reachingFor === "clothes")) fight.afterReach("pull", this.willpower);
   }
 
@@ -3601,6 +3665,7 @@ export class Tavern {
     // What she spent of her energy, and how it wore her out (7k).
     this.energySpent = Math.max(0, this.maxEnergy - fight.energy);
     this.tire(brawlFatigue(fight.foes.length, fight.turns, fight.climaxes));
+    this.cameTonight(fight.climaxes);
     // What she did with her hands and mouth counts like it would upstairs (riding them, like the bed).
     for (const [move, n] of Object.entries(fight.acts)) {
       const act: UpstairsAct = move === "ride" ? "bed" : (move as UpstairsAct);
@@ -3610,6 +3675,10 @@ export class Tavern {
     for (const [stat, n] of Object.entries(fight.xp)) this.gainXp(stat as StatId, n ?? 0);
     this.gainXp("endurance", 3);
     const r = this.records;
+    if (this.invading) {
+      this.finishInvasion(fight);
+      return;
+    }
     r.dodges += fight.dodges;
     r.grapplesLanded += fight.grapplesLanded;
     r.grapplesTaken += fight.grapplesTaken;
@@ -3660,11 +3729,42 @@ export class Tavern {
       // The one who won asks her, and their companions ask too. Hers to answer; the night ends either way (see BrawlOffer).
       if (guest && this.playerBody === "Female") {
         this.brawlOffer = { kind: guest.kind, stats: guest.stats, female: guest.female, drunk: lead.drunk, crew: this.brawlCrew(guest) };
+        // Consent off (KP's defeat): no asking. The one who won and their company take her where she fell.
+        if (this.consentOff && !lead.drunk) this.forceBrawlDuel();
       }
     }
     this.lastFight = { outcome: fight.outcome!, text };
     this.say(text);
     this.fight = null;
+  }
+
+  /**
+   * The brawl that came in through her door (invasion.ts) is over. Won or talked down, they're out and the door's
+   * barred. Lost, it's KP's defeat, right there on her bed: all of them, no Stop.
+   */
+  private finishInvasion(fight: Fight): void {
+    this.invading = false;
+    this.fight = null;
+    const r = this.records;
+    r.dodges += fight.dodges;
+    r.climaxes += fight.climaxes;
+    const pick = <T>(lines: readonly T[]) => lines[Math.floor(this.random() * lines.length) % lines.length];
+    let text: string;
+    if (fight.outcome === "won") {
+      r.invadedWon++;
+      text = pick(WON_LINES);
+    } else if (fight.outcome === "talked") {
+      r.talkedDown++;
+      text = pick(TALKED_LINES);
+    } else {
+      r.fightsLost++;
+      this.addDebuff("bruised");
+      text = "You're down on your own floor, and they're standing over you.";
+      const partners = fight.foes.filter((f) => f.out !== "spent").map((f) => ({ kind: f.kind, female: false }));
+      if (partners.length > 0) this.forceDuel(partners, "upstairs", partners.length > 1 ? FORCED_ROOM_CREW : FORCED_ROOM_ONE);
+    }
+    this.lastFight = { outcome: fight.outcome!, text, invasion: true };
+    this.say(text);
   }
 
   /** One who jumped into a brawl, as it ended for them (7i). */
@@ -3696,7 +3796,7 @@ export class Tavern {
   }
 
   /** How the last brawl ended, once. */
-  takeFightResult(): { outcome: FightOutcome; text: string } | null {
+  takeFightResult(): { outcome: FightOutcome; text: string; invasion?: boolean } | null {
     const result = this.lastFight;
     this.lastFight = null;
     return result;
@@ -3717,8 +3817,14 @@ export class Tavern {
       night: this.nightIndex,
       pull: this.effects.pull.invite ?? 0,
       respected: this.persona.respect >= HIGH_RESPECT,
-      stack: this.adultStack,
+      open: this.tableOpen && this.canHostTable(guest),
     });
+  }
+
+  /** Whether this guest could have her on a table here and now: not drunk, not leaving, not the Baron, nothing else on. */
+  private canHostTable(guest: Guest): boolean {
+    if (this.playerBody !== "Female" || (this.drunk >= SLOPPY_DRUNK && !this.consentOff) || this.duel || this.fight) return false;
+    return guest.mood !== "drunk" && guest.status !== "leaving" && !isBaron(this.roomGuest(guest));
   }
 
   /**
@@ -3731,23 +3837,15 @@ export class Tavern {
   }
 
   /**
-   * Consent off, and her state said yes: where and what, matched to how she is right then (adultplay.ts). Down in
-   * the taproom with everyone who wants in, if it's open to her and she's already on show; else upstairs, doing
-   * what her strongest desire wants. The taproom plays as the After Hours game, so Stop still ends it.
+   * Consent off, and her state said yes: on the table at once, with everyone in the room who wants in, the room left
+   * open, and every part of her she's warm enough for. It plays as the After Hours game, so Stop still ends it.
+   * Returns whether it started.
    */
-  autoAdultPlay(scene: InviteScene): { where: "taproom" } | { where: "upstairs"; act: UpstairsAct; line: string } {
+  autoAdultPlay(scene: InviteScene): boolean {
     const option = this.taproomOption(scene);
-    const showsOff = this.passives.has("openHouse") || this.passives.has("wholeRoom");
-    // She put it to the whole room (barwork.ts): the taproom, if it's open to her, whatever else.
-    const open = option.shown && !option.blocked;
-    if ((scene.wholeRoom && open) || matchWhere(open, this.strippedPieces.length, showsOff) === "taproom") {
-      const areas = this.duelAreas().filter((a) => a.ready).map((a) => a.id);
-      if (this.startTaproom(scene, option.joiners.map((g) => g.id), areas, "plain", true)) return { where: "taproom" };
-    }
-    const choices = this.upstairsChoices().map((c) => ({ ...c, meter: UPSTAIRS[c.act].meter }));
-    const act = matchAct(choices, this.meters) ?? "kiss";
-    const stairs = this.upstairsLine(scene);
-    return { where: "upstairs", act, line: `${stairs} ${this.takeUpstairs(scene, act)}` };
+    if (!option.shown || option.blocked) return false;
+    const areas = this.duelAreas().filter((a) => a.ready).map((a) => a.id);
+    return this.startTaproom(scene, option.joiners.map((g) => g.id), areas, "plain", true);
   }
 
   /**
@@ -3770,6 +3868,11 @@ export class Tavern {
     if (this.records.invitations === 0) lines.push(you(FIRST_INVITE_PAUSE));
   }
 
+  /** Whether the game going on is on a table in the taproom (KP's Waitress Sex): the picture puts her on it. */
+  get onTable(): boolean {
+    return this.taproom !== null && this.duel !== null;
+  }
+
   /** Someone in the room, as the taproom rules see them. */
   private roomGuest(g: Guest): RoomGuest {
     return { id: g.id, kind: g.kind, label: g.stats.label ?? g.kind, status: g.status, lust: g.lust, mood: g.mood, female: g.female };
@@ -3787,51 +3890,35 @@ export class Tavern {
   }
 
   /**
-   * Whether staying down in the taproom is an answer she can give to this invitation. `shown` is false when it
-   * isn't there at all: too much to drink on either side (GAME_PATH.MD: too drunk blocks every yes), or not her.
-   * `blocked` says why it's there but not open: nobody else wants in, or it's her first time (that one's behind a
-   * closed door, the way she'd want it).
+   * Whether the table is an answer she can give (KP's Waitress Sex). `shown` is false when it isn't there at all: too
+   * much to drink on either side (GAME_PATH.MD: too drunk blocks every yes), the Baron, or not her. `blocked` says why
+   * it's there but not open: something else going on. With nobody else up for it, it's just the two of them, and the
+   * room can still join in as it goes.
    */
   taproomOption(scene: InviteScene): { shown: boolean; blocked: string | null; joiners: RoomGuest[] } {
     const host = this.guests.find((g) => g.id === scene.guestId);
     const hidden = { shown: false, blocked: null, joiners: [] };
-    if (this.playerBody !== "Female" || this.drunk >= SLOPPY_DRUNK) return hidden;
+    // Too drunk shuts it, Consent on; Consent off (KP), dead drunk doesn't.
+    if (this.playerBody !== "Female" || (this.drunk >= SLOPPY_DRUNK && !this.consentOff)) return hidden;
     if (!host || host.mood === "drunk" || host.status === "leaving" || isBaron(this.roomGuest(host))) return hidden;
     const joiners = this.taproomJoiners(scene);
-    let blocked: string | null = null;
-    if (this.records.invitations === 0) blocked = "your first time should be behind a closed door";
-    else if (joiners.length === 0) blocked = "nobody else here is up for it";
-    else if (this.duel || this.fight) blocked = "not now";
+    const blocked = this.duel || this.fight ? "not now" : null;
     return { shown: true, blocked, joiners };
   }
 
-  /** The invitation card's line: them waiting on her answer, and the room calling out if others want in. */
+  /** The card's line: them with her on the table, and the room calling out if others want in. */
   inviteChoiceLine(scene: InviteScene): string {
     const option = this.taproomOption(scene);
     if (scene.wholeRoom && option.shown && !option.blocked) return storyLine(WHOLE_ROOM_LINES, this.storyRoll(scene.guestId, 4));
-    const lines = option.shown && !option.blocked ? INVITE_CHOICE_ROOM : INVITE_CHOICE;
+    const lines = option.joiners.length > 0 ? INVITE_CHOICE_ROOM : INVITE_CHOICE;
     return storyLine(lines, this.storyRoll(scene.guestId, 4));
   }
 
-  /** The walk up the stairs, in their kind's way, and the room at the top: new the first time, familiar after. */
-  upstairsLine(scene: InviteScene): string {
-    const stairs = storyLine(STAIRS[scene.guestKind], this.storyRoll(scene.guestId, 5));
-    const room = this.records.invitations === 0 ? UPSTAIRS_ROOM_FIRST : storyLine(UPSTAIRS_ROOM_AGAIN, this.storyRoll(scene.guestId, 6));
-    return `${stairs} ${room}`;
-  }
-
-  /** Upstairs, as before (`goUpstairs`), and what she'll find in the morning. */
-  takeUpstairs(scene: InviteScene, act: UpstairsAct): string {
-    const line = this.goUpstairs(scene, act);
-    this.morningAfter.push(storyLine(MORNING_AFTER[scene.guestKind], this.storyRoll(scene.guestId, 7)));
-    return line;
-  }
-
   /**
-   * She answers the invitation by staying down in the taproom: the one who asked, and the guests she's picked
-   * from those who want in, in an After Hours game (duel.ts) on her rules, with Stop always there. No stake: they
-   * pay in tips if it's played to the end. As it starts, the rest of the room takes it how they will: most stay
-   * and cheer, the cold and the respectable get up and go. Returns whether it started.
+   * On the table (KP's Waitress Sex): the one who asked, and any she's picked from those who want in, in an After
+   * Hours game (duel.ts) on her rules, with Stop always there. No stake: they pay in tips if it's played to the end.
+   * Just the two of them is fine; left open, the room joins in as it goes. As it starts, the rest of the room takes
+   * it how they will: most stay and cheer, the cold and the respectable get up and go. Returns whether it started.
    */
   startTaproom(scene: InviteScene, joinIds: readonly number[], areas: readonly DuelArea[], play: RolePlay = "plain", open = false): boolean {
     const option = this.taproomOption(scene);
@@ -3839,7 +3926,7 @@ export class Tavern {
     // Every one of them wants in, and she's picked every one: nobody is pulled in.
     const willing = new Set(option.joiners.map((g) => g.id));
     const picked = [...new Set(joinIds)];
-    if (picked.length === 0 || picked.some((id) => !willing.has(id))) return false;
+    if (picked.some((id) => !willing.has(id))) return false;
     const ready = new Set(this.duelAreas().filter((a) => a.ready).map((a) => a.id));
     if (areas.some((a) => !ready.has(a))) return false;
     if (!this.rolePlays().some((p) => p.id === play && p.ready)) return false;
@@ -3858,6 +3945,9 @@ export class Tavern {
     const r = this.records;
     r.taproomScenes++;
     r.taproomPartners += partners.length;
+    // It's her adult play, for her records and her passives, as upstairs used to be.
+    r.invitations++;
+    if (!r.upstairsKinds.includes(scene.guestKind)) r.upstairsKinds.push(scene.guestKind);
     // It counts as tonight's game: nobody lingers at bedtime to ask for another.
     this.duelTonight = true;
     this.gainXp("exhibition", 5);
@@ -3868,7 +3958,8 @@ export class Tavern {
     this.duel = duel;
     const room = [cheered > 0 ? `${cheered} stay to watch` : "", left.length > 0 ? `${left.length} get up and leave` : ""].filter(Boolean).join("; ");
     if (open) duel.note("You leave the room open: anyone watching who wants in can join the line.");
-    this.say(`You stay down in the taproom with ${partners.length} of them.${room ? ` ${room[0].toUpperCase()}${room.slice(1)}.` : ""}`);
+    const who = partners.length === 1 ? `the ${(partners[0].stats.label ?? partners[0].kind).toLowerCase()}` : `${partners.length} of them`;
+    this.say(`On a table in the taproom, with ${who}.${room ? ` ${room[0].toUpperCase()}${room.slice(1)}.` : ""}`);
     return true;
   }
 
@@ -3909,10 +4000,16 @@ export class Tavern {
     this.records.taproomMost = Math.max(this.records.taproomMost, game.partnerIds.length);
     const outcome = duel.outcome!;
     const played = outcome !== "stopped";
-    if (played) this.adultStack = 0;
+    // What she did on the table counts toward her records (each act once), and her skill at it.
+    for (const [move, n] of Object.entries(duel.used)) {
+      const act = ACT_OF_DUEL_MOVE[move];
+      if (!act || !n) continue;
+      this.records.acts[act] = (this.records.acts[act] ?? 0) + 1;
+      this.gainXp(ACT_SKILL_OF[act], UPSTAIRS_XP);
+    }
     const result = taproomResult(outcome, game.partnerIds.length, game.localsLeft);
     this.shift({ fame: result.fame, respect: result.respect, flirt: result.flirt });
-    this.adjust(0, result.trust, result.heat);
+    this.adjust(0, result.trust, result.heat + (played ? this.effects.upstairsHeat : 0));
     let gold = 0;
     for (const g of this.guests) {
       if (g.status === "leaving") continue;
@@ -4065,6 +4162,33 @@ export class Tavern {
     return true;
   }
 
+  /**
+   * Consent off, a brawl she lost (Karryn's Prison's defeat): it starts at once, right where she fell, with the one
+   * who won and all their company, every part of her she's warm enough for (a kiss always), no stake and no Stop. It
+   * ends when they're all spent or she gives in, and the night with it.
+   */
+  private forceBrawlDuel(): void {
+    const offer = this.brawlOffer;
+    if (!offer) return;
+    const partners = [{ kind: offer.kind, female: offer.female, stats: offer.stats }, ...offer.crew.map((c) => ({ kind: c.kind, female: c.female, stats: c.stats }))];
+    this.brawlOffer = null;
+    this.forceDuel(partners, "here", partners.length > 1 ? FORCED_HERE_CREW : FORCED_HERE_ONE);
+    this.say(`Right there on the taproom floor where you fell, ${partners.length > 1 ? `${partners.length} of them` : "they"} take you, and the room watches.`);
+  }
+
+  /**
+   * KP's defeat (Consent off): a game that just happens, with every part of her she's warm enough for (a kiss
+   * always), no stake and no Stop; it ends when they're all spent or she gives in, and the night with it.
+   */
+  private forceDuel(partners: readonly { kind: GuestKind; female: boolean; stats?: RoleStats }[], place: BrawlPlace, lines: readonly string[]): void {
+    const areas = this.duelAreas().filter((a) => a.ready).map((a) => a.id);
+    this.duelTonight = true;
+    this.brawlDuel = true;
+    this.brawlPlace = place;
+    this.duel = new Duel(partners[0].kind, new Set(areas), 0, this.duelistStats(), this.random, partners, "plain", true);
+    this.duel.note(storyLine(lines, this.storyRoll(this.nightIndex, 12)).replaceAll("{n}", String(partners.length)));
+  }
+
   /** The brawl winner's companions, each asking to come up too (empty with no lost brawl to answer). */
   get brawlCrewAsking(): readonly BrawlCrewMate[] {
     return this.brawlOffer?.crew ?? [];
@@ -4145,6 +4269,7 @@ export class Tavern {
     r.heldBack += duel.heldBack;
     r.undressed += duel.undressed;
     r.climaxes += duel.climaxes;
+    this.cameTonight(duel.climaxes);
     // An after-hours game wears her out too (7k), more with more of them.
     this.tire(duelFatigue(duel.partners.length, duel.climaxes));
     // Her willpower gave out: lost, whether it played out or she stopped it after. She carries it a night or two.
@@ -4201,8 +4326,6 @@ export class Tavern {
         : `It's too much, all ${duel.partners.length} of them, and you go first. They see themselves out, and you lie where you are a long while.`;
     }
     if (brawl && playedOut) {
-      // Adult play played out: her stack is spent.
-      this.adultStack = 0;
       if (place === "here") {
         // The whole room saw it: like the taproom, the pass talks (taproom.ts).
         const result = taproomResult(duel.outcome!, duel.partners.length, 0);
@@ -4300,8 +4423,9 @@ export class Tavern {
     // clothes), never the very first reach of the run.
     const askAdult =
       !brawl && !held && !firstEver && aroused(guest.lust, guest.mood === "drunk") && this.adultRandom !== null && this.adultRandom() < this.adultChance(guest);
-    // Her last clear drink (barwork.ts): they ask for adult play, whatever her stack, while she can still answer.
-    if (lastClear && !adultTouch(guest.kind, this.random)) return false;
+    // Her last clear drink (barwork.ts): they ask for adult play, open or not, while she can still answer; only if
+    // they could have her on the table.
+    if (lastClear && (!this.canHostTable(guest) || !adultTouch(guest.kind, this.random))) return false;
     const touch =
       (lastClear ? adultTouch(guest.kind, this.adultRandom ?? this.random) : null) ??
       (askAdult && this.adultRandom ? adultTouch(guest.kind, this.adultRandom) : null) ??
@@ -4355,8 +4479,11 @@ export class Tavern {
     // Only ever a touch within their own nerve (GAME_PATH.MD), not the bolder reach a brawl stirs up.
     const covered = s.autoTouch && eager && touch.level <= guestNerve && autoTouchFits(s, touch, answers);
     // Adult play with Consent off (Karryn's Prison): her state decides, not a push against her hold. Ready for it
-    // (a yes is there: her desire's high enough and nobody's too drunk) and them aroused, and it happens.
-    const adultAuto = adult && s.autoTouch && s.agreed && answers.includes("allow") && aroused(guest.lust, guestSloppy);
+    // (a yes is there: her desire's high enough) and them aroused, and it happens; dead drunk, it happens whether
+    // she's ready or not (KP's waitress sex).
+    const adultAuto = adult && s.autoTouch && s.agreed && (answers.includes("allow") || sloppy) && aroused(guest.lust, guestSloppy);
+    // Consent off, mid-brawl (KP): their hands just land. Struggling free in a scene is still hers.
+    const forced = brawl && s.autoTouch && s.agreed;
     // Consent off: weigh them against her. Worked out every time, so the dev panel can show it either way.
     const facts = { ...this.impulseFacts(guest, guestNerve, touch), held: held !== null };
     // Further in is bolder: her hold is that much the stronger for it.
@@ -4398,7 +4525,7 @@ export class Tavern {
     // If her hold stands, she's asked like any other time.
     const who = (guest.stats.label ?? guest.kind).toLowerCase();
     const talk = KINK_TALK[this.kink];
-    if (adult ? adultAuto : covered && s.agreed && check.lands) {
+    if (adult ? adultAuto : forced || (covered && s.agreed && check.lands)) {
       // Adult play keeps what they said to ask; a touch is just the reach.
       chat.lines = [...(adult ? lines.slice(0, 1) : []), { ...narrate(reachText), guestId: guest.id }];
       chat.impulse = true;
@@ -4407,7 +4534,7 @@ export class Tavern {
       this.records.subWins++;
       this.answerTouch(chat, "allow");
       // Where and what are matched to her state when the card plays (autoAdultPlay).
-      if (adult && this.adultScene?.kind === "upstairs") this.adultScene.auto = true;
+      if (adult && this.adultScene?.kind === "table") this.adultScene.auto = true;
       // The guest crows about it, then her sub talk: she gives in, in her own voice. Both in the log too, and both
       // in the style of her kink (kinktalk.ts).
       const crow = oneOf(talk.guestWin, this.random()).replaceAll("{guest}", who);
@@ -4588,7 +4715,6 @@ export class Tavern {
     this.earned += gold;
     if (how === "peek") this.records.peeks++;
     else this.records.flashes++;
-    this.fillStack(how === "peek" ? STACK_GAIN.peek : STACK_GAIN.bare);
     this.shift({ fame: how === "bare" ? 2 : 1, flirt: 1, respect: how === "bare" ? -1 : 0 });
     this.raise(SHOW_METER[part], SHOWN_DESIRE[how]);
     // Hornier, and bolder, as if she'd let them touch her.
@@ -4750,7 +4876,6 @@ export class Tavern {
       if (chat.layer === "inside") r.touchedInside++;
       else if (chat.layer === "bare") r.touchedBare++;
       // Her adult play stack fills with every touch she lets land, the bolder the more (adultplay.ts).
-      if (touch.region !== "invite") this.fillStack(STACK_GAIN.touch + touch.level * STACK_GAIN.touchPerLevel);
       // Tonight's desire: the meter for where it landed most, the rest of her a little; more the more practised.
       const own = TOUCH_DESIRE * (answer === "lean" ? LEAN_DESIRE : 1) * (1 + practised.sens) * layer.desire;
       const meter = METER_OF[touch.region];
@@ -4786,8 +4911,6 @@ export class Tavern {
       this.gainXp("mind", 2);
       respect += e.pullRespect;
     }
-    // Saying no to adult play cools her down: the stack drops back a way.
-    if (!took && touch.region === "invite") this.fillStack(-STACK_REFUSED);
     // Said no with nothing left to say it with: it's still no, but the room saw her waver.
     if (shaky) respect = Math.min(respect, 0);
     this.adjust(gold, 0, 0);
@@ -4824,12 +4947,12 @@ export class Tavern {
       else this.cue("tip");
       if (touch.region === "invite" && guest) {
         chat.reply.push(narrate(storyLine(INVITE_ROOM_YES, this.storyRoll(guest.id, 2))));
-        this.adultScene = { kind: "upstairs", guestId: guest.id, guestKind: guest.kind, guestStats: guest.stats, wholeRoom: chat.wholeRoom };
+        this.adultScene = { kind: "table", guestId: guest.id, guestKind: guest.kind, guestStats: guest.stats, wholeRoom: chat.wholeRoom };
       } else if (this.pleasure >= PLEASURE_MAX && !chat.brawl) {
         this.pleasure = 0;
         r.overwhelmed++;
         this.raiseAll(OVERWHELM_DESIRE + e.overwhelmBoost);
-        this.fillStack(STACK_GAIN.overwhelmed);
+        this.cameTonight();
         chat.reply.push(narrate("It all comes over you at once, right there at the table. Your knees give. (18+)"));
         this.adultScene = { kind: "overwhelmed" };
       }
@@ -6174,8 +6297,8 @@ export class Tavern {
     const start = this.eased ? this.effects.aloneStart : 0;
     for (const m of METERS) this.meters[m] = this.peak[m] = Math.min(METER_MAX, this.effects.start[m] + start);
     this.pleasure = 0;
-    // Her adult play stack starts again too, with a head start from how lewd she is.
-    this.adultStack = Math.min(STACK_FULL, stackStart(this.lewdness) + this.effects.stackStart);
+    // A new shift: the times she's come start again from nothing (the table, adultplay.ts).
+    this.comesTonight = 0;
     // A night's sleep, and she has all her willpower back, and her energy.
     this.willSpent = 0;
     this.energySpent = 0;
@@ -6188,6 +6311,8 @@ export class Tavern {
     this.lastDuel = null;
     this.testDuel = false;
     this.admirers = [];
+    this.leftWanting = [];
+    this.invading = false;
     this.peacemade = [];
     this.brawlOffer = null;
     this.brawlDuel = false;

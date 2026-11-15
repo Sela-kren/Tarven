@@ -163,6 +163,9 @@ export interface Records {
   /** Nights that ended with every piece she'd lose gone. */
   bareNights: number;
   invitations: number;
+  /** Times someone came in through her door at night (invasion.ts), and times she threw them out. */
+  invaded: number;
+  invadedWon: number;
   upstairsKinds: GuestKind[];
   /**
    * Invitations she answered by staying down in the taproom (taproom.ts): how many times, how many partners in
@@ -244,6 +247,8 @@ export function newRecords(): Records {
     clothesLost: 0,
     bareNights: 0,
     invitations: 0,
+    invaded: 0,
+    invadedWon: 0,
     upstairsKinds: [],
     taproomScenes: 0,
     taproomPartners: 0,
@@ -363,7 +368,7 @@ export interface Effects {
   /** How much faster pleasure builds, as a fraction; and what being overwhelmed adds to every meter. */
   pleasure: number;
   overwhelmBoost: number;
-  /** More gold from taking someone upstairs, as a fraction, and heat for it each time. */
+  /** More gold from adult play, as a fraction, and heat for it each time. */
   upstairsGold: number;
   upstairsHeat: number;
   /** Added to every meter's start the night after she eased the ache herself. */
@@ -376,8 +381,8 @@ export interface Effects {
   protectHeat: number;
   /** What happens to trust, heat and respect every night. */
   perNight: { trust: number; heat: number; respect: number; gold: number };
-  /** Points her adult play stack starts each night above where her lewdness puts it (tavernrules.ts). */
-  stackStart: number;
+  /** Eases the table (adultplay.ts, tavernrules.ts): a drink sooner, and a time sooner. */
+  tableEase: number;
   /** Levels given outright to stats and skills. */
   skill: Partial<Record<StatId | SkillId, number>>;
   /** In a fight: extra damage, and extra chance to dodge, talk them down and stare them down. */
@@ -472,7 +477,7 @@ export function noEffects(): Effects {
     protectTrust: 0,
     protectHeat: 0,
     perNight: { trust: 0, heat: 0, respect: 0, gold: 0 },
-    stackStart: 0,
+    tableEase: 0,
     skill: {},
     fightDamage: 0,
     fightDodge: 0,
@@ -733,7 +738,7 @@ export const PASSIVES: readonly PassiveDef[] = [
     id: "practisedMouth",
     name: "Practised Mouth",
     group: "mouth",
-    need: "Use your mouth upstairs 5 times",
+    need: "Use your mouth in adult play 5 times",
     progress: (f) => count(acts(f, "mouth", "kiss"), 5),
     benefit: "Mouth desire fills 25% more",
     effect: (e) => (e.sens.mouth += 0.25),
@@ -910,7 +915,7 @@ export const PASSIVES: readonly PassiveDef[] = [
     id: "fromBehind",
     name: "Taken From Behind",
     group: "butt",
-    need: "Be taken from behind upstairs 3 times",
+    need: "Be taken from behind in adult play 3 times",
     progress: (f) => count(acts(f, "behind"), 3),
     benefit: "Butt desire fills 30% faster",
     effect: (e) => (e.sens.butt += 0.3),
@@ -1001,7 +1006,7 @@ export const PASSIVES: readonly PassiveDef[] = [
     id: "firstNight",
     name: "First Night",
     group: "pussy",
-    need: "Take a guest to bed upstairs",
+    need: "Have a guest inside you in adult play",
     progress: (f) => count(acts(f, "bed"), 1),
     benefit: "All desire starts each night at +3",
     effect: (e) => startAll(e, 3),
@@ -1030,7 +1035,7 @@ export const PASSIVES: readonly PassiveDef[] = [
     id: "curiousHands",
     name: "Curious Hands",
     group: "cock",
-    need: "Use your hands on a guest upstairs",
+    need: "Use your hands on a guest in adult play",
     progress: (f) => count(acts(f, "hands"), 1),
     benefit: "Body and Cock desire start each night at +5",
     effect: (e) => {
@@ -1044,7 +1049,7 @@ export const PASSIVES: readonly PassiveDef[] = [
     id: "skilledHands",
     name: "Skilled Hands",
     group: "cock",
-    need: "Use your hands on guests upstairs 5 times",
+    need: "Use your hands on guests in adult play 5 times",
     progress: (f) => count(acts(f, "hands"), 5),
     benefit: "+20% gold from taking guests upstairs",
     effect: (e) => (e.upstairsGold += 0.2),
@@ -1055,7 +1060,7 @@ export const PASSIVES: readonly PassiveDef[] = [
     id: "eagerMouth",
     name: "Eager Mouth",
     group: "cock",
-    need: "Use your mouth on a guest upstairs",
+    need: "Use your mouth on a guest in adult play",
     progress: (f) => count(acts(f, "mouth"), 1),
     benefit: "Mouth and Cock desire start each night at +5",
     effect: (e) => {
@@ -1069,7 +1074,7 @@ export const PASSIVES: readonly PassiveDef[] = [
     id: "cockHungry",
     name: "Cock-Hungry",
     group: "cock",
-    need: "Use your hands or mouth upstairs 15 times, with 3 kinds of guest",
+    need: "Use your hands or mouth in adult play 15 times, with 3 kinds of guest",
     progress: (f) => count(acts(f, "hands", "mouth"), 15),
     also: (f) => f.records.upstairsKinds.length >= 3,
     benefit: "+30% gold from taking guests upstairs; all desire fills 10% faster",
@@ -1080,7 +1085,7 @@ export const PASSIVES: readonly PassiveDef[] = [
       e.nerve += 1;
     },
     lewd: 14,
-    thought: "(I look at them across the bar and think about upstairs.)",
+    thought: "(I look at them across the bar and think about the tables.)",
   },
 
   // ---- Exhibition ----
@@ -1168,29 +1173,30 @@ export const PASSIVES: readonly PassiveDef[] = [
     lewd: 10,
     thought: "(The whole pass knows what the innkeeper looks like. Good.)",
   },
-  // Answering an invitation in the taproom instead of upstairs (taproom.ts): the room as her audience.
+  // Adult play on the table in the taproom (taproom.ts): the room as her audience. Like KP's waitress-sex passives,
+  // they bring the table on sooner (adultplay.ts).
   {
     id: "openHouse",
     name: "Open House",
     group: "exhibition",
     need: "Have adult play down in the taproom",
     progress: (f) => count(f.records.taproomScenes, 1),
-    benefit: "+20% gold from adult play, upstairs or down; guests ask for a look 25% more often",
+    benefit: "+20% gold from adult play; guests ask for a look 25% more often; guests can have you on a table once you're tipsy, or you've come 2 times this shift",
     effect: (e) => {
       e.upstairsGold += 0.2;
       e.showAsk += 0.25;
     },
     lewd: 8,
-    thought: "(I didn't go upstairs. I didn't want a door between us and the room.)",
+    thought: "(No door, no bed. Just the table, and all of them watching.)",
   },
   {
     id: "wholeRoom",
     name: "The Whole Room",
     group: "exhibition",
-    need: "Stay down in the taproom 3 times, once with 4 at once",
+    need: "Have adult play on the table 3 times, once with 4 at once",
     progress: (f) => count(f.records.taproomScenes, 3),
     also: (f) => f.records.taproomMost >= 4,
-    benefit: "Body desire starts each night at +10; +1 fame a serve while undressed",
+    benefit: "Body desire starts each night at +10; +1 fame a serve while undressed; the table comes on one time sooner still",
     cost: "-1 respect every night: the room remembers",
     effect: (e) => {
       e.start.body += 10;
@@ -1204,44 +1210,44 @@ export const PASSIVES: readonly PassiveDef[] = [
   // ---- Adult play ----
   {
     id: "upstairsCurious",
-    name: "Upstairs Curious",
+    name: "Table Curious",
     group: "invitations",
-    need: "Take a guest upstairs",
+    need: "Have adult play with a guest",
     progress: (f) => count(f.records.invitations, 1),
     benefit: "All desire starts each night at +3",
     effect: (e) => startAll(e, 3),
     lewd: 6,
-    thought: "(I took someone upstairs. Me.)",
+    thought: "(I let someone have me on a table. In front of everyone. Me.)",
   },
   {
     id: "backStairs",
     name: "The Back Stairs",
     group: "invitations",
-    need: "Take guests upstairs 3 times",
+    need: "Have adult play 3 times",
     progress: (f) => count(f.records.invitations, 3),
-    benefit: "Adult play needs 10 less Cock desire; +20% gold from taking guests upstairs",
+    benefit: "Adult play needs 10 less Cock desire; +20% gold from adult play",
     effect: (e) => {
       add(e.ease, ["invite"], 10);
       e.upstairsGold += 0.2;
     },
     lewd: 10,
-    thought: "(The stairs creak in the same places every time now.)",
+    thought: "(I know which tables creak now. All of them.)",
   },
   {
     id: "mistressUpstairs",
-    name: "Mistress of the Upstairs Room",
+    name: "Mistress of the Tables",
     group: "invitations",
-    need: "Take guests upstairs 10 times, all 4 kinds of guest",
+    need: "Have adult play 10 times, with 4 kinds of guest",
     progress: (f) => count(f.records.invitations, 10),
     also: (f) => f.records.upstairsKinds.length >= 4,
-    benefit: "+50% gold from taking guests upstairs",
+    benefit: "+50% gold from adult play",
     cost: "+1 heat each time: the baron hears",
     effect: (e) => {
       e.upstairsGold += 0.5;
       e.upstairsHeat += 1;
     },
     lewd: 15,
-    thought: "(Half the pass has been up those stairs. With me.)",
+    thought: "(Half the pass has had me on these tables.)",
   },
 
   // ---- Masturbation ----
@@ -2671,6 +2677,8 @@ export function readProgress(raw: unknown): ProgressSave {
       "clothesLost",
       "bareNights",
       "invitations",
+      "invaded",
+      "invadedWon",
       "taproomScenes",
       "taproomPartners",
       "taproomMost",

@@ -102,6 +102,18 @@ describe("her clothes in a brawl, Karryn's Prison style (7l)", () => {
     for (let i = 0; i < 20; i++) expect(pickTouch("bandit", 9, () => i / 20, { canStrip: false, brawl: true, seen })?.strip).toBeFalsy();
   });
 
+  it("Consent off (KP): going for her clothes tears them off, no question; a grapple can too", () => {
+    const f = fight({ forceful: true });
+    f.act("dodge");
+    expect(f.reaching).toBe(false);
+    expect(f.events).toContain("their:stripped");
+    expect(f.clothesOff).toBe(1);
+    // A grapple: her move's roll, theirs (lands), grapple or blow (grapple), which grapple, then the tear.
+    const g = new Fight(1, "bandit", false, { ...BASE, desire: undefined, workedUp: false, forceful: true }, () => 0);
+    g.act("dodge");
+    expect(g.clothesOff).toBeGreaterThan(0);
+  });
+
   it("every type has its own say getting her clothes off, and she has hers in every voice", () => {
     for (const lines of Object.values(STRIP_VOICES)) expect(lines.length).toBeGreaterThanOrEqual(8);
     for (const lines of Object.values(HER_STRIPPED_LINES)) expect(lines.length).toBeGreaterThan(0);

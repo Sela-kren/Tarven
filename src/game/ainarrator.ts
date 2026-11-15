@@ -142,7 +142,7 @@ type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
 /**
  * Lines the model wrote ahead of time (tools/ai/make-lines.mjs fills public/ai-lines.json), by pronoun and then by
- * situation: `touch:<region>:<answer>:<tier>`, `ambient:<tier>`, `upstairs:<guest kind>`, `overwhelmed`, `passive`.
+ * situation: `touch:<region>:<answer>:<tier>`, `ambient:<tier>`, `table:<guest kind>`, `overwhelmed`, `passive`.
  * `{name}` and `{guest}` in a line are filled in by the game.
  */
 export interface LineBank {

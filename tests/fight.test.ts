@@ -292,6 +292,42 @@ describe("brawls in the tavern", () => {
     expect(t.duel?.partners.length).toBe(4);
   });
 
+  it("Consent off (KP's defeat): on a loss it starts at once where she fell, with no Stop", () => {
+    const { t, id } = withGuest();
+    t.playerBody = "Female";
+    t.touchSettings.autoTouch = true;
+    t.touchSettings.agreed = true;
+    lose(t, id);
+    expect(t.records.fightsLost).toBe(1);
+    expect(t.brawlOffer).toBeNull();
+    const duel = t.duel!;
+    expect(duel).not.toBeNull();
+    expect(duel.forced).toBe(true);
+    expect(duel.choices().some((c) => c.move === "stop")).toBe(false);
+    // Stop does nothing: it plays on.
+    t.duelMove("stop");
+    expect(t.duel).toBe(duel);
+    expect(duel.outcome).toBeNull();
+  });
+
+  it("Consent off (KP): a foe's hands mid-brawl just land, with no question", () => {
+    const { t, id } = withGuest();
+    t.playerBody = "Female";
+    t.touchSettings.autoTouch = true;
+    t.touchSettings.agreed = true;
+    t.guests.find((g) => g.id === id)!.lust = 10;
+    // Nothing left on her to tear (so he reaches for her instead).
+    t.stripped = 99;
+    t.startFight(id);
+    (t.fight as unknown as { joinQueue: unknown[] }).joinQueue.length = 0;
+    t.fightMove("dodge");
+    // They reached (the conversation's open), and it landed: no Slap, no Pull away, just back to the fight.
+    expect(t.inConversation).toBe(true);
+    const labels = t.talkChoices.map((c) => c.label);
+    expect(labels.length).toBeGreaterThan(0);
+    expect(labels.some((l) => l.startsWith("Pull away") || l.startsWith("Slap"))).toBe(false);
+  });
+
   it("on a loss to a roaring drunk, going on isn't possible", () => {
     const { t, id } = withGuest();
     t.playerBody = "Female";

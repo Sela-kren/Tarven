@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DuelStage, GANGBANG_FROM, type StagePartner } from "../src/game/duelstage";
-import { KIND_POSITIONS, SCENE_JOINS, sceneForEntry } from "../src/game/sexpose";
+import { KIND_POSITIONS, onTable, SCENE_JOINS, SCENE_POSES, sceneForEntry } from "../src/game/sexpose";
 import type { GuestKind } from "../src/game/tavern";
 
 const man = (id: number, kind: GuestKind = "farmer"): StagePartner => ({ id, kind, female: false, done: false });
@@ -136,6 +136,39 @@ describe("4. after a brawl she lost, she starts down where she fell", () => {
     stage.start(true, them);
     stage.moment(their(1, "mouth", 1), them, go);
     expect(stage.cast?.scene).toBe("kneel");
+  });
+});
+
+describe("4b. on a table in the taproom (KP's Waitress Sex)", () => {
+  it("starts with her on her back across it, the one who asked between her legs, the others at her head and hand", () => {
+    const stage = new DuelStage();
+    stage.start(false, [man(1), man(2), man(3)], true);
+    expect(stage.cast).toMatchObject({ scene: "tableBack", lead: 1 });
+    expect(stage.cast?.joins.map((j) => slotOf(stage, j.partner)).sort()).toEqual(["left", "mouth"]);
+    expect(SCENE_POSES.tableBack.table).toBeDefined();
+    expect(SCENE_POSES.tableBent.table).toBeDefined();
+  });
+
+  it("stays on the table: lying back or riding on her back across it, from behind bent over it", () => {
+    expect(onTable("missionary")).toBe("tableBack");
+    expect(onTable("cowgirl")).toBe("tableBack");
+    expect(onTable("doggy")).toBe("tableBent");
+    expect(onTable("prone")).toBe("tableBent");
+    expect(onTable("kneel")).toBe("kneel");
+    const stage = new DuelStage();
+    const them = [man(1, "farmer"), man(2)];
+    stage.start(false, them, true);
+    stage.moment(their(1, "butt", 2), them, go);
+    expect(stage.cast?.scene).toBe("tableBent");
+  });
+
+  it("a crowd on her is still the table, not the floor", () => {
+    const stage = new DuelStage();
+    const them = [man(1), man(2), man(3), man(4)];
+    stage.start(false, them, true);
+    them[0].done = true;
+    stage.moment(their(2, "kiss"), them, go);
+    expect(stage.cast?.scene).toBe("tableBack");
   });
 });
 

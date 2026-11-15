@@ -1,6 +1,6 @@
 /**
  * The fight screens: a tavern brawl, the After Hours duel (the sex fight) from the bedtime offer through her rules
- * to the end, and the 18+ cards (upstairs, alone, and how a duel ended). The duel's rules are in duel.ts and its
+ * to the end, and the 18+ cards (the table, alone, and how a duel ended). The duel's rules are in duel.ts and its
  * moves in duelmoves.ts; this file only draws them and passes her picks on.
  */
 import { CUM_NAMES, CUM_SPOTS, type CumSpot } from "./cum";
@@ -129,18 +129,15 @@ export function playAdultScene(game: Game, scene: AdultScene): void {
 }
 
 /**
- * Consent off, and her state said yes (adultplay.ts): no card to choose from. Where and what are matched to her
- * state; the taproom plays as the After Hours game (Stop still ends it), upstairs as its one card.
+ * Consent off, and her state said yes (adultplay.ts): no card to set it up. On the table at once, with everyone who
+ * wants in; it plays as the After Hours game, so Stop still ends it.
  */
 function playAutoAdult(game: Game, scene: InviteScene): void {
-  const back = () => backToWork(game);
-  const result = game.tavern.autoAdultPlay(scene);
-  if (result.where === "taproom") {
+  if (game.tavern.autoAdultPlay(scene)) {
     showDuel(game);
     return;
   }
-  showAdultCard(game, "Adult play", result.line, result.act === "kiss" ? "candle" : "bed", [{ label: "Go back down to the bar", onPick: back }]);
-  game.panelBack = back;
+  backToWork(game);
 }
 
 /** Back to work from an 18+ card. */
@@ -151,47 +148,30 @@ function backToWork(game: Game): void {
 }
 
 /**
- * She's said yes to adult play (invitetalk.ts tells it). Where is hers to choose: up the stairs with them, or
- * right here in the taproom, with them and whoever else in the room wants in (taproom.ts). The taproom isn't on
- * offer at all when either side has had too much; it's there but shut, with the reason, when nobody else wants
- * in or it's her first time. She can still change her mind.
+ * She's said yes (invitetalk.ts tells it): on a table, right here in the taproom, KP's Waitress Sex. The room wants
+ * in, or it's just the two of them for now. Not there at all when either side has had too much. She can still
+ * change her mind.
  */
 export function showInvitation(game: Game, scene: InviteScene): void {
   const { tavern } = game;
   const back = () => backToWork(game);
   const taproom = tavern.taproomOption(scene);
-  const buttons: Button[] = [{ label: scene.wholeRoom ? "Just the one of them, upstairs" : "Upstairs, in your room", onPick: () => showUpstairs(game, scene) }];
+  const buttons: Button[] = [];
   if (taproom.shown) {
     const n = taproom.joiners.length;
-    // She put it to the whole room (barwork.ts): all of them comes first.
-    buttons[scene.wholeRoom && !taproom.blocked ? "unshift" : "push"]({
+    buttons.push({
       label: taproom.blocked
-        ? `Down here, in the taproom (18+) (${taproom.blocked})`
-        : `Down here, in the taproom (18+): ${n} more ${n === 1 ? "wants" : "want"} to join`,
+        ? `On the table (18+) (${taproom.blocked})`
+        : n > 0
+          ? `On the table, here in the taproom (18+): ${n} more ${n === 1 ? "wants" : "want"} to join`
+          : "On the table, here in the taproom (18+): just the two of you, for now",
       disabled: Boolean(taproom.blocked),
-      onPick: () => showTaproomRules(game, scene, new Set(taproom.joiners.map((g) => g.id)), new Set(), "plain"),
+      // Her last clear drink, put to the whole room: everyone who wants in is ticked.
+      onPick: () => showTaproomRules(game, scene, new Set(scene.wholeRoom || n > 0 ? taproom.joiners.map((g) => g.id) : []), new Set(), "plain"),
     });
   }
   buttons.push({ label: "Not tonight", onPick: back });
-  showAdultCard(game, "Adult play", tavern.inviteChoiceLine(scene), "door", buttons);
-  game.panelBack = back;
-}
-
-/** Up the stairs: the walk up and the room at the top, then what happens there, still hers to choose. */
-function showUpstairs(game: Game, scene: InviteScene): void {
-  const { tavern } = game;
-  const back = () => backToWork(game);
-  const choices: Button[] = tavern.upstairsChoices().map(({ act, label, ready }) => ({
-    label: ready ? label : `${label} (not warm enough yet)`,
-    disabled: !ready,
-    onPick: () => {
-      const line = tavern.takeUpstairs(scene, act);
-      showAdultCard(game, "Upstairs", line, act === "kiss" ? "candle" : "bed", [{ label: "Go back down to the bar", onPick: back }]);
-      game.panelBack = back;
-    },
-  }));
-  choices.push({ label: "Change your mind, gently", onPick: back });
-  showAdultCard(game, "Upstairs", tavern.upstairsLine(scene), "door", choices);
+  showAdultCard(game, "On the table", tavern.inviteChoiceLine(scene), "door", buttons);
   game.panelBack = back;
 }
 
@@ -250,17 +230,16 @@ function showTaproomRules(game: Game, scene: InviteScene, picked: Set<number>, a
   const total = chosen.length + 1;
   const line = total > MAX_PARTNERS ? ` (${MAX_PARTNERS} at once, ${total - MAX_PARTNERS} in line)` : "";
   buttons.push({
-    label: chosen.length === 0 ? "Begin (18+) (pick at least one to join)" : `Begin (18+) with ${total} of them${line}`,
-    disabled: chosen.length === 0,
+    label: chosen.length === 0 ? "Begin (18+), just the two of you" : `Begin (18+) with ${total} of them${line}`,
     onPick: () => {
       if (tavern.startTaproom(scene, chosen, [...areas], play, open)) showDuel(game);
     },
   });
   buttons.push({ label: "Back", onPick: () => showInvitation(game, scene) });
   game.openPanel(
-    "In the taproom",
+    "On the table",
     [
-      `The ${(scene.guestStats?.label ?? scene.guestKind).toLowerCase()} who asked is in. Pick who else joins: each of them asked, and none of them will mind a no. Up to ${MAX_PARTNERS} at once; past that, they wait in line and step in as each one's done. A kiss is always in play. They'll keep to your rules, and you can stop at any time, for all of them.`,
+      `The ${(scene.guestStats?.label ?? scene.guestKind).toLowerCase()} who asked has you on the table. Pick who else joins: each of them asked, and none of them will mind a no. Up to ${MAX_PARTNERS} at once; past that, they wait in line and step in as each one's done. Left open, anyone watching who gets worked up asks to join as it goes. A kiss is always in play. They'll keep to your rules, and you can stop at any time, for all of them.`,
       `${current.name}: ${current.about}`,
     ],
     buttons,
@@ -349,6 +328,18 @@ export function showFight(game: Game): void {
   if (!fight) {
     game.hideDuelMoment();
     const result = tavern.takeFightResult();
+    // Lost, with Consent off (KP's defeat): it's already started, where she fell.
+    if (result?.outcome === "lost" && tavern.duel) {
+      showDuel(game);
+      return;
+    }
+    // Someone came in through her door at night, and she saw them off: bar the door, and to bed.
+    if (result?.invasion) {
+      const toBed = () => closeTheNight(game);
+      game.openPanel(result.outcome === "talked" ? "Talked down" : "Thrown out", [result.text], [{ label: "Bar the door and sleep", onPick: toBed }]);
+      game.panelBack = toBed;
+      return;
+    }
     // Lost, and the one who won is asking: hers to answer.
     if (result?.outcome === "lost" && tavern.brawlOffer) {
       showBrawlOffer(game, result.text);
@@ -487,7 +478,13 @@ export function showBedChoice(game: Game): void {
     buttons.push({
       label: "Ease the ache first (18+)",
       onPick: () => {
-        tavern.easeAche();
+        // Consent off (KP's invasion): the noise can draw someone back in.
+        if (tavern.easeAche()) {
+          showAdultCard(game, "Alone", "You blow out the candle and take care of it yourself. You're still gasping when the latch lifts.", "candle", [
+            { label: "Who's there?!", onPick: () => showFight(game) },
+          ]);
+          return;
+        }
         showAdultCard(game, "Alone", "You blow out the candle and take care of it yourself. Sleep comes easily after.", "candle", [
           { label: "Sleep", onPick: sleep },
         ]);
@@ -814,7 +811,7 @@ export function showDuel(game: Game): void {
     game.panelEl.classList.add("duel-test-open");
     game.panelEl.append(testSidebar(game, duel));
   }
-  // Esc always stops it.
+  // Esc stops it; a forced game (Consent off, after a lost brawl) has no Stop.
   game.panelBack = () => {
     tavern.duelMove("stop");
     showDuel(game);

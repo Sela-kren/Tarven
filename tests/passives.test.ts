@@ -117,27 +117,7 @@ describe("desire tonight", () => {
   });
 });
 
-describe("upstairs and the 18+ moments", () => {
-  it("lets her choose only what she's warm enough for, pays, and keeps the bar waiting", () => {
-    const t = new Tavern(SEATS);
-    t.open();
-    const choices = t.upstairsChoices();
-    expect(choices.find((c) => c.act === "kiss")?.ready).toBe(true);
-    expect(choices.find((c) => c.act === "bed")?.ready).toBe(false);
-    t.meters.pussy = 90;
-    // Pussy desire alone isn't enough for the bed: she has to be wet too (50 pleasure less a quarter of it).
-    expect(t.upstairsChoices().find((c) => c.act === "bed")?.ready).toBe(false);
-    t.pleasure = 28;
-    expect(t.upstairsChoices().find((c) => c.act === "bed")?.ready).toBe(true);
-    const gold = t.gold;
-    const line = t.goUpstairs({ kind: "upstairs", guestId: 1, guestKind: "soldier" }, "bed");
-    expect(line.length).toBeGreaterThan(0);
-    expect(t.gold).toBeGreaterThan(gold);
-    expect(t.records.invitations).toBe(1);
-    expect(t.records.acts.bed).toBe(1);
-    expect(t.records.upstairsKinds).toEqual(["soldier"]);
-  });
-
+describe("the 18+ moments", () => {
   it("lets her ease the ache herself at bedtime only when she's restless", () => {
     const t = new Tavern(SEATS);
     t.playerBody = "Female";

@@ -42,7 +42,9 @@ export type ScenePoseName =
   | "gangbang"
   | "downed"
   | "slumped"
-  | "used";
+  | "used"
+  | "tableBack"
+  | "tableBent";
 
 /** Where a body stands on the stage, and which way it's turned and laid. */
 export interface Place {
@@ -72,7 +74,21 @@ export interface ScenePose {
   them: { body: Body; place: Place } | null;
   /** Where the camera looks from: turned round the two of them (0 straight on from the camera's side), and down. */
   view: { yaw: number; pitch: number };
+  /** A table under her (KP's waitress_table), drawn with the scene; none for most. */
+  table?: SceneTable;
 }
+
+/** A taproom table on the stage: the middle of its top, how long (along x) and wide (along z) it is, and how high. */
+export interface SceneTable {
+  x: number;
+  z: number;
+  length: number;
+  width: number;
+  height: number;
+}
+
+/** How high a taproom table's top stands. */
+export const TABLE_TOP = 0.74;
 
 /** Where another partner can join her in a scene: at her mouth, or at one of her hands. */
 export type JoinSlot = "mouth" | "left" | "right";
@@ -248,6 +264,21 @@ export const SCENE_POSES: Readonly<Record<ScenePoseName, ScenePose>> = {
     them: { body: b(KNEEL, { torso: [-0.5, 0, 0], head: [-0.3, 0, 0], armL: arm(0.5, -0.1, 0.2), armR: arm(0.2, 0.05, 0.2) }), place: at(-0.1, 0, -0.4, FACE_US) },
     view: { yaw: 0.25, pitch: 0.35 },
   },
+  // On a table in the taproom (KP's waitress_table): on her back across it, her hips at its edge and her legs up round
+  // him; him standing between them, hands on her thighs.
+  tableBack: {
+    her: { body: b(STAND, { arch: 0, head: [0.25, 0.6, 0], armL: arm(2.7, 0.6, 0.5), armR: arm(2.7, 0.6, 0.5), legL: leg(1.5, 0.45, 1.0), legR: leg(1.5, 0.45, 1.0) }), place: at(0.85, TABLE_TOP + 0.1, 0, FACE_X, ON_BACK) },
+    them: { body: b(STAND, { torso: [-0.2, 0, 0], head: [-0.4, 0, 0], armL: arm(0.75, -0.15, 0.35), armR: arm(0.75, -0.15, 0.35), legL: leg(0.1, 0.1, 0.15), legR: leg(0.1, 0.1, 0.15) }), place: at(0.32, 0, 0, FACE_MINUS_X) },
+    view: { yaw: 0.45, pitch: 0.2 },
+    table: { x: -0.45, z: 0, length: 1.25, width: 0.75, height: TABLE_TOP },
+  },
+  // Bent forward over a table, chest down on it, arms out across it, looking back; him standing close behind.
+  tableBent: {
+    her: { body: b(STAND, { arch: 0.2, head: [0.6, 0.35, 0], armL: arm(2.6, 0.4, 1.2), armR: arm(2.6, 0.4, 1.2), legL: leg(1.5, 0.12, 0.05), legR: leg(1.5, 0.12, 0.05) }), place: at(0.9, TABLE_TOP + 0.12, 0, FACE_MINUS_X, -ON_BACK) },
+    them: { body: b(STAND, { drop: 0.04, torso: [-0.15, 0, 0], head: [-0.3, 0, 0], armL: arm(0.75, -0.15, 0.35), armR: arm(0.75, -0.15, 0.35), legL: leg(0.1, 0.08, 0.2), legR: leg(0.1, 0.08, 0.2) }), place: at(0.3, 0, 0, FACE_MINUS_X) },
+    view: { yaw: 0.4, pitch: 0.15 },
+    table: { x: -0.55, z: 0, length: 1.05, width: 0.75, height: TABLE_TOP },
+  },
   // Her willpower gone and him in her: on her back, limp, legs fallen open; him kneeling between them, over her.
   used: {
     her: { body: b(STAND, { arch: 0, head: [0, 0.8, 0], armL: arm(2.6, 0.8, 0.3), armR: arm(2.6, 0.8, 0.3), legL: leg(0.9, 0.5, 1.3), legR: leg(0.9, 0.5, 1.3) }), place: at(0.85, 0.1, 0, FACE_X, ON_BACK) },
@@ -311,6 +342,16 @@ export const SCENE_JOINS: Partial<Readonly<Record<ScenePoseName, readonly JoinSp
     { slot: "left", body: WAITING, place: at(-0.6, 0, -0.5, FACE_US - 0.4) },
     { slot: "right", body: WAITING, place: at(0.5, 0, -0.55, FACE_US + 0.4) },
   ],
+  // The table (KP's waitress_table joins): one at her head across the table's end, one at her hand, one at the other.
+  tableBack: [
+    { slot: "mouth", body: STANDING_AT_HEAD, place: at(-1.4, 0, 0, FACE_X) },
+    { slot: "left", body: WAITING, place: at(-0.8, 0, -0.65, FACE_US + 0.3), reach: { armL: arm(2.2, 1.2, 0.3) } },
+    { slot: "right", body: WAITING, place: at(-0.45, 0, -0.65, FACE_US), reach: { armR: arm(2.2, 1.2, 0.3) } },
+  ],
+  tableBent: [
+    { slot: "mouth", body: STANDING_AT_HEAD, place: at(-1.55, 0, 0, FACE_X) },
+    { slot: "right", body: WAITING, place: at(-0.3, 0, -0.6, FACE_US) },
+  ],
 };
 
 /**
@@ -319,6 +360,7 @@ export const SCENE_JOINS: Partial<Readonly<Record<ScenePoseName, readonly JoinSp
  */
 export const HOLDING_SCENES: ReadonlySet<ScenePoseName> = new Set<ScenePoseName>([
   "kneel", "throat", "paizuri", "licked", "cowgirl", "reverse", "doggy", "missionary", "bentover", "carry", "prone", "gangbang", "used",
+  "tableBack", "tableBent",
 ]);
 
 /**
@@ -334,6 +376,17 @@ export const KIND_POSITIONS: Readonly<Record<GuestKind, { pussy: ScenePoseName; 
   bandit: { pussy: "doggy", butt: "prone" },
   noble: { pussy: "cowgirl", butt: "reverse" },
 };
+
+/**
+ * On a table in the taproom (KP's Waitress Sex): the scenes there are on it. Lying back or riding is on her back
+ * across it; from behind, or flat out, is bent over it. With three or more of them on her, it's still the table,
+ * them all at her slots. What isn't either (on her knees for him, a kiss) takes her off it for the moment.
+ */
+export function onTable(scene: ScenePoseName): ScenePoseName {
+  if (["missionary", "cowgirl", "reverse", "carry", "licked", "used", "gangbang"].includes(scene)) return "tableBack";
+  if (["doggy", "bentover", "prone"].includes(scene)) return "tableBent";
+  return scene;
+}
 
 /** With her willpower gone she can't hold herself up: what each scene becomes. */
 export function defeatedScene(scene: ScenePoseName): ScenePoseName {

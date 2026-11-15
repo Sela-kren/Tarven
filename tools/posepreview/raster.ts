@@ -40,6 +40,7 @@ const SHOWN: Record<string, [number, number, number]> = {
   Cloth: [0.3, 0.38, 0.62],
   Hair: [0.55, 0.3, 0.7],
   Shoes: [0.25, 0.2, 0.18],
+  Wood: [0.48, 0.32, 0.2],
 };
 
 /** The parts of her face drawn in their own colours, by material: eye dots, brows, lips, teeth, tongue, lines. */

@@ -43,9 +43,9 @@ export const TAVERN_RULES: readonly TavernRuleDef[] = [
     name: "The Back Room",
     cost: 30,
     corruption: 5,
-    does: "Your adult play stack starts every night 20% fuller",
+    does: "Guests can have you on a table a drink sooner (tipsy, not drunk), and once you've come one time fewer",
     costs: "Corruption +5 when you open it",
-    effect: (e) => (e.stackStart += 20),
+    effect: (e) => (e.tableEase += 1),
   },
   {
     id: "waterAle",
