@@ -18,6 +18,10 @@ const TARGETS = [
 ].join(", ");
 
 export const CURSOR_CLASS = "kb-cursor";
+/** Sent to a control when the cursor lands on it, by key or by mouse. */
+export const CURSOR_EVENT = "kb-cursor";
+/** A control marked with this is where the cursor starts when its menu comes up. */
+export const CURSOR_START = "kbStart";
 
 const PICK_KEYS = ["KeyE", "Enter", "Space"];
 const MOVE_KEYS = ["KeyW", "KeyS", "KeyA", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
@@ -55,6 +59,8 @@ export class KeyNav {
     if (!el) return;
     el.classList.add(CURSOR_CLASS);
     el.scrollIntoView({ block: "nearest" });
+    // Tells the control the cursor's on it (a brawl's target list points at the foe it names).
+    el.dispatchEvent(new CustomEvent(CURSOR_EVENT));
   }
 
   /** Lets go of the menu: no cursor until one is given again. */
@@ -74,8 +80,8 @@ export class KeyNav {
     }
     if (!root) return;
     const targets = this.targets();
-    // A rebuilt or shrunk menu: back to its first control.
-    if (!this.current || !targets.includes(this.current)) this.moveTo(targets[0] ?? null);
+    // A rebuilt or shrunk menu: back to its first control, or the one it asks to start on.
+    if (!this.current || !targets.includes(this.current)) this.moveTo(targets.find((t) => CURSOR_START in t.dataset) ?? targets[0] ?? null);
     const el = this.current;
     if (!el) return;
     const { input } = this;

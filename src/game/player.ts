@@ -1,5 +1,6 @@
 import { Group, MathUtils, Object3D, Vector3 } from "three";
 import { FAINT_SECONDS, REDRESS_SECONDS } from "./barwork";
+import { FIST, LOOSE_HAND } from "./battlepose";
 import { moveVector, resolveCircle, type Rect } from "./collision";
 import type { Input } from "./input";
 import { BUILT_HEFT, heftedSpring, type SoftHeft } from "./heft";
@@ -346,6 +347,8 @@ const BUN_SWAY = 0.05;
 
 const CARRY_UPPER_ARM = 0.3;
 const CARRY_ELBOW = 0.95;
+/** Her hands curled a little more round the tray than they hang loose (0 open, 1 a fist). */
+const CARRY_GRIP = 0.35;
 const CARRY_POSITION = new Vector3(0, 1.02, -0.42);
 const SIT_THIGH = 1.5;
 const SIT_KNEE = 1.5;
@@ -394,6 +397,8 @@ export class Body {
   private readonly upperArmR: Object3D;
   private readonly foreArmL: Object3D;
   private readonly foreArmR: Object3D;
+  /** Each hand's fingers, their tips and thumb: right, then left. A body built before the fingers had bones has none. */
+  private readonly hands: readonly (readonly [Object3D | undefined, Object3D | undefined, Object3D | undefined])[];
   // Only characters with loose hair have these bones.
   private readonly bun: Object3D | undefined;
   private readonly strandL: Object3D | undefined;
@@ -439,6 +444,9 @@ export class Body {
     this.upperArmR = part("UpperArm_R");
     this.foreArmL = part("ForeArm_L");
     this.foreArmR = part("ForeArm_R");
+    this.hands = (["R", "L"] as const).map((side) =>
+      (["HandFingers", "HandTips", "HandThumb"] as const).map((bone) => model.getObjectByName(`${name}_${bone}_${side}`)) as [Object3D | undefined, Object3D | undefined, Object3D | undefined],
+    );
     this.bun = model.getObjectByName(`${name}_Bun`);
     this.strandL = model.getObjectByName(`${name}_Strand_L`);
     this.strandR = model.getObjectByName(`${name}_Strand_R`);
@@ -573,6 +581,17 @@ export class Body {
     for (const jiggle of this.jiggles) if (jiggle.bone.name.startsWith(`${this.name}_${soft}`)) jiggle.kick(push);
   }
 
+  /** Curls both hands from open (0) to a fist (1), the way the fight picture does (battlepose.ts `applyPose`). */
+  private curlHands(curl: number): void {
+    this.hands.forEach(([fingers, tips, thumb], i) => {
+      // Mirrored for the left hand.
+      const s = i === 0 ? 1 : -1;
+      fingers?.rotation.set(0, 0, -FIST.fingers * curl * s);
+      tips?.rotation.set(0, 0, -FIST.tips * curl * s);
+      thumb?.rotation.set(FIST.thumb[0] * curl, FIST.thumb[1] * curl * s, FIST.thumb[2] * curl * s);
+    });
+  }
+
   /** Lays the reaction to a touch over the pose just set. */
   private poseReaction(): void {
     if (!this.reaction) return;
@@ -597,6 +616,16 @@ export class Body {
   }
 
   /** The show pose on her now, and how far it's on (0 to 1, eased as her limbs are); null with none. */
+  /**
+   * Lifts her skirt at once, at the front and back (0 to 1 each), for a picture taken now (the comic panel copies
+   * her): her next frame lets it back as her pose has it.
+   */
+  liftSkirtNow(front: number, back: number): void {
+    if (!this.skirt) return;
+    this.skirt.setLift(front, back);
+    this.skirt.solve(0);
+  }
+
   get showing(): { pose: ShowPose; amount: number } | null {
     return this.show ? { pose: this.show, amount: MathUtils.smoothstep(this.showAmount, 0, 1) } : null;
   }
@@ -854,6 +883,8 @@ export class Body {
       this.foreArmR.rotation.x = lerp(this.foreArmR.rotation.x, HAND_ON_HIP.elbow, hand);
     }
     this.upperArmR.rotation.y = HAND_ON_HIP.upper.y * hand;
+    // Her fingers curl a little, as a hand at rest does, instead of standing out straight and fanned.
+    this.curlHands(MathUtils.lerp(LOOSE_HAND, CARRY_GRIP, carrying));
 
     this.poseShow();
     this.poseReaction();
@@ -903,6 +934,11 @@ export class Sibling {
   }
 
   /** The show pose on her now, and how far it's on: see `Body.showing`. */
+  /** Lifts her skirt at once, for a picture taken now: see `Body.liftSkirtNow`. */
+  liftSkirtNow(front: number, back: number): void {
+    this.body.liftSkirtNow(front, back);
+  }
+
   get showing(): { pose: ShowPose; amount: number } | null {
     return this.body.showing;
   }

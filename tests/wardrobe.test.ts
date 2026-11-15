@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LOOK_OPTIONS, playerOutfits } from "../src/game/appearance";
 import { DARES, stripPiece } from "../src/game/banter";
-import { piecesOff, stripLadder, stripStages, topPull, WARDROBE, type WardrobeBody } from "../src/game/wardrobe";
+import { cutInPieces, piecesOff, stripLadder, stripStages, topPull, WARDROBE, type WardrobeBody } from "../src/game/wardrobe";
 
 const BODIES: WardrobeBody[] = ["Female", "Male"];
 
@@ -23,6 +23,19 @@ describe("the wardrobe", () => {
       expect(ids).not.toContain("shoes");
       expect(ids).not.toContain("boots");
     }
+  });
+
+  it("bares her for a cut-in without ever taking her shoes or boots, in every outfit", () => {
+    const feet = new Set(WARDROBE.Female.filter((g) => g.region === "feet").map((g) => g.id));
+    for (const outfit of playerOutfits("Female")) {
+      const off = cutInPieces("Female", outfit.id, undefined, undefined, []);
+      for (const id of off) expect(feet.has(id)).toBe(false);
+    }
+    // Her smallclothes come off; her skirt stays, to be lifted; what's already off isn't counted again.
+    const plain = cutInPieces("Female", undefined, undefined, undefined, []);
+    expect(plain).toContain("smalls");
+    expect(plain).not.toContain("skirt");
+    expect(cutInPieces("Female", undefined, undefined, undefined, ["smalls"])).not.toContain("smalls");
   });
 
   it("takes off outer layers before what's under them", () => {

@@ -163,6 +163,31 @@ export function topPull(body: WardrobeBody, outfit: string | undefined, off: rea
   return { ids, dir: ids.some((id) => TOP_PULL[id] === "up") ? "up" : "down" };
 }
 
+/**
+ * Bottoms she has held up out of the way in a cut-in, as in a show (they hang on the model's skirt panels, which
+ * lift), and those that stay on round her waist above it all.
+ */
+const CUT_LIFTED: ReadonlySet<string> = new Set(["skirt", "drapes"]);
+const CUT_KEPT: ReadonlySet<string> = new Set(["girdle"]);
+
+/**
+ * What comes off her for a cut-in panel, which always shows her bare (the rest moves instead: her top pulled off her
+ * breasts, her skirt lifted): what can't move out of the way, her band and smallclothes (painted on her), tights over
+ * her groin, and any bottom that isn't a skirt. Never her shoes or boots, nor anything else she keeps on (`keep`), nor
+ * what's already off (`off`).
+ */
+export function cutInPieces(body: WardrobeBody, outfit: string | undefined, legwear: string | undefined, under: Pick<Look, "bra" | "briefs"> | undefined, off: readonly string[]): string[] {
+  const tights = legwearOverGroin(body, outfit, legwear);
+  return stripLadder(body, outfit, legwear, under)
+    .filter((g) => {
+      if (off.includes(g.id) || g.region === "feet") return false;
+      if (g.layer === "smallclothes") return true;
+      if (g.layer === "legwear") return tights;
+      return g.layer === "outer" && g.region === "bottom" && !CUT_LIFTED.has(g.id) && !CUT_KEPT.has(g.id);
+    })
+    .map((g) => g.id);
+}
+
 /** Whether her legwear reaches up over her groin (tights, leggings): its top band, from her waist down her thighs. */
 export function legwearOverGroin(body: WardrobeBody, outfit?: string, legwear?: string): boolean {
   return legwearOf(body, { outfit, legwear })?.bands.includes("T_hose") ?? false;

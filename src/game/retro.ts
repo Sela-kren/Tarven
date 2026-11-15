@@ -127,9 +127,44 @@ export function coatRetroMaterial(): MeshPhongMaterial {
   return coat;
 }
 
+/**
+ * Her skin's soft glow in the room (KP's skin, kept PS1): which materials have it (her body's skin and areolae, as
+ * built or tinted, which keep their names), and how: a pink sheen widening out to where her skin turns from the
+ * viewer, a brighter rim tight at that edge, and a soft highlight as from a lamp up and to the left of the viewer.
+ * All scaled by how lit she is there, so she doesn't glow in the dark.
+ */
+const SKIN_GLOW_NAMES = /^(T_skin_f|T_areola)$/;
+const SKIN_GLOW = {
+  sheen: 0.1,
+  sheenPower: 1.6,
+  sheenColor: [1, 0.66, 0.66],
+  rim: 0.16,
+  rimPower: 3.5,
+  rimColor: [1, 0.9, 0.86],
+  gloss: 0.08,
+  glossPower: 18,
+} as const;
+
+const vec3 = (rgb: readonly number[]) => `vec3(${rgb.map((v) => v.toFixed(3)).join(", ")})`;
+const SKIN_GLOW_GLSL = `{
+  vec3 glowNormal = normalize(normal);
+  vec3 glowView = normalize(vViewPosition);
+  float facing = clamp(dot(glowNormal, glowView), 0.0, 1.0);
+  float lit = clamp(dot(gl_FragColor.rgb, vec3(0.6)), 0.15, 1.0);
+  float sheen = pow(1.0 - facing, ${SKIN_GLOW.sheenPower.toFixed(1)}) * ${SKIN_GLOW.sheen.toFixed(3)};
+  float rim = pow(1.0 - facing, ${SKIN_GLOW.rimPower.toFixed(1)}) * ${SKIN_GLOW.rim.toFixed(3)};
+  vec3 glowHalf = normalize(normalize(vec3(-0.45, 0.6, 0.65)) + glowView);
+  float gloss = pow(max(dot(glowNormal, glowHalf), 0.0), ${SKIN_GLOW.glossPower.toFixed(1)}) * ${SKIN_GLOW.gloss.toFixed(3)};
+  gl_FragColor.rgb += (${vec3(SKIN_GLOW.sheenColor)} * sheen + ${vec3(SKIN_GLOW.rimColor)} * rim + vec3(gloss)) * lit;
+}
+#include <dithering_fragment>`;
+
 /** Adds the PS1's two rasterizer quirks: vertices snapped to a grid and affine (warping) textures. */
 function withPs1Rasterizer<T extends MeshLambertMaterial | MeshPhongMaterial>(material: T): T {
   material.onBeforeCompile = (shader) => {
+    if (SKIN_GLOW_NAMES.test(material.name)) {
+      shader.fragmentShader = shader.fragmentShader.replace("#include <dithering_fragment>", SKIN_GLOW_GLSL);
+    }
     shader.uniforms.uSnap = snapResolution;
     shader.vertexShader = `${AFFINE_VARYINGS}uniform vec2 uSnap;\n${shader.vertexShader}`.replace(
       "#include <project_vertex>",
@@ -157,7 +192,7 @@ function withPs1Rasterizer<T extends MeshLambertMaterial | MeshPhongMaterial>(ma
         #endif`,
       );
   };
-  material.customProgramCacheKey = () => "retro-ps1";
+  material.customProgramCacheKey = () => (SKIN_GLOW_NAMES.test(material.name) ? "retro-ps1-skin" : "retro-ps1");
   return material;
 }
 

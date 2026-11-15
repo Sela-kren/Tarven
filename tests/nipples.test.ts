@@ -21,8 +21,30 @@ const tip = (id: string, arousal: number) => {
 };
 
 describe("nipple types", () => {
-  it("has neat first, then puffy, wide and inverted", () => {
-    expect(NIPPLE_TYPES.map((t) => t.id)).toEqual(["neat", "puffy", "wide", "inverted"]);
+  it("has KP's full and puffy first (her default), then neat, puffy, wide and inverted", () => {
+    expect(NIPPLE_TYPES.map((t) => t.id)).toEqual(["full", "neat", "puffy", "wide", "inverted"]);
+  });
+
+  it("goes as big as KP draws them, turned up: the areola 1.6 times the type, within the disc as built", () => {
+    const edge = (areola: number, bust = 0) => nippleProfile(type("neat"), 0, areola, 0, bust)[DISC_RINGS].r;
+    expect(edge(1)).toBeGreaterThan(edge(0) * 1.5);
+    expect(nippleProfile(type("full"), 1, 1, 0, 2.5)[DISC_RINGS].r).toBeLessThanOrEqual(0.026 + 1e-9);
+    expect(nippleProfile(type("neat"), 1, 0, 1)[0].h).toBeGreaterThan(nippleProfile(type("neat"), 0, 0, 1)[0].h * 1.5);
+  });
+
+  it("grows them a little with her bust", () => {
+    const edge = (bust: number) => nippleProfile(type("neat"), 0, 0, 0, bust)[DISC_RINGS].r;
+    expect(edge(1.6)).toBeGreaterThan(edge(0));
+    expect(edge(-1)).toBeLessThan(edge(0));
+  });
+
+  it("gives KP's full type a bigger, puffier areola and a thicker nipple than neat", () => {
+    const full = nippleProfile(type("full"), 0, 0, 1);
+    const neat = nippleProfile(type("neat"), 0, 0, 1);
+    expect(full[DISC_RINGS].r).toBeGreaterThan(neat[DISC_RINGS].r * 1.4);
+    expect(full[2].r).toBeGreaterThan(neat[2].r * 1.25);
+    // Raised, calm (aroused, an areola firms and flattens a little).
+    expect(nippleProfile(type("full"), 0, 0, 0)[3].h).toBeGreaterThan(nippleProfile(type("neat"), 0, 0, 0)[3].h + 0.002);
   });
 
   it("stands every nipple taller as she's aroused", () => {

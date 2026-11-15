@@ -75,7 +75,7 @@ import { changeLabel, dayIcon, dayStory, statusLines, townTalk, type Standing } 
 import { StatusCard } from "./statuscard";
 import { DRINK_COLORS, Icon, type IconName } from "./icons";
 import type { Input } from "./input";
-import { KeyNav } from "./keynav";
+import { CURSOR_EVENT, CURSOR_START, KeyNav } from "./keynav";
 import { DEBUFFS } from "./debuffs";
 import { FIRST_IN_TARVEN, ordinal } from "./ledger";
 import { firstInTarvenLines } from "./plot";
@@ -101,6 +101,7 @@ import { PASSIVE_ICONS } from "./passiveicons";
 import { saveBadges } from "./saveicons";
 import { SkyDial } from "./skydial";
 import { TouchComic } from "./touchcomic";
+import { CUT_INS, cutKindFor, type CutKind } from "./cutin";
 import { duelHeat } from "./comicfx";
 import { touchLands } from "./touch";
 import { readTouchSettings, writeTouchSettings } from "./touchsettings";
@@ -154,7 +155,7 @@ import type { LewdPart } from "./brawlai";
 import { SCENE_JOINS, type ScenePoseName } from "./sexpose";
 import { FATIGUE_LABELS } from "./herstate";
 import { Body, Sibling, SHOW_POSES, WALK_STYLE_NAMES, type Reaction, type ShowPose, type SoftPart } from "./player";
-import { topPull } from "./wardrobe";
+import { cutInPieces, topPull } from "./wardrobe";
 import { COAT_SECTIONS, COAT_STAGES, type CoatSection } from "./cum";
 import { applyRetroLook, solidRetroMaterial } from "./retro";
 import {
@@ -462,12 +463,12 @@ const FIGHT_SHOTS: Record<string, Omit<TouchShow, "kind">> = {
 };
 
 /** Karryn's battle (GAME_PATH.MD 7i): a foe's lewd moves and the scenes he starts, as comic shots, by the part of her. */
-const AREA_SHOTS: Record<DuelArea, { id: string; region: TouchRegion }> = {
+const AREA_SHOTS: Record<DuelArea, { id: string; region: TouchRegion; cut?: CutKind }> = {
   hands: { id: "fingers", region: "hand" },
-  mouth: { id: "kiss", region: "lips" },
-  breasts: { id: "bothHands", region: "chest" },
-  pussy: { id: "thighUp", region: "intimate" },
-  butt: { id: "grab", region: "rear" },
+  mouth: { id: "kiss", region: "lips", cut: "kissed" },
+  breasts: { id: "bothHands", region: "chest", cut: "breasts" },
+  pussy: { id: "thighUp", region: "intimate", cut: "pussy" },
+  butt: { id: "grab", region: "rear", cut: "butt" },
 };
 const LEWD_SHOTS: Record<LewdPart, { id: string; region: TouchRegion }> = {
   mouth: { id: "gaze", region: "lips" },
@@ -480,7 +481,7 @@ for (const [area, shot] of Object.entries(AREA_SHOTS) as [DuelArea, (typeof AREA
   FIGHT_SHOTS[`their:offer:${area}`] = { ...shot, answer: "allow" };
   FIGHT_SHOTS[`taken:${area}`] = { ...shot, answer: "allow" };
   FIGHT_SHOTS[`their:pose:${area}`] = { ...shot, answer: "allow" };
-  FIGHT_SHOTS[`taken:go:${area}`] = { ...shot, answer: "lean", noHand: true };
+  FIGHT_SHOTS[`taken:go:${area}`] = { ...shot, answer: "lean", noHand: true, cut: undefined };
 }
 for (const [part, shot] of Object.entries(LEWD_SHOTS) as [LewdPart, (typeof LEWD_SHOTS)[LewdPart]][]) {
   FIGHT_SHOTS[`their:talk:${part}`] = { ...shot, answer: "allow", noHand: true };
@@ -497,62 +498,71 @@ FIGHT_SHOTS["their:strip"] = { id: "collar", region: "shoulder", answer: "allow"
 FIGHT_SHOTS["their:stripped"] = { id: "collar", region: "shoulder", answer: "allow", words: { hit: "RIIIP!", voice: "give that back!" } };
 FIGHT_SHOTS.bare = { id: "gaze", region: "chest", answer: "allow", noHand: true, heat: 1, words: { hit: "!!", voice: "don't look...!" } };
 FIGHT_SHOTS.fixClothes = { id: "gaze", region: "face", answer: "allow", noHand: true, words: { hit: "", voice: "there." } };
-FIGHT_SHOTS["her:come"] = { id: "gaze", region: "face", answer: "lean", noHand: true, heat: 1 };
-FIGHT_SHOTS["their:come"] = { id: "gaze", region: "face", answer: "lean", noHand: true };
+FIGHT_SHOTS["her:come"] = { id: "gaze", region: "face", answer: "lean", noHand: true, heat: 1, cut: "orgasm" };
+FIGHT_SHOTS["their:come"] = { id: "gaze", region: "face", answer: "lean", noHand: true, cut: "cumBody" };
+// Her own hands and mouth on them: her hand round him, her kissing him (KP's cock petting and Karryn kiss).
+FIGHT_SHOTS["taken:go:hands"] = { id: "fingers", region: "hand", answer: "lean", cut: "stroke" };
+FIGHT_SHOTS["taken:go:mouth"] = { id: "kiss", region: "lips", answer: "lean", cut: "kissHim" };
+FIGHT_SHOTS["intimate:hands"] = { id: "fingers", region: "hand", answer: "lean", cut: "stroke" };
+FIGHT_SHOTS["intimate:mouth"] = { id: "kiss", region: "lips", answer: "lean", cut: "kissHim" };
 FIGHT_SHOTS["struggle:free"] = { id: "grab", region: "shoulder", answer: "slap", words: { hit: "SHOVE!", voice: "get OFF me!" } };
 FIGHT_SHOTS["struggle:fail"] = { id: "grab", region: "waist", answer: "allow", words: { hit: "...", voice: "let go!" } };
 
-/** A duel moment's comic shot: which touch it looks like (for the framing and the hand), and on what part of her. */
-type DuelShot = { id: string; region: TouchRegion };
+
+/**
+ * A duel moment's comic shot: which touch it looks like (for the framing and the hand), on what part of her, and
+ * the Karryn-style cut-in it plays (cutin.ts), if it has one.
+ */
+type DuelShot = { id: string; region: TouchRegion; cut?: CutKind; strength?: number };
 /** His moves, by the part of her he has, first to boldest (dueltalk.ts THEIR_STAGES). */
 const DUEL_THEIR_SHOTS: Record<"kiss" | DuelArea, readonly DuelShot[]> = {
-  kiss: [{ id: "deepKiss", region: "lips" }],
+  kiss: [{ id: "kiss", region: "lips", cut: "kissed" }],
   hands: [
     { id: "roam", region: "waist" },
     { id: "fingers", region: "hand" },
     { id: "fingers", region: "hand" },
   ],
   mouth: [
-    { id: "deepKiss", region: "lips" },
-    { id: "chin", region: "face" },
-    { id: "chin", region: "face" },
+    { id: "deepKiss", region: "lips", cut: "deepKiss" },
+    { id: "scuffleMouth", region: "lips", cut: "fingers" },
+    { id: "deepKiss", region: "lips", cut: "deepKiss" },
   ],
   breasts: [
-    { id: "bothHands", region: "chest" },
-    { id: "grab", region: "chest" },
-    { id: "bothHands", region: "chest" },
+    { id: "bothHands", region: "chest", cut: "breasts" },
+    { id: "pinch", region: "chest", cut: "nipples" },
+    { id: "bothHands", region: "chest", cut: "breasts" },
   ],
   butt: [
-    { id: "grab", region: "rear" },
-    { id: "smack", region: "rear" },
-    { id: "grab", region: "rear" },
+    { id: "grab", region: "rear", cut: "butt" },
+    { id: "smack", region: "rear", cut: "spank", strength: 2 },
+    { id: "grab", region: "rear", cut: "anal" },
   ],
   pussy: [
-    { id: "thighUp", region: "intimate" },
-    { id: "thighUp", region: "intimate" },
-    { id: "thighUp", region: "intimate" },
+    { id: "thighUp", region: "intimate", cut: "pussy" },
+    { id: "thighUp", region: "intimate", cut: "pussy" },
+    { id: "thighUp", region: "intimate", cut: "clit" },
   ],
 };
 /** Her own moves: the part of her that's doing it, with no hand in the shot. */
 const DUEL_HER_SHOTS: Record<HerMove, DuelShot> = {
-  kiss: { id: "kiss", region: "lips" },
+  kiss: { id: "kiss", region: "lips", cut: "kissHim" },
   caress: { id: "gaze", region: "face" },
-  tease: { id: "gaze", region: "face" },
+  tease: { id: "gaze", region: "chest", cut: "flaunt" },
   undress: { id: "collar", region: "clothes" },
-  hands: { id: "fingers", region: "hand" },
-  mouth: { id: "kiss", region: "lips" },
+  hands: { id: "fingers", region: "hand", cut: "stroke" },
+  mouth: { id: "kiss", region: "lips", cut: "kissHim" },
   tits: { id: "grab", region: "chest" },
   ride: { id: "lap", region: "lap" },
   anal: { id: "grab", region: "rear" },
 };
 /** Where a man finished on her. */
 const DUEL_CUM_SHOTS: Record<CumSpot, DuelShot> = {
-  mouth: { id: "kiss", region: "lips" },
-  face: { id: "gaze", region: "face" },
-  breasts: { id: "grab", region: "chest" },
-  pussy: { id: "thighUp", region: "intimate" },
-  ass: { id: "grab", region: "rear" },
-  body: { id: "hip", region: "waist" },
+  mouth: { id: "kiss", region: "lips", cut: "cumMouth" },
+  face: { id: "gaze", region: "face", cut: "cumFace" },
+  breasts: { id: "grab", region: "chest", cut: "cumBody" },
+  pussy: { id: "thighUp", region: "intimate", cut: "creampie" },
+  ass: { id: "grab", region: "rear", cut: "analCreampie" },
+  body: { id: "hip", region: "waist", cut: "cumBody" },
 };
 
 /**
@@ -631,6 +641,10 @@ export interface Button {
   disabled?: boolean;
   /** A save to show on the button, in icons after the label. */
   save?: SaveData;
+  /** Called when the menu cursor lands on it (keys or mouse). */
+  onCursor?: () => void;
+  /** The menu's cursor starts here rather than on the first button. */
+  start?: boolean;
 }
 
 // Kept for the browser tab only, so a new visit asks again. Storage can be blocked; then it just asks each time.
@@ -964,6 +978,8 @@ export class Game {
       (effect) => this.audio.play(effect),
       // The hand that reaches in is a male guest's of that kind, in their own sleeve.
       (kind) => this.makeGuestBody(kind, false).root,
+      // For a kiss or her hand on him, the whole of him, undressed and ready.
+      (kind) => this.duelPartnerBody(kind, false).root,
     );
     this.spots = {
       tap: requireNode(props, "Spot_Tap").getWorldPosition(new Vector3()),
@@ -1783,6 +1799,8 @@ export class Game {
       }
       el.disabled = Boolean(button.disabled);
       el.addEventListener("click", () => this.pressButton(button));
+      if (button.onCursor) el.addEventListener(CURSOR_EVENT, button.onCursor);
+      if (button.start) el.dataset[CURSOR_START] = "";
       menu.append(el);
     });
     box.append(menu);
@@ -2997,6 +3015,12 @@ export class Game {
     // K and L act out putting a piece back on and passing out, to check the animations, in development only.
     if (import.meta.env.DEV && input.pressed("KeyK")) player.act("dress");
     if (import.meta.env.DEV && input.pressed("KeyL")) player.act(player.acted?.kind === "faint" ? null : "faint");
+    // [ plays the cut-in tester's last cut-in again, and \ takes the panel down, in development only.
+    if (import.meta.env.DEV && input.pressed("BracketLeft") && this.testedCut) {
+      const { kind, guest } = this.testedCut;
+      this.testCutIn(kind, guest);
+    }
+    if (import.meta.env.DEV && input.pressed("Backslash")) this.touchComic.clear();
 
     // P opens the sex fight test panel, in development only.
     if (import.meta.env.DEV && input.pressed("KeyP")) {
@@ -3127,7 +3151,7 @@ export class Game {
     if (took && this.brawlReachOpen) this.brawlTouchScene(moment);
     const name = BODY_NAMES[this.active];
     const body = sibling.root.getObjectByName(name);
-    if (body) this.touchComic.play(body, name, { id: moment.id, region: moment.region, answer: moment.answer, kind: moment.kind, level: moment.level });
+    if (body) this.playComic({ id: moment.id, region: moment.region, answer: moment.answer, kind: moment.kind, level: moment.level });
   }
 
   /**
@@ -3148,7 +3172,53 @@ export class Game {
     if (!body) return;
     // Steam, moans and hearts by how worked up she is; where a man finished, she's at her peak whatever her state.
     const heat = entry.spot ? Math.max(0.9, duelHeat(state)) : duelHeat(state);
-    this.touchComic.play(body, name, { ...shot, answer: state === "calm" ? "allow" : "lean", kind: entry.kind ?? "farmer", hold: true, heat });
+    this.playComic({ ...shot, answer: state === "calm" ? "allow" : "lean", kind: entry.kind ?? "farmer", hold: true, heat });
+  }
+
+  /** The cut-in the dev tester last played ([ plays it again), in development only. */
+  private testedCut: { kind: CutKind; guest: GuestKind } | null = null;
+
+  /** Plays one cut-in on her now, held up until cleared (\) or the next: the dev panel's cut-in tester. */
+  testCutIn(kind: CutKind, guest: GuestKind): void {
+    this.testedCut = { kind, guest };
+    this.playComic({ id: "grab", region: CUT_INS[kind].region, answer: "allow", kind: guest, level: 6, hold: true, heat: 0.7, cut: kind });
+  }
+
+  /**
+   * Plays a moment in the comic panel. A cut-in (Karryn-style) always shows her bare, as KP's do, never dressed, and
+   * never by her clothes just vanishing where they can move instead: her top pulled down off her breasts (or lifted
+   * over them), the way her hands pull it in a show pose (Dresser.setPull); her skirt lifted, at the front or (on her
+   * behind) the back, as her hands lift it in a show; what can't move (her band and smallclothes, painted on her;
+   * tights over her groin; a bottom that isn't a skirt) taken off. All on her own model just while the panel copies
+   * her, then put back, so the room never sees it.
+   */
+  private playComic(show: TouchShow): void {
+    const name = BODY_NAMES[this.active];
+    const sibling = this.siblings[this.active];
+    const body = sibling.root.getObjectByName(name);
+    if (!body) return;
+    const { tavern } = this;
+    const kind = show.cut ?? (touchLands(show.answer) && !show.words ? cutKindFor(show.id, show.region, show.level ?? 4, show.noHand) : null);
+    const pull = kind ? topPull(tavern.playerBody, tavern.playerOutfit, tavern.strippedPieces) : null;
+    // Her shoes and boots stay on (cutInPieces never takes them).
+    const off = kind ? cutInPieces(tavern.playerBody, tavern.playerOutfit, tavern.playerLegwear, tavern.playerUnder, tavern.shownPieces) : [];
+    const behind = kind ? CUT_INS[kind].region === "rear" : false;
+    const dresser = this.dressers[this.active];
+    if (off.length) dresser.setStripped([...tavern.shownPieces, ...off]);
+    if (pull) dresser.setPull(pull, 1);
+    if (kind) sibling.liftSkirtNow(behind ? 0 : 1, behind ? 1 : 0);
+    this.touchComic.play(body, name, { ...show, ownCloth: Boolean(pull || off.length) });
+    // Back as it was on her in the room; a show pose's own pull, and her skirt, come back with the next frame.
+    if (pull) dresser.setPull(null, 0);
+    if (off.length) dresser.setStripped(tavern.shownPieces);
+  }
+
+  /** She came in a duel: KP's orgasm cut-in, harder (`strength` 2) from her second time on. */
+  showDuelClimax(times: number): void {
+    const name = BODY_NAMES[this.active];
+    const body = this.siblings[this.active].root.getObjectByName(name);
+    if (!body) return;
+    this.playComic({ id: "gaze", region: "face", answer: "lean", noHand: true, kind: "farmer", hold: true, heat: 1, cut: "orgasm", strength: times > 1 ? 2 : 1 });
   }
 
   /** Whether a brawl event gets its own comic moment (so a turn's moments can be counted). */
@@ -3171,7 +3241,7 @@ export class Game {
     if (!show) return;
     const name = BODY_NAMES[this.active];
     const body = this.siblings[this.active].root.getObjectByName(name);
-    if (body) this.touchComic.play(body, name, show);
+    if (body) this.playComic(show);
     this.fightQueueWait = FIGHT_MOMENT_GAP;
   }
 
@@ -3232,6 +3302,14 @@ export class Game {
   /** A foe across from her takes a hit. */
   foeHit(index: number): void {
     this.foeColumn.hit(index);
+  }
+
+  /**
+   * The target cursor over a foe's picture (KP's enemy select), or none. With `pick`, their pictures can be
+   * clicked to choose them.
+   */
+  aimAtFoe(index: number | null, pick?: (index: number) => void): void {
+    this.foeColumn.aim(index, pick);
   }
 
   /** Shakes the pictures on screen, Karryn's Prison's way (screenshake.ts): a blow, a spank, her coming. */

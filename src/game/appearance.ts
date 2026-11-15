@@ -45,7 +45,7 @@ export interface Look {
   outfit?: string;
   /** The legwear style's id. Missing means the outfit's own. */
   legwear?: string;
-  /** Her nipples' type's id. Missing means the first, neat. */
+  /** Her nipples' type's id. Missing means the first, full & puffy (KP's). */
   nipples?: string;
   /** Her bust's shape's id. Missing means the first, teardrop. */
   bustShape?: string;
@@ -2170,6 +2170,12 @@ const PULL_HALF_WIDTH = 0.3;
  */
 const PULL_AXIS = 0.02;
 const PULL_FRONT: readonly [number, number] = [-0.05, 0.6];
+/**
+ * Her breasts' skin, for where a pulled-down top goes under them: what the Bust bone carries at least this much of,
+ * and how far below their lowest point the cloth taken still reaches.
+ */
+const PULL_UNDER_WEIGHT = 0.5;
+const PULL_UNDER_BAND = 0.03;
 /** Her chest just under each breast as built (across, height): where its underside's gone says where the roll goes. */
 const PULL_CREASE: readonly [number, number] = [0.06, 1.08];
 /**
@@ -2177,6 +2183,8 @@ const PULL_CREASE: readonly [number, number] = [0.06, 1.08];
  * middle, and how far it stands off what it lies on, at its near edge and its far edge.
  */
 const PULL_ROLL = { gap: 0.006, height: 0.028, narrow: 0.06, thick: [0.006, 0.016] as const };
+/** How wide each strip of a top pulled down is, across her, measured to its own neckline (see Dresser.planPull). */
+const PULL_STRIP = 0.012;
 /** Meshes on her skin a top lifted over her breasts doesn't lie on: her nipple discs, pubic hair and underwear patch. */
 const PULL_SKIP_SKIN: readonly string[] = [DISC_MATERIAL, PUBIC_MATERIAL, LINGERIE_MATERIAL];
 
@@ -3074,7 +3082,10 @@ export class Dresser {
       const { bind } = this.slots[s];
       return p.set(bind[v * 3] + totals[s][v * 3], bind[v * 3 + 1] + totals[s][v * 3 + 1], bind[v * 3 + 2] + totals[s][v * 3 + 2]);
     };
-    const front = this.frontness(slot, own, totals);
+    // Down: under her breasts as they hang now, however big (a full bust hangs well below the crease as built), and
+    // the cloth taken from as low as that.
+    const under = dir === "down" ? this.underBreasts(totals) : null;
+    const front = this.frontness(slot, own, totals, under === null ? PULL_BAND[0] : Math.min(PULL_BAND[0], under - PULL_UNDER_BAND));
     if (side) {
       const [from, to] = PULL_SIDE_BLEND;
       for (let v = 0; v < count; v++) {
@@ -3092,7 +3103,7 @@ export class Dresser {
       low = Math.min(low, y);
       high = Math.max(high, y);
     }
-    const cut = dir === "down" ? (this.creaseHeight(totals) ?? PULL_CREASE[1]) : low;
+    const cut = dir === "down" ? (under ?? PULL_CREASE[1]) : low;
 
     // Which points are taken: down, those above the breasts' undersides; up, all of it at the front.
     const taken: number[] = [];
@@ -3118,10 +3129,26 @@ export class Dresser {
     const weight = new Float32Array(taken.length);
     const span = Math.max(0.01, high - cut);
     const { gap, height, narrow, thick } = PULL_ROLL;
+    // Pulled down, each strip of the cloth (across her, PULL_STRIP wide) is measured to its own top edge: a neckline
+    // isn't level (it dips between her breasts), and measured to the highest point of all, the strips would roll to
+    // different depths and their faces fold over each other into teeth. So the neckline is the roll's one even edge.
+    const strip = (x: number) => Math.round(x / PULL_STRIP);
+    const tops = new Map<number, number>();
+    for (const v of taken) {
+      const { x, y } = shapedAt(own, v);
+      const b = strip(x);
+      tops.set(b, Math.max(tops.get(b) ?? -Infinity, y));
+    }
+    const topAt = (x: number) => {
+      const b = strip(x);
+      let top = -Infinity;
+      for (const n of [b - 1, b, b + 1]) top = Math.max(top, tops.get(n) ?? -Infinity);
+      return Number.isFinite(top) ? top : high;
+    };
     taken.forEach((v, k) => {
       const { x, y, z } = shapedAt(own, v);
       // How far through the pulled cloth the point is, from where the roll starts (0) to its far edge (1).
-      const t = Math.min(1, Math.max(0, dir === "down" ? (y - cut) / span : (high - y) / span));
+      const t = Math.min(1, Math.max(0, dir === "down" ? (y - cut) / Math.max(0.01, topAt(x) - cut) : (high - y) / span));
       const to = dir === "down" ? cut - gap - height * t : high + gap + height * t;
       const on = ground.frontAt(x, to) ?? z;
       // The roll stands off what it lies on, the far edge outermost, as rolled cloth does.
@@ -3137,7 +3164,7 @@ export class Dresser {
    * How much of each point of a mesh the pull takes, 0 to 1: all of it facing forwards, easing off round the sides
    * to nothing at the back, and nothing on the arms or past her sides.
    */
-  private frontness(slot: MeshSlot, index: number, totals: Float32Array[]): Float32Array {
+  private frontness(slot: MeshSlot, index: number, totals: Float32Array[], bottom = PULL_BAND[0]): Float32Array {
     const count = slot.bind.length / 3;
     const out = new Float32Array(count);
     const skinIndex = slot.mesh.geometry.getAttribute("skinIndex");
@@ -3149,7 +3176,7 @@ export class Dresser {
       const x = bind[v * 3] + total[v * 3];
       const y = bind[v * 3 + 1] + total[v * 3 + 1];
       const z = bind[v * 3 + 2] + total[v * 3 + 2];
-      if (y < PULL_BAND[0] || y > PULL_BAND[1] || Math.abs(x) > PULL_HALF_WIDTH) continue;
+      if (y < bottom || y > PULL_BAND[1] || Math.abs(x) > PULL_HALF_WIDTH) continue;
       let onArm = 0;
       for (let k = 0; k < 4; k++) if (arm[skinIndex.getComponent(v, k)]) onArm += skinWeight.getComponent(v, k);
       // Forwards is -z: the share of the way round from her side (0) to straight ahead (1).
@@ -3158,6 +3185,34 @@ export class Dresser {
       out[v] = t * t * (3 - 2 * t) * Math.max(0, 1 - onArm * 2);
     }
     return out;
+  }
+
+  /**
+   * Where a top pulled down goes under her breasts as shaped now: the crease under them, or lower where her breasts
+   * hang below it (a full bust does), the lowest of her skin the Bust bone carries at the front.
+   */
+  private underBreasts(totals: Float32Array[]): number | null {
+    const crease = this.creaseHeight(totals);
+    // Every piece of her body, not just the one coloured as her skin: her breasts are mostly the piece her breast
+    // band is painted on.
+    let lowest = Infinity;
+    this.slots.forEach((slot, s) => {
+      if (slot.part !== "Body" || PULL_SKIP_SKIN.includes(slot.original.name)) return;
+      const { bind, mesh } = slot;
+      const bust = mesh.skeleton.bones.findIndex((bone) => this.boneIndex.get(bone)?.label === "Bust");
+      const skinIndex = mesh.geometry.getAttribute("skinIndex");
+      const skinWeight = mesh.geometry.getAttribute("skinWeight");
+      if (bust < 0 || !skinIndex || !skinWeight) return;
+      for (let v = 0; v < bind.length / 3; v++) {
+        if (bind[v * 3 + 2] > 0) continue;
+        let w = 0;
+        for (let k = 0; k < 4; k++) if (skinIndex.getComponent(v, k) === bust) w += skinWeight.getComponent(v, k);
+        if (w < PULL_UNDER_WEIGHT) continue;
+        lowest = Math.min(lowest, bind[v * 3 + 1] + totals[s][v * 3 + 1]);
+      }
+    });
+    // Never higher than it always went, for a small bust; lower for one that hangs below that.
+    return Math.min(crease ?? PULL_CREASE[1], lowest);
   }
 
   /** How high the undersides of her breasts are as shaped now: the chest just under them as built, where it's gone. */
@@ -3407,7 +3462,7 @@ export class Dresser {
     const type = types.find((t) => t.id === this.look.nipples) ?? types[0];
     if (!nipples || !type) return;
     const { sliders } = this.look;
-    const profile = nippleProfile(type, clampSlider(sliders.nippleSize), clampSlider(sliders.areolaSize), this.arousal);
+    const profile = nippleProfile(type, clampSlider(sliders.nippleSize), clampSlider(sliders.areolaSize), this.arousal, clampSlider(sliders.bust, CUP_TOP));
     const { bind } = nipples.slot;
     const total = totals[this.slots.indexOf(nipples.slot)];
     const shaped = onSkin.slice();

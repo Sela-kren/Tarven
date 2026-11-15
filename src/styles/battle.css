@@ -175,6 +175,49 @@ body:has(#battle-view.open) {
   grid-template-columns: 1fr;
 }
 
+/* Choosing who to go for (KP's enemy select): their pictures can be pointed at and clicked. */
+#battle-foes.picking .battle-card {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* The target cursor: a bobbing arrow over the foe's head, and their frame lit. */
+#battle-foes .battle-card.aimed .frame {
+  outline: 3px solid #ffd27a;
+  outline-offset: -3px;
+  box-shadow: 0 0 18px rgba(255, 210, 122, 0.55);
+}
+
+#battle-foes .battle-card.aimed::after {
+  content: "▼";
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  z-index: 3;
+  color: #ffd27a;
+  font-size: 30px;
+  line-height: 1;
+  text-shadow: 0 2px 0 #000, 0 0 8px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: aim-bob 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes aim-bob {
+  from {
+    transform: translate(-50%, 0);
+  }
+  to {
+    transform: translate(-50%, 7px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #battle-foes .battle-card.aimed::after {
+    animation: none;
+  }
+}
+
 body:has(#battle-foes.open) #panel.battle-open.open {
   padding-left: calc(var(--battle-w, 0px) + 40px);
   padding-right: calc(var(--battle-w, 0px) + 40px);
@@ -189,7 +232,7 @@ body:has(#battle-view.open.right) #touch-comic {
 /* The close-up comic pops in over her legs. */
 body:has(#battle-view.open) #touch-comic {
   --comic-w: calc(var(--battle-w) * 0.7);
-  top: calc(16px + var(--battle-h) - var(--comic-w) * 0.75 - 4px);
+  top: calc(16px + var(--battle-h) - var(--comic-w) * var(--comic-aspect, 3 / 4) - 4px);
   left: calc(16px + var(--battle-w) * 0.38);
   width: var(--comic-w);
   margin: 0;
@@ -200,6 +243,11 @@ body:has(#battle-view.open) #touch-comic {
   .battle-card .flash.on {
     animation-duration: 0.01s;
   }
+}
+
+/* A tall cut-in: narrower over her, as tall as the wide ones are wide. */
+body:has(#battle-view.open) #touch-comic.tall {
+  --comic-w: calc(var(--battle-w) * 0.5);
 }
 
 /* Too narrow for her and the board side by side: the board alone, and the comic up top. */

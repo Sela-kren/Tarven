@@ -1,9 +1,9 @@
 # Last Call at Tarven: Story
 
 > The story design document. It replaces the story parts of GAME_CONCEPT.md (sections 1, 8.2, 9 and 11) once it is approved.
-> **Draft 2.18, 14 Nov 2026.** See the changelog at the bottom.
+> **Draft 2.19, 15 Nov 2026.** See the changelog at the bottom.
 
-**House rules stay in force.** Every character is an adult (18+), and the game says so. Every intimate beat is the player's choice. With **Consent on** (the default), every touch asks first. With **Consent off**, an impulsive guest's touch may land without the choice screen, but only a touch she could already say yes to (her desire is high enough, nobody is too drunk, it's within the boldness the player set, and never an invitation), and only when their push beats her hold (GAME_PATH.MD, 7b). Slap and Pull away always work on the next reach, and being too drunk blocks every yes. No text shows a touch landing after a refusal. A lost brawl may offer a scene, with a continue/stop choice at its start (GAME_PATH.MD, "Brawl loss"). The Force bar only shows how bold a touch was after a yes. Sexual scenes stay as non-graphic 18+ cards.
+**House rules stay in force.** Tarven is an adult game, and it's written **raw and hard**, as explicit as Karryn's Prison: cocks, cunts, cum and all of it, said plainly, by her, the guests and the room. Every character is an adult (18+), and the game says so. Consent is the player's switch (GAME_PATH.MD, the consent rule, which is the source of truth): with **Consent on** (the default) every touch asks first, Slap and Pull away always work, being too drunk blocks every yes, and a lost brawl only offers, with Stop always there. With **Consent off** it plays like Karryn's Prison: in a brawl their hands land and they tear her clothes off, at drink 8 the table can happen whether she's ready or not, a lost brawl just happens with no Stop, and easing the ache at night can draw someone in. Whatever the switch, **nothing ever happens to her while she's passed out**, and nobody roaring drunk takes her.
 
 > **The main goal is popularity.** She starts with one cold tavern and a debt, and aims to make it **the most popular house on the pass**. She beats the rival taverns, buys them up, and decides whether to work with the bosses she beat, the Baron included. The red book is the story underneath. It explains why the Baron wants her tavern, and it is the leverage the top house gets to use.
 
@@ -137,7 +137,7 @@ The thresholds are the old mind-stage cut-offs (30 / 80 / 160 on `lewdness × 1.
 
 | | **Sheltered** | **Curious** | **Willing** | **Known** |
 |---|---|---|---|---|
-| **Her inner voice** | Alarm and counting. Who saw? What would Mother say? No body words, only "there". Short, breathless thoughts | Questions to herself. "Why didn't I pull away?" She notices her own body and is embarrassed by it | Decisions and prices. She knows what she wants and names it, still non-graphic. The teasing *Confident* lines live here | Ownership. She thinks about the room, the coin and who's watching, as much as the touch. The crude body lines (`BODY_LINES`) belong here and nowhere earlier |
+| **Her inner voice** | Alarm and counting. Who saw? What would Mother say? No body words, only "there". Short, breathless thoughts | Questions to herself. "Why didn't I pull away?" She notices her own body and is embarrassed by it | Decisions and prices. She knows what she wants and names it, crude words and all. The teasing *Confident* lines live here | Ownership. She thinks about the room, the coin and who's watching, as much as the touch. The crude body lines (`BODY_LINES`) belong here and nowhere earlier |
 | **How guests treat her** | They test her. Small touches, a lot of "just being friendly". Farmers are protective, and soldiers place bets on who gets the first smile | They've heard she *might*. The bold ones push, the shy ones get shy. Rumours run ahead of the truth | They ask by name and they come back for her. Regulars expect their usual. Strangers have heard of her before they sit down | Her name sells ale. Some come *only* for her, and some stop coming because of her (farmers' wives, chapel folk). Guests' nerve is up (+1 at Lewdness 30, +2 at 60, as built) |
 | **The room** | Watches her like a new barmaid. Quiet when a hand comes in | Whistles and nudges. A slap gets a cheer | Expects a show. A refusal gets groans, and saying no costs willpower | Plays along. A refusal surprises them, and she gets a line for it ("Not tonight, lads. Even I have nights off.") |
 | **Story beats** | Tansy's hint about the Lantern shocks her. Pell treats her as a girl out of her depth | Wren's first madam's letter lands as a mirror: "The second time, I didn't." | The lantern (lewdness 50 gate) becomes a real temptation, not a rumour. Rhea starts watching her soldiers around her | The madam's last letter. Rivals treat her as Wren come back. Pell uses her name as leverage (see "One choice that changes", below) |
@@ -212,7 +212,7 @@ Three of the cast become **named regulars** (GAME_PATH.MD, section 5): they keep
 - **Their first line of the night** picks from their memory (what they did last, how she answered) and her stage.
 - **They notice her stage changing.** The first night she's a new stage, each regular has a one-off line about it.
 
-**Example memory lines** (non-graphic):
+**Example memory lines:**
 
 | Regular | Early (Sheltered / Curious) | Later (Willing / Known) | After a slap | After Consent off let one land |
 |---|---|---|---|---|
@@ -277,9 +277,9 @@ These five beats come early, while most players are Sheltered. Each one should s
 
 ### Writing rules for this arc
 
-- **Every line stays non-graphic.** Body words stay vague until Known, and scenes stay on 18+ cards.
-- **Never write a touch after a no.** Consent off writing is her body getting there before her head, never being overpowered.
-- **Too drunk is always a no,** at every stage, in every voice (`TOO_DRUNK_TO_ALLOW`).
+- **Raw and explicit, by her stage.** Every line can be as hard as Karryn's Prison's. What changes with her stage is *her* voice, not how explicit the game is: Sheltered she's shocked and swears she won't, Curious she's flustered and turned on, Willing she asks for it by name, Known she begs for it and loves it (KP's experience levels). Guests are crude from the start.
+- **Consent on: never write a touch after a no.** Consent off (KP): it can be her being overpowered, and she fights it in her own voice; written as Karryn's Prison writes it.
+- **Too drunk is always a no with Consent on,** at every stage, in every voice (`TOO_DRUNK_TO_ALLOW`). Passed out is a no whatever the switch.
 - **A refusal is never "backsliding".** At Willing and Known, saying no is written as confidence, not innocence returning.
 - **Stages are earned by the player's yeses.** Nothing in the story pushes her stage up. The story only reacts to where she is.
 
@@ -980,6 +980,7 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 
 | Date | Draft | Changes |
 |---|---|---|
+| 15 Nov 2026 | 2.19 | Tarven is written raw and hard, as explicit as Karryn's Prison: the "non-graphic" rules are gone. Her stage sets her voice, not how explicit the words are. The consent paragraph follows GAME_PATH.MD's rule: Consent on asks, Consent off plays like Karryn's Prison; passed out is always a no |
 | 14 Nov 2026 | 2.18 | Her arc built in part: the mind stage reads Lewdness only, `arcStage` (shown by the Force bar), the written touch line kept with a stage layer, the Consent-off and late first-time thoughts, her dawn line and the town's line as her stage rises, Pell at dawn by stage and corruption (defy, or her ear: half the gold and a name), and Act 1 beats 2, 4 and 5. The defy choice's effect corrected: the meeting comes before Pell, so it can't open earlier |
 | 14 Nov 2026 | 2.17 | Act 1's story flags built (`plot.ts`): every written last call sets a flag, two conditional choices (hide Ash, tell Rhea about the silver), and what comes back (Silas's brawl, the salt crate, dearer bottles, the meeting night's talk, the First in Tarven card) |
 | 14 Nov 2026 | 2.16 | Story path brought up to date with the build. The intro rewrite is built (old three-night deadline removed). Act 1's three last calls have named visitors (Pell, Garrick, Rhea) and section 9's numbers. Section 15 fixes 3 and 4 done; flags and conditional choices are still to do |

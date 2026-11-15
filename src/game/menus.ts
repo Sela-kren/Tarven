@@ -1,5 +1,7 @@
 /** The settings, save and load menus, and the yes/no question they ask before overwriting or losing progress. */
 import type { Game } from "./game";
+import { CUT_INS, type CutKind } from "./cutin";
+import type { GuestKind } from "./tavern";
 import { pixelSvg } from "./icons";
 import { MANUAL_SLOTS, readSave, slotName, SLOTS } from "./save";
 import { desirePenalties, horny, WET_PLEASURE, type DesirePenalties } from "./desire";
@@ -192,7 +194,42 @@ export function showDevPanel(game: Game, back: () => void): void {
     [...her, "", ...them],
     [
       { label: consentOff ? "Consent is Off: switch On (always ask)" : "Consent is On: switch Off (stop asking)", onPick: flip },
+      { label: "Cut-in tester", onPick: () => showCutInTester(game, back) },
       { label: "Refresh", onPick: () => showDevPanel(game, back) },
+    ],
+    back,
+  );
+}
+
+/** The cut-in tester's choices, kept while the game runs. */
+const tester: { guest: GuestKind } = { guest: "farmer" };
+const TEST_GUESTS: GuestKind[] = ["farmer", "smuggler", "soldier", "fugitive", "adventurer", "bandit", "noble"];
+
+/**
+ * In development, from the ] panel: every cut-in, to play on her now (always bare, as in the game), with any kind of guest's
+ * hands. It stays up until \ takes it down or another plays; [ plays the last one again.
+ */
+function showCutInTester(game: Game, back: () => void): void {
+  const again = () => showCutInTester(game, back);
+  const kinds = Object.keys(CUT_INS) as CutKind[];
+  game.openMenu(
+    "Dev: Cut-in tester",
+    [
+      "Pick one to play it on her now. It stays up until the \\ key takes it down or another plays.",
+      "[ plays the last one again; ] opens this panel.",
+    ],
+    [
+      {
+        label: `Guest: ${tester.guest} (next)`,
+        onPick: () => ((tester.guest = TEST_GUESTS[(TEST_GUESTS.indexOf(tester.guest) + 1) % TEST_GUESTS.length]), again()),
+      },
+      ...kinds.map((kind, i) => ({
+        label: `${i + 1}. ${kind} (KP ${CUT_INS[kind].kp})`,
+        onPick: () => {
+          back();
+          game.testCutIn(kind, tester.guest);
+        },
+      })),
     ],
     back,
   );

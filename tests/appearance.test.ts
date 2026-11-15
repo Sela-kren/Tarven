@@ -664,7 +664,8 @@ describe("bust shape and height", () => {
 describe("nipples in the look", () => {
   it("keeps a known type, leaving the default out, and copies it", () => {
     expect(readLook({ nipples: "puffy" }, "Female")!.nipples).toBe("puffy");
-    expect(readLook({ nipples: "neat" }, "Female")!.nipples).toBeUndefined();
+    expect(readLook({ nipples: "neat" }, "Female")!.nipples).toBe("neat");
+    expect(readLook({ nipples: "full" }, "Female")!.nipples).toBeUndefined();
     expect(readLook({ nipples: "pierced" }, "Female")!.nipples).toBeUndefined();
     expect(readLook({ nipples: "puffy" }, "Male")!.nipples).toBeUndefined();
     expect(copyLook({ ...newLook(), nipples: "wide" }).nipples).toBe("wide");

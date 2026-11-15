@@ -124,15 +124,24 @@
   display: block;
 }
 
+/* A tall cut-in (KP's butt, pussy, orgasm and flaunt panels): narrower, taller. */
+#touch-comic.tall {
+  --comic-aspect: 4 / 3;
+  width: min(330px, calc(100vw - 32px));
+  aspect-ratio: 3 / 4;
+  margin-left: calc(min(330px, calc(100vw - 32px)) / -2);
+}
+
+/* Inked like Karryn's Prison's cut-ins: a thick black edge. */
 #touch-comic .rim {
   position: absolute;
   inset: 0;
-  background: var(--wood-edge);
+  background: #0b0608;
 }
 
 #touch-comic .picture {
   position: absolute;
-  inset: 9px;
+  inset: 6px;
   background: var(--wood-darkest);
 }
 

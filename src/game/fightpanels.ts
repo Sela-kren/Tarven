@@ -19,7 +19,7 @@ const PLACE_WORDS: Record<BrawlPlace, string> = {
 import { willLabel } from "./willpower";
 import { DESIRE_STRONG } from "./desire";
 import { METER_NAMES, METERS } from "./passives";
-import type { Fight, Foe } from "./fight";
+import type { Fight, FightChoice, FightMove, Foe } from "./fight";
 import { erect } from "./brawlai";
 import { STANCE_NAMES } from "./herstate";
 import { restingPose } from "./battlepose";
@@ -318,6 +318,24 @@ function brawlTitle(fight: Fight): string {
   return standing.length > 1 ? `Brawl with the ${lead.name} and ${standing.length - 1} more` : `Brawl with a ${lead.name}`;
 }
 
+/** Her moves that land on one of them: with more than one standing, she picks who (KP's enemy select). */
+const AIMED_MOVES: ReadonlySet<FightMove> = new Set<FightMove>([
+  "strike",
+  "shove",
+  "grab",
+  "hairpull",
+  "tackle",
+  "talk",
+  "stare",
+  "throw",
+  "hands",
+  "mouth",
+  "ride",
+]);
+
+/** The move she's picked and is choosing who to aim it at, if she is. */
+let aiming: FightChoice | null = null;
+
 /**
  * A brawl, turn by turn: both sides' stamina, what just happened, and her moves with the chance each has.
  * When it's over, how it went, and back to work.
@@ -325,6 +343,8 @@ function brawlTitle(fight: Fight): string {
 export function showFight(game: Game): void {
   const { tavern } = game;
   const fight = tavern.fight;
+  game.aimAtFoe(null);
+  if (!fight) aiming = null;
   if (!fight) {
     game.hideDuelMoment();
     const result = tavern.takeFightResult();
@@ -379,32 +399,60 @@ export function showFight(game: Game): void {
         },
       }))
     : [];
-  // More than one of them: she picks who she goes for (no turn spent turning).
-  const targetButtons: Button[] =
-    fight.offering || fight.taken || fight.standing.length < 2
-      ? []
-      : fight.foes.flatMap((foe, index) =>
-          foe.out || index === fight.target
-            ? []
-            : [{ label: `Go for the ${foe.name} instead`, disabled: false, onPick: () => (fight.setTarget(index), showFight(game)) }],
-        );
-  const buttons: Button[] = fight.offering ? offerButtons : [...targetButtons, ...fight.choices().map((choice) => ({
-    label: choice.chance === null ? choice.label : `${choice.label} · ${Math.round(choice.chance * 100)}%`,
-    disabled: choice.disabled,
-    onPick: () => {
-      const before = fight.events.length;
-      tavern.fightMove(choice.move);
-      playTurn(before);
-      game.audio.play(fight.outcome === "lost" ? "walkOut" : "cloth");
-      // They reached for her instead of swinging: she's asked on the touch screen, and the fight waits.
-      if (tavern.inConversation) {
-        game.showBrawlReach();
-        return;
-      }
-      showFight(game);
-    },
-  }))];
-  game.openPanel(brawlTitle(fight), [], buttons);
+  const makeMove = (choice: FightChoice) => {
+    aiming = null;
+    const before = fight.events.length;
+    tavern.fightMove(choice.move);
+    playTurn(before);
+    game.audio.play(fight.outcome === "lost" ? "walkOut" : "cloth");
+    // They reached for her instead of swinging: she's asked on the touch screen, and the fight waits.
+    if (tavern.inConversation) {
+      game.showBrawlReach();
+      return;
+    }
+    showFight(game);
+  };
+  // More than one of them on their feet: a move that lands on one asks who, with a cursor over their picture
+  // (KP's enemy select). Choosing costs no turn.
+  const choosing = !fight.offering && !fight.taken && fight.standing.length > 1;
+  if (!choosing) aiming = null;
+  const standing = fight.standing;
+  const aimAt = (index: number) => {
+    const choice = aiming;
+    const foe = standing[index];
+    if (!choice || !foe) return;
+    fight.setTarget(fight.foes.indexOf(foe));
+    makeMove(choice);
+  };
+  const back = () => {
+    aiming = null;
+    showFight(game);
+  };
+  const aimButtons = (): Button[] => [
+    ...standing.map((foe, index) => ({
+      label: `The ${foe.name} · ${foe.stamina}/${foe.max} stamina${foe.drunk ? " · drunk" : ""}`,
+      disabled: false,
+      start: foe === fight.targeted,
+      onCursor: () => game.aimAtFoe(index, aimAt),
+      onPick: () => aimAt(index),
+    })),
+    { label: "Back", onPick: back },
+  ];
+  const moveButtons = (): Button[] =>
+    fight.choices().map((choice) => ({
+      label: choice.chance === null ? choice.label : `${choice.label} · ${Math.round(choice.chance * 100)}%`,
+      disabled: choice.disabled,
+      onPick: () => {
+        if (choosing && AIMED_MOVES.has(choice.move)) {
+          aiming = choice;
+          showFight(game);
+          return;
+        }
+        makeMove(choice);
+      },
+    }));
+  const buttons: Button[] = fight.offering ? offerButtons : aiming ? aimButtons() : moveButtons();
+  game.openPanel(aiming ? `${aiming.label.split(" · ")[0]}: who?` : brawlTitle(fight), [], buttons);
   game.panelEl.classList.add("fight-open", "battle-open");
   const off = tavern.strippedPieces.length;
   game.showBattle("brawl", "You · Brawl", 0, false, [
@@ -440,8 +488,10 @@ export function showFight(game: Game): void {
   const log = fightLog(fight.log);
   box.insertBefore(log, box.querySelector(".menu"));
   box.insertBefore(bars, log);
-  // No running from it: Esc does nothing until it's settled.
-  game.panelBack = () => undefined;
+  // No running from it: Esc does nothing until it's settled, bar backing out of choosing who.
+  game.panelBack = aiming ? back : () => undefined;
+  // Choosing: the cursor starts over the one she was going for, and follows the menu's cursor.
+  if (aiming) game.aimAtFoe(Math.max(0, standing.indexOf(fight.targeted)), aimAt);
 }
 
 /**
@@ -752,6 +802,8 @@ export function showDuel(game: Game): void {
       const turn = duel.entries.slice(before);
       const shown = [...turn].reverse().find((e) => e.part || e.move || e.spot);
       if (shown) game.showDuelMoment(shown, duel.state);
+      // Her coming takes over the panel, Karryn-style.
+      if (duel.climaxes > climaxes) game.showDuelClimax(duel.climaxes);
       // The two of them in the big picture, in the scene that moment puts them in (sexpose.ts).
       if (shown) game.duelScene(shown, duel);
       // His hands on her, or him finishing on her, jolts her in the big picture.

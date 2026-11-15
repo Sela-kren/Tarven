@@ -39,6 +39,13 @@ export interface FxPlan {
   focus: boolean;
   /** Her voice in a cloud bubble, or null to leave it to the panel's own words. */
   moan: { text: string; loud: boolean } | null;
+  /** A cut-in's own (cutin.ts): what a man left on her and where, a white flash as she comes (how hard, 1 or 2), sparkles as she shows off, and a spank's red mark (how hard, 1 to 3). */
+  cum?: "mouth" | "face" | "body" | "inside" | "behind";
+  flash?: number;
+  sparkle?: boolean;
+  mark?: number;
+  /** Sweat beads and shine on her skin round his hands (KP's glossy, sweating breasts): how many beads a hand. */
+  skin?: number;
 }
 
 /** Her voice by how worked up she is: caught out, getting into it, then past holding it in. */
@@ -109,6 +116,8 @@ export interface FxSpots {
   contact: PanelPoint;
   /** How big her body is on the panel round the touch, in its pixels. */
   bodySize: number;
+  /** Where each hand on her is (a cut-in's both hands), for what shows round them. */
+  hands?: PanelPoint[];
 }
 
 /** A steady pseudo-random number from 0 to 1 for a seed, so a puff or a drop looks the same each frame. */
@@ -159,6 +168,9 @@ export class ComicFx {
     ctx.scale(this.k, this.k);
     ctx.globalAlpha = fade;
     const grow = MathUtils.smootherstep(since, 0, 0.6);
+    if (plan.mark) this.mark(spots, plan.mark, since);
+    if (plan.skin) this.skinShine(spots, plan.skin, clock, grow);
+    if (plan.cum) this.cum(spots, plan.cum, since, clock);
     if (plan.focus) this.focusLines(clock, grow);
     if (plan.skinSteam > 0) this.skinSteam(spots, clock, plan.skinSteam * grow);
     if (plan.blushLines) this.blushLines(spots, grow);
@@ -167,7 +179,165 @@ export class ComicFx {
     if (plan.sweat > 0) this.sweat(spots, plan.sweat, clock, grow);
     if (plan.hearts > 0) this.hearts(spots, plan.hearts, since);
     if (plan.burst) this.burst(spots, since);
+    if (plan.sparkle) this.sparkles(spots, clock, grow);
+    if (plan.flash) this.flash(plan.flash, since);
     ctx.restore();
+  }
+
+  /**
+   * What a man left on her, KP's ejaculation cut-ins: thick white gobs where it landed, glossy, and runs that crawl
+   * down from them as the panel stays up. In her mouth it brims at her lips and dribbles off her chin; on her face
+   * it's splashed across her cheeks; on her body, ropes across the skin round the touch; inside her, it wells out
+   * where he was and runs down.
+   */
+  private cum(spots: FxSpots, where: NonNullable<FxPlan["cum"]>, since: number, clock: number): void {
+    const s = spots.cheekSize;
+    const b = spots.bodySize;
+    const land = MathUtils.smootherstep(since, 0, 0.25);
+    // Each gob: where it sits, how big, and how far its run can crawl.
+    const gobs: { x: number; y: number; r: number; run: number }[] = [];
+    const { mouth, contact, cheeks } = spots;
+    if (where === "mouth") {
+      gobs.push({ x: mouth.x, y: mouth.y + s * 0.3, r: s * 0.6, run: s * 3 });
+      gobs.push({ x: mouth.x + s * 0.7, y: mouth.y + s * 0.5, r: s * 0.35, run: s * 2.2 });
+    } else if (where === "face") {
+      for (const c of cheeks) gobs.push({ x: c.x, y: c.y - s * 0.4, r: s * 0.5, run: s * 2.2 });
+      gobs.push({ x: mouth.x - s * 0.3, y: mouth.y + s * 0.2, r: s * 0.4, run: s * 1.8 });
+      gobs.push({ x: (cheeks[0]?.x ?? mouth.x) * 0.5 + (cheeks[1]?.x ?? mouth.x) * 0.5, y: mouth.y - s * 3.2, r: s * 0.45, run: s * 3 });
+    } else if (where === "body") {
+      for (let i = 0; i < 5; i++) gobs.push({ x: contact.x + (hash(i + 90) - 0.5) * b * 3, y: contact.y + (hash(i + 95) - 0.5) * b * 1.6, r: b * (0.18 + hash(i + 99) * 0.14), run: b * 1.4 });
+    } else {
+      gobs.push({ x: contact.x, y: contact.y, r: b * 0.32, run: b * 2.4 });
+      gobs.push({ x: contact.x + b * 0.15, y: contact.y + b * 0.2, r: b * 0.2, run: b * 1.8 });
+    }
+    const { ctx } = this;
+    ctx.save();
+    ctx.lineCap = "round";
+    gobs.forEach((g, i) => {
+      const r = g.r * (0.4 + 0.6 * land);
+      // The run crawls down, slowing, and keeps creeping while the panel's up (by the clock on a held one).
+      const crawl = g.run * (1 - Math.exp(-Math.max(0, clock - 0.2 - hash(i + 31) * 0.4) * 0.9));
+      ctx.strokeStyle = "rgba(250, 248, 236, 0.95)";
+      ctx.lineWidth = r * 0.38;
+      ctx.beginPath();
+      ctx.moveTo(g.x, g.y);
+      ctx.quadraticCurveTo(g.x + r * 0.4 * (hash(i) - 0.5), g.y + crawl * 0.5, g.x + r * 0.3 * (hash(i + 4) - 0.5), g.y + crawl);
+      ctx.stroke();
+      // A bead at the end of the run, about to drip.
+      ctx.fillStyle = "rgba(250, 248, 236, 0.95)";
+      ctx.beginPath();
+      ctx.arc(g.x + r * 0.3 * (hash(i + 4) - 0.5), g.y + crawl, r * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      // The gob, with an ink edge and a shine.
+      ctx.beginPath();
+      ctx.ellipse(g.x, g.y, r, r * 0.75, hash(i + 8) - 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = Math.max(0.3, r * 0.12);
+      ctx.strokeStyle = "rgba(120, 110, 120, 0.7)";
+      ctx.stroke();
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.ellipse(g.x - r * 0.3, g.y - r * 0.25, r * 0.22, r * 0.14, -0.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+  }
+
+  /**
+   * Her skin glistening under his hands, as KP paints it: a soft white shine on each breast above his fingers, and
+   * beads of sweat that well up, slide a little way and are replaced.
+   */
+  private skinShine(spots: FxSpots, beads: number, clock: number, grow: number): void {
+    const { ctx } = this;
+    const b = spots.bodySize;
+    const places = spots.hands?.length ? spots.hands : [spots.contact];
+    ctx.save();
+    places.forEach((p, side) => {
+      // The shine: a bright dab and a thin crescent, on the top of the breast.
+      ctx.globalAlpha = 0.75 * grow;
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.ellipse(p.x - b * 0.12, p.y - b * 0.55, b * 0.1, b * 0.055, -0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = Math.max(0.4, b * 0.03);
+      ctx.strokeStyle = "rgba(255,255,255,0.7)";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y - b * 0.15, b * 0.42, Math.PI * 1.15, Math.PI * 1.45);
+      ctx.stroke();
+      // The beads.
+      for (let i = 0; i < beads; i++) {
+        const seed = side * 31 + i;
+        const life = 2.2 + hash(seed + 300) * 1.2;
+        const age = ((clock + hash(seed + 310) * life) % life) / life;
+        // Over the breast above his fingers, sliding down a little.
+        const x = p.x + (hash(seed + 320) - 0.5) * b * 1.3;
+        const y = p.y - b * (0.25 + hash(seed + 330) * 0.75) + age * b * 0.3;
+        const size = b * (0.05 + hash(seed + 340) * 0.04) * Math.min(1, age * 5);
+        ctx.globalAlpha = grow * (1 - MathUtils.smoothstep(age, 0.75, 1));
+        ctx.beginPath();
+        ctx.moveTo(x, y - size * 1.6);
+        ctx.bezierCurveTo(x + size, y - size * 0.4, x + size, y + size, x, y + size);
+        ctx.bezierCurveTo(x - size, y + size, x - size, y - size * 0.4, x, y - size * 1.6);
+        ctx.fillStyle = "rgba(225, 240, 255, 0.85)";
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(x - size * 0.3, y, size * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+    ctx.restore();
+  }
+
+  /** A spank's mark, KP's reddened behind: a hot pink glow where the hand came down, deeper the harder. */
+  private mark(spots: FxSpots, level: number, since: number): void {
+    const { ctx } = this;
+    const r = spots.bodySize * (1 + level * 0.25);
+    const alpha = Math.min(1, since * 3) * (0.22 + level * 0.12);
+    const glow = ctx.createRadialGradient(spots.contact.x, spots.contact.y, 0, spots.contact.x, spots.contact.y, r);
+    glow.addColorStop(0, `rgba(235, 40, 70, ${alpha})`);
+    glow.addColorStop(1, "rgba(235, 40, 70, 0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(spots.contact.x - r, spots.contact.y - r, r * 2, r * 2);
+  }
+
+  /** Four-pointed sparkles twinkling round her as she shows herself off. */
+  private sparkles(spots: FxSpots, clock: number, grow: number): void {
+    const { ctx, width, height } = this;
+    ctx.save();
+    for (let i = 0; i < 7; i++) {
+      const x = (0.12 + hash(i + 200) * 0.76) * width;
+      const y = (0.1 + hash(i + 210) * 0.8) * height;
+      const twinkle = Math.max(0, Math.sin(clock * 4 + i * 1.9));
+      const size = spots.cheekSize * (0.8 + hash(i + 220)) * twinkle * grow;
+      if (size <= 0.2) continue;
+      ctx.translate(x, y);
+      ctx.beginPath();
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        const reach = k % 2 === 0 ? size * 1.6 : size * 0.3;
+        ctx.lineTo(Math.cos(a) * reach, Math.sin(a) * reach);
+      }
+      ctx.closePath();
+      ctx.fillStyle = "rgba(255, 246, 210, 0.95)";
+      ctx.fill();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(this.k, this.k);
+    }
+    ctx.restore();
+  }
+
+  /** The white flash as she comes, KP's orgasm cut-in: once, or twice for a harder one. */
+  private flash(times: number, since: number): void {
+    let alpha = 0;
+    for (let i = 0; i < times; i++) {
+      const age = (since - i * 0.45) / 0.35;
+      if (age >= 0 && age <= 1) alpha = Math.max(alpha, 1 - age);
+    }
+    if (alpha <= 0) return;
+    const { ctx } = this;
+    ctx.fillStyle = `rgba(255, 250, 252, ${0.9 * alpha})`;
+    ctx.fillRect(0, 0, this.width, this.height);
   }
 
   /**
@@ -253,7 +423,9 @@ export class ComicFx {
   private quiver(spots: FxSpots, clock: number, grow: number): void {
     const { ctx } = this;
     const frame = Math.floor(clock * 12);
-    const r = spots.bodySize * 1.15;
+    // Outside his hands, if he has them on her, so the marks never cross them.
+    const handsOut = (spots.hands ?? []).map((h) => Math.hypot(h.x - spots.contact.x, (h.y - spots.contact.y) / 0.9));
+    const r = Math.max(spots.bodySize * 1.15, handsOut.length ? Math.max(...handsOut) + spots.bodySize * 0.55 : 0);
     ctx.save();
     ctx.lineCap = "round";
     ctx.lineJoin = "round";

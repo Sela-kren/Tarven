@@ -1,5 +1,7 @@
 # Tarven – Karryn-inspired guest types, preferences & systems
 
+**Tarven is an adult game, written raw and hard, as explicit as Karryn's Prison** (STORY.md, house rules). Every character is an adult (18+). What she can do and what's done to her follows the consent rule below.
+
 ## Consent rule (always — for any agent or implementation)
 Normal service touches: player is asked first. All four answers stay available.
 Pull away always works on later reaches. Too-drunk blocks yes.
@@ -374,6 +376,20 @@ Adult play (`region: "invite"`, boldness 10; the code still calls it the invitat
 - **Records** (journal, Records, under Adult play): adult play all told, on a table in the taproom, joined in all told (the one who asked counts), most at once, kinds of guest; and what she did on the table (kiss, hands, mouth, the bed, behind: each act once a time), which also counts for her passives and her act skills.
 - **Passives:** the Adult Play group (*Table Curious* 1, *The Back Stairs* 3, *Mistress of the Tables* 10 with 4 kinds of guest) and the act passives (*Curious Hands*, *Eager Mouth*, *First Night*...) count adult play on the table. Exhibition: *Open House* (once on the table: +20% gold from adult play; asked for a look 25% more often; the table comes on tipsy, or 2 comes; lewd 8). *The Whole Room* (3 times, once with 4 at once: Body desire starts +10; +1 fame a serve while undressed; the table a time sooner still; costs −1 respect every night; lewd 14).
 - Tests: `tests/invite.test.ts`, `tests/duelstage.test.ts`.
+
+## 7h-b. The bar's raw talk, Karryn-style [built]
+KP's waitress lines, newly written and raw (STORY.md house rules). Her lines are in `src/game/barher.ts`, the guests' in `src/game/barvoices.ts`; the tests are in `tests/barlines.test.ts`.
+- **Her voice out loud** at every bar moment: opening up, taking an order, serving, a drink (yes or no), a look (yes or no), letting a touch land (by where: her chest, rear, thighs, cunt, mouth, the rest of her), saying no, the table, and coming at a table. Levelled like KP's experience: by her stage (Sheltered, Curious, Willing, Known); horny over it until she's Known; drunk (4 drinks) over everything.
+- **Each guest type's crude voice:** what they say as they reach (by where), crowing when she lets them, sulking when she doesn't, and once worked up (lust 6+), what they say ordering and being served.
+- Lines are picked off the night's dice, so what's said never changes how the night goes.
+
+## 7h-c. Cut-ins, Karryn-style [built]
+The close-up comic panel plays KP's cut-ins, made from Tarven's own models (`src/game/cutin.ts`, drawn by `src/game/touchcomic.ts`; tests in `tests/cutin.test.ts`). Each has its own framing, panel shape (wide or tall), drift across the screen and looping motion, which keeps going while a duel's panel is held. The backdrop turns rose and magenta as she heats up.
+- **Hands on her:** breasts and nipples (both his hands), pussy, clit (boldness 8+), butt and anal (both hands), his fingers in her mouth, and a spank at three strengths (boldness 1-4, 5-7, 8+; her behind reddens).
+- **Mouths:** he kisses her, a deep kiss, and she kisses him, with his face in the shot. Her hand on his cock shows him, undressed.
+- **After:** cum in her mouth, on her face, on her body, a creampie, and one from behind. Her coming (first time, then harder) flashes white and shakes the panel. Flaunting (her tease move) poses her, with sparkles.
+- **Which plays:** a service touch that lands picks by touch and region (`cutKindFor`); a slap, a pull away or a brawl's blows keep the plain shot. Brawls and duels name theirs by the part of her and the stage (`FIGHT_SHOTS`, `DUEL_*_SHOTS` in game.ts).
+- **Not built:** KP's toy cut-ins (rotor, dildo, anal beads). Tarven has no toys yet.
 
 ## 7g. Touch layers: over the clothes, inside them, bare skin [built]
 Karryn-style, a touch on a part her clothes cover (chest, rear, thighs, waist, intimate) goes **over her clothes**, **inside them**, or on **bare skin** (`layersOpen`, `pickLayer` in `src/game/touch.ts`).

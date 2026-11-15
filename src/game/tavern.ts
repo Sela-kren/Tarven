@@ -1,4 +1,6 @@
 import { fightTier } from "./fightface";
+import { barVoice, HER_BAR_LINES, type BarMoment } from "./barher";
+import { BAR_VOICES, QUIP_LUST, REACH_PART } from "./barvoices";
 import { DOOR_CREW_LINES, DOOR_LINES, FORCED_ROOM_CREW, FORCED_ROOM_ONE, invaderCount, invasionChance, NOISE_LINES, TALKED_LINES, WON_LINES } from "./invasion";
 import { brawlFatigue, duelFatigue, FATIGUE_MAX, FATIGUE_REST, fatigueLevel, maxEnergy, NAP_ENERGY } from "./herstate";
 import { cloneLayout, type HouseLayout } from "./house";
@@ -153,7 +155,6 @@ import {
   SHOW_LABELS,
   SHOW_METER,
   SHOW_NEED,
-  SHOW_NO,
   SHOW_NO_LABEL,
   SHOW_NOT_READY,
   SHOW_NOT_WEARING,
@@ -164,7 +165,6 @@ import {
   SHOW_TOLD_ONE,
   SHOW_TOO_DRUNK,
   SHOW_UNDER,
-  SHOW_YES,
   type ShowPart,
   type ShowSide,
 } from "./show";
@@ -1384,6 +1384,8 @@ export interface TouchMoment {
   answer: TouchAnswer;
   /** Who reached for you. */
   kind: GuestKind;
+  /** How far in it went: over her clothes, inside them, or on her bare skin (touch.ts). */
+  layer: TouchLayer;
 }
 
 export interface TickContext {
@@ -1839,6 +1841,8 @@ export class Tavern {
   open(): void {
     if (this.phase !== "day" || this.settlingIn) return;
     this.phase = "dusk";
+    // Her line as the night starts (KP's waitress start).
+    if (this.playerBody === "Female") this.say(`You: ${this.herBar("shift")}`);
     this.openedDirty = this.messes.length > 0;
     this.say(
       this.messes.length > 0
@@ -2670,6 +2674,11 @@ export class Tavern {
   private takeOrder(guest: Guest): void {
     guest.ordered = true;
     this.say(`The ${this.nameOf(guest).toLowerCase()} at table ${this.tableOf(guest.seat)} wants ${ORDER_WORDS[guest.order]}.`);
+    // Worked up, they say what they really want, and she answers (barvoices.ts, barher.ts).
+    if (this.playerBody === "Female" && guest.lust >= QUIP_LUST) {
+      this.say(`${this.nameOf(guest)}: ${this.barQuip(guest, (v) => v.order).text}`);
+      this.say(`You: ${this.herBar("order")}`);
+    }
     this.cue("order");
     // Leaning in to listen: they may grab her, or ask for a look.
     if (!this.maybeGrab(guest, "order")) this.maybeAskToSee(guest);
@@ -2710,6 +2719,10 @@ export class Tavern {
     this.shift({ fame: FAME_SERVED + (tipped ? FAME_TIPPED + rules.fame : 0) + (idolized ? FAME_IDOLIZED : 0) });
     this.takeOne(sibling);
     guest.status = "eating";
+    if (this.playerBody === "Female" && guest.lust >= QUIP_LUST) {
+      this.say(`${this.nameOf(guest)}: ${this.barQuip(guest, (v) => v.serve).text}`);
+      this.say(`You: ${this.herBar("serve")}`);
+    }
     this.served++;
     this.earned += amount;
     this.adjust(amount, rules.trust, 0);
@@ -3955,6 +3968,7 @@ export class Tavern {
     const setups = partners.map((g) => ({ kind: g.kind, female: g.female, stats: g.stats }));
     const duel = new Duel(partners[0].kind, new Set(areas), 0, this.duelistStats(), this.random, setups, play);
     duel.note(storyLine(TAPROOM_START, this.storyRoll(scene.guestId, 8)));
+    duel.note(`You: ${this.herBar("table")}`);
     this.duel = duel;
     const room = [cheered > 0 ? `${cheered} stay to watch` : "", left.length > 0 ? `${left.length} get up and leave` : ""].filter(Boolean).join("; ");
     if (open) duel.note("You leave the room open: anyone watching who wants in can join the line.");
@@ -4468,6 +4482,9 @@ export class Tavern {
     // Too drunk on either side, and it can't happen anyway: saying no takes nothing out of her.
     const tier = sloppy || guestSloppy ? 0 : tempted;
     const lines: TalkLine[] = [{ ...narrate(reachText), guestId: guest.id }, you(thought)];
+    // What they say going for her, in their type's voice (barvoices.ts).
+    const part = REACH_PART[touch.region];
+    if (part) lines.unshift(this.barQuip(guest, (v) => v.reach[part]));
     if (firstEver && !sloppy && !guestSloppy) lines.push(you(FIRST_REACH_THOUGHT));
     if (tier > 0 && this.willpower < this.refuseWill(tier, touch.level)) lines.push(narrate(WORN_THIN));
     if (touch.region === "invite") this.tellInvitation(guest, lines);
@@ -4690,7 +4707,7 @@ export class Tavern {
         run: () => {
           chat.answered = true;
           this.records.showsRefused++;
-          chat.reply = [you(pick(SHOW_NO)), this.guestSays(guest, pick(SHOW_AFTER.no))];
+          chat.reply = [you(this.herBar("lookNo")), this.guestSays(guest, pick(SHOW_AFTER.no))];
         },
       });
       return options;
@@ -4724,7 +4741,7 @@ export class Tavern {
     const one = chat.side && chat.side !== "both" ? chat.side : null;
     const told = (one ? pick(SHOW_TOLD_ONE).replaceAll("{side}", one) : pick(SHOW_TOLD[part])).replaceAll("{top}", this.topPullDir);
     const after = part === chat.part ? SHOW_AFTER[how] : SHOW_AFTER.other;
-    chat.reply = [you(pick(SHOW_YES)), narrate(`${told} (+${gold} gold)`), this.guestSays(guest, pick(after))];
+    chat.reply = [you(this.herBar("lookYes")), narrate(`${told} (+${gold} gold)`), this.guestSays(guest, pick(after))];
     this.say(`You showed them your ${this.showUnder(part) || PART_WORDS[part]}. +${gold} gold.`);
     this.cue("tip");
   }
@@ -4809,6 +4826,30 @@ export class Tavern {
   /** A guest saying something out loud in a conversation, under their own name, so the game shows them. */
   private guestSays(guest: Guest, text: string): TalkLine {
     return { speaker: this.nameOf(guest), text: `"${text}"`, guestId: guest.id };
+  }
+
+  /** Lines of the bar's talk picked so far: picked apart from `random`, so what's said never changes how it goes. */
+  private barTexts = 0;
+
+  /** A roll from 0 to 1 for the bar's lines (barher.ts, barvoices.ts), well spread, off the night's dice. */
+  private barRoll(): number {
+    this.barTexts++;
+    const x = Math.sin(this.barTexts * 12.9898 + this.nightIndex * 78.233 + 4.1) * 43758.5453;
+    return x - Math.floor(x);
+  }
+
+  private barPick(lines: readonly string[]): string {
+    return lines[Math.floor(this.barRoll() * lines.length) % lines.length];
+  }
+
+  /** What she says out loud at the bar (barher.ts, KP's waitress lines): by her stage, horny or drunk over it. */
+  private herBar(moment: BarMoment): string {
+    return `"${this.barPick(HER_BAR_LINES[moment][barVoice(this.arcStage, horny(this.meters), this.drunk)])}"`;
+  }
+
+  /** A guest's crude bar talk (barvoices.ts), in their type's voice. */
+  private barQuip(guest: Guest, pick: (v: (typeof BAR_VOICES)[GuestKind]) => readonly string[]): TalkLine {
+    return this.guestSays(guest, this.barPick(pick(BAR_VOICES[guest.kind])));
   }
 
   /** Both sides of the Consent-off check for a touch: her desire, exposure, passives and practice; their nerve and taste. */
@@ -4938,6 +4979,12 @@ export class Tavern {
       // Her giving in is its own beat, so its line stays; otherwise her stage layers on the written line.
       if (!givenIn) line = flavorLine(line, this.arcStage, touch.region, false);
       chat.reply = [narrate(line + tip)];
+      // Out loud, by where they have her, and them crowing (barher.ts, barvoices.ts).
+      const part = REACH_PART[touch.region];
+      if (part && guest) {
+        const moment: BarMoment = ({ chest: "letChest", rear: "letRear", thigh: "letThigh", intimate: "letIntimate", mouth: "letMouth", body: "letBody" } as const)[part];
+        chat.reply.push(you(this.herBar(moment)), this.barQuip(guest, (v) => v.crow));
+      }
       const after = afterLine(touch.region, before, { unasked: chat.impulse, late: arcIndex(this.arcStage) >= arcIndex("willing") });
       if (after) chat.reply.push(you(after.text));
       if (touch.strip) {
@@ -4953,7 +5000,7 @@ export class Tavern {
         r.overwhelmed++;
         this.raiseAll(OVERWHELM_DESIRE + e.overwhelmBoost);
         this.cameTonight();
-        chat.reply.push(narrate("It all comes over you at once, right there at the table. Your knees give. (18+)"));
+        chat.reply.push(narrate("It all comes over you at once, right there at the table. Your knees give. (18+)"), you(this.herBar("came")));
         this.adultScene = { kind: "overwhelmed" };
       }
     } else {
@@ -4961,6 +5008,7 @@ export class Tavern {
       if (answer === "slap") history.slapped = true;
       const { say, result } = pick(answer === "slap" ? SLAPS : PULLS);
       chat.reply = [you(say), narrate(result)];
+      if (guest && REACH_PART[touch.region]) chat.reply.push(this.barQuip(guest, (v) => v.sulk));
       if (shaky) chat.reply.push(narrate(WAVERED));
       // The first time she ever says no, the room approves (STORY.md 4b): saying no is a story moment too.
       else if (!chat.brawl && r.pulled + r.slapped === 1) chat.reply.push(narrate(FIRST_REFUSAL));
@@ -4972,7 +5020,7 @@ export class Tavern {
       else if (took) this.mark(guest, (m) => m.lets++);
       else if (answer === "slap") this.mark(guest, (m) => (m.slapped = true));
     }
-    this.touchMoment = { id: touch.id, region: touch.region, level: touch.level, answer, kind: guest?.kind ?? "farmer" };
+    this.touchMoment = { id: touch.id, region: touch.region, level: touch.level, answer, kind: guest?.kind ?? "farmer", layer: chat.layer ?? "over" };
     // Karryn's bar (barwork.ts): a hand on her may cost her the tray, and the rest of their table was watching.
     if (took && !chat.brawl) {
       this.maybeDropTray(chat, guest);
@@ -5125,7 +5173,7 @@ export class Tavern {
             this.earned += TIP_DRINK_BONUS;
             this.changeMood(chat.guestId, (mood) => moodAfterDrink(mood, 1));
             chat.reply = [
-              you("\"Cheers!\""),
+              you(this.playerBody === "Female" ? this.herBar("drinkYes") : "\"Cheers!\""),
               narrate(`You drink with them. They're delighted, and add a coin for luck. (+${TIP_DRINK_BONUS} gold)`),
               ...chat.ask,
             ];
@@ -5136,7 +5184,7 @@ export class Tavern {
           disabled: false,
           run: () => {
             chat.offered = true;
-            chat.reply = [you("\"Not just now, thanks.\""), ...chat.ask];
+            chat.reply = [you(this.playerBody === "Female" ? this.herBar("drinkNo") : "\"Not just now, thanks.\""), ...chat.ask];
           },
         },
       );

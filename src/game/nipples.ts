@@ -11,6 +11,10 @@ export const DISC_RINGS = 5;
 export const DISC_SPOKES = 12;
 /** The material the discs are built in. */
 export const DISC_MATERIAL = "T_areola";
+/** How far out the disc is built: NIPPLE_RADIUS in build_world.py. */
+export const DISC_RADIUS = 0.026;
+/** The widest an areola grows: the disc as built. */
+const AREOLA_MOST = DISC_RADIUS;
 /** How far over the skin the disc is built: NIPPLE_LIFT in build_world.py. */
 export const DISC_LIFT = 0.0008;
 /**
@@ -38,8 +42,10 @@ export interface NippleType {
   puff: number;
 }
 
-/** The first is the default. */
+/** The first is the default: Karryn's Prison's big areolae and nipples. */
 export const NIPPLE_TYPES: NippleType[] = [
+  // Karryn's Prison's, hers by default: a big, soft, raised areola and a thick nipple that stands well out.
+  { id: "full", label: "Full & puffy", areola: 0.016, nipple: 0.004, height: 0.003, erect: 0.0085, puff: 0.003 },
   { id: "neat", label: "Neat", areola: 0.0105, nipple: 0.003, height: 0.0026, erect: 0.0075, puff: 0 },
   { id: "puffy", label: "Puffy", areola: 0.013, nipple: 0.0032, height: 0.0018, erect: 0.0065, puff: 0.0035 },
   { id: "wide", label: "Wide areola", areola: 0.0175, nipple: 0.0032, height: 0.0024, erect: 0.007, puff: 0.0004 },
@@ -79,17 +85,20 @@ const smooth = (t: number) => {
 };
 
 /**
- * The disc's rings, tip first, for a type, the two size sliders (-1 to 1) and how aroused she is (0 to 1).
- * Aroused, the nipple stands and swells a little, and the areola draws in and firms.
+ * The disc's rings, tip first, for a type, the two size sliders (-1 to 1), how aroused she is (0 to 1) and her bust
+ * slider. Aroused, the nipple stands and swells a little, and the areola draws in and firms. Turned up, the sliders
+ * go well past the type (up to 1.6 times it), as big as KP draws them; down, a little smaller. A bigger bust has
+ * them a little bigger too, so they never look lost on her.
  */
-export function nippleProfile(type: NippleType, nippleSize: number, areolaSize: number, arousal: number): Ring[] {
+export function nippleProfile(type: NippleType, nippleSize: number, areolaSize: number, arousal: number, bust = 0): Ring[] {
   const a = smooth(arousal);
-  const size = 1 + 0.5 * nippleSize;
+  const withBust = Math.min(1.5, Math.max(0.85, 1 + 0.2 * bust));
+  const size = (1 + (nippleSize > 0 ? 0.6 : 0.5) * nippleSize) * Math.sqrt(withBust);
   const rn = type.nipple * size * (1 + 0.1 * a);
   const hn = (type.height + (type.erect - type.height) * a) * size;
   const puff = type.puff * (1 - 0.6 * a);
   // Never smaller than the nipple's own base, with a ring of areola around it.
-  const ra = Math.max(rn * 1.8, type.areola * (1 + 0.45 * areolaSize) * (1 - 0.18 * a));
+  const ra = Math.min(AREOLA_MOST, Math.max(rn * 1.8, type.areola * (1 + (areolaSize > 0 ? 0.6 : 0.45) * areolaSize) * withBust * (1 - 0.18 * a)));
   const base = rn * 1.15;
   return [
     { r: 0, h: puff + hn },

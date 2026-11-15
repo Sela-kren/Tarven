@@ -177,6 +177,11 @@ export class BattleView {
     return this.active;
   }
 
+  /** The card on screen: its picture, nameplate and status. */
+  get element(): HTMLElement {
+    return this.root;
+  }
+
   /**
    * Shows her, or shows her again as she is now: `body` is her own model as it stands in the room (dressed or
    * not, coated or not), and `name` its body name. Call it again whenever her clothes or what's on her change.
@@ -750,11 +755,36 @@ export class FoeColumn {
   private readonly root = document.createElement("div");
   private readonly views: BattleView[] = [];
   private readonly keys: string[] = [];
+  /** While she's choosing who to go for: what clicking a foe's picture does. */
+  private picking: ((index: number) => void) | null = null;
 
   constructor(private readonly renderer: WebGLRenderer) {
     this.root.id = "battle-foes";
     this.root.setAttribute("aria-hidden", "true");
     document.body.append(this.root);
+    // Choosing: the cursor follows the mouse over their pictures, and a click picks one.
+    const cardAt = (event: Event) => {
+      const card = (event.target as Element | null)?.closest?.(".battle-card");
+      return this.views.findIndex((view) => view.element === card);
+    };
+    this.root.addEventListener("pointerover", (event) => {
+      const index = cardAt(event);
+      if (this.picking && index >= 0) this.aim(index, this.picking);
+    });
+    this.root.addEventListener("click", (event) => {
+      const index = cardAt(event);
+      if (this.picking && index >= 0) this.picking(index);
+    });
+  }
+
+  /**
+   * The target cursor (KP's enemy select): over the picture of foe `index`, or none. With `pick`, she's choosing,
+   * and their pictures can be pointed at and clicked.
+   */
+  aim(index: number | null, pick?: (index: number) => void): void {
+    this.picking = pick ?? null;
+    this.root.classList.toggle("picking", Boolean(pick));
+    this.views.forEach((view, i) => view.element.classList.toggle("aimed", i === index));
   }
 
   show(foes: readonly FoeShow[], mode: BattleMode): void {
@@ -782,6 +812,7 @@ export class FoeColumn {
   }
 
   hide(): void {
+    this.aim(null);
     for (const view of this.views) view.hide();
     this.keys.length = 0;
     this.root.classList.remove("open");
