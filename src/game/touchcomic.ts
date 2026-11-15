@@ -4,6 +4,7 @@ import {
   BufferGeometry,
   Color,
   DirectionalLight,
+  DoubleSide,
   Group,
   HemisphereLight,
   type InterleavedBufferAttribute,
@@ -27,6 +28,7 @@ import {
 } from "three";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { DISC_MATERIAL } from "./nipples";
+import { VULVA_MATERIAL } from "./vulva";
 import type { Effect } from "./audio";
 import { PANEL_SHAPE } from "./comic";
 import { ComicFx, fxPlan, makeMoanBubble, touchHeat, type FxPlan, type FxSpots } from "./comicfx";
@@ -68,12 +70,13 @@ const T = {
 const HOLD_AT = T.release - 0.05;
 
 /** How she stands to the camera: facing it (angled toward the guest), side on, or with her back to it. */
-type View = "front" | "square" | "under" | "above" | "profile" | "behind";
+type View = "front" | "square" | "under" | "above" | "between" | "profile" | "behind";
 const TURN: Record<View, number> = {
   front: Math.PI - 0.5,
   square: Math.PI - 0.12,
   under: Math.PI - 0.42,
   above: Math.PI - 0.2,
+  between: Math.PI,
   profile: Math.PI - 1.15,
   behind: 0.3,
 };
@@ -1141,6 +1144,186 @@ const KISS_TURN = 1.87;
 const SHAFT_ROOT = new Vector3(0, 1.0, -0.05);
 const SHAFT_TIP = new Vector3(0, 1.065, -0.185);
 
+/**
+ * The shot between her legs (CutView "between"), in shares of the camera's distance: how far under where it lands
+ * it looks (her vulva just above the middle), how far below that and out in front of her the camera stands, and
+ * how bright the light from below is.
+ */
+const BETWEEN = { below: 0.25, low: 0.9, ahead: 0.6, light: 1.4 } as const;
+/**
+ * His fingertip on her clit (KP's petting clit): how deep it sinks into her (metres at her build, negative: in), how
+ * wide its circles are, how far round her clit her skin is drawn after it and how much of its move her skin takes;
+ * how bent each finger is (index, middle, ring, little: two out, two curled under) and his thumb.
+ */
+const CLIT = { sink: -0.001, circle: 0.0045, reach: 0.018, follow: 0.8, bends: [0.12, 0.22, 0.85, 0.85], thumb: 0.55 } as const;
+
+/**
+ * Spreads her legs (her copy in the panel): each thigh raised forward and swung out to her side by the turns given,
+ * in her model's own frame, and her knees bent back.
+ */
+function spreadLegs(model: Object3D, name: string, legs: { raise: number; out: number; knee: number }): void {
+  model.updateMatrixWorld(true);
+  const turn = model.getWorldQuaternion(new Quaternion());
+  const inWorld = (local: Quaternion) => turn.clone().multiply(local).multiply(turn.clone().invert());
+  // Turns a bone by a turn in the world, keeping it on its parent.
+  const turnBone = (bone: Object3D, by: Quaternion) => {
+    const now = bone.getWorldQuaternion(new Quaternion());
+    const parent = bone.parent ? bone.parent.getWorldQuaternion(new Quaternion()) : new Quaternion();
+    bone.quaternion.copy(parent.invert().multiply(by.multiply(now)));
+    bone.updateMatrixWorld(true);
+  };
+  const x = new Vector3(1, 0, 0);
+  const z = new Vector3(0, 0, 1);
+  for (const [side, away] of [["L", -1], ["R", 1]] as const) {
+    const thigh = model.getObjectByName(`${name}_Thigh_${side}`);
+    const shin = model.getObjectByName(`${name}_Shin_${side}`);
+    // Forward is her -Z: a turn about +X raises a leg forward; about Z, out to her side (her left is -X).
+    if (thigh) turnBone(thigh, inWorld(new Quaternion().setFromAxisAngle(x, legs.raise).multiply(new Quaternion().setFromAxisAngle(z, away * legs.out))));
+    if (shin) turnBone(shin, inWorld(new Quaternion().setFromAxisAngle(x, -legs.knee)));
+  }
+  model.updateMatrixWorld(true);
+}
+
+/** The top of her slit, where her clit is, in the world: the highest point of her inner lips' mesh. Null if she has none. */
+function clitPoint(model: Object3D): Vector3 | null {
+  model.updateMatrixWorld(true);
+  const toModel = model.matrixWorld.clone().invert();
+  const v = new Vector3();
+  let bestY = -Infinity;
+  let best: Vector3 | null = null;
+  model.traverse((object) => {
+    if (!(object instanceof SkinnedMesh) || !object.visible) return;
+    const worn = Array.isArray(object.material) ? object.material[0] : object.material;
+    if (worn.name !== VULVA_MATERIAL) return;
+    object.skeleton.update();
+    const position = object.geometry.getAttribute("position");
+    for (let i = 0; i < position.count; i++) {
+      object.applyBoneTransform(i, v.fromBufferAttribute(position, i)).applyMatrix4(object.matrixWorld);
+      const y = v.clone().applyMatrix4(toModel).y;
+      if (y > bestY) {
+        bestY = y;
+        best = v.clone();
+      }
+    }
+  });
+  return best;
+}
+
+/**
+ * How much bigger than life her vulva's drawn on her clit (KP draws it big): her skin swollen smoothly out from its
+ * middle, `gain` more at the middle (a share of how far out each point is), fading to nothing by `radius` (metres
+ * at her build). (Under 1.25 it never folds over.)
+ */
+const CLIT_LENS = { radius: 0.065, gain: 0.75 } as const;
+
+/** The middle of her vulva in the world, as she's posed: the mean of her inner lips' points. Null if she has none. */
+function vulvaMiddle(model: Object3D): Vector3 | null {
+  model.updateMatrixWorld(true);
+  const v = new Vector3();
+  const sum = new Vector3();
+  let count = 0;
+  model.traverse((object) => {
+    if (!(object instanceof SkinnedMesh) || !object.visible) return;
+    const worn = Array.isArray(object.material) ? object.material[0] : object.material;
+    if (worn.name !== VULVA_MATERIAL) return;
+    object.skeleton.update();
+    const position = object.geometry.getAttribute("position");
+    for (let i = 0; i < position.count; i++) {
+      sum.add(object.applyBoneTransform(i, v.fromBufferAttribute(position, i)).applyMatrix4(object.matrixWorld));
+      count++;
+    }
+  });
+  return count ? sum.divideScalar(count) : null;
+}
+
+/**
+ * Swells her skin round `centre` (in the world), as through a lens: each point of her body's meshes within
+ * `radius` moved out from it by `gain` of how far out it is, fully at the middle and smoothly less to nothing at
+ * `radius`, so nothing tears. Once, on her copy, as she's posed.
+ */
+function lensSkin(model: Object3D, centre: Vector3, radius: number, gain: number): void {
+  const swell = dragSkin(model, centre, radius, (at, far) => at.clone().sub(centre).multiplyScalar(gain * (1 - far * far) ** 2));
+  swell?.move(new Vector3(1, 1, 1));
+}
+
+/** Her skin round a point, dragged after something on it (his fingertip on her clit): `move` puts it where the drag has it. */
+interface DragSkin {
+  move(by: Vector3): void;
+}
+
+/**
+ * Her skin round `at` (in the world): each point of her body's meshes within `reach`, how much of the drag it takes
+ * (all of it at the point, none by `reach`), and the turn from the world back into its mesh as it's skinned.
+ */
+function dragSkin(model: Object3D, at: Vector3, reach: number, own?: (point: Vector3, far: number) => Vector3): DragSkin | null {
+  model.updateMatrixWorld(true);
+  const pieces: { mesh: SkinnedMesh; index: Uint32Array; share: Float32Array; back: Float32Array; rest: Float32Array; moves: Float32Array | null }[] = [];
+  const v = new Vector3();
+  const sum = new Matrix4();
+  const bone = new Matrix4();
+  const linear = new Matrix4();
+  model.traverse((object) => {
+    if (!(object instanceof SkinnedMesh) || !object.visible || !/_Body/.test(object.name)) return;
+    const { skeleton, geometry } = object;
+    const position = geometry.getAttribute("position");
+    const indices = geometry.getAttribute("skinIndex");
+    const weights = geometry.getAttribute("skinWeight");
+    if (!indices || !weights || !skeleton.boneMatrices) return;
+    skeleton.update();
+    const index: number[] = [];
+    const share: number[] = [];
+    const back: number[] = [];
+    const moves: number[] = [];
+    for (let i = 0; i < position.count; i++) {
+      object.applyBoneTransform(i, v.fromBufferAttribute(position, i)).applyMatrix4(object.matrixWorld);
+      const far = v.distanceTo(at) / reach;
+      if (far > 1) continue;
+      index.push(i);
+      share.push((1 - far * far) ** 2);
+      if (own) moves.push(...own(v, far).toArray());
+      sum.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+      for (let k = 0; k < 4; k++) {
+        const w = weights.getComponent(i, k);
+        if (w === 0) continue;
+        bone.fromArray(skeleton.boneMatrices, indices.getComponent(i, k) * 16);
+        for (let e = 0; e < 16; e++) sum.elements[e] += bone.elements[e] * w;
+      }
+      linear.copy(object.matrixWorld).multiply(object.bindMatrixInverse).multiply(sum).multiply(object.bindMatrix);
+      back.push(...new Matrix3().setFromMatrix4(linear).invert().elements);
+    }
+    if (index.length) {
+      pieces.push({
+        mesh: object,
+        index: Uint32Array.from(index),
+        share: Float32Array.from(share),
+        back: Float32Array.from(back),
+        rest: (position.array as Float32Array).slice(),
+        moves: own ? Float32Array.from(moves) : null,
+      });
+    }
+  });
+  if (!pieces.length) return null;
+  const turn = new Matrix3();
+  return {
+    move(by: Vector3) {
+      for (const { mesh, index, share, back, rest, moves } of pieces) {
+        const position = mesh.geometry.getAttribute("position") as BufferAttribute;
+        const array = position.array as Float32Array;
+        index.forEach((i, n) => {
+          // Its own move (a lens: scaled by `by`), or its share of the drag.
+          if (moves) v.fromArray(moves, n * 3).multiply(by);
+          else v.copy(by).multiplyScalar(share[n]);
+          v.applyMatrix3(turn.fromArray(back, n * 9));
+          array[i * 3] = rest[i * 3] + v.x;
+          array[i * 3 + 1] = rest[i * 3 + 1] + v.y;
+          array[i * 3 + 2] = rest[i * 3 + 2] + v.z;
+        });
+        position.needsUpdate = true;
+      }
+    },
+  };
+}
+
 /** How many times sharper a close-up (CutIn.closeUp) is drawn than a plain panel. */
 const CLOSE_UP_SCALE = 2;
 
@@ -1159,19 +1342,30 @@ function paintSkin(model: Object3D, shade: UnderShade): void {
       const old = material as Material & { color?: Color; map?: Texture | null };
       // A touch warmer and pinker than the texture's average, as KP paints her.
       const color = averageColor(old.map ?? null).multiply(old.color ?? new Color(1, 1, 1)).offsetHSL(-0.01, SKIN_GLOSS.warmer, -0.02);
+      // Inside her, darker: depth, not shine.
+      const inside = SKIN_INSIDE.test(material.name);
+      if (inside) color.multiplyScalar(SKIN_GLOSS.inside);
       const areola = material.name === DISC_MATERIAL;
       const painted = new MeshPhysicalMaterial({
         name: material.name,
         color,
-        roughness: SKIN_GLOSS.roughness,
-        clearcoat: SKIN_GLOSS.clearcoat,
-        clearcoatRoughness: SKIN_GLOSS.clearcoatRoughness,
+        // Her inner lips and canal wet: glossier.
+        roughness: inside ? SKIN_GLOSS.roughness : SKIN_WET.test(material.name) ? SKIN_GLOSS.wetRoughness : SKIN_GLOSS.roughness,
+        clearcoat: inside ? 0 : SKIN_GLOSS.clearcoat,
+        clearcoatRoughness: SKIN_WET.test(material.name) ? SKIN_GLOSS.wetCoat : SKIN_GLOSS.clearcoatRoughness,
         sheen: SKIN_GLOSS.sheen,
         sheenColor: new Color(...SKIN_GLOSS.sheenColor),
         sheenRoughness: 0.5,
         emissive: color.clone().multiply(new Color(...SKIN_GLOSS.glow)),
         emissiveIntensity: areola ? 0.12 : 0.05,
       });
+      // Drawn in front of what it lies on as the original was (her lips and openings over her skin), or the two fight.
+      painted.polygonOffset = material.polygonOffset;
+      painted.polygonOffsetFactor = material.polygonOffsetFactor;
+      painted.polygonOffsetUnits = material.polygonOffsetUnits;
+      painted.alphaTest = material.alphaTest;
+      // Her inner lips and canal from both sides: seen from below, past the canal's walls is nothing to see through to.
+      painted.side = SKIN_WET.test(material.name) ? DoubleSide : material.side;
       painted.onBeforeCompile = (shader) => {
         Object.assign(shader.uniforms, shade);
         shader.vertexShader = `varying vec3 vShadeAt;
@@ -1222,6 +1416,8 @@ function smoothShading(meshes: Mesh[]): void {
     }
   }
   for (const sum of sums.values()) if (sum.lengthSq() > 1e-12) sum.normalize();
+  // Her nipples, lips and openings keep their shapes: averaged at each spot only, not blurred.
+  const plain = new Map([...sums].map(([k, sum]) => [k, sum.clone()]));
   // Blurred over her skin's neighbouring points, a few times, so a fold in her low-poly shape (where her breasts
   // meet her chest) shades as a soft curve, not a line. Her areolae keep their own (her nipples stand off them).
   const near = new Map<string, Set<string>>();
@@ -1249,18 +1445,72 @@ function smoothShading(meshes: Mesh[]): void {
     }
     for (const [k, blurred] of next) sums.get(k)!.copy(blurred);
   }
+  // Her skin's points by where they are (in cells PATCH_EDGE.reach across), for the patches lying over it.
+  const cell = (x: number) => Math.floor(x / PATCH_EDGE.reach);
+  const skinAt = new Map<string, { at: Vector3; normal: Vector3 }[]>();
+  for (const mesh of meshes) {
+    if (isAreola(mesh) || isPatch(mesh)) continue;
+    const position = mesh.geometry.getAttribute("position");
+    for (let i = 0; i < position.count; i++) {
+      const normal = sums.get(key(position, i));
+      if (!normal) continue;
+      const at = new Vector3().fromBufferAttribute(position, i);
+      const c = `${cell(at.x)},${cell(at.y)},${cell(at.z)}`;
+      (skinAt.get(c) ?? skinAt.set(c, []).get(c)!).push({ at, normal });
+    }
+  }
+  const skinUnder = (at: Vector3): Vector3 | null => {
+    let best: Vector3 | null = null;
+    let bestFar = PATCH_EDGE.reach ** 2;
+    const [cx, cy, cz] = [cell(at.x), cell(at.y), cell(at.z)];
+    for (let x = cx - 1; x <= cx + 1; x++)
+      for (let y = cy - 1; y <= cy + 1; y++)
+        for (let z = cz - 1; z <= cz + 1; z++)
+          for (const point of skinAt.get(`${x},${y},${z}`) ?? []) {
+            const far = point.at.distanceToSquared(at);
+            if (far < bestFar) {
+              bestFar = far;
+              best = point.normal;
+            }
+          }
+    return best;
+  };
+  const at = new Vector3();
   for (const mesh of meshes) {
     const position = mesh.geometry.getAttribute("position");
     const normal = mesh.geometry.getAttribute("normal");
+    const patch = isPatch(mesh);
+    const whole = patch && PATCH_WHOLE.test((Array.isArray(mesh.material) ? mesh.material[0] : mesh.material).name);
+    const uv = patch && !whole ? mesh.geometry.getAttribute("uv") : null;
     for (let i = 0; i < position.count; i++) {
-      const sum = isAreola(mesh) ? null : sums.get(key(position, i));
+      const sum = (isAreola(mesh) ? plain : sums).get(key(position, i));
       if (sum && sum.lengthSq() > 1e-12) n.copy(sum).normalize();
       else n.fromBufferAttribute(normal, i);
+      if (patch) {
+        // A patch over her skin shades as the skin under it (her outer lips only at their edge, their own in their
+        // middle: a grid, u across, v along, 0 to 1), so it melts into her.
+        const edge = uv ? Math.max(Math.abs(2 * uv.getX(i) - 1), Math.abs(2 * uv.getY(i) - 1)) : 1;
+        const under = skinUnder(at.fromBufferAttribute(position, i));
+        if (under) n.lerp(under, MathUtils.smoothstep(edge, PATCH_EDGE.from, PATCH_EDGE.to)).normalize();
+      }
       normal.setXYZ(i, n.x, n.y, n.z);
     }
     normal.needsUpdate = true;
   }
 }
+
+/**
+ * Patches over her skin, blurred with it and shaded as the skin under them: her outer lips at their edges (they're
+ * a grid, their middle shaped), the skin round her anus all over.
+ */
+const SKIN_PATCH = /^(T_labia|T_anus_skin)$/;
+const PATCH_WHOLE = /^T_anus_skin$/;
+const isPatch = (mesh: Mesh) => SKIN_PATCH.test((Array.isArray(mesh.material) ? mesh.material[0] : mesh.material).name);
+/**
+ * Where a patch's shading turns to the skin under it: from this far out from its middle (0 middle, 1 edge) to all of
+ * it here; and how far off it the skin under it is looked for (metres as built).
+ */
+const PATCH_EDGE = { from: 0.45, to: 0.9, reach: 0.012 } as const;
 
 /** The shadow under her breasts in a close-up: uniforms shared by her painted skin's shaders (TouchComic.underShade). */
 interface UnderShade {
@@ -1273,9 +1523,10 @@ interface UnderShade {
  * The soft shadow her breasts cast on her ribcage under them in a close-up, each breast taken as a ball: how big the
  * ball is (a share of the breast's size, so its own top isn't shadowed), how soft the shadow's edge is (higher:
  * harder), how dark it is at most and the colour it darkens toward (warm, as KP's), and how far in front of her the
- * light comes from (0: straight down; 1: as much from the front).
+ * light comes from (0: straight down; 1: as much from the front); and from how far down the ball (a share of its
+ * size below its middle) the shadow starts, to where it's whole: low on her breast and under it, not a line across.
  */
-const UNDER_SHADE = { fit: 0.9, soft: 3, dark: 0.55, tint: [0.62, 0.36, 0.38], ahead: 0.35 } as const;
+const UNDER_SHADE = { fit: 0.9, soft: 1.4, dark: 0.55, tint: [0.62, 0.36, 0.38], ahead: 0.35, low: [0.2, 0.9] } as const;
 const UNDER_SHADE_GLSL = `varying vec3 vShadeAt;
 uniform vec4 uBreasts[2];
 uniform vec3 uShadeFrom;
@@ -1286,12 +1537,13 @@ float underShade(vec3 at, vec3 toLight, vec4 ball) {
   float h = b * b - dot(oc, oc) + ball.w * ball.w;
   float miss = sqrt(max(0.0, ball.w * ball.w - h)) - ball.w;
   float t = -b - sqrt(max(h, 0.0));
-  return t < 0.0 ? 1.0 : smoothstep(0.0, 1.0, ${UNDER_SHADE.soft.toFixed(1)} * miss / t);
+  float low = smoothstep(${UNDER_SHADE.low[0].toFixed(2)}, ${UNDER_SHADE.low[1].toFixed(2)}, (ball.y - at.y) / ball.w);
+  return t < 0.0 ? 1.0 : mix(1.0, smoothstep(0.0, 1.0, ${UNDER_SHADE.soft.toFixed(1)} * miss / t), low);
 }
 `;
 
-/** Whether a mesh is her areolae and nipples (DISC_MATERIAL). */
-const isAreola = (mesh: Mesh) => (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material).name === DISC_MATERIAL;
+/** Whether a mesh has shapes of its own (her areolae and nipples, her vulva and anus: SKIN_DETAIL), not blurred. */
+const isAreola = (mesh: Mesh) => SKIN_DETAIL.test((Array.isArray(mesh.material) ? mesh.material[0] : mesh.material).name);
 
 /**
  * How many times her skin's shading is blurred over each point's neighbours in a close-up: enough to melt the folds
@@ -1301,12 +1553,24 @@ const NORMAL_BLUR = 8;
 
 
 /** Which of her materials are painted for a close-up: her body's skin and her areolae (not her face's). */
-const SKIN_PAINTED = /^(T_skin_f|T_skin|T_areola)$/;
+const SKIN_PAINTED = /^(T_skin_f|T_skin|T_areola|T_labia|T_vulva|T_canal|T_anus|T_anus_skin|T_navel)$/;
+/** Of those, what's wet (her inner lips, her canal): glossier, and drawn from both sides. */
+const SKIN_WET = /^(T_vulva|T_canal)$/;
+/** Of those, what's inside her (her canal): darker and without the clear coat, so it reads as depth. */
+const SKIN_INSIDE = /^T_canal$/;
+/**
+ * Of those, what has shapes of its own (nipples, inner lips, openings) that blurring her shading would flatten. Her
+ * outer lips and the skin round her anus are blurred with her skin, so they melt into it at their edges.
+ */
+const SKIN_DETAIL = /^(T_areola|T_vulva|T_canal|T_anus)$/;
 /**
  * How her skin is painted in a close-up: how much more saturated than her texture, how rough (low: glossy), its clear coat and how sharp that is, a pink
  * sheen, a warm glow of its own (as light through skin), and the rim's strength, how tight it is and its colour.
  */
 const SKIN_GLOSS = {
+  inside: 0.6,
+  wetRoughness: 0.3,
+  wetCoat: 0.18,
   warmer: 0.12,
   roughness: 0.6,
   clearcoat: 0.45,
@@ -1398,6 +1662,10 @@ export class TouchComic {
   private breastMiddles: Vector3[] = [];
   /** How big each of her breasts is (how far its skin sits from its middle), in her model's space. */
   private breastSizes: number[] = [];
+  /** A soft warm light from below and in front, lit only between her legs (KP's bright cheeks and thighs there). */
+  private readonly below = new DirectionalLight(0xffd8c8, 0);
+  /** Her skin round her clit, dragged after his fingertip (the clit cut-in). */
+  private clitDrag: DragSkin | null = null;
   /**
    * Where her breasts are for the shadow under them in a close-up (UNDER_SHADE): each one's middle and size (world
    * space; size 0 for none), and which way the light comes from. Shared with her painted skin's shaders.
@@ -1482,7 +1750,8 @@ export class TouchComic {
     key.position.set(-1.5, 2.5, 3);
     const back = new DirectionalLight(0x8fa4d0, 2.2);
     back.position.set(2, 2, -2.5);
-    this.scene.add(key, back);
+    this.below.position.set(0.3, -2, 2.5);
+    this.scene.add(key, back, this.below);
   }
 
   get playing(): boolean {
@@ -1522,7 +1791,7 @@ export class TouchComic {
     const model = cloneSkinned(body);
     model.position.set(0, 0, 0);
     if (cut?.closeUp) paintSkin(model, this.underShade);
-    if (show.ownCloth || (kind && ON_BREASTS.has(kind))) {
+    if (show.ownCloth || (kind && ON_BREASTS.has(kind)) || cut?.legs) {
       model.traverse((object) => {
         if (object instanceof Mesh) object.geometry = object.geometry.clone();
       });
@@ -1546,6 +1815,13 @@ export class TouchComic {
     model.rotation.set(0, this.turn, 0);
     model.visible = true;
     const part = (label: string) => model.getObjectByName(`${name}_${label}`);
+    if (cut?.legs) {
+      spreadLegs(model, name, cut.legs);
+      // Seen from between her legs her hair down her back would fill the gap under her: not in KP's shot.
+      model.traverse((object) => {
+        if (object instanceof Mesh && /Hair/.test(object.name)) object.visible = false;
+      });
+    }
     const torso = part("Torso");
     const head = part("Head");
     const upper = part("UpperArm_R");
@@ -1582,6 +1858,13 @@ export class TouchComic {
       return model.localToWorld(local);
     };
     const contacts: Vector3[] = [toWorld(anchor, shot.offset)];
+    // On her clit: drawn bigger than life, as KP's (a smooth swell round her vulva), then the top of her slit.
+    if (kind === "clit") {
+      const middle = vulvaMiddle(model);
+      if (middle) lensSkin(model, middle, CLIT_LENS.radius * scale, CLIT_LENS.gain);
+    }
+    const clit = kind === "clit" ? clitPoint(model) : null;
+    if (clit) contacts[0] = clit;
     // Kneading her breasts: a hand on the front of each, the heel of it low so the fingers spread up over her.
     const fronts = kind && ON_BREASTS.has(kind) ? breastFronts(model, name, middle) : null;
     // However big her sliders have made her breasts, the panel holds them as it holds a C cup: further back for a
@@ -1685,6 +1968,8 @@ export class TouchComic {
       }
     }
     if (shot.view === "square") look.copy(this.contact);
+    // Between her legs: her vulva just above the middle, her belly over it, the undersides of her cheeks below.
+    if (shot.view === "between") look.copy(this.contact).add(new Vector3(0, -BETWEEN.below * d, 0));
     // From under and to her side: on the middle of her breasts, between the two.
     if (shot.view === "above" && fronts) look.copy(fronts.reduce((sum, f) => sum.add(model.localToWorld(f.centre.clone())), new Vector3()).divideScalar(fronts.length));
     if (shot.view === "under") {
@@ -1699,6 +1984,9 @@ export class TouchComic {
     if (shot.view === "under") this.camera.position.set(look.x + 0.04 * d, look.y - 0.34 * d, look.z + 0.94 * d);
     // From a little above: down over her breasts, her collarbone at the top of the panel (KP's nipple cut-in).
     if (shot.view === "above") this.camera.position.set(look.x + 0.05 * d, look.y + 0.3 * d, look.z + 0.95 * d);
+    // From between her knees, a little below: up at her, as KP draws her spread.
+    if (shot.view === "between") this.camera.position.set(look.x, look.y - BETWEEN.low * d, look.z + BETWEEN.ahead * d);
+    this.below.intensity = shot.view === "between" ? BETWEEN.light : 0;
     if (cut?.motion === "arch" || cut?.motion === "pose") this.camera.position.y -= 0.12 * d;
     this.camera.lookAt(look);
     // A close-up tipped on the slant, as KP's.
@@ -1748,7 +2036,9 @@ export class TouchComic {
       else if (fronts) start.add(new Vector3((right ? 0.6 : -0.6) * d, -0.85 * d, 0.1 * d));
       else if (count === 2) start.add(new Vector3((right ? 0.5 : -0.5) * d, -0.9 * d, 0.2 * d));
       // Between her legs, or to her mouth: up from below on the left, so it doesn't cross her.
-      else if (cut && (cut.motion === "rub" || cut.motion === "circle" || cut.motion === "suck")) start.add(new Vector3(-0.55 * d, -0.85 * d, 0.25 * d));
+      // On her clit: down over her mound from the top of the panel, from her right (KP).
+      else if (cut?.motion === "circle") start.add(new Vector3(0.9 * d, 0.8 * d, 0.35 * d));
+      else if (cut && (cut.motion === "rub" || cut.motion === "suck")) start.add(new Vector3(-0.55 * d, -0.85 * d, 0.25 * d));
       else start.add(new Vector3((right ? 0.95 : -0.95) * d, -0.22 * d, 0.3 * d));
       if (cut?.motion === "pump") {
         // Her palm round his shaft from her side of it.
@@ -1794,6 +2084,7 @@ export class TouchComic {
     }
 
     if (this.bust) this.soft = softSkin(model, this.bust, show.ownCloth ? name : null);
+    this.clitDrag = clit ? dragSkin(model, clit, CLIT.reach * scale) : null;
     this.breastMiddles = fronts ? fronts.map((front) => front.centre.clone()) : [];
     this.breastSprings = this.breastMiddles.map(() => ({ at: new Vector3(), speed: new Vector3() }));
     this.springAt = this.clock;
@@ -1815,7 +2106,11 @@ export class TouchComic {
       if (cut.sparkle) plan.sparkle = true;
       if (kind === "spank") plan.mark = this.strength;
       if (cut.motion === "arch") plan.focus = true;
-      if (kind === "breasts" || kind === "nipples") {
+      if (kind === "clit") {
+        // KP's: just the picture, her skin wet round his hand; nothing else drawn over it.
+        Object.assign(plan, { steam: 0, skinSteam: 0, quiver: false, blushLines: false, sweat: 0, hearts: 0, burst: false, focus: false, sparkle: false });
+        plan.skin = 1 + Math.round(this.heat);
+      } else if (kind === "breasts" || kind === "nipples") {
         // KP's petting cut-in is just the picture: no drops, sweat, steam, hearts or marks drawn over it.
         Object.assign(plan, { steam: 0, skinSteam: 0, quiver: false, blushLines: false, sweat: 0, hearts: 0, burst: false, focus: false, skin: 0, sparkle: false });
       } else if (kind && ON_BREASTS.has(kind)) {
@@ -1905,6 +2200,7 @@ export class TouchComic {
     this.partnerHead = null;
     this.bust = null;
     this.soft = null;
+    this.clitDrag = null;
     this.bones = null;
     this.rigs = [];
     this.jiggles = [];
@@ -2137,7 +2433,9 @@ export class TouchComic {
     const tips = gesture === "tap" || gesture === "press" || motion === "circle" || motion === "suck";
     // Pinching her nipple, his fingertips meet on it.
     const pinching = motion === "pinch" && rig.aim !== null;
-    const target = rig.contact.clone().addScaledVector(n, (pinching ? -0.002 : tips ? 0.03 : 0.015) * scale);
+    // On her clit, his index fingertip right on it.
+    const flicking = motion === "circle" && this.clitDrag !== null;
+    const target = rig.contact.clone().addScaledVector(n, (pinching ? -0.002 : flicking ? CLIT.sink : tips ? 0.03 : 0.015) * scale);
 
     let into = ease(span(t, T.reachFrom, T.contact));
     // A smack hangs back, then comes in fast.
@@ -2212,6 +2510,13 @@ export class TouchComic {
           position.addScaledVector(up, s * 0.035 * scale).addScaledVector(n, -0.008 * scale);
           break;
         case "circle":
+          if (flicking) {
+            // KP: small circles on her clit; her clit and the top of her lips go round with his fingertip.
+            const across = new Vector3().crossVectors(n, up).normalize();
+            const along = up.clone().addScaledVector(n, -up.dot(n)).normalize();
+            position.addScaledVector(across, c * CLIT.circle * scale).addScaledVector(along, s * CLIT.circle * 0.8 * scale);
+            break;
+          }
           curl = 0.35 * closing;
           position.addScaledVector(right, c * 0.012 * scale).addScaledVector(up, s * 0.012 * scale);
           break;
@@ -2302,6 +2607,15 @@ export class TouchComic {
     const inward = n.clone().negate();
     const reaching = this.orient(way, palmTo(inward.clone().addScaledVector(way, -inward.dot(way)).normalize()));
     let lying = this.orient(fingersOn, palmTo(inward));
+    if (flicking) {
+      // Two fingers out (index and middle, the index a little ahead), the others curled under, his thumb tucked:
+      // his index fingertip is what lands on her clit.
+      rig.arm.fingers.forEach((finger, f) => finger.bend(CLIT.bends[f] ?? CLIT.bends[3]));
+      rig.arm.thumb?.bend(CLIT.thumb);
+      hand.updateMatrixWorld(true);
+      const index = rig.arm.fingers[0]?.tip.getWorldPosition(new Vector3());
+      if (index) rig.palm.copy(hand.worldToLocal(index));
+    }
     if (pinching) {
       // Pinching: thumb and finger closing on her nipple, harder as he tugs. His hand is turned from the pinch itself:
       // the line from his thumb's tip to his finger's lies across her (from under and outside her nipple to over and
@@ -2339,8 +2653,9 @@ export class TouchComic {
     hand.quaternion.copy(reaching).slerp(lying, settle);
     if (spin) hand.quaternion.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), spin));
 
-    if (pinching) {
-      // The point between his thumb's tip and his finger's is what lands on her nipple (rig.palm, above).
+    if (pinching || flicking) {
+      // The point between his thumb's tip and his finger's (or his fingertip) is what lands on her (rig.palm, above),
+      // and her skin there goes where it goes.
       rig.pull.copy(position).sub(target).multiplyScalar(there ? 1 : 0);
     } else rig.arm.curl(this.show?.fist ? 1 : Math.min(1, curl));
     // The arm's origin is its elbow: put it so the palm lands where it should.
@@ -2908,6 +3223,7 @@ export class TouchComic {
     this.pose(this.time);
     if (this.soft) this.squeezeSkin(this.soft);
     if (this.pixelScale > 1) this.placeUnderShade();
+    if (this.clitDrag) this.clitDrag.move(this.rigs[0]?.pull.clone().multiplyScalar(CLIT.follow) ?? new Vector3());
     const { renderer } = this;
     const { target, pixels, width, height, ctx, image } = this.surface;
     const previousTarget = renderer.getRenderTarget();

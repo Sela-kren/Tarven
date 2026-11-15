@@ -18,6 +18,18 @@ describe("Karryn-style cut-ins", () => {
     expect(cutKindFor("thighUp", "intimate", 9)).toBe("clit");
   });
 
+  it("frame her clit as KP does: a close-up from between her spread legs, one hand circling it", () => {
+    const clit = CUT_INS.clit;
+    expect(clit.view).toBe("between");
+    expect(clit.closeUp).toBeDefined();
+    expect(clit.legs?.raise).toBeGreaterThan(0);
+    expect(clit.legs?.out).toBeGreaterThan(0);
+    expect(clit.hands).toBe(1);
+    expect(clit.motion).toBe("circle");
+    expect(clit.loop).toBeCloseTo(0.44, 2);
+    expect(clit.format).toBe("tall");
+  });
+
   it("tell a kiss, a deep kiss and fingers in her mouth apart", () => {
     expect(cutKindFor("kiss", "lips")).toBe("kissed");
     expect(cutKindFor("deepKiss", "lips")).toBe("deepKiss");

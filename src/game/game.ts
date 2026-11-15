@@ -714,6 +714,12 @@ const CROWD_FULL = 6;
 const CROWD_BEDROOM_LEVEL = 0.3;
 const RUNNING_STEP_LOUDNESS = 1.6;
 
+/**
+ * A hand between her legs in a cut-in finds her aroused and parted at least this much (KP's wet, open vulva):
+ * her vulva's arousal (0 to 1) and how open it is (0 closed, 1 fully open).
+ */
+const CUT_WET = { arousal: 0.85, open: 0.45 } as const;
+
 export class Game {
   readonly tavern: Tavern;
   readonly siblings: [Sibling, Sibling];
@@ -3203,14 +3209,26 @@ export class Game {
     // Her shoes and boots stay on (cutInPieces never takes them).
     const off = kind ? cutInPieces(tavern.playerBody, tavern.playerOutfit, tavern.playerLegwear, tavern.playerUnder, tavern.shownPieces) : [];
     const behind = kind ? CUT_INS[kind].region === "rear" : false;
+    // Seen from between her legs, from below, she holds it up all round.
+    const between = kind ? CUT_INS[kind].view === "between" : false;
+    // A hand between her legs finds her wet and parted, as KP's does, however she shows in the room.
+    const intimate = kind ? CUT_INS[kind].region === "intimate" : false;
     const dresser = this.dressers[this.active];
     if (off.length) dresser.setStripped([...tavern.shownPieces, ...off]);
     if (pull) dresser.setPull(pull, 1);
-    if (kind) sibling.liftSkirtNow(behind ? 0 : 1, behind ? 1 : 0);
+    if (kind) sibling.liftSkirtNow(behind ? 0 : 1, behind || between ? 1 : 0);
+    if (intimate) {
+      dresser.setArousal(this.arousalShown, Math.max(this.vulvaArousalShown, CUT_WET.arousal));
+      dresser.setOpening(Math.max(this.openingShown.vulva, CUT_WET.open), this.openingShown.anus);
+    }
     this.touchComic.play(body, name, { ...show, ownCloth: Boolean(pull || off.length) });
     // Back as it was on her in the room; a show pose's own pull, and her skirt, come back with the next frame.
     if (pull) dresser.setPull(null, 0);
     if (off.length) dresser.setStripped(tavern.shownPieces);
+    if (intimate) {
+      dresser.setArousal(this.arousalShown, this.vulvaArousalShown);
+      dresser.setOpening(this.openingShown.vulva, this.openingShown.anus);
+    }
   }
 
   /** She came in a duel: KP's orgasm cut-in, harder (`strength` 2) from her second time on. */

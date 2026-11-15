@@ -44,7 +44,7 @@ export type CutCum = "mouth" | "face" | "body" | "inside" | "behind";
 export type CutFormat = "wide" | "tall";
 
 /** How she stands to the camera: facing it (angled to the guest, or square on), side on, or with her back to it. */
-export type CutView = "front" | "square" | "under" | "above" | "profile" | "behind";
+export type CutView = "front" | "square" | "under" | "above" | "between" | "profile" | "behind";
 
 export interface CutIn {
   /** The Karryn's Prison cut-in it answers. */
@@ -82,6 +82,11 @@ export interface CutIn {
    * texture), the camera tipped `roll` radians for KP's slant.
    */
   closeUp?: { roll: number };
+  /**
+   * Her legs spread for the panel (her copy only; the room never sees it), as KP draws her between her thighs: how
+   * far each thigh is raised forward and swung out to her side, and how far her knees bend (radians).
+   */
+  legs?: { raise: number; out: number; knee: number };
 }
 
 /** Panel outlines, KP's shapes: a tipped pentagon, a tall leaning strip, a wide wedge, a kite. */
@@ -149,18 +154,23 @@ export const CUT_INS: Record<CutKind, CutIn> = {
   clit: {
     kp: "Petting clit (cutin_pt_ct)",
     region: "intimate",
+    // KP's frames: right up between her spread thighs, from a little below, her vulva just above the middle, her
+    // belly at the top and the undersides of her cheeks at the bottom; his hand in over her mound from the top, two
+    // fingertips circling her clit (8 frames, 0.44s). (The panel finds her clit itself; this is the fallback.)
     bone: "Hips",
-    offset: [0, -0.13, -0.11],
-    distance: 0.9,
-    view: "front",
+    offset: [0, -0.1, -0.06],
+    distance: 0.34,
+    view: "between",
     hands: 1,
     motion: "circle",
-    loop: 0.4,
+    loop: 0.44,
     format: "tall",
     shape: TALL_STRIP,
     drift: [-0.1, 0],
     hit: "flick♥",
     voice: "hyaah♥!",
+    closeUp: { roll: 0.06 },
+    legs: { raise: 0.5, out: 0.5, knee: 0.4 },
   },
   butt: {
     kp: "Petting butt (cutin_pt_bt)",
