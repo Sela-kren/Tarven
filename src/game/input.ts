@@ -15,6 +15,8 @@ function typing(target: EventTarget | null): boolean {
 export class Input {
   private readonly held = new Set<string>();
   private readonly justPressed = new Set<string>();
+  /** Keys that went down this frame, counting the repeats a held key sends. */
+  private readonly typed = new Set<string>();
 
   constructor(target: Window = window) {
     target.addEventListener("keydown", (e) => {
@@ -24,6 +26,7 @@ export class Input {
       e.preventDefault();
       this.held.add(e.code);
       if (!e.repeat) this.justPressed.add(e.code);
+      this.typed.add(e.code);
     });
     target.addEventListener("keyup", (e) => this.held.delete(e.code));
     // A key released while the window is unfocused would otherwise stay stuck.
@@ -45,8 +48,22 @@ export class Input {
     return this.justPressed.has(code);
   }
 
+  /** True on the frame a key goes down, and again each time it repeats while held: for stepping through menus. */
+  pressedOrHeld(code: string): boolean {
+    return this.typed.has(code);
+  }
+
+  /** Uses up this frame's press of these keys, so nothing later in the frame acts on it too. */
+  consume(...codes: string[]): void {
+    for (const code of codes) {
+      this.justPressed.delete(code);
+      this.typed.delete(code);
+    }
+  }
+
   /** Call once at the end of every frame. */
   endFrame(): void {
     this.justPressed.clear();
+    this.typed.clear();
   }
 }

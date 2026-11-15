@@ -38,10 +38,21 @@ const DECAL_Y = 0.012;
 const VANISH_SECONDS = 0.3;
 /** How far a puddle lies from its seat, towards the table. */
 const SPILL_REACH = 0.3;
-/** A carried stack of dirty bowls: how many are drawn, how far apart, and how large. */
+/**
+ * A dirty bowl is the stew bowl it was served in, the same size on the table as on the tray: the served bowl
+ * (Item_Stew) is 0.19 m across the rim once the game scales it up, and this one's rim is 0.08 before scaling.
+ */
+const BOWL_SCALE = 2.4;
+/** A carried stack of dirty bowls: how many are drawn, and how far apart. */
 const STACK_SHOWN = 5;
-const STACK_STEP = 0.06;
-const STACK_SCALE = 1.6;
+const STACK_STEP = 0.09;
+/**
+ * An emptied cup is the ale cup served on the tray (Item_Ale at the game's item scale), with nothing in it: its
+ * foot and rim radius, its height, and its handle.
+ */
+const CUP_FOOT = 0.088;
+const CUP_RIM = 0.099;
+const CUP_HEIGHT = 0.192;
 
 /** Cobwebs: how far off the wall they hang, and how big a web in a corner or mid-wall is. */
 const WEB_OFF_WALL = 0.07;
@@ -219,8 +230,9 @@ export class MessLayer {
     7,
   );
   private readonly bowlCrust = new CircleGeometry(0.055, 7).rotateX(-Math.PI / 2);
-  private readonly cup = new CylinderGeometry(0.04, 0.035, 0.1, 7, 1, true);
-  private readonly cupBase = new CircleGeometry(0.035, 7).rotateX(Math.PI / 2);
+  private readonly cup = new CylinderGeometry(CUP_RIM, CUP_FOOT, CUP_HEIGHT, 8, 1, true);
+  private readonly cupBase = new CircleGeometry(CUP_FOOT, 8).rotateX(Math.PI / 2);
+  private readonly cupHandle = new BoxGeometry(0.056, 0.112, 0.032);
   private readonly crumb = new BoxGeometry(0.025, 0.012, 0.018);
   private readonly dustPatch = new PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
   private readonly clump = new IcosahedronGeometry(0.045, 0);
@@ -370,7 +382,7 @@ export class MessLayer {
       const bowl = this.mesh(this.bowl, this.materials.clay);
       bowl.castShadow = false;
       bowl.position.y = i * STACK_STEP;
-      bowl.scale.setScalar(STACK_SCALE);
+      bowl.scale.setScalar(BOWL_SCALE);
       stack.add(bowl);
     }
     return stack;
@@ -384,6 +396,7 @@ export class MessLayer {
 
     if (ware === "dish") {
       const bowl = this.mesh(this.bowl, this.materials.clay);
+      bowl.scale.setScalar(BOWL_SCALE);
       bowl.position.set((random() - 0.5) * 0.06, 0, (random() - 0.5) * 0.06);
       const crust = this.mesh(this.bowlCrust, this.materials.crust);
       crust.position.y = 0.02;
@@ -403,17 +416,20 @@ export class MessLayer {
     const cup = new Group();
     cup.add(this.mesh(this.cup, this.materials.pewter));
     const base = this.mesh(this.cupBase, this.materials.pewter);
-    base.position.y = -0.05;
+    base.position.y = -CUP_HEIGHT / 2;
     cup.add(base);
+    const handle = this.mesh(this.cupHandle, this.materials.pewter);
+    handle.position.set(0.125, 0.008, 0);
+    cup.add(handle);
     if (random() < 0.5) {
       // Knocked over, lying on its side with a little ale run out of it.
       cup.rotation.z = Math.PI / 2;
-      cup.position.set(0.13, 0.04, -0.04);
-      const drip = this.mesh(puddleGeometry(0.07, random), this.materials.ale);
-      drip.position.set(0.2, 0.002, -0.04);
+      cup.position.set(0.2, CUP_FOOT, -0.06);
+      const drip = this.mesh(puddleGeometry(0.1, random), this.materials.ale);
+      drip.position.set(0.32, 0.002, -0.06);
       place.add(drip);
     } else {
-      cup.position.set(0.13, 0.05, -0.06);
+      cup.position.set(0.2, CUP_HEIGHT / 2, -0.08);
     }
     cup.rotation.y = random() * Math.PI;
     place.add(cup);
@@ -437,10 +453,13 @@ export class MessLayer {
     const cup = new Group();
     cup.add(this.mesh(this.cup, this.materials.pewter));
     const base = this.mesh(this.cupBase, this.materials.pewter);
-    base.position.y = -0.05;
+    base.position.y = -CUP_HEIGHT / 2;
     cup.add(base);
+    const handle = this.mesh(this.cupHandle, this.materials.pewter);
+    handle.position.set(0.125, 0.008, 0);
+    cup.add(handle);
     cup.rotation.set(0, random() * Math.PI * 2, Math.PI / 2, "YXZ");
-    cup.position.set(0.22, 0.04, 0.1);
+    cup.position.set(0.24, CUP_FOOT, 0.1);
     puddle.add(cup);
     puddle.position.y = DECAL_Y;
     return puddle;

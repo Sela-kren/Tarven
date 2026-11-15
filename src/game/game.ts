@@ -75,6 +75,7 @@ import { changeLabel, dayIcon, dayStory, statusLines, townTalk, type Standing } 
 import { StatusCard } from "./statuscard";
 import { DRINK_COLORS, Icon, type IconName } from "./icons";
 import type { Input } from "./input";
+import { KeyNav } from "./keynav";
 import { DEBUFFS } from "./debuffs";
 import { FIRST_IN_TARVEN, ordinal } from "./ledger";
 import { firstInTarvenLines } from "./plot";
@@ -877,6 +878,10 @@ export class Game {
   panelButtons: Button[] = [];
   /** Where Esc leads from the open menu, or null when it has no way back. */
   panelBack: (() => void) | null = null;
+  /** W/S and E through whatever menu is up (keynav.ts). */
+  private readonly keyNav: KeyNav;
+  private readonly talkChoicesEl = element("talk-choices");
+  private readonly customizeEl = element("customize");
   /** An 18+ moment the last answer led to, shown once the conversation closes. */
   private pendingAdult: AdultScene | null = null;
   /** Today as it opened: what the autosave holds. */
@@ -908,6 +913,7 @@ export class Game {
     void this.narrator.loadBank(`${import.meta.env.BASE_URL}ai-lines.json`);
     // Brawls and duels take their colour lines from the same bank.
     setFlavorSource((key, guest) => this.narrator.draw(key, guest));
+    this.keyNav = new KeyNav(input);
     this.bell = makeBell();
     this.bell.position.copy(BELL_SPOT);
     assets.props.add(this.bell);
@@ -1795,6 +1801,25 @@ export class Game {
     this.panelBack = null;
   }
 
+  /**
+   * Where the keyboard's menu cursor works this frame (keynav.ts): the open menu board, her talk's choices once
+   * they're up, or the customizer. In the room, W/S walk instead.
+   */
+  private navRoot(): HTMLElement | null {
+    switch (this.screen) {
+      case "panel":
+      case "title":
+      case "paused":
+        return this.panelEl;
+      case "talk":
+        return this.dialogue.choosing ? this.talkChoicesEl : null;
+      case "customize":
+        return this.customizeEl;
+      default:
+        return null;
+    }
+  }
+
   /** A menu that Esc (or its Back button) leaves by calling `back`. */
   openMenu(title: string, paragraphs: string[], buttons: Button[], back: () => void): void {
     this.openPanel(title, paragraphs, [...buttons, { label: "Back", onPick: back }]);
@@ -1806,11 +1831,11 @@ export class Game {
     button.onPick();
   }
 
+  /** A number picks its button. W/S and E work every menu, this one included (keynav.ts, run from update). */
   private handlePanelKeys(): void {
     const buttons = this.panelButtons;
     const pick = buttons.findIndex((_, index) => this.input.pressed(`Digit${index + 1}`));
     if (pick >= 0 && !buttons[pick].disabled) this.pressButton(buttons[pick]);
-    else if (buttons.length === 1 && this.input.pressed("Enter")) this.pressButton(buttons[0]);
   }
 
   /** Starts a day with the tavern closed. Every day starts here, so this is where the autosave is taken. */
@@ -2185,7 +2210,7 @@ export class Game {
     const { input } = this;
     if (input.pressed("Digit1") || input.pressed("ArrowLeft") || input.pressed("KeyA")) this.choose(0);
     if (input.pressed("Digit2") || input.pressed("ArrowRight") || input.pressed("KeyD")) this.choose(1);
-    if (input.pressed("Enter")) this.beginNight();
+    if (input.pressed("Enter") || input.pressed("KeyE")) this.beginNight();
     if (input.pressed("KeyC")) this.openCustomizer();
 
     const spot = new Vector3();
@@ -3366,7 +3391,10 @@ export class Game {
     // Paused: nothing moves, not even the guests.
     if (this.screen === "paused") {
       if (this.input.pressed("Escape")) (this.panelBack ?? (() => this.resume()))();
-      else this.handlePanelKeys();
+      else {
+        this.keyNav.update(this.navRoot());
+        this.handlePanelKeys();
+      }
       this.updateSound();
       this.input.endFrame();
       return;
@@ -3379,6 +3407,9 @@ export class Game {
       else if (this.panelBack) this.panelBack();
       else this.pause();
     }
+    // The menu cursor goes first and uses up the keys it acts on, so an E that picks from a menu isn't also taken
+    // as the screen's own E.
+    this.keyNav.update(this.navRoot());
 
     this.time += dt;
     // Time stands still while you're looking at the plans.

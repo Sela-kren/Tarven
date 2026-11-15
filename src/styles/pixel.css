@@ -127,6 +127,8 @@
 
 #talk-choices button:hover:not(:disabled),
 #talk-choices button:focus-visible,
+#talk-choices button.kb-cursor:not(:disabled),
+#customize button.kb-cursor:not(.swatch),
 #story-skip:hover,
 #story-skip:focus-visible,
 #customize button:not(.swatch):hover,
@@ -404,4 +406,13 @@
     width: 154px;
     height: 80px;
   }
+}
+
+/* ---------- Keyboard cursor ----------
+   The control W/S has moved to (keynav.ts). Planks light up as they do under the mouse (above, and panel.css);
+   anything else, such as a slider, a colour swatch, a tick box or a drop-down, gets a gold frame. */
+.kb-cursor:is(input, select, .swatch),
+#panel .kb-cursor:not(.menu > button) {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
 }

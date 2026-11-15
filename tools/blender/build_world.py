@@ -7035,13 +7035,17 @@ def build_props(c, m):
     tap.done()
 
     pot = Part(c, "Station_Pot")
-    pot.lathe(-6.0, 0.5, 0.22, [(0.16, 0), (0.28, 0.12), (0.3, 0.28), (0.25, 0.42)], 8, m["iron"], m["soot"])
+    # Hollow: up the outside to the rim, over its lip, and back down the inside to a sooty floor, so an empty pot
+    # shows dark inside and the stew sits down in it below the rim.
+    pot.lathe(-6.0, 0.5, 0.22, [(0.16, 0), (0.28, 0.12), (0.3, 0.28), (0.25, 0.42), (0.215, 0.42), (0.26, 0.3),
+                                (0.24, 0.16)], 8, m["iron"], m["soot"])
     for i in range(3):
         a = i * 2 * math.pi / 3 + 0.5
         pot.box(-6.0 + 0.22 * math.cos(a), 0.5 + 0.22 * math.sin(a), 0, 0.05, 0.05, 0.3, m["iron"], swap=True)
     pot.done()
     # Separate so the game can show or recolour what is in the pot.
-    Part(c, "Station_PotStew").lathe(-6.0, 0.5, 0.63, [(0.24, 0), (0.24, 0.015)], 8, m["stew"]).done()
+    # Its surface fills the pot's inside a little under the rim, meeting the inner wall.
+    Part(c, "Station_PotStew").lathe(-6.0, 0.5, 0.54, [(0.25, 0), (0.25, 0.012)], 8, m["stew"]).done()
 
     basket = Part(c, "Station_Bread")
     basket.lathe(-5.15, -4.3, 0.8, [(0.2, 0), (0.3, 0.14)], 8, m["crate"], m["soot"])

@@ -137,6 +137,7 @@
 }
 
 #panel button:hover:not(:disabled),
+#panel button.kb-cursor:not(:disabled),
 #panel button:focus-visible {
   outline: none;
   color: var(--gold);
@@ -145,6 +146,7 @@
 }
 
 #panel button:hover:not(:disabled) .key,
+#panel button.kb-cursor:not(:disabled) .key,
 #panel button:focus-visible .key {
   background: var(--gold);
   box-shadow: inset 0 -4px 0 #b8922c;
