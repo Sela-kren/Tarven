@@ -198,9 +198,15 @@ describe("brawls in the tavern", () => {
   function lose(t: Tavern, id: number): void {
     t.startFight(id);
     let turn = 0;
-    t.random = () => [0.99, 0, 0.99][turn++ % 3];
+    // Her swing misses; theirs lands, a fist. With her desire in it, a foe first rolls whether he wants her
+    // (brawlai.ts): low, he'd rather hurt her.
+    const rolls = t.fight?.desire ? [0.99, 0, 0, 0.99] : [0.99, 0, 0.99];
+    t.random = () => rolls[turn++ % rolls.length];
     (t.fight as unknown as { random: () => number }).random = t.random;
-    for (let i = 0; i < 30 && t.fight; i++) t.fightMove("strike");
+    // One on one: nobody from their table piles in (7i), so the rolls go where they're meant to.
+    (t.fight as unknown as { joinQueue: unknown[] }).joinQueue.length = 0;
+    // Down with energy to spare, she'd have a Second Wind (7k): these are about losing, so she stays down.
+    for (let i = 0; i < 30 && t.fight; i++) t.fightMove(t.fight.downed ? "stayDown" : "strike");
   }
 
   it("on a loss, costs gold and pride, then the winner only asks: stopping ends the night with nothing more", () => {

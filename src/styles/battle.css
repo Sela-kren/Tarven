@@ -336,3 +336,22 @@ body:has(#brawl-intro.on) canvas {
     animation: none;
   }
 }
+
+/*
+ * The screen shake (screenshake.ts), Karryn's Prison's: the pictures slide side to side (the room, her big picture,
+ * the foes across from her) while the words stay put. `translate` is its own property, so it sits on top of any
+ * transform these already have.
+ */
+body > canvas,
+#battle-view,
+#battle-foes {
+  translate: var(--shake-x, 0px) 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body > canvas,
+  #battle-view,
+  #battle-foes {
+    translate: none;
+  }
+}

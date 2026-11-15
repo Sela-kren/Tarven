@@ -818,6 +818,12 @@
   --fill-shade: #36589a;
 }
 
+/* Her energy (7k): what her energy skills and stances run on. */
+#panel .fight-bar.energy {
+  --fill-color: #30b870;
+  --fill-shade: #10683a;
+}
+
 #panel .fight-bar b {
   text-align: right;
 }
@@ -839,6 +845,20 @@
 
 #panel .fight-log p:last-child {
   color: var(--text-bright);
+}
+
+/* Who's talking, Karryn's Prison style: her answers, his words, the room shouting. */
+#panel .fight-log p.her {
+  color: #f0a8c0;
+}
+
+#panel .fight-log p.said {
+  color: #e8c878;
+}
+
+#panel .fight-log p.crowd {
+  color: #9fb8d8;
+  font-style: italic;
 }
 
 /* ---------- After hours ---------- */

@@ -424,6 +424,8 @@ export class Body {
     this.hips = part("Hips");
     this.hipsBaseY = this.hips.position.y;
     this.hipsBaseZ = this.hips.position.z;
+    this.hips.userData.baseY = this.hipsBaseY;
+    this.hips.userData.baseZ = this.hipsBaseZ;
     this.torso = part("Torso");
     this.head = part("Head");
     this.style = name === "Female" ? FEMALE_WALK_STYLE : null;
@@ -462,9 +464,14 @@ export class Body {
   ): void {
     this.legSize = legSize;
     this.armSpread = armSpread;
+    // Copies of her posed elsewhere (the fight picture) hang their arms clear of her by the same amount.
+    this.torso.userData.armSpread = armSpread;
     this.posture = posture;
     this.hipsBaseY = this.hips.position.y;
     this.hipsBaseZ = this.hips.position.z;
+    // ...and stand them at her hips' rest, however she was crouched or bobbing in the room when copied.
+    this.hips.userData.baseY = this.hipsBaseY;
+    this.hips.userData.baseZ = this.hipsBaseZ;
     this.legLength = this.hipsBaseY + this.thighL.position.y;
     for (const jiggle of this.jiggles) {
       // A fuller bust or rear is heavier: it swings further and a little slower.

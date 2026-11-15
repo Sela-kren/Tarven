@@ -193,6 +193,8 @@ export interface DuelLogEntry {
   move?: HerMove;
   spot?: CumSpot;
   kind?: GuestKind;
+  /** The partner it was with (Partner.id): for the big picture, which body to show with her. */
+  partner?: number;
 }
 
 /** What a partner's move is called in the log, by the part of her they have (or a kiss). */
@@ -562,7 +564,7 @@ export class Duel {
         text = this.pick(lines && !group ? (partner.female ? lines.herOnWoman : lines.her)[move] : lines?.her[move], group ? base.line : (this.moveFor(move, partner) ?? base).line);
       }
       text = this.flavorOr(`duel:her:${move}:${this.state}`, partner, text);
-      this.entries.push({ side: "her", actor: "You", action, target: group ? "Everyone" : this.nameOf(partner), text, effects: [...effects, ...mine], move, kind: partner.kind });
+      this.entries.push({ side: "her", actor: "You", action, target: group ? "Everyone" : this.nameOf(partner), text, effects: [...effects, ...mine], move, kind: partner.kind, partner: partner.id });
       return true;
     }
 
@@ -593,6 +595,7 @@ export class Duel {
       effects: [...effects, ...mine],
       move,
       kind: partner.kind,
+      partner: partner.id,
     });
     return true;
   }
@@ -741,6 +744,7 @@ export class Duel {
       part: pick,
       stage,
       kind: partner.kind,
+      partner: partner.id,
     });
     this.talk(partner, pick);
   }
@@ -780,6 +784,7 @@ export class Duel {
       effects: [{ who: CUM_SPOT_LOG[spot], side: "her", stat: "cum", amount: ml }],
       spot,
       kind: partner.kind,
+      partner: partner.id,
     });
   }
 }

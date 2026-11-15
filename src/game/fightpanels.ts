@@ -3,7 +3,7 @@
  * to the end, and the 18+ cards (upstairs, alone, and how a duel ended). The duel's rules are in duel.ts and its
  * moves in duelmoves.ts; this file only draws them and passes her picks on.
  */
-import { CUM_NAMES, CUM_SPOTS } from "./cum";
+import { CUM_NAMES, CUM_SPOTS, type CumSpot } from "./cum";
 import { AREA_NAMES, DUEL_AREAS, MAX_PARTNERS, STATE_NAMES, type Duel, type DuelArea, type DuelLogEntry, type DuelTest, type Partner } from "./duel";
 import { ROLE_PLAYS, type RolePlay } from "./duellines";
 import { GUEST_KIND_LIST, statsOf } from "./guestroles";
@@ -19,7 +19,11 @@ const PLACE_WORDS: Record<BrawlPlace, string> = {
 import { willLabel } from "./willpower";
 import { DESIRE_STRONG } from "./desire";
 import { METER_NAMES, METERS } from "./passives";
-import type { Fight } from "./fight";
+import type { Fight, Foe } from "./fight";
+import { erect } from "./brawlai";
+import { STANCE_NAMES } from "./herstate";
+import { restingPose } from "./battlepose";
+import { duelShake } from "./screenshake";
 
 /** Her desire in a brawl, in a line: horny or wet first, then each desire past 50 that's getting in her way. */
 function desireSummary(fight: Fight): string {
@@ -50,15 +54,32 @@ function statBar(who: string, now: number, max: number, tone: string): HTMLEleme
 }
 
 /** The last few lines of a fight's log: what just happened. */
+/**
+ * The brawl's log, Karryn's Prison style: the last few lines, hers, theirs and the room's each in their own colour
+ * (brawlvoices.ts), newest at the bottom.
+ */
 function fightLog(lines: readonly string[]): HTMLElement {
   const log = document.createElement("div");
   log.className = "fight-log";
-  for (const line of lines.slice(-4)) {
+  for (const line of lines.slice(-FIGHT_LOG_LINES)) {
     const p = document.createElement("p");
     p.textContent = line;
+    const kind = logKind(line);
+    if (kind) p.classList.add(kind);
     log.append(p);
   }
   return log;
+}
+
+/** How many lines of a brawl's log show: enough for a turn's moves, what's said, and the room. */
+const FIGHT_LOG_LINES = 7;
+
+/** Whose a log line is: hers ("You: ..."), the room's (someone at a table or across the room), or his words. */
+function logKind(line: string): "her" | "crowd" | "said" | null {
+  if (line.startsWith("You: \"")) return "her";
+  if (/^(The [^:"]+ at their table|An? [^:"]+ across the room) /.test(line)) return "crowd";
+  if (line.includes("\"")) return "said";
+  return null;
 }
 
 /**
@@ -247,8 +268,10 @@ function showTaproomRules(game: Game, scene: InviteScene, picked: Set<number>, a
   game.panelBack = () => showInvitation(game, scene);
 }
 
-/** Brawl events where a blow lands on her, and where one of hers lands on them (fight.ts). */
-const HURTS_HER = new Set(["their:hit", "their:grab", "their:headlock", "their:hairpull", "their:tackle", "lost"]);
+/**
+ * Brawl events where one of her blows lands on them (fight.ts). A blow landing on her flashes her picture as its
+ * pose comes up (battlepose.ts).
+ */
 const HURTS_THEM = new Set(["strike:hit", "shove:hit", "grab:hit", "headlock:hit", "hairpull:hit", "tackle:hit", "throw"]);
 
 /** Ends the night straight from the brawl: everyone gone, and to bed. */
@@ -303,6 +326,19 @@ export function showBrawlOffer(game: Game, lost = ""): void {
   game.panelBack = stop;
 }
 
+/** How a foe is, on his card: drunk, horny or angry, and erect once he's worked up past half (brawlai.ts). */
+function foeState(fight: Fight, foe: Foe): string {
+  const mood = foe.drunk ? "Roaring drunk" : foe.horny ? "Horny" : "Angry";
+  return fight.desire && erect(foe) ? `${mood} · erect` : mood;
+}
+
+/** Who's in it with her, for the brawl's title: the one who started it, and how many more piled in. */
+function brawlTitle(fight: Fight): string {
+  const standing = fight.standing;
+  const lead = standing[0] ?? fight.lead;
+  return standing.length > 1 ? `Brawl with the ${lead.name} and ${standing.length - 1} more` : `Brawl with a ${lead.name}`;
+}
+
 /**
  * A brawl, turn by turn: both sides' stamina, what just happened, and her moves with the chance each has.
  * When it's over, how it went, and back to work.
@@ -327,17 +363,47 @@ export function showFight(game: Game): void {
     game.panelBack = back;
     return;
   }
-  const buttons: Button[] = fight.choices().map((choice) => ({
+  // The turn's moments play in the comic panel and the big picture (her pose, or a scene with them), then she's left
+  // on her feet, winded, or down.
+  const playTurn = (before: number) => {
+    const events = fight.events.slice(before);
+    game.showFightMoments(events, fight.targeted.kind);
+    if (events.some((e) => HURTS_THEM.has(e))) game.foeHit(Math.max(0, fight.standing.indexOf(fight.targeted)));
+    // Reeling after she's come, she stays down till she comes back to herself.
+    game.battleTurn(events, restingPose({ stamina: fight.stamina, maxStamina: fight.maxStamina, lost: fight.outcome === "lost" || fight.dazed }), fight);
+    // Her coming shakes the screen, harder from the second time on (screenshake.ts).
+    if (events.includes("her:come")) game.shakeScreen(fight.climaxes >= 2 ? "bigClimax" : "climax");
+  };
+  // A foe starting a scene with her (GAME_PATH.MD 7i): hers to answer, like a reach. Pull away always works.
+  const offerButtons: Button[] = fight.offering
+    ? (["yes", "slap", "pull"] as const).map((answer) => ({
+        label: answer === "yes" ? "Let it happen (18+)" : answer === "slap" ? "Slap them" : "Pull away",
+        disabled: false,
+        onPick: () => {
+          const before = fight.events.length;
+          tavern.answerFightOffer(answer);
+          playTurn(before);
+          game.audio.play("cloth");
+          showFight(game);
+        },
+      }))
+    : [];
+  // More than one of them: she picks who she goes for (no turn spent turning).
+  const targetButtons: Button[] =
+    fight.offering || fight.taken || fight.standing.length < 2
+      ? []
+      : fight.foes.flatMap((foe, index) =>
+          foe.out || index === fight.target
+            ? []
+            : [{ label: `Go for the ${foe.name} instead`, disabled: false, onPick: () => (fight.setTarget(index), showFight(game)) }],
+        );
+  const buttons: Button[] = fight.offering ? offerButtons : [...targetButtons, ...fight.choices().map((choice) => ({
     label: choice.chance === null ? choice.label : `${choice.label} · ${Math.round(choice.chance * 100)}%`,
     disabled: choice.disabled,
     onPick: () => {
       const before = fight.events.length;
       tavern.fightMove(choice.move);
-      // The turn's moments play in the comic panel, and a blow that lands on her shows in the big picture.
-      const events = fight.events.slice(before);
-      game.showFightMoments(events, fight.kind);
-      if (events.some((e) => HURTS_HER.has(e))) game.battleHit(true);
-      if (events.some((e) => HURTS_THEM.has(e))) game.foeHit(0);
+      playTurn(before);
       game.audio.play(fight.outcome === "lost" ? "walkOut" : "cloth");
       // They reached for her instead of swinging: she's asked on the touch screen, and the fight waits.
       if (tavern.inConversation) {
@@ -346,27 +412,30 @@ export function showFight(game: Game): void {
       }
       showFight(game);
     },
-  }));
-  game.openPanel(`Brawl with a ${fight.name}`, [], buttons);
+  }))];
+  game.openPanel(brawlTitle(fight), [], buttons);
   game.panelEl.classList.add("fight-open", "battle-open");
   const off = tavern.strippedPieces.length;
   game.showBattle("brawl", "You · Brawl", 0, false, [
     { label: "Stamina", value: `${fight.stamina}/${fight.maxStamina}`, tone: fight.stamina < fight.maxStamina / 2 ? "hurt" : undefined },
     { label: "Willpower", value: `${fight.will}/${fight.maxWill} · ${willLabel(fight.will, fight.maxWill)}` },
+    // Her energy, and the stance she's in (7k).
+    ...(fight.maxEnergy > 0 ? [{ label: "Energy", value: `${fight.energy}/${fight.maxEnergy}${fight.stance ? ` · ${STANCE_NAMES[fight.stance]}` : ""}` }] : []),
     { label: "Clothes", value: off === 0 ? "Dressed" : `${off} ${off === 1 ? "piece" : "pieces"} off` },
     // Her desire, Karryn-style (desire.ts): the strongest ones, and whether she's horny or wet.
     ...(fight.desire ? [{ label: "Desire", value: desireSummary(fight), tone: fight.horny ? ("hurt" as const) : undefined }] : []),
-  ], [
-    {
-      guestId: fight.guestId,
-      kind: fight.kind,
-      title: `The ${fight.name}`,
-      status: [
-        { label: "Stamina", value: `${fight.foeStamina}/${fight.foeMax}`, tone: fight.foeStamina < fight.foeMax / 2 ? "hurt" : undefined },
-        { label: "State", value: fight.drunk ? "Roaring drunk" : "Angry" },
-      ],
-    },
-  ]);
+  ], fight.standing.map((foe) => ({
+    guestId: foe.guestId,
+    kind: foe.kind,
+    // The one she's going for is marked.
+    title: foe === fight.targeted && fight.standing.length > 1 ? `▶ The ${foe.name}` : `The ${foe.name}`,
+    status: [
+      { label: "Stamina", value: `${foe.stamina}/${foe.max}`, tone: foe.stamina < foe.max / 2 ? ("hurt" as const) : undefined },
+      { label: "State", value: foeState(fight, foe) },
+      // His own pleasure, Karryn's Prison style (brawlai.ts): erect past half, spent at the top.
+      ...(fight.desire ? [{ label: "Pleasure", value: `${Math.round(foe.pleasure)}%`, tone: foe.pleasure >= 50 ? ("hurt" as const) : undefined }] : []),
+    ],
+  })));
   const box = game.panelEl.querySelector(".box");
   if (!box) return;
   const bars = document.createElement("div");
@@ -374,7 +443,8 @@ export function showFight(game: Game): void {
   bars.append(
     statBar("You", fight.stamina, fight.maxStamina, "you"),
     statBar("Willpower", fight.will, fight.maxWill, "will"),
-    statBar(`The ${fight.name}${fight.drunk ? " (drunk)" : ""}`, fight.foeStamina, fight.foeMax, "foe"),
+    ...(fight.maxEnergy > 0 ? [statBar("Energy", fight.energy, fight.maxEnergy, "energy")] : []),
+    ...fight.standing.map((foe) => statBar(`The ${foe.name}${foe.drunk ? " (drunk)" : ""}`, foe.stamina, foe.max, "foe")),
   );
   const log = fightLog(fight.log);
   box.insertBefore(log, box.querySelector(".menu"));
@@ -679,13 +749,19 @@ export function showDuel(game: Game): void {
     disabled: choice.disabled,
     onPick: () => {
       const before = duel.entries.length;
+      const climaxes = duel.climaxes;
       tavern.duelMove(choice.move, targetId);
       // The turn's last moment plays in the comic panel beside the log, Karryn-style.
       const turn = duel.entries.slice(before);
       const shown = [...turn].reverse().find((e) => e.part || e.move || e.spot);
       if (shown) game.showDuelMoment(shown, duel.state);
+      // The two of them in the big picture, in the scene that moment puts them in (sexpose.ts).
+      if (shown) game.duelScene(shown, duel);
       // His hands on her, or him finishing on her, jolts her in the big picture.
       if (turn.some((e) => e.side === "partner" && (e.part || e.spot))) game.battleHit(turn.some((e) => e.spot));
+      // Her coming, or a spank, shakes the screen, as in Karryn's Prison.
+      const shake = duelShake(turn, { before: climaxes, after: duel.climaxes });
+      if (shake) game.shakeScreen(shake);
       game.audio.play("cloth");
       // Played to the end: the last of the log first (who gave in, and where they finished), then the result.
       if (!tavern.duel && duel.outcome !== "stopped") showDuelEnd(game, duel);
@@ -751,6 +827,12 @@ const UNDRESSED = ["Dressed", "In her shift", "Naked"];
 /** The big picture of her beside the duel, Karryn-style, with her status board: clothes, feeling, what's on her. */
 function showDuelBattle(game: Game, duel: Duel): void {
   const cum = CUM_SPOTS.filter((spot) => (duel.cum[spot] ?? 0) > 0);
+  showDuelStats(game, duel, cum);
+  // Who's in the picture with her, as it stands (the moment's own scene was set as it played: see showDuel).
+  game.duelScene(null, duel);
+}
+
+function showDuelStats(game: Game, duel: Duel, cum: readonly CumSpot[]): void {
   game.showBattle("duel", "You · After hours", duel.pleasure / 100, duel.state === "edge", [
     { label: "Feeling", value: STATE_NAMES[duel.state], tone: duel.state === "calm" ? undefined : "hot" },
     { label: "Pleasure", value: `${duel.pleasure}/100`, tone: "hot" },

@@ -11,6 +11,7 @@ This is intentional difficulty. The player can still Slap or Pull away on the ne
 See “Horny direct touch” below.
 
 Brawl loss is a separate exception: a sexual scene may be offered after defeat, with a final continue/stop choice.
+Brawl battle (7i, Karryn-style): mid-brawl, a foe may start or join a scene only once her desire is ready for it (its requirement). Consent on asks first; Pull away always works; too-drunk blocks it.
 
 ## Horny direct touch (Karryn-style challenge)
 When a guest is in the Horny state or has high Nerve (example: Nerve 5+):
@@ -28,6 +29,8 @@ Too-drunk still blocks yes from either side.
 ## Brawl notes
 - Non-sexual grapples (grabs, headlocks, hair-pulls, tackles, bear hugs, arm twists, pins against the wall, leg sweeps, collar hauls) are combat actions and do not need a yes/no prompt. Each guest kind has favourite grapples (bandits crush and pin, smugglers trip and twist, nobles haul by the collar). Code: `FOE_GRAPPLES` in `src/game/fight.ts`.
 - Mid-brawl sexual reaches go through the normal four-choice touch screen (Let / Lean / Slap / Pull away). Pull away always works.
+- A foe going for her clothes mid-brawl (7l) is a reach like any other: asked on the touch screen (Consent off, the push-vs-hold check, only within their own Nerve). Pull away always works; nothing is torn off her unasked.
+- **[planned] Karryn's battle (7i):** foes may also start sex mid-brawl, join a scene she's in, grope, talk and stare, the way Karryn's Prison enemies do. Consent on, it asks like a reach; Consent off, it plays out only once her desire is ready for it. Pull away always works.
 - Mid-brawl reaches are Karryn-style: bolder than at the table (+2 Nerve for what they go for), aimed at the part their type likes, and they can use brawl-only touches open to any kind: spank, hips hauled back, thumb across the lips, breath on the neck, a grope, a hand up the thigh, a squeeze under the breasts, a kiss mid-fight (`brawl: true` in `touchtalk.ts`). A touch can only land unasked (Consent off) when it is within their own Nerve, without the brawl's +2.
 - A talked-down brawl can later lead to an After Hours invite, which the player can accept or refuse.
 
@@ -407,11 +410,115 @@ Six desires, 0–100, reset each night to what her passives start them at: **Bod
 | Cock | a worked-up foe reaches +10% | +20%, and at 80+ any foe may reach |
 
 **Her brawl moves for desire**
-- **Suppress desire (Mind):** everything but Cock comes down by 15 (+3 per Mind level above 1). Costs 4 willpower, 6 while horny.
+- **Suppress desire (Mind):** everything but Cock comes down by 15 (+3 per Mind level above 1). Costs 4 willpower, 6 while horny. A willpower skill (7j): it doesn't take her turn.
 - **Suppress Cock desire (Mind):** Cock alone, the same amount. Costs 6 willpower, 9 while horny.
-- **Use your hands on them** (Cock 40): −5 their stamina. **Use your mouth on them** (Cock 60): −8. **Ride them** (Cock 70, wet): −12. Each raises her pleasure (never to 100 mid-fight) and her desire, and counts toward upstairs records and skills (riding counts as the bed).
+- **Use your hands on them** (Cock 40): −5 their stamina. **Use your mouth on them** (Cock 60): −8. **Ride them** (Cock 70, wet): −12. Each raises her pleasure (at 100 she comes, 7j) and her desire, and counts toward upstairs records and skills (riding counts as the bed).
+- **In the big picture (Karryn's Prison in-battle poses):** each of these puts her in a scene with the one she's fighting (hands: stroking them; mouth: on her knees, deeper the second time running; riding: facing them, then turned round), and it holds through their turns until she does anything else or she's down. A touch she lets land mid-brawl shows for a moment (a kiss, a grope, a grab, a spank) before she's back in the fight. Picture only: nothing starts that she didn't choose or let happen (`brawlscene.ts`).
 - Wearing them out this way is a win, but a different one: **"Spent"**: they leave besotted, fame +3, flirt +1, respect −1.
 - The brawl screen shows a **Desire** line: Horny, Wet, and each desire past 50.
+
+## 7i. The brawl as Karryn's battle [part built]
+A brawl plays like a battle in Karryn's Prison: several of them at once, each with a mind of their own, sex in the middle of the fight, and a battle log where they talk to her and to each other. The code is in `src/game/brawlai.ts` (their minds), `src/game/brawllines.ts` (the log's lines), `fight.ts` (their turns) and `brawlscene.ts` (the big picture); the tests are in `tests/brawlai.test.ts`.
+
+**Built so far (one foe):** the foe's pleasure, Horny / Angry / Erect, wanting her or wanting her hurt, starting a scene she's ready for (asked, or played with Consent off), holding it (Struggle free or Go along with it), him coming and being spent, lewd talk and staring with their lines, and the scene in the big picture. The log talks, as raw as Karryn's Prison's: each type says his own lines (`brawlvoices.ts`); she answers (`brawlher.ts`) by her Slut Level, but in a scene by how used she is to that act, KP's experience levels (never done it: her first time; 1+: proper; 5+: easy; 15+: lewd, from her records), horny or broken over either, and when he comes, by where he had her; what she does goes from clumsy to eager the same way; and the guests watching (their table, then the room) shout at most once a turn (`brawllines.ts`, with the narration); the log shows the last 7 lines, hers pink, his gold, the room's blue. More of them (`fight.ts` `foes`): each turn the next of their table (their party, or else their table; angry, drunk or lusting; never the Baron) may jump in, 30% a turn (45% drunk or worked up), up to 4 foes; each has a name of their own ("rogue", "rogue B"), their own numbers, pleasure and mind, and takes a turn; she picks who she goes for (no turn spent); one down, the rest fight on; all down, she's won (talked down, if words did it). While one has her in a scene, the rest don't swing: an erect one may join in at her mouth or a hand (if she's ready for it: Mouth 80 / Cock 50, or Cock 40), asked like any scene; his turns work him up, and he comes and is out; the one who has her coming, or her struggling free, throws them all off. The foes talk among themselves at most once a turn (egging on, dibs, laughing at one she laid out or who didn't last). Each ends as it went for them: spent, out the door, back in their seat, or standing over her. The big picture puts the one joined in at his slot in the scene. **Still to come:** her own state (coming mid-brawl, more mental skills).
+
+**Who's in it (KP's bar brawl, "joins the brawl")**
+- The one who started it, and then their table: each turn, one of their tablemates who's angry, drunk or worked up may join (30%, ×1.5 drunk or lustful), up to **4 foes** in all. Never anyone too drunk to stand, never the Baron. The foes' column shows them all.
+- Each foe has their own stamina, attack and accuracy (their type's, rolled), and three Karryn-style states of their own: **Angry** (wants to hurt her), **Horny** (wants her, whatever else), and **Erect**, once their pleasure is past half.
+- **Their pleasure (KP's enemy arousal bar):** it rises as they touch her (+8 a touch she lets land), talk lewd (+3) or stare (+6), watch her each turn (up to +4, the more that's off her), are in a scene with her (+15 a turn, +20 when she goes along with it), and as she works on them (her hands, mouth, riding: 3 per point of stamina it wears off them). At the top they come (where depends on the scene they're in: in her, on her, on the floor), and they're spent: out of the fight, and out of the room grinning.
+
+**Each foe's turn (KP `enemyBattleAIGeneric`)**
+1. **She's in a scene with someone:** a foe who's erect may try to join it, with a chance of his pleasure % against a roll of 80 (30 if he's horny). He takes a free slot (her mouth, her left hand, her right hand, as after hours: duelstage.ts). If it's his scene, he may move it on to a bolder one instead. Otherwise he gropes, talks or stares (below). Nobody swings at her while she's in a scene.
+2. **She isn't:** he wants her if a roll of 100 (+80 if he's horny) beats his anger less his pleasure %; horny and not angry, he always does.
+   - Not wanting her, he fights: a swing or a grapple, as now.
+   - Wanting her and erect, he tries to **start a scene** with her, the way his type has her (KIND_POSITIONS), if she's ready for it (requirements below). If she isn't, or he isn't erect yet, he gropes, talks or stares.
+3. **Groping (KP petting):** he reaches for her, asked on the touch screen like any mid-brawl reach (up to 3 a fight); what he goes for follows her openness as at the bar. A touch she lets land works him up (+8).
+4. **Talking (KP talk):** a lewd line at her about one part of her (mouth, breasts, butt, pussy, cock), raising that desire by 3–6.
+5. **Staring (KP sight):** at what's bare (or soaked): that desire +4, and her exhibition count.
+
+**What she has to be ready for (KP's sex requirements, on Tarven's 0–100 desire)**
+
+| Scene | Needs |
+|---|---|
+| Her hands on him (stroking) | Cock 40 |
+| Her mouth (kneeling) | Mouth 80, Cock 50 |
+| Her breasts (paizuri) | Breasts 80, Cock 50, top off |
+| Him in her (his type's position) | Pussy 80, Cock 70, wet, nothing on below |
+| Him in her rear | Butt 80, Cock 70, nothing on below |
+
+Passives lower these, as KP's do. Never while she or he is too drunk (the consent rule).
+
+**Consent (her answer is still hers)**
+- **Consent on:** a foe starting a scene, or joining one, freezes the fight like a reach: *Let it happen*, *Slap*, *Pull away*. Pull away always works, and costs her a turn.
+- **Consent off:** being ready for it is her yes in advance (as adult play, 7f: her state decides), so it plays out.
+- **Holding (KP sex poses):** once she's in a scene it holds, turn after turn, until he comes, she breaks free (*Struggle*: strength against his, one turn), or her stamina runs out.
+
+**Her turn in a scene**
+She can keep at it (her hands, mouth or the rest wear him down and raise his pleasure, as her intimate moves do now), use her willpower, or **Struggle** free. Her fists are no use while she's held.
+
+**The battle log, Karryn-style (KP `RemtairyLines.js`)**
+- Every move gets a line in the log: what happened, as now.
+- **What they say.** A foe who gropes, talks, stares, starts a scene, joins or comes says a line of his own, by his type (a farmer's fumbling, a noble's sneer, a bandit's crude bark).
+- **What she says back.** Her answer goes by her Slut Level: proper (sharp, disgusted), easy (flustered, half willing), lewd (teasing, eager). It also changes once she's horny, or once her willpower is gone.
+- **What they say to each other.** The foes waiting their turn talk among themselves: egging the one with her on ("Go on, she's loving it!"), calling dibs ("Oi, my turn next!"), laughing at one who's knocked down ("Ha! She flattened you!"), and cheering when one comes. At most one such line a turn, so the log stays readable.
+
+## 7j. Her state in a brawl, Karryn-style [built]
+What Karryn's Prison gives Karryn in battle, on Tarven's side. The code is in `fight.ts`; the tests are in `tests/brawlstate.test.ts`.
+
+**She can come mid-brawl (KP's orgasm in battle)**
+- At 100 pleasure she comes, right there in the fight, or in the scene she's in. Her pleasure goes back to 0, and she loses 5 willpower and 2 stamina. If that takes her stamina to nothing, she's lost.
+- She's reeling for a turn (KP's down, orgasm): all she can do is *Come back to yourself*, and the foes get their turn. In the big picture she's down on her knees, and the screen shakes (harder from the second time on).
+- The log has its say: what happens, her line by her Slut Level (or horny, or broken), the room roaring, and the foe who did it gloating. It counts in her records like any other time.
+
+**Willpower skills (KP's mental phase)**
+Each is used before her move and doesn't take her turn, one a turn. Short of willpower, it shows but can't be used.
+
+| Skill | What it does | Willpower |
+|---|---|---|
+| Suppress desire | Every desire but Cock −15 (+3 per Mind level above 1) | 4 (6 horny) |
+| Suppress Cock desire | Cock −15 (+3 per Mind level above 1) | 6 (9 horny) |
+| Release desire | Every desire but Cock +15: what she can do (and what they can) opens up | 2 |
+| Release Cock desire | Cock +15 | 3 |
+| Eye of the Mind | Her next blow or grapple can't miss, and hits 1.5× as hard (not in a scene) | 5 |
+| Edging Control | For 3 turns her pleasure stops at 95: she won't come (from 50 pleasure) | 5 (8 horny) |
+| Resist | Pleasure −25 (+3 per Mind level above 1) (from 30 pleasure) | 6 (9 horny) |
+
+**Gather yourself (Mind)** takes her turn: +6 willpower (+2 per Mind level above 1). Steel yourself is KP's Healing Thoughts, as before.
+
+Energy, fatigue and stances are 7k.
+
+## 7k. Energy, fatigue and stances, Karryn-style [built]
+The rules are in `src/game/herstate.ts`; the brawl side in `fight.ts`; the tests are in `tests/herstate.test.ts`.
+
+**Energy (KP's second bar)**
+- 20 at Mind and Endurance 1, +2 for each level of either past 1. Full every morning; a nap gives back half. Shown on her status card (E) and in a brawl.
+- Coming mid-brawl costs 5 (KP's energy damage from orgasms).
+- Energy skills in a brawl (none with no energy to her name):
+
+| Skill | What it does | Energy |
+|---|---|---|
+| Revitalize | +6 stamina (+1 per Endurance level past 1); takes her turn | 5 |
+| Breathe | +3 energy, +1 stamina; takes her turn | 0 |
+| Second Wind | Only once she's down with no stamina: back up with half her stamina, once a brawl. She can **Stay down** instead | 10 |
+| Cautious Stance | Their aim −15%, her dodges +10% | 3 |
+| Defensive Stance | Their blows hurt 2 less and take half the willpower; their grapples can't pin her | 4 |
+| Counter Stance | When they miss, she hits back for half a strike | 5 |
+
+- A stance doesn't take her turn (one change a turn) and holds 4 turns, not in a scene. While she's down, the foes wait for her answer.
+
+**Fatigue (KP's fatigue)**
+- 0 to 100, kept from day to day. A brawl adds 3, +2 for each foe past the first, +1 for every 4 turns, +2 each time she came; an after-hours game adds 5, +2 for each partner past the first, +2 each time she came. Sleep takes 20 off; a nap 5.
+- At 25, 35, 45, 55 and 65 it's level 1 to 5 (Tired, Weary, Worn out, Exhausted, Spent, on her status card). Each level takes 10% off the weight behind her blows, and 3% off her chance with every move, her dodges and her struggling free (KP: 10% off every stat but her max stamina and energy).
+
+Fix Clothes is in 7l.
+
+## 7l. Her clothes in a brawl, Karryn-style [built]
+The rules and lines are in `src/game/brawlclothes.ts`; the brawl side in `fight.ts`; the tests are in `tests/brawlclothes.test.ts`.
+
+- **She goes in with her clothes:** her strip ladder, and what's already off her tonight. Her exposure in the fight goes by them as they come off, so staring, foes getting worked up by the sight of her, and the scenes that need her bare (7i) all open up as she loses them.
+- **A foe going for her clothes (KP's stripping):** a foe who wants her, when he'd grope, talk or stare, goes for her clothes instead 30% of the time, while she has any left. It's a reach (counts toward his three), so it's **asked like any brawl touch**: only the scuffle's strip tries (a tug, L2; ripping it, L4; yanking it down, L5; a bear hug while they strip her, L7). Her yes needs her desire for it, as for any touch; Slap and Pull away are always there; Consent off, the push-vs-hold check, only within their own Nerve.
+- **A piece off:** what he does and says (each type in his own voice), what she says (by her voice: her first time, proper, easy, lewd, horny, broken), the room and the other foes; it works him up (+10 pleasure). The last piece gone, she's fighting bare. What's off her in the fight is off her for the night, as with a dare.
+- **Fix Clothes** (energy skill, 4 energy, takes her turn, not in a scene): the last piece they had off her this brawl, back on. Not what was off her before the brawl.
 
 ## 8. Player side (already present, reinforced)
 - Six desire meters (section 7c). Pussy is the direct analogue of Karryn's genital desire; Cock of her cock desire.

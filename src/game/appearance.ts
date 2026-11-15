@@ -364,6 +364,11 @@ export interface BustShape {
 }
 
 const both = (label: string) => [`${label}_L`, `${label}_R`];
+/**
+ * The fingers' and thumbs' bones. The hand used to be all forearm, so wherever a slider reshapes the forearm, they
+ * take the same share about their own joints (which the forearm's reshaping carries along with it).
+ */
+const HAND_BONES = ["HandFingers", "HandTips", "HandThumb"].flatMap(both);
 /** Rear changes are full from 3 cm below the glute joint and gone 11 cm above it, at the small of the back. */
 const REAR_FADE = [-0.03, 0.11] as const;
 /** Her hair's spring bones, and the bones they sit on. */
@@ -477,6 +482,7 @@ const FEMALE_SLIDERS: SliderDef[] = [
       ...terms(both("Shin"), [0.1, 0, 0.1], { fade: [0, -0.3] }),
       ...terms(both("UpperArm"), [0.15, 0, 0.15]),
       ...terms(both("ForeArm"), [0.12, 0, 0.12]),
+      ...terms(HAND_BONES, [0.12, 0, 0.12]),
       ...terms(["Belly"], [0.2, 0.1, 0.2]),
       ...glutes([0.1, 0.1, 0.1]),
     ],
@@ -498,6 +504,7 @@ const FEMALE_SLIDERS: SliderDef[] = [
     id: "arms", label: "Arms", tab: "body", terms: [
       ...terms(both("UpperArm"), [0.18, 0, 0.18]),
       ...terms(both("ForeArm"), [0.15, 0, 0.15]),
+      ...terms(HAND_BONES, [0.15, 0, 0.15]),
     ],
   },
   // The hand is the end of the forearm bone, from the wrist 20 cm below the elbow to the fingertips at 35 cm, and
@@ -506,6 +513,9 @@ const FEMALE_SLIDERS: SliderDef[] = [
     id: "hands", label: "Hand size", tab: "body", roll: 0.4, terms: [
       { bone: "ForeArm_L", grow: [0.25, 0.25, 0.25], shrink: [0.15, 0.15, 0.15], about: [-0.06, -0.2, 0.005], fade: [-0.215, -0.19] },
       { bone: "ForeArm_R", grow: [0.25, 0.25, 0.25], shrink: [0.15, 0.15, 0.15], about: [0.06, -0.2, 0.005], fade: [-0.215, -0.19] },
+      // The fingers and thumb, on bones of their own: the hand growing carries their joints out with it, so each
+      // grows by the same share about its own joint and the whole hand keeps its shape.
+      ...terms(HAND_BONES, [0.25, 0.25, 0.25], { shrink: [0.15, 0.15, 0.15] }),
     ],
   },
   // Her neck is part of the head: it follows the head bone from its base in the shoulders, 3.5 cm below the head's
@@ -741,6 +751,7 @@ const MALE_SLIDERS: SliderDef[] = [
       ...terms(both("Shin"), [0.1, 0, 0.1], { fade: [0, -0.35] }),
       ...terms(both("UpperArm"), [0.15, 0, 0.15]),
       ...terms(both("ForeArm"), [0.12, 0, 0.12]),
+      ...terms(HAND_BONES, [0.12, 0, 0.12]),
     ],
   },
   { id: "shoulders", label: "Shoulders", tab: "body", terms: terms(["Torso"], [0.12, 0, 0], { fade: [0.28, 0.1] }) },
@@ -758,6 +769,7 @@ const MALE_SLIDERS: SliderDef[] = [
     id: "arms", label: "Arms", tab: "body", terms: [
       ...terms(both("UpperArm"), [0.18, 0, 0.18]),
       ...terms(both("ForeArm"), [0.15, 0, 0.15]),
+      ...terms(HAND_BONES, [0.15, 0, 0.15]),
     ],
   },
   // His penis and scrotum change no bones: the dresser shapes their tube and sack from these and the type (see
@@ -3130,7 +3142,7 @@ export class Dresser {
     const out = new Float32Array(count);
     const skinIndex = slot.mesh.geometry.getAttribute("skinIndex");
     const skinWeight = slot.mesh.geometry.getAttribute("skinWeight");
-    const arm = slot.mesh.skeleton.bones.map((bone) => /^(UpperArm|ForeArm)/.test(this.boneIndex.get(bone)?.label ?? ""));
+    const arm = slot.mesh.skeleton.bones.map((bone) => /^(UpperArm|ForeArm|Hand)/.test(this.boneIndex.get(bone)?.label ?? ""));
     const total = totals[index];
     const { bind } = slot;
     for (let v = 0; v < count; v++) {

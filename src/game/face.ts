@@ -197,6 +197,8 @@ export interface FaceCause {
   exposed?: number;
   /** In a brawl. */
   fighting?: boolean;
+  /** In a brawl, the face picked for the moment she's in (fightface.ts), if one has been: it leads in place of anger. */
+  fightFace?: FaceShape | null;
   /** In an after-hours game: how far gone she is (duel.ts's states), and her pleasure, 0 to 1. */
   duel?: { state: "calm" | "aroused" | "edge"; pleasure: number } | null;
   /** Something that just happened. */
@@ -276,6 +278,9 @@ export function faceFor(cause: FaceCause): FaceShape {
     shape = blendFace(shape, EXPRESSIONS.embarrassed, shame);
     shape = blendFace(shape, EXPRESSIONS.drunk, clamp(cause.drunk) * 0.8);
     shape = blendFace(shape, EXPRESSIONS.aroused, clamp(cause.arousal) * 0.5);
+  } else if (cause.fightFace && cause.fighting && leading({ ...cause, fighting: false }) === null) {
+    // In a brawl with nothing else going on: the face for the moment of the fight she's in.
+    shape = { ...cause.fightFace };
   } else {
     shape = { ...EXPRESSIONS[main] };
     // Deep in an after-hours game, her pleasure takes her further: worked up towards pleasure, and on the edge, lost.

@@ -80,20 +80,25 @@ describe("desire in a brawl", () => {
   });
 
   it("suppresses desire for willpower, Cock apart from the rest", () => {
-    const f = fight({ mouth: 40, pussy: 30, cock: 40 });
+    // A foe who'd rather hurt her than talk lewd at her (brawlai.ts): his turn leaves her desire alone.
+    const f = fight({ mouth: 40, pussy: 30, cock: 40 }, {}, () => 0.5);
     const will = f.will;
     f.act("suppress");
     expect(f.desire).toMatchObject({ mouth: 25, pussy: 15, cock: 40 });
     expect(f.will).toBeLessThanOrEqual(will - 4);
+    // One willpower skill a turn (KP's mental phase, 7j): a second waits for her next turn.
+    f.act("suppressCock");
+    expect(f.desire!.cock).toBe(40);
+    f.act("dodge");
     f.act("suppressCock");
     expect(f.desire!.cock).toBe(25);
   });
 
   it("opens up her hands, mouth and riding them with Cock desire, and riding needs her wet", () => {
-    expect(choice(fight({ cock: 39 }), "hands")?.disabled).toBe(true);
+    expect(choice(fight({ cock: 39 }), "hands")).toBeUndefined();
     expect(choice(fight({ cock: 40 }), "hands")?.disabled).toBe(false);
     expect(choice(fight({ cock: 60 }), "mouth")?.disabled).toBe(false);
-    expect(choice(fight({ cock: 70, pussy: 0 }, { pleasure: 0 }), "ride")?.disabled).toBe(true);
+    expect(choice(fight({ cock: 70, pussy: 0 }, { pleasure: 0 }), "ride")).toBeUndefined();
     expect(choice(fight({ cock: 70, pussy: 100 }, { pleasure: 30 }), "ride")?.disabled).toBe(false);
   });
 

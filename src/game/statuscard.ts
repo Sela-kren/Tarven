@@ -25,6 +25,10 @@ export interface StatusState {
   adultStack: number;
   lewdness: number;
   corruption: number;
+  /** Her energy and its top (7k); her fatigue, as a word ("" when she's fresh). */
+  energy: number;
+  energyMax: number;
+  fatigueLabel: string;
 }
 
 /** Pleasure at which she's aroused, and on the edge (as in the after-hours game). */
@@ -160,6 +164,7 @@ export class StatusCard {
   private readonly stackValue = document.createElement("b");
   private readonly will = new Gauge("W", "Willpower", "will");
   private readonly drink = new Gauge("D", "Drink", "drink");
+  private readonly energy = new Gauge("E", "Energy", "energy");
   private readonly tags = document.createElement("div");
   private portrait: HTMLCanvasElement | null = null;
   private shownText = "";
@@ -216,7 +221,7 @@ export class StatusCard {
     gauges.className = "gauges";
     const row = document.createElement("div");
     row.className = "row";
-    row.append(this.drink.el, this.will.el);
+    row.append(this.drink.el, this.will.el, this.energy.el);
     this.tags.className = "tags";
     gauges.append(row, this.tags);
 
@@ -243,6 +248,7 @@ export class StatusCard {
     const tags = [
       willLabel(s.will, s.willMax),
       s.drunkLabel,
+      s.fatigueLabel,
       s.piecesOff > 0 ? `${s.piecesOff} ${s.piecesOff === 1 ? "piece" : "pieces"} off` : "Dressed",
       `Lewd ${s.lewdness}`,
       ...(s.corruption > 0 ? [`Corrupt ${s.corruption}`] : []),
@@ -281,6 +287,7 @@ export class StatusCard {
       this.stack.classList.toggle("full", stack >= 100);
     }
     this.will.set(s.will / Math.max(1, s.willMax), String(s.will), `${s.will}/${s.willMax}`, s.will < s.willMax / 4);
+    this.energy.set(s.energy / Math.max(1, s.energyMax), String(s.energy), `${s.energy}/${s.energyMax}`, s.energy < s.energyMax / 4);
     const drunk = Math.round(s.drunk * 100);
     this.drink.set(s.drunk, String(drunk), `${s.drunkLabel || "Sober"} (${drunk}%)`, s.drunk >= 0.75);
     this.root.hidden = false;

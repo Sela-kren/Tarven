@@ -869,6 +869,57 @@ export const TOUCHES: readonly TouchDef[] = [
     lean: "You kiss them back harder, and the tavern erupts.",
   },
 
+  // ---- In a brawl: a foe going for her clothes (7l, KP's stripping). Anyone's. Asked like any reach: Pull away is
+  // always there, and with Consent off, only within their own nerve. ----
+  {
+    id: "scuffleTug",
+    level: 2,
+    region: "clothes",
+    kinds: ANY,
+    brawl: true,
+    strip: true,
+    reach: "In the scuffle they get a fist in your {piece} and start to pull.",
+    thoughts: ["(Let go of that!)", "(It's only my {piece}... it's only my {piece}...)", "(Go on. Pull harder.)"],
+    allow: "You let them pull. Your {piece} comes away, and the room whoops.",
+    lean: "You twist the way they're pulling, and your {piece} slides right off you.",
+  },
+  {
+    id: "scuffleRip",
+    level: 4,
+    region: "clothes",
+    kinds: ANY,
+    brawl: true,
+    strip: true,
+    reach: "They catch your {piece} in both hands and wrench at it, hard enough to tear.",
+    thoughts: ["(They'll rip it clean off me!)", "(Everyone's going to see...)", "(Rip it, then.)"],
+    allow: "There's a long tear, and your {piece} is in their hands. Cheers from every table.",
+    lean: "You stop fighting it. RIP. Your {piece} hangs off their fist like a flag.",
+  },
+  {
+    id: "scuffleYank",
+    level: 5,
+    region: "clothes",
+    kinds: ANY,
+    brawl: true,
+    strip: true,
+    reach: "They duck under your swing, hook your {piece} and yank it down.",
+    thoughts: ["(Not in the middle of a fight—!)", "(My hands should be fists. They're not.)", "(Down it goes.)"],
+    allow: "Your {piece} comes down and off. They wave it at the room.",
+    lean: "You step out of your {piece} for them, fists still up.",
+  },
+  {
+    id: "scuffleStrip",
+    level: 7,
+    region: "clothes",
+    kinds: ANY,
+    brawl: true,
+    strip: true,
+    reach: "They get you in a bear hug from behind and start stripping your {piece} off you while their friends cheer.",
+    thoughts: ["(Let go— everyone's watching—)", "(I could stamp on their foot. I'm not.)", "(Strip me, then. In front of all of them.)"],
+    allow: "You stop struggling. Your {piece} is peeled off you to a roar from the whole room.",
+    lean: "You arch back against them and let them take your {piece}. The room goes wild.",
+  },
+
   // ---- At the table, once a guest has hold of her (grab.ts) ----
   // Any guest's, but only after a grab she let stand (or, Consent off, one that just happened). Asked like any reach:
   // Pull away is always there.

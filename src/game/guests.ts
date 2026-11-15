@@ -252,7 +252,7 @@ export class GuestActor {
   update(dt: number, tavern: Tavern, her: Vec2): boolean {
     const { guest } = this;
     const coming = tavern.trouble?.guestId === guest.id && tavern.trouble.stage === "coming";
-    const fighting = coming || tavern.fight?.guestId === guest.id;
+    const fighting = coming || Boolean(tavern.fight?.foes.some((f) => f.guestId === guest.id && !f.out));
 
     switch (this.mode) {
       case "walking-in":

@@ -109,6 +109,8 @@ export interface PickOptions {
   brawl?: boolean;
   /** A guest with hold of her at the table: the held strip tries open up, and garments are all they go for. */
   held?: boolean;
+  /** A foe going for her clothes mid-brawl (7l): the scuffle's strip tries and nothing else. */
+  stripOnly?: boolean;
   /**
    * How open she is, by part, for the parts guests only go as far as she's open to (`LEWD_REGIONS`): see `openness`.
    * A part left out isn't held to it (a brawl leaves it all out: the fight has its own rules).
@@ -165,8 +167,8 @@ export function touchesFor(kind: GuestKind, guestNerve: number, options: PickOpt
 export function pickTouch(kind: GuestKind, guestNerve: number, random: () => number, options: PickOptions): TouchDef | null {
   const open = touchesFor(kind, guestNerve, options);
   // With hold of her, they go for her clothes, while there's anything left to take.
-  const garments = options.held ? open.filter((t) => t.strip) : [];
-  const choices = garments.length > 0 ? garments : open;
+  const garments = options.held ? open.filter((t) => t.strip) : options.stripOnly ? open.filter((t) => t.strip && t.brawl) : [];
+  const choices = garments.length > 0 || options.stripOnly ? garments : open;
   if (choices.length === 0) return null;
   const weights = choices.map(
     (t) =>

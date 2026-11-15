@@ -1,3 +1,5 @@
+import { fightTier } from "./fightface";
+import { brawlFatigue, duelFatigue, FATIGUE_MAX, FATIGUE_REST, fatigueLevel, maxEnergy, NAP_ENERGY } from "./herstate";
 import { cloneLayout, type HouseLayout } from "./house";
 import { ARC_DAWN, arcIndex, arcStage, ARC_STAGES, flavorLine, TANSY_CALLBACK, type ArcStage, wildSensitivity } from "./lewd";
 import { faceLine } from "./facetalk";
@@ -217,7 +219,7 @@ import {
   type ImpulseFacts,
   type TouchSettings,
 } from "./touchsettings";
-import { Fight, TROUBLE_SHOUTS, type FighterStats, type FightMove, type FightOutcome } from "./fight";
+import { Fight, MAX_FOES, TROUBLE_SHOUTS, type Foe, type FighterStats, type FightMove, type FightOutcome, type FoeSpec } from "./fight";
 import { ROLE_PLAYS, type RolePlay } from "./duellines";
 import { coatStages, loadOf, type CoatSection, type CumSpot } from "./cum";
 
@@ -1616,6 +1618,10 @@ export class Tavern {
   adultStack = 0;
   /** Willpower she's spent since she last slept (see willpower.ts). Kept as what's spent, so it's right whatever her Mind does. */
   private willSpent = 0;
+  /** Energy she's spent since she last slept (herstate.ts, GAME_PATH.MD 7k), kept the same way. */
+  private energySpent = 0;
+  /** How worn out she is, 0 to 100, day after day (herstate.ts): brawls and after-hours games add to it, sleep takes some away. */
+  fatigue = 0;
   /** How far she's sold out, from 0 up. Lasts. */
   corruption = 0;
   /**
@@ -1673,6 +1679,11 @@ export class Tavern {
   private testDuel = false;
   /** Whether the duel going on is the one she agreed to after losing a brawl: the night ends after it. */
   private brawlDuel = false;
+
+  /** Whether the game going on is the one after a brawl she lost: its picture starts with her down where she fell. */
+  get duelAfterBrawl(): boolean {
+    return this.brawlDuel;
+  }
   /** Where the game after a lost brawl is played (`brawlPlaces`): right where she fell, upstairs, or out back. */
   private brawlPlace: BrawlPlace = "upstairs";
   /** Guests she let touch her tonight who weren't drunk: one of them might linger after closing. */
@@ -1848,6 +1859,8 @@ export class Tavern {
   sleep(): void {
     if (this.phase !== "bedtime") return;
     this.phase = "dawn";
+    // A night's sleep takes some of the wear off her (7k).
+    this.tire(-FATIGUE_REST.sleep);
     this.drunk = 0;
     this.overLimit = 0;
     this.endOfNight();
@@ -2060,6 +2073,8 @@ export class Tavern {
     this.drunk = 0;
     this.overLimit = 0;
     this.restoreWill(Math.round(this.maxWillpower * NAP_RESTORE));
+    this.energySpent = Math.max(0, this.energySpent - Math.round(this.maxEnergy * NAP_ENERGY));
+    this.tire(-FATIGUE_REST.nap);
     this.say("You wake up in the late afternoon. Ring the bell when you're ready.");
   }
 
@@ -3236,6 +3251,27 @@ export class Tavern {
     return maxWillpower(this.level("mind"), this.effects.willMax + (this.herLevel - 1) * LEVEL_WILL);
   }
 
+  /** Her energy at the top (7k): from Mind and Endurance. */
+  get maxEnergy(): number {
+    return maxEnergy(this.statLevels());
+  }
+
+  /** Her energy now, 0 up to the top. Full every morning. */
+  get energy(): number {
+    const max = this.maxEnergy;
+    return Math.max(0, Math.min(max, max - this.energySpent));
+  }
+
+  /** Her fatigue level, 0 to 5 (KP's): each takes something off what she can do in a brawl. */
+  get fatigueLevel(): number {
+    return fatigueLevel(this.fatigue);
+  }
+
+  /** Wears her out; never past the top. */
+  private tire(n: number): void {
+    this.fatigue = Math.max(0, Math.min(FATIGUE_MAX, this.fatigue + n));
+  }
+
   /** Her willpower now, 0 up to the top. Full every morning. */
   get willpower(): number {
     const max = this.maxWillpower;
@@ -3413,11 +3449,70 @@ export class Tavern {
     const workedUp = female && guest.lust >= STRONG_LUST;
     // Her desire comes into the fight with her (desire.ts): it gets in her way, their grapples stir it, and her
     // Cock desire opens up what she can do with her hands and mouth.
-    const desire = female ? { desire: { ...this.meters }, sens: { ...this.effects.sens }, pleasure: this.pleasure, prefers: guest.stats.prefers } : {};
-    this.fight = new Fight(guest.id, guest.kind, guest.mood === "drunk", { ...this.fighterStats(), workedUp, ...desire }, this.random, guest.stats);
+    // Their table, who may pile in as it goes (7i: KP's bar brawl joins).
+    const joiners = this.brawlJoiners(guest, female);
+    // How much is off her, and whether she's sober enough for a foe to start anything (7i; the consent rule).
+    const desire = female
+      ? {
+          desire: { ...this.meters },
+          sens: { ...this.effects.sens },
+          pleasure: this.pleasure,
+          prefers: guest.stats.prefers,
+          exposure: this.exposure,
+          // Her clothes, as they are going in (7l): a foe may go for them, asked like any reach.
+          clothes: {
+            pieces: stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder).map((g) => g.label),
+            off: this.stripped,
+          },
+          sexOk: this.drunk < SLOPPY_DRUNK,
+          tier: fightTier(this.slutLevel),
+          // How used she is to each act (her records), for how she talks in a scene: her first time is her first time.
+          experience: {
+            hands: this.records.acts.hands ?? 0,
+            mouth: this.records.acts.mouth ?? 0,
+            breasts: this.records.acts.hands ?? 0,
+            pussy: this.records.acts.bed ?? 0,
+            butt: this.records.acts.behind ?? 0,
+          },
+          crowd: this.brawlWatchers(guest, joiners),
+        }
+      : {};
+    this.fight = new Fight(guest.id, guest.kind, guest.mood === "drunk", { ...this.fighterStats(), workedUp, joiners, ...desire }, this.random, guest.stats);
     this.fightsTonight++;
     this.say(`Brawl! The ${this.nameOf(guest).toLowerCase()} is right in your face.`);
     this.cue("walkOut");
+  }
+
+  /**
+   * Who's watching a brawl, as the log names them (7i): their table first, then the rest of the room. Only those sat
+   * in it; never the Baron.
+   */
+  private brawlWatchers(foe: Guest, joiners: readonly FoeSpec[]): string[] {
+    const table = this.tableOf(foe.seat);
+    return this.guests
+      .filter((g) => g.id !== foe.id && !joiners.some((j) => j.guestId === g.id))
+      .filter((g) => (g.status === "waiting" || g.status === "eating") && !isBaron(this.roomGuest(g)))
+      .map((g) => {
+        const label = (g.stats.label ?? g.kind).toLowerCase();
+        return this.tableOf(g.seat) === table ? `The ${label} at their table` : `${/^[aeiou]/.test(label) ? "An" : "A"} ${label} across the room`;
+      });
+  }
+
+  /**
+   * Who may jump into a brawl (7i, KP's bar brawl joins): the one who started it's party, or else their table; only
+   * those sat in the room and spoiling for it (angry, drunk or lusting), never the Baron; the readiest first, up to
+   * three. Worked up (strong lust), they want her as much as a fight.
+   */
+  private brawlJoiners(foe: Guest, female: boolean): FoeSpec[] {
+    const table = this.tableOf(foe.seat);
+    const keen = (g: Guest) => (g.mood === "drunk" ? 2 : g.mood === "lust" ? 1.5 : 1);
+    return this.guests
+      .filter((g) => g.id !== foe.id && (g.status === "waiting" || g.status === "eating"))
+      .filter((g) => (foe.party !== null ? g.party === foe.party : this.tableOf(g.seat) === table))
+      .filter((g) => (g.mood === "angry" || g.mood === "drunk" || g.mood === "lust") && !isBaron(this.roomGuest(g)))
+      .sort((a, b) => keen(b) - keen(a))
+      .slice(0, MAX_FOES - 1)
+      .map((g) => ({ guestId: g.id, kind: g.kind, drunk: g.mood === "drunk", rolled: g.stats, prefers: g.stats.prefers, horny: female && g.lust >= STRONG_LUST }));
   }
 
   /** Her side of a brawl: her levels, what her passives add, and the willpower she has left. */
@@ -3438,6 +3533,10 @@ export class Tavern {
       brawlReach: e.brawlReach,
       fightDesire: e.fightDesire,
       extraStamina: this.levelStamina,
+      // Her energy and fatigue going in (7k).
+      energy: this.energy,
+      maxEnergy: this.maxEnergy,
+      fatigue: this.fatigueLevel,
     };
   }
 
@@ -3446,7 +3545,25 @@ export class Tavern {
     const fight = this.fight;
     if (!fight) return;
     fight.act(move);
+    // Fix Clothes puts a piece back on her (7l).
+    this.syncClothes(fight);
     if (fight.reaching) this.brawlReach(fight);
+    // A foe starting a scene with her (7i): with Consent off, her state has already said yes (she's ready for it);
+    // with it on, she's asked (answerFightOffer).
+    if (fight.offering && this.consentOff) fight.answerOffer("yes");
+    if (fight.outcome) this.finishFight(fight);
+  }
+
+  /** Consent is off: the player has said yes in advance to what she's ready for. */
+  get consentOff(): boolean {
+    return this.touchSettings.autoTouch && this.touchSettings.agreed;
+  }
+
+  /** Her answer to a foe starting a scene with her mid-brawl (7i). Pull away always works. */
+  answerFightOffer(answer: "yes" | "slap" | "pull"): void {
+    const fight = this.fight;
+    if (!fight?.offering) return;
+    fight.answerOffer(answer);
     if (fight.outcome) this.finishFight(fight);
   }
 
@@ -3455,11 +3572,17 @@ export class Tavern {
    * answer there (Pull away included). If there's nothing to ask about, she just twists clear.
    */
   private brawlReach(fight: Fight): void {
-    const guest = this.guests.find((g) => g.id === fight.guestId);
+    const guest = this.guests.find((g) => g.id === fight.reachingGuestId);
     // What she has left after the blows so far is what she answers with.
     this.settleWill(fight.will);
     this.settleDesire(fight);
-    if (!guest || !this.maybeReach(guest, true)) fight.afterReach("pull", this.willpower);
+    // Going for her clothes (7l): a garment, asked like any reach; nothing to take, and she twists clear.
+    if (!guest || !this.maybeReach(guest, true, null, null, null, fight.reachingFor === "clothes")) fight.afterReach("pull", this.willpower);
+  }
+
+  /** What's off her in the fight is what's off her (7l), for the model, her exposure and the night's records. */
+  private syncClothes(fight: Fight): void {
+    if (this.playerBody === "Female") this.stripped = fight.clothesOff;
   }
 
   /** She comes out of the fight (or into the touch screen mid-fight) with the desire and pleasure it left her. */
@@ -3475,6 +3598,9 @@ export class Tavern {
   private finishFight(fight: Fight): void {
     this.settleWill(fight.will);
     this.settleDesire(fight);
+    // What she spent of her energy, and how it wore her out (7k).
+    this.energySpent = Math.max(0, this.maxEnergy - fight.energy);
+    this.tire(brawlFatigue(fight.foes.length, fight.turns, fight.climaxes));
     // What she did with her hands and mouth counts like it would upstairs (riding them, like the bed).
     for (const [move, n] of Object.entries(fight.acts)) {
       const act: UpstairsAct = move === "ride" ? "bed" : (move as UpstairsAct);
@@ -3488,7 +3614,12 @@ export class Tavern {
     r.grapplesLanded += fight.grapplesLanded;
     r.grapplesTaken += fight.grapplesTaken;
     r.timesHeld += fight.timesHeld;
-    const guest = this.guests.find((g) => g.id === fight.guestId);
+    // Coming mid-brawl counts like any other time (7j).
+    r.climaxes += fight.climaxes;
+    const lead = fight.lead;
+    const guest = this.guests.find((g) => g.id === lead.guestId);
+    // Whoever else piled in (7i): out the door, besotted, back in their seat, or still standing over her.
+    for (const foe of fight.foes.slice(1)) this.settleJoiner(foe);
     // For the regulars (regulars.ts): a brawl settles who's stronger, either way.
     if (fight.outcome === "won") this.mark(guest, (m) => (m.lostToHer = true));
     else if (fight.outcome === "lost") this.mark(guest, (m) => (m.beatHer = true));
@@ -3507,13 +3638,13 @@ export class Tavern {
       if (guest) this.sendOff(guest);
       this.shift({ respect: 2, fame: 3 });
       // Throwing out one of the baron's men gets back to him.
-      this.adjust(0, 0, fight.kind === "soldier" ? 1 : 0);
-      text = fight.kind === "soldier" ? "Thrown out. The room cheers, but the baron will hear of it. (+1 heat)" : "Thrown out. The room cheers.";
+      this.adjust(0, 0, lead.kind === "soldier" ? 1 : 0);
+      text = lead.kind === "soldier" ? "Thrown out. The room cheers, but the baron will hear of it. (+1 heat)" : "Thrown out. The room cheers.";
     } else if (fight.outcome === "talked") {
       r.talkedDown++;
       if (guest) guest.mood = "calm";
       // Sober, and talked round rather than beaten: they might linger after closing and ask for a game.
-      if (guest && !fight.drunk) this.peacemade.push({ kind: guest.kind, stats: guest.stats });
+      if (guest && !lead.drunk) this.peacemade.push({ kind: guest.kind, stats: guest.stats });
       this.shift({ respect: 1 });
       this.adjust(0, 1, 0);
       text = "Talked down. They're back in their seat, and the village likes a peacemaker. (+1 trust)";
@@ -3528,12 +3659,27 @@ export class Tavern {
       this.addDebuff("bruised");
       // The one who won asks her, and their companions ask too. Hers to answer; the night ends either way (see BrawlOffer).
       if (guest && this.playerBody === "Female") {
-        this.brawlOffer = { kind: guest.kind, stats: guest.stats, female: guest.female, drunk: fight.drunk, crew: this.brawlCrew(guest) };
+        this.brawlOffer = { kind: guest.kind, stats: guest.stats, female: guest.female, drunk: lead.drunk, crew: this.brawlCrew(guest) };
       }
     }
     this.lastFight = { outcome: fight.outcome!, text };
     this.say(text);
     this.fight = null;
+  }
+
+  /** One who jumped into a brawl, as it ended for them (7i). */
+  private settleJoiner(foe: Foe): void {
+    const guest = this.guests.find((g) => g.id === foe.guestId);
+    if (!guest) return;
+    if (foe.out === "spent") {
+      guest.mood = "idolize";
+      this.sendOff(guest);
+      this.mark(guest, (m) => (m.lostToHer = true));
+    } else if (foe.out === "talked") guest.mood = "calm";
+    else if (foe.out) {
+      this.sendOff(guest);
+      this.mark(guest, (m) => (m.lostToHer = true));
+    } else this.mark(guest, (m) => (m.beatHer = true));
   }
 
   /**
@@ -3999,6 +4145,8 @@ export class Tavern {
     r.heldBack += duel.heldBack;
     r.undressed += duel.undressed;
     r.climaxes += duel.climaxes;
+    // An after-hours game wears her out too (7k), more with more of them.
+    this.tire(duelFatigue(duel.partners.length, duel.climaxes));
     // Her willpower gave out: lost, whether it played out or she stopped it after. She carries it a night or two.
     if (duel.defeated) this.addDebuff("overwhelmed");
     this.undressedTonight = Math.max(this.undressedTonight, duel.undressed);
@@ -4127,6 +4275,8 @@ export class Tavern {
     held: { prelude: TalkLine[] } | null = null,
     join: { prelude: TalkLine[]; joined: number[] } | null = null,
     lastClear: { prelude: TalkLine[] } | null = null,
+    /** A foe going for her clothes mid-brawl (7l): only the scuffle's strip tries. */
+    brawlStrip = false,
   ): boolean {
     if (this.playerBody !== "Female" || this.inConversation) return false;
     const guestNerve = this.nerveOf(guest);
@@ -4156,7 +4306,8 @@ export class Tavern {
       (lastClear ? adultTouch(guest.kind, this.adultRandom ?? this.random) : null) ??
       (askAdult && this.adultRandom ? adultTouch(guest.kind, this.adultRandom) : null) ??
       pickTouch(guest.kind, reachNerve, this.random, {
-        canStrip: !brawl && piece !== null,
+        canStrip: (!brawl || brawlStrip) && piece !== null,
+        stripOnly: brawlStrip,
         seen: this.touchSeen,
         invites: false,
         pull,
@@ -4707,8 +4858,9 @@ export class Tavern {
     // A reach mid-brawl: her answer goes back to the fight, with the willpower she has left after it.
     const fight = this.fight;
     if (chat.brawl && fight?.reaching) {
-      // And the desire and pleasure the touch left her with.
+      // And the desire and pleasure the touch left her with, and what's off her now (7l).
       fight.setDesire(this.meters, this.pleasure);
+      fight.setClothes(this.stripped);
       fight.afterReach(took ? "yes" : answer === "slap" ? "slap" : "pull", this.willpower);
       chat.reply.push(narrate(fight.log[fight.log.length - 1]));
       if (fight.outcome) this.finishFight(fight);
@@ -6024,8 +6176,9 @@ export class Tavern {
     this.pleasure = 0;
     // Her adult play stack starts again too, with a head start from how lewd she is.
     this.adultStack = Math.min(STACK_FULL, stackStart(this.lewdness) + this.effects.stackStart);
-    // A night's sleep, and she has all her willpower back.
+    // A night's sleep, and she has all her willpower back, and her energy.
     this.willSpent = 0;
+    this.energySpent = 0;
     this.adultScene = null;
     this.fight = null;
     this.trouble = null;

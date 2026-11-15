@@ -370,6 +370,12 @@ body:has(#build.open) #status-card {
   --g-dark: #3c2088;
 }
 
+#status-card .gauge.energy {
+  --g-light: #8ef0b0;
+  --g-mid: #30b870;
+  --g-dark: #10683a;
+}
+
 #status-card .gauge.drink {
   --g-light: #ffd27a;
   --g-mid: #e09030;

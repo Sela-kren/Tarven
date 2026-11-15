@@ -1048,21 +1048,71 @@ def arm_rings(stack, cx, sx, n, y_at=lambda z: 0.0):
     return rings
 
 
+# The hand, in hand units below the wrist (scaled by the body's hand_scale). Each finger: how far forwards it sits
+# across the knuckles, and the lengths of its two joints; they hang from the knuckles at KNUCKLE_DEPTH, the middle
+# joints a little in towards the palm (FINGER_MID_IN). The thumb: depth, forwards and in, for its root, middle and tip.
+FINGERS = ((-0.045, 0.04, 0.042), (-0.016, 0.052, 0.054), (0.013, 0.056, 0.058), (0.042, 0.048, 0.05))
+KNUCKLE_DEPTH = 0.105
+FINGER_MID_IN = 0.01
+THUMB = ((0.015, 0.046, 0.006), (0.075, 0.09, 0.02), (0.122, 0.104, 0.034))
+# The rings of each hand's mesh that its finger bones take (see add_hand and skin_character), by part name: the
+# game curls the fingers into a fist on them (src/game/battlepose.ts). The knuckle and the thumb's root stay on the
+# forearm, with the back of the hand.
+HAND_RINGS = {}
+
+
 def add_hand(part, cx, wrist_z, sx, scale, skin, y0=0.0):
     """A broad back of the hand, two-joint fingers and a thumb. The palm faces the body."""
     def section(depth, w, f, b, n=8, cy=0.0, out=0.0):
         return ring(wrist_z - depth * scale, w * scale, f * scale, b * scale,
                     y0 + cy * scale, cx + sx * out * scale, n)
 
+    def rings_of(start, n, which):
+        return [i for r in which for i in range(start + r * n, start + (r + 1) * n)]
+
+    part.bm.verts.ensure_lookup_table()
+    tags = HAND_RINGS.setdefault(part.name, {"HandFingers": [], "HandTips": [], "HandThumb": []})
     part.loft([section(-0.015, 0.028, 0.034, 0.034), section(0.03, 0.036, 0.058, 0.054),
                section(0.09, 0.036, 0.066, 0.062), section(0.118, 0.024, 0.06, 0.056)], skin)
-    for y, first, second in ((-0.045, 0.04, 0.042), (-0.016, 0.052, 0.054), (0.013, 0.056, 0.058), (0.042, 0.048, 0.05)):
-        part.loft([section(0.105, 0.0125, 0.0145, 0.0145, 6, y, 0.0),
-                   section(0.105 + first, 0.0105, 0.012, 0.012, 6, y * 1.08, -0.01),
-                   section(0.105 + first + second, 0.0075, 0.0085, 0.0085, 6, y * 1.14, -0.034)], skin)
-    part.loft([section(0.015, 0.015, 0.02, 0.02, 6, 0.046, -0.006),
-               section(0.075, 0.0125, 0.015, 0.015, 6, 0.09, -0.02),
-               section(0.122, 0.0085, 0.01, 0.01, 6, 0.104, -0.034)], skin)
+    for y, first, second in FINGERS:
+        start = len(part.bm.verts)
+        part.loft([section(KNUCKLE_DEPTH, 0.0125, 0.0145, 0.0145, 6, y, 0.0),
+                   section(KNUCKLE_DEPTH + first, 0.0105, 0.012, 0.012, 6, y * 1.08, -FINGER_MID_IN),
+                   section(KNUCKLE_DEPTH + first + second, 0.0075, 0.0085, 0.0085, 6, y * 1.14, -0.034)], skin)
+        tags["HandFingers"] += rings_of(start, 6, [1])
+        tags["HandTips"] += rings_of(start, 6, [2])
+    start = len(part.bm.verts)
+    (root, middle, tip) = THUMB
+    part.loft([section(root[0], 0.015, 0.02, 0.02, 6, root[1], -root[2]),
+               section(middle[0], 0.0125, 0.015, 0.015, 6, middle[1], -middle[2]),
+               section(tip[0], 0.0085, 0.01, 0.01, 6, tip[1], -tip[2])], skin)
+    tags["HandThumb"] += rings_of(start, 6, [1, 2])
+
+
+def hand_joints(spec, side, sx):
+    """Where each finger bone turns, as the arm hangs splayed: the knuckles, the fingers' middle joints and the
+    thumb's root (the same points add_hand draws the hand round), turned out about the shoulder with the arm."""
+    shoulder_x, shoulder_z = spec["shoulder"]
+    shoulder_y = spec.get("shoulder_y", 0.0)
+    upper_lean, fore_lean = spec.get("arm_lean", (0.0, 0.0))
+    elbow_z, wrist_z, scale = spec["elbow_z"], spec["wrist_z"], spec["hand_scale"]
+    elbow_y = shoulder_y - upper_lean * (shoulder_z - elbow_z)
+    y0 = elbow_y - fore_lean * (elbow_z - wrist_z)
+    cx = sx * shoulder_x
+    across = sum(y for y, _, _ in FINGERS) / len(FINGERS)
+    first = sum(f for _, f, _ in FINGERS) / len(FINGERS)
+    designed = {
+        "HandFingers": (cx, y0 + across * scale, wrist_z - KNUCKLE_DEPTH * scale),
+        "HandTips": (cx - sx * FINGER_MID_IN * scale, y0 + across * 1.08 * scale, wrist_z - (KNUCKLE_DEPTH + first) * scale),
+        "HandThumb": (cx - sx * THUMB[0][2] * scale, y0 + THUMB[0][1] * scale, wrist_z - THUMB[0][0] * scale),
+    }
+    # The upper arm (and the forearm on it) is turned out by -sx * splay about Y, round the shoulder.
+    turn = -sx * spec["splay"]
+    out = {}
+    for bone, (x, y, z) in designed.items():
+        dx, dz = x - cx, z - shoulder_z
+        out[bone] = (cx + dx * math.cos(turn) + dz * math.sin(turn), y, shoulder_z - dx * math.sin(turn) + dz * math.cos(turn))
+    return out
 
 
 # The face and skull as drawn in the head reference. Face columns run from the centre out to the temple.
@@ -2604,6 +2654,12 @@ def character_joints(spec):
                                                          shoulder_z - length * math.cos(spec["splay"])))
         joints[f"Thigh_{side}"] = ("Hips", (sx * spec["hip_x"], 0.0, hip_z))
         joints[f"Shin_{side}"] = (f"Thigh_{side}", (sx * knee_x, 0.0, spec["knee_z"]))
+        # The fingers, so the game can close a hand into a fist: all four together at the knuckles, their tips at
+        # the middle joints, and the thumb.
+        hand = hand_joints(spec, side, sx)
+        joints[f"HandFingers_{side}"] = (f"ForeArm_{side}", hand["HandFingers"])
+        joints[f"HandTips_{side}"] = (f"HandFingers_{side}", hand["HandTips"])
+        joints[f"HandThumb_{side}"] = (f"ForeArm_{side}", hand["HandThumb"])
     kx, ky, kz = spec["head_scale"]
     chin = spec["chin_z"]
     if "buns" in spec:
@@ -2764,7 +2820,7 @@ def refine_soft_parts(obj, name, regions=REFINE_REGIONS, smooth=None, touching=F
     in a region if its middle is, or, `touching`, if any corner is: long faces reaching into it are split too. A
     region's side is 1 for the front, -1 the back, 0 both. A face with a corner the arm holds more than `arm_share` of
     is the arm's, and stays as it is."""
-    arms = {g.index for g in obj.vertex_groups if g.name.startswith((f"{name}_UpperArm", f"{name}_ForeArm"))}
+    arms = {g.index for g in obj.vertex_groups if g.name.startswith((f"{name}_UpperArm", f"{name}_ForeArm", f"{name}_Hand"))}
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     deform = bm.verts.layers.deform.active
@@ -2796,7 +2852,7 @@ def refine_soft_parts(obj, name, regions=REFINE_REGIONS, smooth=None, touching=F
 
 def round_ribs(obj, name, ribs=RIBS):
     """Rounds off her upper trunk (see RIBS): split once, flat, then each corner inside eased towards its neighbours."""
-    arms = {g.index for g in obj.vertex_groups if g.name.startswith((f"{name}_UpperArm", f"{name}_ForeArm"))}
+    arms = {g.index for g in obj.vertex_groups if g.name.startswith((f"{name}_UpperArm", f"{name}_ForeArm", f"{name}_Hand"))}
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     deform = bm.verts.layers.deform.active
@@ -6589,9 +6645,13 @@ def build_coat(c, m, name, body_obj, clothes=()):
                 pieces.append((outfit, mat.name, CoatSurface(obj, index)))
 
     def along_bone(label, share):
-        """A point down the middle of a limb, from the skin it carries most of."""
-        index = groups.index(f"{name}_{label}")
-        points = [v.co for v in bm_body.verts if v[deform].get(index, 0.0) > 0.6]
+        """A point down the middle of a limb, from the skin it carries most of. A forearm runs on down its hand to
+        the fingertips, though the fingers have bones of their own."""
+        labels = [label]
+        if label.startswith("ForeArm_"):
+            labels += [f"{bone}_{label[-1]}" for bone in ("HandFingers", "HandTips", "HandThumb")]
+        indices = [groups.index(f"{name}_{each}") for each in labels if f"{name}_{each}" in groups]
+        points = [v.co for v in bm_body.verts if any(v[deform].get(i, 0.0) > 0.6 for i in indices)]
         top, bottom = max(p.z for p in points), min(p.z for p in points)
         z = top + (bottom - top) * share
         near = [p for p in points if abs(p.z - z) < 0.02] or points
@@ -6770,6 +6830,12 @@ def skin_character(c, m, spec, root):
     limbs = [f"{part}_{side}" for part in ("UpperArm", "ForeArm", "Thigh") for side in "LR"]
     for key in limbs:
         bind(parts[label(key)], label(key))
+    # The fingers and thumb go from the forearm to their own bones (see add_hand).
+    for side in "LR":
+        fore = parts[label(f"ForeArm_{side}")]
+        for bone, indices in HAND_RINGS.get(label(f"ForeArm_{side}"), {}).items():
+            fore.vertex_groups[label(f"ForeArm_{side}")].remove(indices)
+            bind(fore, label(f"{bone}_{side}"), indices)
     join(body_obj, [parts[label(key)] for key in ["Head", "Torso"] + limbs])
     if medieval:
         # The track pants' drawstring goes; the skirt, apron, belt and laces take its place.

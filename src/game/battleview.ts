@@ -13,13 +13,20 @@ import {
   WebGLRenderTarget,
 } from "three";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
+import { applyPose, BATTLE_POSES, blendPose, NO_EXTRA, poseBones, type BattlePose, type BattlePoseName, type PoseBones, type PoseExtra } from "./battlepose";
 import { chestOverHips } from "./player";
+import { cardFraming, facingTurn } from "./battleframe";
+import type { BrawlBeat } from "./brawlscene";
+import { blendScene, placeBody, SCENE_JOINS, SCENE_POSES, sceneFraming, type Body, type Posed, type ScenePose, type ScenePoseName } from "./sexpose";
 
 /**
- * The big picture of her during a fight, the way Karryn's Prison shows Karryn the whole time she battles: her
- * whole body, rendered live from her own model (so whatever's come off her and whatever men have left on her
- * shows), breathing, flushing as she gets worked up and trembling on the edge, flinching when she's hit. A
- * status board under her says how she stands; the close-up comic panels pop in over her for each moment.
+ * The big picture of her during a fight, the way Karryn's Prison shows Karryn the whole time she battles,
+ * rendered live from her own model (so whatever's come off her and whatever men have left on her shows),
+ * breathing, flushing as she gets worked up and trembling on the edge, flinching when she's hit. In a brawl she's
+ * framed close, head to mid-thigh, and strikes Karryn's held fight poses as the turn plays out (battlepose.ts): her
+ * swing, a blow landing, a dodge, a hold. A status board under her says how she stands; the close-up comic panels
+ * pop in over her for each moment. After hours, once she's with someone, the picture is the two of them together in
+ * Karryn's Prison's held sex poses (sexpose.ts), swapped as the game moves on.
  *
  * It's drawn small and shown scaled up without smoothing, dithered to the game's 5-bit colour like the comics.
  */
@@ -40,6 +47,10 @@ export interface BattleStat {
   tone?: "hot" | "hurt" | "cum";
 }
 
+/** How long a new pose takes to snap in: Karryn's Prison swaps the whole picture; this is barely more than that. */
+const SNAP = 0.12;
+/** How long her swing's streak shows, in seconds. */
+const STREAK_TIME = 0.45;
 function linearToSrgb(c: number): number {
   return c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
 }
@@ -57,7 +68,33 @@ export class BattleView {
   private readonly title: HTMLElement;
 
   private model: Object3D | null = null;
-  private bones: { torso: Object3D | null; head: Object3D | null; hips: Object3D | null } = { torso: null, head: null, hips: null };
+  private bones: PoseBones = poseBones(new Object3D(), "");
+  /** Her own picture strikes the fight poses and is framed close; a foe's stands whole, as they stood in the room. */
+  private readonly posed: boolean;
+  /** Her hips' rest (a pose lowers her from it) and her legs' length, in the hips' own units. */
+  private hipsBase = { y: 0, z: 0 };
+  private legLength = 0;
+  /** The top of her hair, in her head bone's own space, so it tips with her head (battleframe.ts). */
+  private readonly crown = new Vector3();
+  /** How tall she stands. */
+  private height = 1.7;
+  /** The model's turn toward the fight, before a pose turns her further. */
+  private baseTurn = 0;
+  /** The pose she's striking, the one she's snapping in from, and seconds since the snap began. */
+  private poseName: BattlePoseName = "ready";
+  private fromPose: BattlePose = BATTLE_POSES.ready;
+  private snap = SNAP;
+  /** The camera's framing for the pose she's snapping from and to, and where it looks now. */
+  private readonly fromCam = { position: new Vector3(), target: new Vector3() };
+  private readonly toCam = { position: new Vector3(), target: new Vector3() };
+  private readonly look = new Vector3();
+  /** A brawl turn's poses still to come, and seconds since the turn began. */
+  private beats: BrawlBeat[] = [];
+  private beatClock = 0;
+  /** Her swing's streak: seconds since it began, or null; and where it runs on the picture, behind her to her fist. */
+  private streak: number | null = null;
+  private readonly streakPath = { from: { x: 0, y: 0 }, bend: { x: 0, y: 0 }, to: { x: 0, y: 0 } };
+  private female = false;
   private readonly cheeks = [new Vector3(), new Vector3()];
   private scale = 1;
   private mode: BattleMode = "duel";
@@ -71,17 +108,35 @@ export class BattleView {
   private flinch = 0;
   private flinchHard = false;
 
+  /** In a brawl, who'd be in a scene with her (brawlscene.ts): the one she's with, and anyone joined in. */
+  private brawlCast: CastMember[] = [];
+
+  /** Called as a blow lands on her in a brawl turn (the screen shakes, Karryn-style: screenshake.ts). */
+  onBlow: (() => void) | null = null;
+  /** Called as she strikes each pose in a brawl (her face changes with it: fightface.ts). */
+  onPose: ((name: BattlePoseName) => void) | null = null;
+
+  /**
+   * After hours: whoever she's with in the picture (each body posed with hers: the lead, or joined at a slot of the
+   * scene), the scene they're in, the one it's snapping from, and seconds since the snap began.
+   */
+  private readonly cast = new Map<string, Posed & { spot: CastSpot }>();
+  private sceneName: ScenePoseName | null = null;
+  private fromScene: ScenePose | null = null;
+  private sceneSnap = SNAP;
+
   /** Which way the body is turned: toward a fight on the right of it, or on the left. */
   private facing: "left" | "right" = "right";
 
   /**
    * `id` names her own picture; a foe's picture goes without one, into `parent` (the column of foes), and is
-   * styled by the shared `battle-card` class like hers.
+   * styled by the shared `battle-card` class like hers. Hers strikes the fight poses; a foe's doesn't.
    */
   constructor(
     private readonly renderer: WebGLRenderer,
     options: { id?: string; parent?: HTMLElement } = { id: "battle-view" },
   ) {
+    this.posed = !options.parent;
     this.canvas.width = WIDTH;
     this.canvas.height = HEIGHT;
     this.ctx = this.canvas.getContext("2d")!;
@@ -128,31 +183,64 @@ export class BattleView {
     const model = cloneSkinned(body);
     model.position.set(0, 0, 0);
     // Turned a little toward the fight beside the picture, like Karryn facing her enemies.
+    const fresh = !this.active || this.mode !== mode;
     this.facing = facing;
     const side = facing === "right" ? 1 : -1;
-    model.rotation.set(0, Math.PI - 0.35 * side, 0);
+    this.baseTurn = facingTurn(side);
+    model.rotation.set(0, this.baseTurn, 0);
     model.visible = true;
     this.scene.add(model);
-    model.updateMatrixWorld(true);
-    const part = (label: string) => model.getObjectByName(`${name}_${label}`) ?? null;
-    this.bones = { torso: part("Torso"), head: part("Head"), hips: part("Hips") };
+    this.bones = poseBones(model, name);
+    this.female = name === "Female";
     this.model = model;
+    this.mode = mode;
     this.scale = model.getWorldScale(new Vector3()).y;
+    const hips = this.bones.hips;
+    this.hipsBase = {
+      y: (hips?.userData.baseY as number | undefined) ?? hips?.position.y ?? 0,
+      z: (hips?.userData.baseZ as number | undefined) ?? hips?.position.z ?? 0,
+    };
+    this.legLength = this.hipsBase.y + (this.bones.thighL?.position.y ?? 0);
+    if (fresh) {
+      this.poseName = "ready";
+      this.fromPose = BATTLE_POSES.ready;
+      this.snap = SNAP;
+      this.beats = [];
+      this.streak = null;
+      this.setCast(null, []);
+    }
 
-    // Frame her whole body: from the top of her head to her feet, with a little room.
+    // Measured standing: in a brawl, in her stance; otherwise as she stood in the room.
+    if (this.closeUp) this.strike(BATTLE_POSES.ready, NO_EXTRA);
+    model.updateMatrixWorld(true);
     // The head bone sits differently on each body (and a guest's hair or hat can stand taller), so the top is
     // whichever is higher: a little over the head bone, or the top of what's drawn.
     const head = this.bones.head?.getWorldPosition(new Vector3()) ?? new Vector3(0, 1.6 * this.scale, 0);
     const drawn = new Box3().setFromObject(model, true);
     const top = Math.max(head.y + 0.18 * this.scale, Number.isFinite(drawn.max.y) ? drawn.max.y + 0.06 * this.scale : 0);
-    const middle = top / 2;
-    const fov = MathUtils.degToRad(this.camera.fov);
-    const distance = ((top * 1.08) / 2 / Math.tan(fov / 2));
-    this.camera.position.set(0.25 * side * this.scale, middle + 0.05 * this.scale, distance);
-    this.camera.lookAt(0, middle, 0);
+    this.height = top;
+    if (this.bones.head) this.bones.head.worldToLocal(this.crown.set(head.x, top, head.z));
 
-    if (!this.active || this.mode !== mode) this.time = 0;
-    this.mode = mode;
+    if (this.inScene) {
+      this.frameScene(this.toCam);
+    } else if (this.closeUp) {
+      // Framed close for the pose she's in, Karryn-style (battleframe.ts).
+      this.frameFor(this.poseName, this.toCam);
+    } else {
+      // Her whole body: from the top of her head to her feet, with a little room.
+      const middle = top / 2;
+      const fov = MathUtils.degToRad(this.camera.fov);
+      const distance = ((top * 1.08) / 2 / Math.tan(fov / 2));
+      this.toCam.position.set(0.25 * side * this.scale, middle + 0.05 * this.scale, distance);
+      this.toCam.target.set(0, middle, 0);
+    }
+    this.fromCam.position.copy(this.toCam.position);
+    this.fromCam.target.copy(this.toCam.target);
+    this.camera.position.copy(this.toCam.position);
+    this.look.copy(this.toCam.target);
+    this.camera.lookAt(this.look);
+
+    if (fresh) this.time = 0;
     this.title.textContent = title;
     this.root.classList.toggle("brawl", mode === "brawl");
     // Facing left means the picture stands on the right of the screen, with the foes across from it.
@@ -160,6 +248,11 @@ export class BattleView {
     this.active = true;
     this.root.classList.add("open");
     this.render();
+  }
+
+  /** Who's in a scene with her mid-brawl (brawlscene.ts): the one she's with, and anyone joined in at a slot. */
+  setBrawlCast(members: readonly CastMember[]): void {
+    this.brawlCast = [...members];
   }
 
   /** How worked up she is, 0 to 1, and whether she's on the edge. */
@@ -196,8 +289,23 @@ export class BattleView {
     );
   }
 
+  /**
+   * A brawl turn's poses, each struck as its moment comes up in the comic panel, then how she's left
+   * (battlepose.ts `turnBeats`). A new turn's replaces whatever's left of the last one's.
+   */
+  play(beats: readonly BrawlBeat[]): void {
+    if (!this.closeUp) return;
+    this.beats = [...beats].sort((x, y) => x.at - y.at);
+    this.beatClock = 0;
+  }
+
   hide(): void {
     this.active = false;
+    this.beats = [];
+    this.streak = null;
+    this.setCast(null, []);
+    this.sceneName = null;
+    this.fromScene = null;
     this.root.classList.remove("open");
     if (this.model) this.scene.remove(this.model);
     this.model = null;
@@ -208,7 +316,208 @@ export class BattleView {
     this.time += dt;
     this.flinch = Math.max(0, this.flinch - dt * 2.2);
     this.shownHeat = MathUtils.damp(this.shownHeat, this.heat, 3, dt);
+    if (this.closeUp) {
+      this.beatClock += dt;
+      while (this.beats.length > 0 && this.beats[0].at <= this.beatClock) {
+        const beat = this.beats.shift()!;
+        this.startPose(beat.pose, beat.hurt, beat.scene);
+      }
+      this.snap = Math.min(SNAP, this.snap + dt);
+      if (this.streak !== null) {
+        this.streak += dt;
+        if (this.streak > STREAK_TIME) this.streak = null;
+      }
+    }
+    this.sceneSnap = Math.min(SNAP, this.sceneSnap + dt);
     this.render();
+  }
+
+  /**
+   * After hours, who's in the picture with her, and the scene (duelstage.ts's cast): each member's body as it stands,
+   * its body name, a key telling them apart (so the same one isn't set down again), and where they are in the scene.
+   * A new scene snaps in, the camera coming round with it; someone joining or leaving reframes it. Null takes them
+   * all away.
+   */
+  setCast(scene: ScenePoseName | null, members: readonly CastMember[]): void {
+    const keys = new Set(members.map((m) => m.key));
+    let changed = false;
+    for (const [key, posed] of this.cast) {
+      if (keys.has(key)) continue;
+      this.scene.remove(posed.model);
+      this.cast.delete(key);
+      changed = true;
+    }
+    for (const member of members) {
+      const had = this.cast.get(member.key);
+      if (had) {
+        if (had.spot !== member.spot) changed = true;
+        had.spot = member.spot;
+        continue;
+      }
+      const model = cloneSkinned(member.body);
+      model.position.set(0, 0, 0);
+      model.visible = true;
+      this.scene.add(model);
+      const bones = poseBones(model, member.name);
+      const hips = bones.hips;
+      const hipsBaseY = (hips?.userData.baseY as number | undefined) ?? hips?.position.y ?? 0;
+      this.cast.set(member.key, {
+        model,
+        bones,
+        female: member.name === "Female",
+        hipsBaseY,
+        hipsBaseZ: (hips?.userData.baseZ as number | undefined) ?? hips?.position.z ?? 0,
+        legLength: hipsBaseY + (bones.thighL?.position.y ?? 0),
+        scale: this.scale,
+        spot: member.spot,
+      });
+      changed = true;
+    }
+    if (!scene || !this.posed || !this.model) {
+      this.sceneName = null;
+      this.fromScene = null;
+      return;
+    }
+    if (scene === this.sceneName && !changed) return;
+    const first = this.sceneName === null;
+    this.fromScene = first || scene === this.sceneName ? null : this.currentScene();
+    this.fromCam.position.copy(this.camera.position);
+    this.fromCam.target.copy(this.look);
+    this.sceneName = scene;
+    // In a brawl the camera comes round from the fight onto them; after hours the first scene is just there.
+    this.sceneSnap = first && !this.closeUp ? SNAP : 0;
+    this.frameScene(this.toCam);
+    if (first && !this.closeUp) {
+      this.fromCam.position.copy(this.toCam.position);
+      this.fromCam.target.copy(this.toCam.target);
+    }
+  }
+
+  /** Whether the picture is her with someone, in a scene. */
+  private get inScene(): boolean {
+    return this.posed && this.sceneName !== null && this.cast.size > 0;
+  }
+
+  /** The scene as it stands now: partway through snapping into the new one. */
+  private currentScene(): ScenePose {
+    const to = SCENE_POSES[this.sceneName!];
+    return this.fromScene ? blendScene(this.fromScene, to, MathUtils.smoothstep(this.sceneSnap / SNAP, 0, 1)) : to;
+  }
+
+  /** Her body's measures, for posing her in a scene. */
+  private herPosed(): Posed | null {
+    if (!this.model) return null;
+    return { model: this.model, bones: this.bones, female: this.female, hipsBaseY: this.hipsBase.y, hipsBaseZ: this.hipsBase.z, legLength: this.legLength, scale: this.scale };
+  }
+
+  /**
+   * Sets them all in a scene: her (with `extra`, her breathing, and her arm or head turned to whoever's joined her),
+   * the lead where the scene has them, and the others at their slots.
+   */
+  private setScene(scene: ScenePose, extra: PoseExtra): void {
+    const her = this.herPosed();
+    if (!her || !this.sceneName) return;
+    const spots = SCENE_JOINS[this.sceneName] ?? [];
+    let body: Body = scene.her.body;
+    for (const member of this.cast.values()) {
+      const spot = member.spot === "lead" ? null : spots[member.spot];
+      if (spot?.reach) body = { ...body, ...spot.reach };
+    }
+    placeBody(her, body, scene.her.place, extra);
+    for (const member of this.cast.values()) {
+      const at = member.spot === "lead" ? scene.them : spots[member.spot];
+      member.model.visible = Boolean(at);
+      if (at) placeBody(member, at.body, at.place);
+    }
+  }
+
+  /** Where the camera stands for the scene they're snapping into: framed on all of them, set in it outright. */
+  private frameScene(out: { position: Vector3; target: Vector3 }): void {
+    if (!this.sceneName) return;
+    const scene = SCENE_POSES[this.sceneName];
+    this.setScene(scene, NO_EXTRA);
+    const box = new Box3();
+    for (const model of [this.model, ...[...this.cast.values()].map((m) => m.model)]) {
+      if (!model?.visible) continue;
+      model.updateMatrixWorld(true);
+      box.union(new Box3().setFromObject(model, true));
+    }
+    const frame = sceneFraming(box, scene.view, this.camera.fov, WIDTH / HEIGHT);
+    out.position.copy(frame.position);
+    out.target.copy(frame.target);
+  }
+
+  /** Her own picture in a brawl: posed and framed close. */
+  private get closeUp(): boolean {
+    return this.posed && this.mode === "brawl";
+  }
+
+  /**
+   * Snaps into a pose (a swing streaks; a blow landing flashes the picture), the camera coming round with her. With
+   * a `scene` (brawlscene.ts), she's in it with the one she's fighting instead, and stays in it till a beat without.
+   */
+  private startPose(name: BattlePoseName, hurt: boolean, scene?: ScenePoseName): void {
+    if (!this.model) return;
+    if (scene && this.brawlCast.length > 0) {
+      this.poseName = name;
+      this.setCast(scene, this.brawlCast);
+      this.onPose?.(name);
+      if (hurt) {
+        this.hit(true);
+        this.onBlow?.();
+      }
+      return;
+    }
+    if (this.sceneName) {
+      // Out of the scene and back in the fight: stood back up where she was.
+      this.setCast(null, []);
+      this.model.position.set(0, 0, 0);
+      this.model.rotation.set(0, this.baseTurn, 0);
+      this.snap = SNAP;
+    }
+    this.fromPose = this.currentPose();
+    this.fromCam.position.copy(this.camera.position);
+    this.fromCam.target.copy(this.look);
+    this.poseName = name;
+    this.frameFor(name, this.toCam);
+    this.snap = 0;
+    if (name === "strike") this.streak = 0;
+    this.onPose?.(name);
+    if (hurt) {
+      this.hit(true);
+      this.onBlow?.();
+    }
+  }
+
+  /** The pose as it stands now: partway through snapping into the new one. */
+  private currentPose(): BattlePose {
+    return blendPose(this.fromPose, BATTLE_POSES[this.poseName], MathUtils.smoothstep(this.snap / SNAP, 0, 1));
+  }
+
+  /** Sets her bones to a pose, and turns her body with it. */
+  private strike(pose: BattlePose, extra: PoseExtra): void {
+    if (!this.model) return;
+    const turn = applyPose(this.bones, pose, {
+      mirror: this.facing === "right",
+      female: this.female,
+      legLength: this.legLength,
+      hipsBaseY: this.hipsBase.y,
+      hipsBaseZ: this.hipsBase.z,
+      extra,
+    });
+    this.model.rotation.y = this.baseTurn + turn;
+  }
+
+  /** Where the camera stands to frame her in a pose: struck outright, framed on where the top of her hair goes. */
+  private frameFor(name: BattlePoseName, out: { position: Vector3; target: Vector3 }): void {
+    const { model, bones } = this;
+    if (!model) return;
+    this.strike(BATTLE_POSES[name], NO_EXTRA);
+    model.updateMatrixWorld(true);
+    const crown = bones.head ? bones.head.localToWorld(this.crown.clone()) : new Vector3(0, this.height, 0);
+    const frame = cardFraming({ crown, height: this.height, side: this.facing === "right" ? 1 : -1, fov: this.camera.fov });
+    out.position.copy(frame.position);
+    out.target.copy(frame.target);
   }
 
   /** Breathing, faster and deeper the hotter she is; a tremble on the edge; a flinch when hit. */
@@ -221,18 +530,64 @@ export class BattleView {
     const breath = Math.sin(t * rate) * (0.02 + heat * 0.03);
     const tremble = this.edge ? Math.sin(t * 41) * 0.012 + Math.sin(t * 29) * 0.008 : 0;
     const f = this.flinch * this.flinch;
-    if (bones.torso) bones.torso.rotation.set(chestOverHips(bones.torso) + breath - f * (this.flinchHard ? 0.25 : 0.12), tremble, 0);
-    if (bones.head) {
-      // Head tips back a little as she gets hotter; snaps aside when hit.
-      bones.head.rotation.set(-heat * 0.12 + f * 0.1, (this.flinchHard ? f * 0.45 : 0) + tremble * 2, heat * 0.08);
+    // Over any pose: a breath, a hunch from a flinch, her head tipping back as she gets hotter and snapping aside
+    // when she's hit.
+    const extra: PoseExtra = {
+      torsoX: breath - f * (this.flinchHard ? 0.25 : 0.12),
+      torsoY: tremble,
+      headX: -heat * 0.12 + f * 0.1,
+      headY: (this.flinchHard ? f * 0.45 : 0) + tremble * 2,
+      headZ: heat * 0.08,
+    };
+    if (this.inScene) {
+      this.setScene(this.currentScene(), extra);
+      // The camera comes round with them as they snap into a scene.
+      const k = MathUtils.smoothstep(this.sceneSnap / SNAP, 0, 1);
+      this.camera.position.lerpVectors(this.fromCam.position, this.toCam.position, k);
+      this.look.lerpVectors(this.fromCam.target, this.toCam.target, k);
+      this.camera.lookAt(this.look);
+    } else if (this.closeUp) {
+      this.strike(this.currentPose(), extra);
+      // The camera comes round with her as she snaps into a pose.
+      const k = MathUtils.smoothstep(this.snap / SNAP, 0, 1);
+      this.camera.position.lerpVectors(this.fromCam.position, this.toCam.position, k);
+      this.look.lerpVectors(this.fromCam.target, this.toCam.target, k);
+      this.camera.lookAt(this.look);
+    } else {
+      // A foe, or her after hours: their own stance from the room, breathing.
+      if (bones.torso) bones.torso.rotation.set(chestOverHips(bones.torso) + extra.torsoX, extra.torsoY, 0);
+      if (bones.head) bones.head.rotation.set(extra.headX, extra.headY, extra.headZ);
+      model.rotation.y = this.baseTurn;
     }
     if (bones.hips) bones.hips.rotation.y = Math.sin(t * 0.7) * 0.03 * (0.5 + heat);
-    model.position.x = this.flinchHard ? -f * 0.05 * this.scale * (this.facing === "right" ? 1 : -1) : 0;
+    if (!this.inScene) model.position.x = this.flinchHard ? -f * 0.05 * this.scale * (this.facing === "right" ? 1 : -1) : 0;
     model.updateMatrixWorld(true);
     if (bones.head) {
       bones.head.localToWorld(this.cheeks[0].set(0.045, 0.1, -0.085));
       bones.head.localToWorld(this.cheeks[1].set(-0.045, 0.1, -0.085));
     }
+    if (this.streak !== null) this.traceStreak();
+  }
+
+  /**
+   * Where her swing's streak runs on the picture: from behind her shoulder, curving over it, out to her fist (her
+   * near arm's, the one she throws). The hand is past the elbow by about the upper arm's length.
+   */
+  private traceStreak(): void {
+    const { bones } = this;
+    const near = this.facing === "right" ? { upper: bones.upperL, fore: bones.foreL } : { upper: bones.upperR, fore: bones.foreR };
+    if (!near.upper || !near.fore) return;
+    const shoulder = near.upper.getWorldPosition(new Vector3());
+    const elbow = near.fore.getWorldPosition(new Vector3());
+    const fist = elbow.clone().add(elbow.clone().sub(shoulder));
+    const reach = fist.distanceTo(shoulder);
+    const behind = shoulder.clone().addScaledVector(fist.clone().sub(shoulder).normalize(), -reach * 0.35);
+    behind.y += reach * 0.25;
+    const over = shoulder.clone();
+    over.y += reach * 0.45;
+    this.streakPath.from = this.onPicture(behind);
+    this.streakPath.bend = this.onPicture(over);
+    this.streakPath.to = this.onPicture(fist);
   }
 
   private onPicture(point: Vector3): { x: number; y: number } {
@@ -294,8 +649,8 @@ export class BattleView {
           r = MathUtils.lerp(0.05, warm[0], k);
           g = MathUtils.lerp(0.035, warm[1], k);
           b = MathUtils.lerp(0.03, warm[2], k);
-          // A floor under her feet.
-          if (y > HEIGHT * 0.9) {
+          // A floor under her feet, when the picture reaches down to them.
+          if (!this.closeUp && !this.inScene && y > HEIGHT * 0.9) {
             r *= 0.8;
             g *= 0.75;
             b *= 0.7;
@@ -308,6 +663,43 @@ export class BattleView {
         data[to + 3] = 255;
       }
     }
+    if (this.streak !== null) this.drawStreak();
+  }
+
+  /**
+   * Her swing's streak, drawn over the picture the way Karryn's Prison paints the arc of Karryn's halberd: a pale
+   * band sweeping from behind her shoulder to her fist, widening as it goes, laid down fast and fading out.
+   */
+  private drawStreak(): void {
+    const life = this.streak ?? 0;
+    const data = this.image.data;
+    const laid = Math.min(1, life / 0.1);
+    const fade = 1 - MathUtils.smoothstep(life, STREAK_TIME * 0.35, STREAK_TIME);
+    const { from, bend, to } = this.streakPath;
+    const tint = [1, 0.93, 0.82];
+    const steps = 90;
+    for (let i = 0; i <= steps * laid; i++) {
+      const u = i / steps;
+      // Along the curve: from behind her shoulder, bending over it, to her fist.
+      const x = (1 - u) * (1 - u) * from.x + 2 * (1 - u) * u * bend.x + u * u * to.x;
+      const y = (1 - u) * (1 - u) * from.y + 2 * (1 - u) * u * bend.y + u * u * to.y;
+      const width = 0.6 + 3.4 * u;
+      const strength = (0.25 + 0.75 * u) * fade;
+      for (let py = Math.floor(y - width); py <= Math.ceil(y + width); py++) {
+        if (py < 0 || py >= HEIGHT) continue;
+        for (let px = Math.floor(x - width); px <= Math.ceil(x + width); px++) {
+          if (px < 0 || px >= WIDTH) continue;
+          const k = Math.max(0, 1 - Math.hypot(px - x, py - y) / width) * strength;
+          if (k <= 0) continue;
+          const at = (py * WIDTH + px) * 4;
+          const threshold = (BAYER4[(px & 3) + ((py & 3) << 2)] / 16 - 0.46875) / LEVELS;
+          for (let c = 0; c < 3; c++) {
+            const v = MathUtils.lerp(data[at + c] / 255, tint[c], Math.min(1, k * 1.4));
+            data[at + c] = Math.round(MathUtils.clamp(Math.round((v + threshold) * LEVELS) / LEVELS, 0, 1) * 255);
+          }
+        }
+      }
+    }
   }
 
   dispose(): void {
@@ -315,6 +707,17 @@ export class BattleView {
     this.target.dispose();
     this.root.remove();
   }
+}
+
+/** Where someone is in a scene: the lead, or joined at one of its slots (an index into its SCENE_JOINS). */
+export type CastSpot = "lead" | number;
+
+/** Someone in the after-hours picture with her: their body as it stands, its body name, a key, and where they are. */
+export interface CastMember {
+  key: string;
+  body: Object3D;
+  name: string;
+  spot: CastSpot;
 }
 
 /** One foe in the column across from her: their body as it stands, what the plate says, and how they stand. */

@@ -134,7 +134,9 @@ import { SpeechBubbles, type Speaker } from "./speech";
 import { formatHour, type WorldClock } from "./time";
 import { NavGrid } from "./path";
 import type { CumSpot } from "./cum";
-import type { DuelArea, DuelLogEntry, DuelState } from "./duel";
+import type { Duel, DuelArea, DuelLogEntry, DuelState } from "./duel";
+import { DuelStage } from "./duelstage";
+import type { CastMember } from "./battleview";
 import type { HerMove } from "./duelmoves";
 import { SMACK_TOUCHES, type TouchRegion } from "./touchtalk";
 import { TAVERN_RULES } from "./tavernrules";
@@ -142,6 +144,14 @@ import { horny } from "./desire";
 import { FAINT_HOLD, FAINT_SECONDS } from "./barwork";
 import type { TouchShow } from "./touchcomic";
 import { BattleView, FoeColumn, type BattleMode, type BattleStat } from "./battleview";
+import { ScreenShake, shakePixels, type ShakeKind } from "./screenshake";
+import { fightFace } from "./fightface";
+import { restingPose, type BattlePoseName } from "./battlepose";
+import type { Fight, Foe } from "./fight";
+import { brawlBeats, intimateOf, intimateScene, takenOf, takenScene, touchScene, TOUCH_SCENE_HOLD, type IntimateRun } from "./brawlscene";
+import type { LewdPart } from "./brawlai";
+import { SCENE_JOINS, type ScenePoseName } from "./sexpose";
+import { FATIGUE_LABELS } from "./herstate";
 import { Body, Sibling, SHOW_POSES, WALK_STYLE_NAMES, type Reaction, type ShowPose, type SoftPart } from "./player";
 import { topPull } from "./wardrobe";
 import { COAT_SECTIONS, COAT_STAGES, type CoatSection } from "./cum";
@@ -444,7 +454,52 @@ const FIGHT_SHOTS: Record<string, Omit<TouchShow, "kind">> = {
   "their:pin": { id: "grab", region: "shoulder", answer: "allow", words: { hit: "SLAM!", voice: "get off me!" } },
   "their:sweep": { id: "smack", region: "face", answer: "allow", fist: true, words: { hit: "THUD!", voice: "my legs—!" } },
   "their:collar": { id: "collar", region: "shoulder", answer: "allow", words: { hit: "SHAKE!", voice: "put me down!" } },
+  // Her hands, her mouth, riding them: no fighting words, the blush and the heart of a touch she wants.
+  "intimate:hands": { id: "fingers", region: "hand", answer: "lean", noHand: true },
+  "intimate:mouth": { id: "kiss", region: "lips", answer: "lean", noHand: true },
+  "intimate:ride": { id: "lap", region: "lap", answer: "lean", noHand: true },
 };
+
+/** Karryn's battle (GAME_PATH.MD 7i): a foe's lewd moves and the scenes he starts, as comic shots, by the part of her. */
+const AREA_SHOTS: Record<DuelArea, { id: string; region: TouchRegion }> = {
+  hands: { id: "fingers", region: "hand" },
+  mouth: { id: "kiss", region: "lips" },
+  breasts: { id: "bothHands", region: "chest" },
+  pussy: { id: "thighUp", region: "intimate" },
+  butt: { id: "grab", region: "rear" },
+};
+const LEWD_SHOTS: Record<LewdPart, { id: string; region: TouchRegion }> = {
+  mouth: { id: "gaze", region: "lips" },
+  breasts: { id: "gaze", region: "chest" },
+  butt: { id: "gaze", region: "rear" },
+  pussy: { id: "gaze", region: "intimate" },
+  cock: { id: "gaze", region: "face" },
+};
+for (const [area, shot] of Object.entries(AREA_SHOTS) as [DuelArea, (typeof AREA_SHOTS)[DuelArea]][]) {
+  FIGHT_SHOTS[`their:offer:${area}`] = { ...shot, answer: "allow" };
+  FIGHT_SHOTS[`taken:${area}`] = { ...shot, answer: "allow" };
+  FIGHT_SHOTS[`their:pose:${area}`] = { ...shot, answer: "allow" };
+  FIGHT_SHOTS[`taken:go:${area}`] = { ...shot, answer: "lean", noHand: true };
+}
+for (const [part, shot] of Object.entries(LEWD_SHOTS) as [LewdPart, (typeof LEWD_SHOTS)[LewdPart]][]) {
+  FIGHT_SHOTS[`their:talk:${part}`] = { ...shot, answer: "allow", noHand: true };
+  FIGHT_SHOTS[`their:sight:${part}`] = { ...shot, answer: "allow", noHand: true };
+}
+for (const slot of ["mouth", "left", "right"] as const) {
+  const shot = slot === "mouth" ? AREA_SHOTS.mouth : AREA_SHOTS.hands;
+  FIGHT_SHOTS[`their:join:${slot}`] = { ...shot, answer: "allow" };
+  FIGHT_SHOTS[`joined:${slot}`] = { ...shot, answer: "allow" };
+}
+FIGHT_SHOTS.join = { id: "grab", region: "shoulder", answer: "allow", words: { hit: "ANOTHER!", voice: "oh, come on!" } };
+// Her clothes in a brawl (7l): him going for them, a piece coming off, the last one gone, and her fixing them.
+FIGHT_SHOTS["their:strip"] = { id: "collar", region: "shoulder", answer: "allow", words: { hit: "GRAB!", voice: "not my clothes—!" } };
+FIGHT_SHOTS["their:stripped"] = { id: "collar", region: "shoulder", answer: "allow", words: { hit: "RIIIP!", voice: "give that back!" } };
+FIGHT_SHOTS.bare = { id: "gaze", region: "chest", answer: "allow", noHand: true, heat: 1, words: { hit: "!!", voice: "don't look...!" } };
+FIGHT_SHOTS.fixClothes = { id: "gaze", region: "face", answer: "allow", noHand: true, words: { hit: "", voice: "there." } };
+FIGHT_SHOTS["her:come"] = { id: "gaze", region: "face", answer: "lean", noHand: true, heat: 1 };
+FIGHT_SHOTS["their:come"] = { id: "gaze", region: "face", answer: "lean", noHand: true };
+FIGHT_SHOTS["struggle:free"] = { id: "grab", region: "shoulder", answer: "slap", words: { hit: "SHOVE!", voice: "get OFF me!" } };
+FIGHT_SHOTS["struggle:fail"] = { id: "grab", region: "waist", answer: "allow", words: { hit: "...", voice: "let go!" } };
 
 /** A duel moment's comic shot: which touch it looks like (for the framing and the hand), and on what part of her. */
 type DuelShot = { id: string; region: TouchRegion };
@@ -796,6 +851,9 @@ export class Game {
   /** The "Brawl!" card that slams onto the screen before a fight, and how long it has left. */
   private readonly brawlIntroEl = makeBrawlIntro();
   private brawlIntro = 0;
+  /** The screen shake (screenshake.ts), and how far out it was last drawn, in our pixels. */
+  private readonly screenShake = new ScreenShake();
+  private shakeShown = 0;
   /** Seconds until the room carries her up to bed, once she's passed out (barwork.ts); 0 when she hasn't. */
   private faintLeft = 0;
   /** The trouble whose shout has been said out loud, so it's said once. */
@@ -892,6 +950,8 @@ export class Game {
     }
     this.drinkComic = new DrinkComic(renderer, element("comic"), () => this.makeItem("ale"), (effect) => this.audio.play(effect));
     this.battleView = new BattleView(this.renderer);
+    this.battleView.onBlow = () => this.shakeScreen("hit");
+    this.battleView.onPose = (pose) => this.pickFightFace(pose);
     this.foeColumn = new FoeColumn(this.renderer);
     this.touchComic = new TouchComic(
       renderer,
@@ -1563,6 +1623,9 @@ export class Game {
       adultStack: tavern.adultStack,
       lewdness: Math.floor(tavern.lewdness),
       corruption: Math.floor(tavern.corruption),
+      energy: tavern.energy,
+      energyMax: tavern.maxEnergy,
+      fatigueLabel: FATIGUE_LABELS[tavern.fatigueLevel] ?? "",
     });
   }
 
@@ -2326,6 +2389,72 @@ export class Game {
   /** Times she's said no, as last counted (null before the first count): one more, and it shows on her face. */
   private refusalsSeen: number | null = null;
 
+  /** After hours, a body for each kind of partner to stand in the big picture with her: undressed, and ready. */
+  private readonly duelPartnerBodies = new Map<string, Body>();
+
+  /** Who's in the after-hours picture with her, and how (duelstage.ts), for the game it's of. */
+  private readonly duelStage = new DuelStage();
+  private stagedDuel: Duel | null = null;
+
+  /**
+   * After hours, who's in the big picture with her, the way Karryn's Prison runs its sex poses (duelstage.ts,
+   * sexpose.ts): `entry` is the moment the comic panel shows, or null just to show the picture as it stands (a new
+   * game after a brawl she lost starts with her down where she fell). Riding him, she faces him or his feet: which,
+   * for each partner, turns over each time she comes.
+   */
+  duelScene(entry: DuelLogEntry | null, duel: Duel): void {
+    const partners = duel.partners.map((p) => ({ id: p.id, kind: p.kind, female: p.female, done: p.done }));
+    if (this.stagedDuel !== duel) {
+      this.stagedDuel = duel;
+      this.duelStage.start(this.tavern.duelAfterBrawl, partners);
+    }
+    if (entry) {
+      const alt = entry.partner !== undefined && (entry.partner + duel.climaxes) % 2 === 1;
+      this.duelStage.moment(entry, partners, { defeated: duel.defeated, alt });
+    }
+    const cast = this.duelStage.cast;
+    if (!cast) return;
+    const member = (id: number, spot: CastMember["spot"]): CastMember[] => {
+      const partner = duel.partners.find((p) => p.id === id);
+      if (!partner) return [];
+      return [{ key: String(id), body: this.duelPartnerBody(partner.kind, partner.female).root, name: partner.female ? "Female" : "Male", spot }];
+    };
+    this.battleView.setCast(cast.scene, [...member(cast.lead, "lead"), ...cast.joins.flatMap((j) => member(j.partner, j.spot))]);
+  }
+
+  /** A body for a kind of partner to stand in the big picture with her: undressed, and ready. Clones share it. */
+  private duelPartnerBody(kind: GuestKind, female: boolean): Body {
+    const key = `${kind}:${female ? "f" : "m"}`;
+    let body = this.duelPartnerBodies.get(key);
+    if (!body) {
+      body = this.makeGuestBody(kind, female);
+      const dresser = new Dresser(body.root, female ? "Female" : "Male");
+      dresser.apply(newLook());
+      dresser.setDressing("nude");
+      if (!female) dresser.setErection(1);
+      this.duelPartnerBodies.set(key, body);
+    }
+    return body;
+  }
+
+  /** In a brawl, her face for the moment she's in (fightface.ts), and whether it's just been picked (it snaps on). */
+  private fightFace: FaceShape | null = null;
+  private fightFaceNew = false;
+
+  /** Picks her face for a moment of a brawl as she strikes its pose, Karryn-style, from how the fight stands. */
+  private pickFightFace(pose: BattlePoseName): void {
+    const fight = this.tavern.fight;
+    if (!fight) return;
+    this.fightFace = fightFace({
+      pose,
+      stamina: fight.maxStamina > 0 ? fight.stamina / fight.maxStamina : 0,
+      foeStamina: fight.foeMax > 0 ? fight.foeStamina / fight.foeMax : 0,
+      slut: this.tavern.slutLevel,
+      arousal: this.arousalShown,
+    }).shape;
+    this.fightFaceNew = true;
+  }
+
   /** Puts something that just happened on her face for a moment. */
   private faceFlash(kind: FaceMoment): void {
     this.faceMoment = { kind, left: MOMENT_TIME[kind] };
@@ -2348,6 +2477,9 @@ export class Game {
       if (this.faceMoment.left <= 0) this.faceMoment = null;
     }
     const duel = tavern.duel ? { state: tavern.duel.state, pleasure: tavern.duel.pleasure / 100 } : null;
+    // A brawl starts squared up; once it's over, its face goes.
+    if (!tavern.fight) this.fightFace = null;
+    else if (!this.fightFace) this.pickFightFace("ready");
     const cause: FaceCause = {
       showing: tavern.showEagerness,
       reaction: this.siblings[this.active]?.reacting ?? null,
@@ -2357,6 +2489,7 @@ export class Game {
       will: tavern.maxWillpower > 0 ? tavern.willpower / tavern.maxWillpower : 1,
       exposed: tavern.exposure,
       fighting: tavern.fight !== null,
+      fightFace: this.fightFace,
       duel,
       moment: this.faceMoment?.kind ?? null,
     };
@@ -2365,7 +2498,9 @@ export class Game {
     const leading = DEV_FACE ?? expressionFor(cause);
     const snap = leading !== this.faceLeading && tavern.inConversation;
     this.faceLeading = leading;
-    this.faceShown = snap ? target : easeFace(this.faceShown, target, dt);
+    // A brawl's new face comes on with her pose, at once, as Karryn's Prison swaps the whole picture.
+    this.faceShown = snap || this.fightFaceNew ? target : easeFace(this.faceShown, target, dt);
+    this.fightFaceNew = false;
     if (snap) this.playerPortrait = null;
     this.dressers.forEach((dresser, index) => dresser.setExpression(index === this.active ? this.faceShown : REST_FACE));
   }
@@ -2963,6 +3098,8 @@ export class Game {
     const soft: SoftPart | null = !took ? null : moment.region === "chest" ? "Bust" : moment.region === "rear" || moment.region === "lap" ? "Glute" : null;
     const reaction: Reaction = !took ? "recoil" : moment.answer === "lean" ? "melt" : "jolt";
     sibling.react(reaction, soft, SMACK_TOUCHES.has(moment.id) ? 0.9 : 0.6);
+    if (took && SMACK_TOUCHES.has(moment.id)) this.shakeScreen("spank");
+    if (took && this.brawlReachOpen) this.brawlTouchScene(moment);
     const name = BODY_NAMES[this.active];
     const body = sibling.root.getObjectByName(name);
     if (body) this.touchComic.play(body, name, { id: moment.id, region: moment.region, answer: moment.answer, kind: moment.kind, level: moment.level });
@@ -2987,6 +3124,11 @@ export class Game {
     // Steam, moans and hearts by how worked up she is; where a man finished, she's at her peak whatever her state.
     const heat = entry.spot ? Math.max(0.9, duelHeat(state)) : duelHeat(state);
     this.touchComic.play(body, name, { ...shot, answer: state === "calm" ? "allow" : "lean", kind: entry.kind ?? "farmer", hold: true, heat });
+  }
+
+  /** Whether a brawl event gets its own comic moment (so a turn's moments can be counted). */
+  hasFightShot(event: string): boolean {
+    return Boolean(FIGHT_SHOTS[event]);
   }
 
   /**
@@ -3067,9 +3209,105 @@ export class Game {
     this.foeColumn.hit(index);
   }
 
+  /** Shakes the pictures on screen, Karryn's Prison's way (screenshake.ts): a blow, a spank, her coming. */
+  shakeScreen(kind: ShakeKind): void {
+    this.screenShake.start(kind);
+  }
+
+  /** Slides the pictures with the shake: only when it's moved a pixel, so a still screen costs nothing. */
+  private updateShake(dt: number): void {
+    const x = shakePixels(this.screenShake.update(dt), window.innerWidth);
+    if (x === this.shakeShown) return;
+    this.shakeShown = x;
+    document.documentElement.style.setProperty("--shake-x", `${x}px`);
+  }
+
   /** She's hit, or jolted, in the big picture. */
   battleHit(hard: boolean): void {
     this.battleView.hit(hard);
+  }
+
+  /**
+   * A brawl turn in the big picture, Karryn-style: she strikes each pose as its moment comes up in the comic panel
+   * (her swing, a blow landing, a dodge, a hold), then settles into `rest` once the turn has played out.
+   */
+  battleTurn(events: readonly string[], rest: BattlePoseName, fight: Fight): void {
+    this.stageBrawl(fight);
+    // Who she's in a scene with: the one who has her, or, for her own moves, the one she's going for.
+    const with_ = fight.taken ? fight.foes[fight.taken.foe] : fight.targeted;
+    const female = this.guestFemale(with_.guestId);
+    const sceneOf = (event: string): ScenePoseName | null => {
+      const area = takenOf(event);
+      if (area) return takenScene(area, with_.kind, female);
+      const move = intimateOf(event);
+      if (!move) return null;
+      // Her mouth on them twice running goes deeper; riding them again, she turns round.
+      const times = this.brawlRun?.move === move ? this.brawlRun.times + 1 : 1;
+      this.brawlRun = { move, times };
+      return intimateScene(move, with_.kind, female, times);
+    };
+    const { beats, held, taken } = brawlBeats(events, (event) => this.hasFightShot(event), FIGHT_MOMENT_GAP, rest, this.brawlHeld, sceneOf, this.brawlTaken);
+    this.brawlHeld = held;
+    this.brawlTaken = taken;
+    if (!held) this.brawlRun = null;
+    this.castBrawl(fight, with_, held);
+    this.battleView.play(beats);
+  }
+
+  /**
+   * Who's in the big picture with her mid-brawl: `with_`, and anyone joined in with them at a slot the scene has
+   * (KP's pose joins: her mouth, her hands). Each undressed and ready, like after hours.
+   */
+  private castBrawl(fight: Fight, with_: Foe, scene: ScenePoseName | null): void {
+    const member = (foe: Foe, spot: CastMember["spot"]): CastMember => {
+      const female = this.guestFemale(foe.guestId);
+      return { key: `brawl:${foe.guestId}:${foe.name}`, body: this.duelPartnerBody(foe.kind, female).root, name: female ? "Female" : "Male", spot };
+    };
+    const spots = scene ? (SCENE_JOINS[scene] ?? []) : [];
+    const joined = fight.joined.flatMap((j) => {
+      const spot = spots.findIndex((s) => s.slot === j.slot);
+      return spot >= 0 ? [member(fight.foes[j.foe], spot)] : [];
+    });
+    this.battleView.setBrawlCast([member(with_, "lead"), ...joined]);
+  }
+
+  /** Whether a guest is a woman (a made-up foe for a test brawl isn't). */
+  private guestFemale(guestId: number): boolean {
+    return this.tavern.guests.find((g) => g.id === guestId)?.female ?? false;
+  }
+
+  /**
+   * Mid-brawl, a touch she let land shows in the big picture for a moment (brawlscene.ts), her and the one she's
+   * fighting, then she's back in the fight; not while she's already in a scene with them.
+   */
+  private brawlTouchScene(touch: { id: string; region: TouchRegion }): void {
+    const fight = this.tavern.fight;
+    const scene = touchScene(touch);
+    if (!fight || !scene || this.brawlHeld) return;
+    this.stageBrawl(fight);
+    // It's the one who reached for her she's in it with.
+    this.castBrawl(fight, fight.foes.find((f) => f.guestId === fight.reachingGuestId) ?? fight.targeted, scene);
+    const rest = restingPose({ stamina: fight.stamina, maxStamina: fight.maxStamina, lost: fight.outcome === "lost" });
+    this.battleView.play([
+      { pose: "held", at: 0, hurt: false, scene },
+      { pose: rest, at: TOUCH_SCENE_HOLD, hurt: false },
+    ]);
+  }
+
+  /** The brawl the big picture's scenes are of, the scene she's held in, and her run of one intimate move. */
+  private stagedBrawl: Fight | null = null;
+  private brawlHeld: ScenePoseName | null = null;
+  private brawlRun: IntimateRun = null;
+  /** Whether the scene she's held in is one a foe started (she can't just walk out of it). */
+  private brawlTaken = false;
+
+  /** A new brawl starts with no scene in the picture. */
+  private stageBrawl(fight: Fight): void {
+    if (this.stagedBrawl === fight) return;
+    this.stagedBrawl = fight;
+    this.brawlHeld = null;
+    this.brawlRun = null;
+    this.brawlTaken = false;
   }
 
   /** Takes the duel's comic panel down, once the game is over. */
@@ -3195,6 +3433,7 @@ export class Game {
     this.touchComic.update(dt);
     this.battleView.update(dt);
     this.foeColumn.update(dt);
+    this.updateShake(dt);
     this.syncGuests(dt);
     this.messLayer.sync(this.tavern.messes, dt);
     this.updateBell(dt);
