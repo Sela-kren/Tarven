@@ -69,14 +69,26 @@ export class DayNightLighting {
   readonly sun = new DirectionalLight();
   private readonly glow: MeshLambertMaterial[] = [];
   private readonly scratch = new Color();
+  /** Whether the background is the sky (outdoors) or the dark of the room (indoors). */
+  private sky: boolean;
+  private readonly indoorBackground: Color;
 
   constructor(
     private readonly scene: Scene,
-    private readonly options: LightingOptions = {},
+    options: LightingOptions = {},
   ) {
     // The sun casts no shadows: indoors it would need the walls to block it, which is not worth the cost yet.
     this.sun.castShadow = false;
     scene.add(this.ambient, this.hemisphere, this.sun, this.sun.target);
+    this.sky = Boolean(options.sky);
+    this.indoorBackground = scene.background instanceof Color ? scene.background.clone() : new Color(0x050404);
+  }
+
+  /** Paints the sky behind everything while she's outdoors, and the room's dark again once she's back in. */
+  setSky(on: boolean): void {
+    if (on === this.sky) return;
+    this.sky = on;
+    if (!on) this.scene.background = this.indoorBackground.clone();
   }
 
   /** Makes every material named in `names` under `root` glow with the sky outside, like window glass. */
@@ -120,7 +132,7 @@ export class DayNightLighting {
       material.emissive.setHex(0xffffff).lerp(this.scratch.setHex(GLOW_TWILIGHT), twilight * 0.7);
     }
 
-    if (this.options.sky) {
+    if (this.sky) {
       const background = this.scene.background instanceof Color ? this.scene.background : new Color();
       blend(NIGHT.background, DAY.background, background).lerp(this.scratch.setHex(TWILIGHT_SKY), twilight * 0.6);
       this.scene.background = background;

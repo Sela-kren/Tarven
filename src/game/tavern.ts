@@ -338,7 +338,9 @@ export type Target =
   | { kind: "door" }
   | { kind: "desk" }
   | { kind: "book" }
-  | { kind: "bath" };
+  | { kind: "bath" }
+  /** Out through the front door by day ("out"), or a place on the high street (street.ts), which says its own label. */
+  | { kind: "street"; place: string; label: string };
 /** A sound the rules ask for. What each one actually sounds like is up to the audio layer. */
 export type Cue =
   | "pour" | "aleReady" | "takeAle" | "takeBread" | "takeStew" | "takeCask" | "putDown" | "refill"
@@ -5416,6 +5418,14 @@ export class Tavern {
           this.cue(this.doorOpen ? "doorOpen" : "doorClose");
         },
       };
+    }
+    if (target.kind === "street") {
+      if (target.place !== "out") return { label: target.label, run: () => undefined };
+      // The town by day (TOWN_DAY.md): out of the front door while the tavern's shut, and back before evening.
+      if (this.phase === "day") {
+        return this.settlingIn ? { label: "Clean up before you go out" } : { label: "Go out into Tarven", run: () => undefined };
+      }
+      return this.phase === "dusk" ? { label: "No time to go out now" } : null;
     }
     if (target.kind === "book") return { label: "Read your journal", run: () => undefined };
     if (target.kind === "bath") {

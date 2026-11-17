@@ -629,7 +629,7 @@ FEMALE = {
     # "modern": the original white tee, red track pants and white sneakers, kept for later.
     "outfit": "medieval",
     "jiggle": True,  # spring bones for the bust, belly, glutes and skirt hem
-    "heroic": True,  # the stylised-heroine proportions (HEROIC, see heroic_reshape), applied to the finished rig
+    "heroic": False,  # OFF 2026-11-17: the user chose the old body (pre-933caa0) for the game. The stylised-heroine proportions (HEROIC, see heroic_reshape), applied to the finished rig
     "study_fit": True,  # then fitted to the measured reference heroines (STUDY_FIT, see study_fit, MODEL_STUDY.md)
     "sculpt_fit": False,  # (the old skin pulled onto the sculpt's forms, tools/blender/sculpt_fit.py; superseded)
     "real_heroin": False,  # OFF 2026-11-17: the game keeps the old Female body; real_heroin is for later (panels etc.). Then real_heroin, the sculpted heroine, swapped in as her skin (real_heroin_swap.py)
@@ -7440,11 +7440,11 @@ def skin_character(c, m, spec, root):
             study_fit(STUDY_FIT, rig, body_obj, [o for o in c.objects if o.type == "MESH"], HEROIC_LEGS["stature"])
             keep_clothes_clear(body_obj, (cloth_obj, *outfits))
         if spec.get("sculpt_fit"):
-            # Her skin pulled onto the heroine sculpt's forms (tools/blender/sculpt_fit.py), the same corners as
-            # before; everything joined to it or worn over it rides on it, the bones stay. Then the clothes and the
-            # stains on them kept off the new skin.
+            # Her skin pulled onto the heroine sculpt's forms (tools/blender/real_heroin/sculpt_fit.py), the same
+            # corners as before; everything joined to it or worn over it rides on it, the bones stay. Then the
+            # clothes and the stains on them kept off the new skin.
             import sys
-            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "real_heroin"))
             import sculpt_fit
             sculpt_fit.fit_to_sculpt(rig, body_obj, [o for o in c.objects if o.type == "MESH"], name)
             keep_clothes_clear(body_obj, (cloth_obj, *outfits))
@@ -7452,11 +7452,11 @@ def skin_character(c, m, spec, root):
             keep_clothes_clear(body_obj, stains, dict(CLEAR, gap=CLEAR["gap"] + STAIN_LIFT))
         if spec.get("real_heroin"):
             # real_heroin, the sculpted heroine (build_body.py / build_head.py), becomes her skin in her own posture
-            # (tools/blender/real_heroin_swap.py). The old skin carries the clothes, hair and the game's patches and
-            # grids onto her surface first, and gives her its bone weights and painted parts; then it goes.
+            # (tools/blender/real_heroin/real_heroin_swap.py). The old skin carries the clothes, hair and the game's
+            # patches and grids onto her surface first, and gives her its bone weights and painted parts; then it goes.
             import sys
             import tempfile
-            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "real_heroin"))
             import real_heroin_swap
             real_heroin_swap.swap_in(rig, body_obj, [o for o in c.objects if o.type == "MESH"], m,
                                      os.path.join(tempfile.gettempdir(), "tarven_real_heroin"), name)
@@ -8371,8 +8371,9 @@ STUDY_FIT = {
               (0.845, 1.0, 1.25, 1.2), (0.86, 1.0, 1.22, 1.22), (0.875, 1.0, 1.15, 1.15), (0.89, 1.0, 1.0, 1.0)),
     # (No widening from the shoulders up: at those heights it squared off the shoulders' tops, not the neck.)
     # The glutes pushed out behind: centre height (share), half height, how much further out at the centre, and how
-    # far either side of her middle it reaches fully and fades out (shares of stature).
-    "glutes": (0.525, 0.055, 0.25, (0.05, 0.09)),
+    # far either side of her middle it reaches fully and fades out (shares of stature). Centred on her rear as it
+    # stands after the reshaping (fullest at 0.59): at 0.525 it swelled a second bump under it, a double rear.
+    "glutes": (0.565, 0.07, 0.25, (0.05, 0.09)),
     # Round the hips the width grows about each leg's own line (so the legs keep their spacing), easing back to
     # about her middle by the second height above the crotch.
     "hip_pivot": (0.04, 0.12),
@@ -8506,12 +8507,18 @@ def study_fit(fit, rig, body, meshes, stature):
         lo, hi = reach_rows.get(k, (p.y, p.y))
         reach_rows[k] = (min(lo, p.y), max(hi, p.y))
 
+    # Each row the widest of it and its neighbours, read between rows, so the cloth carried along shows no steps;
+    # every point of her body still lies within the reach at its own height, so her skin moves exactly as before.
+    keys = sorted(reach_rows)
+    rows_out = [(k, min(reach_rows[j][0] for j in (k - 1, k, k + 1) if j in reach_rows),
+                 max(reach_rows[j][1] for j in (k - 1, k, k + 1) if j in reach_rows)) for k in keys]
+    back_rows = [(k / 100, lo) for k, lo, _ in rows_out]
+    front_rows = [(k / 100, hi) for k, _, hi in rows_out]
+
     def body_reach(share):
-        k = int(round(share * 100))
-        near = [reach_rows[j] for j in (k - 1, k, k + 1) if j in reach_rows]
-        if not near:
+        if not rows_out or share < back_rows[0][0] - 0.01 or share > back_rows[-1][0] + 0.01:
             return None
-        return min(r[0] for r in near), max(r[1] for r in near)
+        return _table(back_rows, share), _table(front_rows, share)
     for _ in range(3):
         middle = [(middle[i][0], sum(m[1] for m in middle[max(0, i - 2):i + 3]) / len(middle[max(0, i - 2):i + 3]))
                   for i in range(len(middle))]

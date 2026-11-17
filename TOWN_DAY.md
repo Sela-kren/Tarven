@@ -122,7 +122,7 @@ Free use and sex anywhere apply to the whole town, her included. How they treat 
 
 | Step | What | Size |
 |---|---|---|
-| 1 | The front door goes outside: the high street scene, the world clock, the 5 PM deadline, walking back in | Medium |
+| 1 | The front door goes outside: the high street scene, the world clock, the 5 PM deadline, walking back in. **Built 2026-11-17** (`street.ts`, town kit from D:/planet via `tools/blender/build_street_kit.py`, townsfolk walking the street in `townsfolk.ts`). The places only show a panel so far | Medium |
 | 2 | Market (cheaper stock) and flyers (fans): two simple day errands so going out pays from day 1 | Small |
 | 3 | The grass port to three.js (the `build-grass` skill), for the street verges and Mara's fields | Medium |
 | 4 | Chapel and rival-house visits, using the plot and Ledger already written | Medium |

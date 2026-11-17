@@ -26,7 +26,7 @@ import { claimFurniture } from "./game/houseview";
 import { Input } from "./game/input";
 import { DayNightLighting } from "./game/lighting";
 import { DownloadTally, LoadScreen, nextPaint } from "./game/loadscreen";
-import { RetroPipeline } from "./game/retro";
+import { applyRetroLook, RetroPipeline } from "./game/retro";
 import { WorldClock } from "./game/time";
 import { setupWorld } from "./game/world";
 
@@ -94,6 +94,14 @@ async function start(): Promise<void> {
         return file;
       });
   const [worldFile, maleFile, femaleFile, propsFile] = await Promise.all(files.map(fetchModel));
+  // The town kit for the high street. The game still runs without it, with a plainer street.
+  const streetKit = await loader
+    .loadAsync(`${base}models/streetkit.glb`)
+    .then((file) => {
+      applyRetroLook(file.scene);
+      return file.scene;
+    })
+    .catch(() => null);
 
   loading.show("world", 0);
   await nextPaint();
@@ -117,6 +125,7 @@ async function start(): Promise<void> {
     male: maleFile.scene,
     female: femaleFile.scene,
     props: propsFile.scene,
+    streetKit,
     furniture: claimed.defaults,
   }, camera, renderer, clock, audio);
 
@@ -127,7 +136,7 @@ async function start(): Promise<void> {
       return;
     }
     // The bedroom and the bathroom past it are off the side of the main room's shot, so the camera moves over.
-    if (game.focus.x > BEDROOM_FROM_X && game.focus.z < BEDROOM_SOUTH_Z) {
+    if (!game.outdoors && game.focus.x > BEDROOM_FROM_X && game.focus.z < BEDROOM_SOUTH_Z) {
       focus.copy(game.focus.x > BATHROOM_FROM_X ? BATHROOM_VIEW : BEDROOM_VIEW);
       return;
     }
@@ -164,6 +173,7 @@ async function start(): Promise<void> {
 
     game.update(dt);
     world.update(elapsed);
+    lighting.setSky(game.outdoors);
     lighting.apply(clock);
 
     updateCameraTarget();

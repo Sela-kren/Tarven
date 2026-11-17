@@ -1,6 +1,6 @@
 # Sliders for the new heroine: body and face
 
-How the look sliders reshape her today, what the rebuilt model (`tools/blender/heroine/`) should use instead, and
+How the look sliders reshape her today, what the rebuilt model (`tools/blender/real_heroin/heroine/`) should use instead, and
 the full slider list with ranges taken from the reference study (`MODEL_STUDY.md`).
 
 **Rule:** slider ends span the *range* of the nine references' proportions. No slider set, saved look, preset or test
@@ -194,7 +194,7 @@ Count: 15 body morph sliders (~24 targets) + 28 face morph sliders (~32 targets)
 
 ## 4. Coverage test (body only, no presets)
 
-A headless script (`tools/blender/heroine/coverage.py`, to write) builds the body at slider settings, measures it
+A headless script (`tools/blender/real_heroin/heroine/coverage.py`, to write) builds the body at slider settings, measures it
 with the study's method (exact slice cuts, convex-hull girths, arms left out by dominant bone, barefoot stature)
 and checks:
 

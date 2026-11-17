@@ -15,10 +15,10 @@ keep fitting.
 The reference heroines were measured in 3D (`MODEL_STUDY.md`). Scaling the ring-built body to their numbers
 (`study_fit`) gets her proportions within about 1–3%, but she stays a smooth tube. MPFB was considered and dropped
 (you want her made from scratch, not from a stock base). She is now sculpted in code as a signed distance field:
-`tools/blender/heroine/sdf.py` (pure numpy: the median ref skeleton, a lofted trunk with her S-curve, anatomical
+`tools/blender/real_heroin/heroine/sdf.py` (pure numpy: the median ref skeleton, a lofted trunk with her S-curve, anatomical
 parts — breasts, glutes, pecs, clavicles, scapulae, thigh and calf muscles, kneecaps, ankle bones, deltoid, biceps,
 forearm, a hand with jointed fingers, feet with toes, a skull with a modelled face) blended smoothly, and
-`tools/blender/build_heroine.py` (meshes the field with OpenVDB in ~20 s at 2.5 mm, ~70 s at 1.2 mm).
+`tools/blender/real_heroin/build_heroine.py` (meshes the field with OpenVDB in ~20 s at 2.5 mm, ~70 s at 1.2 mm).
 Every pass is checked against the refs' own 3D models: side-by-side clay renders and silhouette overlays
 (ref only magenta, hers cyan, both white), front and side, whole body and head only. No ref mesh is used.
 1. [~] Body form: front silhouette matches the barefoot ref (IW azure) closely; side posture between the refs;

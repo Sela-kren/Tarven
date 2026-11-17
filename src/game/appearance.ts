@@ -145,6 +145,11 @@ interface BoneTerm {
   shrinkApart?: number;
   /** How far each side turns outwards, in metres at the front of the breast at a value of 1: nipples that point out. */
   turn?: number;
+  /**
+   * How far the front of the breast sinks, in metres at its front at a value of 1, more than its root does: a heavy
+   * breast hangs, so the nipple sits low on it and looks a little down instead of straight out. Growing only.
+   */
+  droop?: number;
   /** Only these mesh parts change, as hair sliders leave the head under the hair alone. Joints never move for these. */
   parts?: readonly MeshPart[];
 }
@@ -583,10 +588,13 @@ const FEMALE_SLIDERS: SliderDef[] = [
     // amounts are large because the front of the breasts takes about 0.58 of them (BUST_WEIGHT). They grow wide
     // as well as out: at Q each stands about 17 cm out from the chest and reaches 18.5 cm from the middle of her
     // (grown mostly forwards instead, a big bust stood out from her like a log). Shrinking stops well short of flat.
+    // As it grows the front sinks more than the root (droop), as real_heroin's does: the nipple low on the breast and
+    // looking a little down, the upper slope longer, the lower curve full; without it a big bust pointed straight out.
+    // More than this pushed a point out under the nipple.
     id: "bust", label: "Cup size", tab: "body", group: "Bust", stops: CUPS, roll: 0.45,
     terms: terms(["Bust"], [4.0, 2.07, 2.6], {
       shrink: [0.2, 0.25, 0.7], shift: [0, -0.075, -0.012], shrinkShift: [0, 0, 0],
-      lobes: [0.06, -0.005, 0.025], fade: [0.04, 0.12], apart: 0.03, shrinkApart: 0,
+      lobes: [0.06, -0.005, 0.025], fade: [0.04, 0.12], apart: 0.03, shrinkApart: 0, droop: 0.09,
     }),
   },
   // Where the breasts sit on the chest, root and all: the move reaches past where their weight thins out towards
@@ -639,17 +647,19 @@ const FEMALE_SLIDERS: SliderDef[] = [
   // Each glute has its own bone, about 3 cm inside the curve of the rear. The rear is fullest low down and
   // blends into the small of the back, so every change fades out above the joint instead of leaving a shelf.
   {
-    // Measured on the model: at 1 the rear stands 5 cm further out behind the small of the back and the hips
-    // measure 7 cm more, enough to go with the fullest bust. It grows out and back, hardly down, so the fold
-    // under it stays where it is instead of hanging over the thighs. It grows by scaling the rear out from the joint,
-    // so what stands out most grows most and the curve keeps its shape, and the scaling reaches past where the
-    // weight thins out (reach): a push weighted by the skin alone follows the weight's own hill and comes to a point.
+    // It swells each cheek round about a point 4 cm in front of its joint, inside her (about), growing out, back and
+    // a little up and down alike, as a breast does, so it stays a round mass. Grown mostly backwards about the joint
+    // itself (0.6, 0.12, 2.0), what stood out most grew most and it came to a point, a cone from the side. The growth
+    // reaches past where the weight thins out (reach): a push weighted by the skin alone follows the weight's own hill
+    // and comes to a point.
     id: "rear", label: "Size", tab: "body", group: "Rear",
     terms: [
-      ...glutes([0.6, 0.12, 2.0], { shrink: [0.15, 0.08, 0.4], shift: [0, -0.008, 0], shrinkShift: [0, 0, 0], reach: 0.35 }),
-      // The lower third, 4-5.5 cm below the joint, fills out on top of that and a little down, so the rear stays full
-      // low and then turns in sharply to the fold on the thigh, which stays put, as a round mass sitting on the leg.
-      ...glutes([0, 0, 0], { shift: [0, -0.006, 0.04], shrinkShift: [0, 0, 0], band: [-0.01, -0.04, -0.055, -0.085], reach: 0.5 }),
+      ...glutes([0.5, 0.3, 0.7], { shrink: [0.15, 0.08, 0.25], shift: [0, 0.004, 0], shrinkShift: [0, 0, 0], about: [0, 0, -0.04], reach: 0.35 }),
+      // The lower half, 2-6 cm below the joint, fills out on top of that and a little down, so the rear stays full
+      // low and then turns in to the fold on the thigh, which stays put, as a round mass sitting on the leg. It eases
+      // in from 4 cm above the joint: started at the joint (full from 4 cm below), it stood out as a second roll
+      // under the cheek with a crease between, a double bump from the side.
+      ...glutes([0, 0, 0], { shift: [0, -0.006, 0.04], shrinkShift: [0, 0, 0], band: [0.04, -0.02, -0.06, -0.1], reach: 0.5 }),
     ],
   },
   {
@@ -1852,6 +1862,7 @@ interface ActiveTerm {
   reach?: number;
   apart?: number;
   turn?: number;
+  droop?: number;
   parts?: readonly MeshPart[];
 }
 
@@ -1941,6 +1952,8 @@ export function reshape(active: readonly ActiveTerm[], d: Vector3, out: Vector3,
     if (term.apart) out.x += side * term.apart * weight * Math.min(1, Math.abs(d.x) / (term.lobes ? term.lobes[0] : 0.04));
     // Turning outwards moves the front of a breast most: by how far forwards (-z) it is, up to 1.5 times at 9 cm.
     if (term.turn) out.x += side * term.turn * weight * Math.min(1.5, Math.max(0, -d.z / 0.06));
+    // Sinking likewise moves the front of a breast most, by how far forwards it is, so its root stays on the chest.
+    if (term.droop) out.y -= term.droop * weight * Math.min(1.5, Math.max(0, -d.z / 0.06));
     if (reach !== 1) out.sub(before).multiplyScalar(reach).add(before);
   }
   return out;
@@ -1978,6 +1991,7 @@ export function activeTerms(
       reach: term.reach,
       apart: term.apart === undefined ? undefined : (value < 0 && term.shrinkApart !== undefined ? -term.shrinkApart : term.apart) * value,
       turn: term.turn === undefined ? undefined : term.turn * value,
+      droop: term.droop === undefined ? undefined : term.droop * Math.max(0, value),
       parts: term.parts,
     });
     byBone.set(term.bone, list);
@@ -2006,7 +2020,7 @@ export function activeTerms(
   }
   const slider = clampSlider(sliders.bustInner);
   const inner = slider >= 0 ? INNER_AS_BUILT + (1 - INNER_AS_BUILT) * slider : INNER_AS_BUILT + (1 + INNER_AS_BUILT) * slider;
-  if (inner !== 0) for (const list of byBone.values()) for (const term of list) if (term.lobes) term.inner = inner;
+  if (inner !== 0) for (const term of byBone.get("Bust") ?? []) if (term.lobes) term.inner = inner;
   // Breasts set apart part over her chest instead of dragging the skin between them along, so the cleavage opens:
   // with the Spacing slider, a side-set or east-west shape, or the inner sides drawn in; pushed together (by her or
   // by what she wears), it closes again.
@@ -2014,7 +2028,7 @@ export function activeTerms(
     Math.max(0, clampSlider(sliders.bustSpacing)) + (CLEFT_OF_SHAPE[bustShape ?? ""] ?? 0)
     + Math.max(0, -slider) * CLEFT_OF_INNER - Math.max(0, clampSlider(sliders.bustTogether)),
   ));
-  if (cleft > 0) for (const list of byBone.values()) for (const term of list) if (term.lobes) term.cleft = cleft;
+  if (cleft > 0) for (const term of byBone.get("Bust") ?? []) if (term.lobes) term.cleft = cleft;
   return byBone;
 }
 

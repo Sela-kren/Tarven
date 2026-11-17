@@ -133,6 +133,8 @@ import { BODY_SKILLS, STATS, type SkillId, type StatId } from "./skills";
 import { AiNarrator } from "./ainarrator";
 import { setFlavorSource } from "./flavor";
 import { SpeechBubbles, type Speaker } from "./speech";
+import { buildStreet, type Street } from "./street";
+import { Townsfolk } from "./townsfolk";
 import { formatHour, type WorldClock } from "./time";
 import { NavGrid } from "./path";
 import type { CumSpot } from "./cum";
@@ -274,6 +276,87 @@ const ROOM_SHOT_DRIFT = 0.12;
 const SPRITE_TURN = 0.3;
 /** How long the screen takes to go black, and then to come back, when the night starts. */
 const FADE_SECONDS = 0.45;
+/** Where she stands to go out of the front door by day, how near she must be, and where she comes back in. */
+const FRONT_DOOR_SPOT = new Vector3(-1.5, 0, -4.4);
+const FRONT_DOOR_RANGE = 1.3;
+const BACK_INSIDE: Vec2 = { x: -1.5, z: -3.8 };
+/** Out in the street, the hour she's reminded to head home, before the bell at five (AFTERNOON_HOLD_HOUR). */
+const STREET_REMIND_HOUR = 16;
+/** How much further back the camera stands in the street than in the room. */
+const STREET_ZOOM = 1.45;
+/** What each place on the high street says for now (TOWN_DAY.md). Places that do something come later. */
+const STREET_PLACES: Record<string, { title: string; text: string[] }> = {
+  market: {
+    title: "The Market Stalls",
+    text: [
+      "Flour, onions, and a whole side of something that used to be a boar. A goblin at the end stall is selling phone charms, and swears one of them is lucky.",
+      "Not open yet: buying stock here, cheaper than the delivery cart, comes next.",
+    ],
+  },
+  board: {
+    title: "The Notice Board",
+    text: [
+      "LOST: one goat, answers to Gerald. WANTED: strong backs for the quarry. A poster for the Copper Bell's \"Two-for-One Thursdays\". Somebody has drawn something rude on the Baron's toll notice.",
+      "Not open yet: day jobs from the board come later.",
+    ],
+  },
+  chapel: {
+    title: "The Chapel",
+    text: [
+      "Cold stone and the smell of candles. A carving of the Stone-Hearted watches the door, his helmet shut. Brother Oden is somewhere at the back, pretending he didn't see you come in.",
+      "Not open yet: talking to Oden by day comes later.",
+    ],
+  },
+  warmhouse: {
+    title: "The Warm House",
+    text: [
+      "Red curtains, warm air, and the smell of scented oil. A priestess at the door smiles like she already knows exactly how tight you are, and offers you a ribbon.",
+      "Not open yet: the Church of Veyra comes later.",
+    ],
+  },
+  copperbell: {
+    title: "The Copper Bell",
+    text: [
+      "The biggest tavern in Tarven, and it knows it. Jory Bell is polishing the same tankard he was polishing last week, and watching you count his customers.",
+      "Not open yet: scouting the rival houses comes later.",
+    ],
+  },
+  garrison: {
+    title: "The Garrison Yard",
+    text: [
+      "Soldiers drilling half-heartedly. Two of them are checking their phones under their helmets. Up on the keep's tower the relay stone glows: every message in town goes through it, and Pell reads them all.",
+      "Not open yet: sparring in the yard comes later.",
+    ],
+  },
+  ciderbarn: {
+    title: "Hollin's Cider Barn",
+    text: [
+      "Half the farmers in Tarven drink here on credit, sitting on hay bales. Hollin writes every cup in his little book, and the chickens wander in and out like paying customers.",
+      "Not open yet: scouting the rival houses comes later.",
+    ],
+  },
+  bakehouse: {
+    title: "The Bakehouse",
+    text: [
+      "Pies, warm bread and one long table of gossip. Goodwife Tansy looks you up and down, and says you have your grandmother's walk.",
+      "Not open yet: scouting the rival houses comes later.",
+    ],
+  },
+  fields: {
+    title: "The Road to Mara's Fields",
+    text: [
+      "The road runs on west between the fields and the long grass, down to Mara's farm.",
+      "Not open yet: the walk out to the fields comes later.",
+    ],
+  },
+  quarry: {
+    title: "The Quarry Road",
+    text: [
+      "The road climbs east toward the quarry and the high pass. Up there the phones go quiet, which is exactly why Silas's crew likes it.",
+      "Not open yet: the quarry road comes later.",
+    ],
+  },
+};
 
 // The day's schedule on the world clock. The day passes slowly, then waits in the late afternoon
 // until you open the doors; the sun then goes down over a few seconds.
@@ -631,6 +714,8 @@ interface Assets {
   male: Object3D;
   female: Object3D;
   props: Object3D;
+  /** The town kit the high street is dressed with (tools/blender/build_street_kit.py), if it loaded. */
+  streetKit?: Object3D | null;
   /** Where the furniture stood in the room as it was loaded. */
   furniture: Placed[];
 }
@@ -688,6 +773,7 @@ function targetKey(target: Target): string {
   if (target.kind === "station") return `station:${target.station}`;
   if (target.kind === "guest") return `guest:${target.id}`;
   if (target.kind === "mess") return `mess:${target.id}`;
+  if (target.kind === "street") return `street:${target.place}`;
   return target.kind;
 }
 
@@ -759,6 +845,14 @@ export class Game {
   /** What to return to when the pause menu closes. */
   private pausedFrom: "play" | "visitor" = "play";
   private afterFade: (() => void) | null = null;
+  /** Tarven's high street (street.ts), and whether she's out in it rather than in the tavern. */
+  private readonly street: Street;
+  /** The people out in the street by day (townsfolk.ts), made the first time she goes out. */
+  private townsfolk: Townsfolk | null = null;
+  private readonly townLayer = new Group();
+  outdoors = false;
+  /** The reminders to head home she's had today out in the street: 1 at four, 2 at five. */
+  private streetReminders = 0;
   private readonly roomShot = { eye: new Vector3(), target: new Vector3() };
   /** True until the night starts; the camera holds the character select shot meanwhile. */
   private staging = true;
@@ -954,6 +1048,8 @@ export class Game {
     this.tavern.touchSettings = readTouchSettings();
     this.messLayer = new MessLayer(world.seats, dustSpots, cobwebSpots);
     scene.add(this.messLayer.group);
+    this.street = buildStreet(assets.streetKit ?? null);
+    scene.add(this.street.root);
     this.checkpoint = this.tavern.snapshot();
 
     const { props } = assets;
@@ -1042,7 +1138,7 @@ export class Game {
       new Sibling(assets.male, "Male", spawn),
       new Sibling(assets.female, "Female", spawn.clone().setX(spawn.x + 1)),
     ];
-    scene.add(this.siblings[0].root, this.siblings[1].root, this.guestLayer);
+    scene.add(this.siblings[0].root, this.siblings[1].root, this.guestLayer, this.townLayer);
 
     // Each sibling gets meshes of its own to reshape, before the outlines are made from them.
     this.dressers = this.siblings.map((sibling, index) => new Dresser(sibling.root, BODY_NAMES[index]));
@@ -1150,11 +1246,14 @@ export class Game {
   }
 
   get cameraZoom(): number {
-    return this.screen === "build" ? BUILD_ZOOM : 1;
+    if (this.screen === "build") return BUILD_ZOOM;
+    // The street's houses are taller than the room's walls, so the camera stands further back out there.
+    return this.outdoors ? STREET_ZOOM : 1;
   }
 
   /** How far the follow camera may go, so all of a bigger house can be seen. */
   get cameraLimits(): Rect {
+    if (this.outdoors) return this.street.cameraLimits;
     const { minX, maxX, minZ, maxZ } = this.plan.bounds();
     return {
       minX: Math.min(-CAMERA_LIMIT_X, minX + CAMERA_INSET_X),
@@ -1177,6 +1276,8 @@ export class Game {
   /** Draws the plan and makes the room behave like it: walls and furniture block, seats go where the chairs are. */
   private applyPlan(): NavGrid {
     const { colliders, seats } = this.world;
+    // The room's walls are the ones that count: she's indoors.
+    this.outdoors = false;
     this.houseView.rebuild(this.plan);
     colliders.length = 0;
     colliders.push(...this.staticColliders, ...this.planColliders());
@@ -1238,7 +1339,10 @@ export class Game {
     const player = this.siblings[this.active];
     return {
       time: this.clock.time,
-      at: { x: player.position.x, z: player.position.z, facing: player.facing },
+      // Saved out in the street, she loads just inside her own front door.
+      at: this.outdoors
+        ? { x: BACK_INSIDE.x, z: BACK_INSIDE.z, facing: Math.PI }
+        : { x: player.position.x, z: player.position.z, facing: player.facing },
       dayStart: this.dayStart ? { ...this.dayStart } : null,
       ...this.tavern.captureMoment(),
     };
@@ -1504,6 +1608,13 @@ export class Game {
       if (!best || score < best.score) best = { target, at, height, prompt, score };
     };
 
+    if (this.outdoors) {
+      for (const spot of this.street.spots) {
+        consider({ kind: "street", place: spot.place, label: spot.label }, spot.at, STATION_ARROW_HEIGHT, spot.range);
+      }
+      return best;
+    }
+
     for (const station of STATIONS) {
       consider({ kind: "station", station }, this.spots[station], STATION_ARROW_HEIGHT, STATION_RANGE);
     }
@@ -1531,6 +1642,7 @@ export class Game {
     consider({ kind: "desk" }, DESK_SPOT, STATION_ARROW_HEIGHT, DESK_RANGE);
     consider({ kind: "book" }, JOURNAL_SPOT, JOURNAL_ARROW_HEIGHT, JOURNAL_RANGE);
     consider({ kind: "bath" }, BATH_SPOT, STATION_ARROW_HEIGHT, BATH_RANGE);
+    consider({ kind: "street", place: "out", label: "" }, FRONT_DOOR_SPOT, STATION_ARROW_HEIGHT, FRONT_DOOR_RANGE);
     return best;
   }
 
@@ -2139,6 +2251,88 @@ export class Game {
   }
 
   /** Fades to black, runs `next` while the screen is dark, then fades back in. */
+  /** A place on the high street, or the front door between it and the tavern (street.ts, TOWN_DAY.md). */
+  private useStreet(place: string): void {
+    if (place === "out") {
+      this.goOutside();
+      return;
+    }
+    if (place === "home") {
+      this.goInside();
+      return;
+    }
+    const info = STREET_PLACES[place];
+    if (!info) return;
+    this.clearTarget();
+    this.openPanel(info.title, info.text, [
+      {
+        label: "Back to the street",
+        onPick: () => {
+          this.closePanel();
+          this.screen = "play";
+        },
+      },
+    ]);
+  }
+
+  /** One of the townsfolk: every kind of person in Tarven, men and women, each with a look of their own. */
+  private townBody(index: number): Body {
+    const kinds: GuestKind[] = ["farmer", "soldier", "noble", "farmer", "adventurer", "fugitive", "smuggler", "farmer", "bandit"];
+    return this.makeGuestBody(kinds[index % kinds.length], index % 3 === 1 || index % 4 === 2, 1 + index * 3);
+  }
+
+  /** Out of the front door onto the high street, for the rest of the day. */
+  private goOutside(): void {
+    this.clearTarget();
+    this.audio.play("doorOpen");
+    this.fadeTo(() => {
+      this.outdoors = true;
+      if (!this.townsfolk) {
+        const { activities, doors, colliders, walkable } = this.street;
+        this.townsfolk = new Townsfolk(activities, doors, colliders, walkable, (index) => this.townBody(index));
+        this.townLayer.add(this.townsfolk.group);
+      }
+      this.streetReminders = this.clock.hour >= STREET_REMIND_HOUR ? 1 : 0;
+      // The street's walls take the room's place until she comes back in.
+      const { colliders } = this.world;
+      colliders.length = 0;
+      colliders.push(...this.street.colliders);
+      const player = this.siblings[this.active];
+      player.position.setX(this.street.spawn.x).setZ(this.street.spawn.z);
+      player.face(0);
+      this.screen = "play";
+      this.log.add(`Out on Tarven's high street. It's ${formatHour(this.clock.hour)}: be back to ring the bell by five.`);
+    });
+  }
+
+  /** Back in through the front door, standing just inside it. */
+  private goInside(): void {
+    this.clearTarget();
+    this.audio.play("doorClose");
+    this.fadeTo(() => {
+      this.nav = this.applyPlan();
+      const player = this.siblings[this.active];
+      const clear = resolveCircle(BACK_INSIDE, SIBLING_RADIUS, this.world.colliders, 8);
+      player.position.setX(clear.x).setZ(clear.z);
+      player.face(Math.PI);
+      this.screen = "play";
+    });
+  }
+
+  /** Out in the street, a nudge at four and at five that the tavern needs opening. */
+  private remindToHeadHome(): void {
+    if (!this.outdoors) return;
+    const hour = this.clock.hour;
+    if (this.streetReminders < 1 && hour >= STREET_REMIND_HOUR) {
+      this.streetReminders = 1;
+      this.log.add("The chapel bell rings four. An hour until the tavern should open.");
+    }
+    if (this.streetReminders < 2 && hour >= AFTERNOON_HOLD_HOUR - 0.01) {
+      this.streetReminders = 2;
+      this.log.add("Five o'clock. The tavern won't open itself: head home and ring the bell.");
+    }
+  }
+
   private fadeTo(next: () => void): void {
     this.screen = "fade";
     this.fadeLeft = FADE_SECONDS;
@@ -3051,6 +3245,8 @@ export class Game {
       return;
     }
 
+    this.remindToHeadHome();
+    if (this.outdoors) this.townsfolk?.update(dt);
     const found = this.findTarget();
     if (found && found.prompt.actionable && input.pressed("KeyE") && found.target.kind === "bed" && (tavern.restless || tavern.duelOffer())) {
       this.clearTarget();
@@ -3061,6 +3257,10 @@ export class Game {
       tavern.interact(this.active, found.target);
       if (tavern.inConversation) {
         this.showTalk();
+        return;
+      }
+      if (found.target.kind === "street") {
+        this.useStreet(found.target.place);
         return;
       }
       // Ringing the bell opens the tavern and sends the world clock on to nightfall.
@@ -3468,9 +3668,11 @@ export class Game {
     const crowd = tavern.phase === "service" ? Math.sqrt(Math.min(1, tavern.guests.length / CROWD_FULL)) : 0;
     const bubbling = tavern.potState === "cooking" || tavern.potState === "ready";
     const fire = inBedroom ? FIRE_BEDROOM_LEVEL : Math.max(FIRE_ROOM_LEVEL, falloff(fromHearth, FIRE_REACH));
-    audio.setLayer("fire", this.staging ? 0 : fire);
-    audio.setLayer("crowd", this.staging ? 0 : crowd * (inBedroom ? CROWD_BEDROOM_LEVEL : 1));
-    audio.setLayer("stew", !this.staging && bubbling ? falloff(fromHearth, STEW_REACH) : 0);
+    // Out in the street the room isn't heard at all.
+    const away = this.staging || this.outdoors;
+    audio.setLayer("fire", away ? 0 : fire);
+    audio.setLayer("crowd", away ? 0 : crowd * (inBedroom ? CROWD_BEDROOM_LEVEL : 1));
+    audio.setLayer("stew", !away && bubbling ? falloff(fromHearth, STEW_REACH) : 0);
   }
 
   update(dt: number): void {
