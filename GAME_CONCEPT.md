@@ -29,7 +29,7 @@ Every night you decide what kind of innkeeper you are. You can stay proper and r
 - **Tarven** is a cold little market town under the mountains. One high street, a chapel, a quarry, and the Baron's keep watching over it all.
 - **The tavern** is the biggest building on the street. It's cramped and worn when you arrive, and you can rebuild it (see House Plans).
 - **Tone:** earthy, bawdy and warm, with something darker underneath. Think of a tavern full of dirty songs where the Baron's men are always sitting at the back table. The humour is crude, the romance is sincere, and the politics are nasty.
-- **Look:** low-res 3D rendered through a dithered 5-bit filter, pixel-art HUD, comic-style panels cut on the slant for big moments, and a visual-novel layer for story beats.
+- **Look:** stylised 3D in the manner of hero-shooter characters (see `MODEL_STUDY.md`): clean sculpted forms, heroic proportions, hand-painted textures with toon shading and outlines. Comic-style panels cut on the slant for big moments, and a visual-novel layer for story beats.
 
 ---
 
@@ -314,7 +314,7 @@ Furniture changes the guests: booths raise Lust and make private talk easier, a 
 
 - **Engine:** Three.js plus TypeScript, built with Vite and tested with Vitest
 - **Art:** Blender pipeline (`tools/blender/build_world.py`) exports male/female GLB models with bone-driven body reshaping, clothing layers and hair meshes
-- **Look:** dither and retro post-process, outlines, spring physics for skirts and soft parts
+- **Look:** toon shading from painted colour and shadow-colour maps, outlines, spring physics for skirts and soft parts
 - **Modules:** `tavern.ts` (simulation), `banter.ts` / `chatter.ts` / `gossip.ts` / `mood.ts` (writing and reputation), `wardrobe.ts` (garments and strip order), `customizer.ts` / `appearance.ts` (body), `comic.ts` / `cg.ts` / `story.ts` (presentation), `house.ts` / `buildmode.ts` (building), `save.ts` (autosave plus 3 slots)
 
 ---

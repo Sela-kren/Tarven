@@ -16,6 +16,7 @@ import bpy
 import numpy as np
 from mathutils import Matrix, Vector
 from mathutils.bvhtree import BVHTree
+from mathutils.kdtree import KDTree
 
 # TARVEN_ROOT sends the build somewhere else, such as a scratch folder to compare it with the game's models.
 ROOT = os.environ.get("TARVEN_ROOT") or r"C:\Game\Tarven"
@@ -628,6 +629,11 @@ FEMALE = {
     # "modern": the original white tee, red track pants and white sneakers, kept for later.
     "outfit": "medieval",
     "jiggle": True,  # spring bones for the bust, belly, glutes and skirt hem
+    "heroic": True,  # the stylised-heroine proportions (HEROIC, see heroic_reshape), applied to the finished rig
+    "study_fit": True,  # then fitted to the measured reference heroines (STUDY_FIT, see study_fit, MODEL_STUDY.md)
+    "subdivide": 1,  # her skin and clothes split this many times before the details go on (see subdivide_layers)
+    "landmarks": True,  # her anatomy pressed into the skin and clothes (LANDMARKS, see sculpt_landmarks)
+    "hand_detail": True,  # a palm, three-jointed fingers and a thumb with nails (detailed_hand)
     "shoe_styles": True,  # her other shoes, heels and boots (SHOE_STYLES), each its own mesh
     "nipples": True,  # discs the game shapes into her areolae and nipples
     "pubes": True,  # a patch over her mound the game draws her pubic hair's style on
@@ -803,6 +809,147 @@ ANKLE_STRAP = (0.124, 0.138)  # bottom and top of the ankle strap
 BOOT_GROW = 0.011  # how far a boot's shaft stands off the leg, clear of her legwear
 
 
+# Her bare foot, in its own frame: across (+ out, away from her other foot), along (+ towards the toes, as FOOT's y)
+# and up from the floor, in metres at a foot_scale of 1. The body of the foot runs from the heel to the ball along
+# FOOT's outline, with a flat sole; the arch lifts the inside of the sole under the middle of the foot; the ankle
+# bones stand out, the inner one higher. Then five toes, each resting on the floor, rounded at the tip, with a nail.
+FOOT_SIDES = 14
+# The bare foot's outline, heel to ball: (along, half width, height of the top). Narrow at the heel; at the ankle
+# as wide as the leg and rising up inside it, so the leg's open end is never seen; then the top slopes down over the
+# instep to the ball, where it meets the toes at their own height.
+BARE_FOOT = [(-0.093, 0.006, 0.012), (-0.09, 0.014, 0.022), (-0.085, 0.021, 0.035), (-0.078, 0.027, 0.065), (-0.065, 0.033, 0.11), (-0.05, 0.038, 0.13),
+             (-0.03, 0.04, 0.19), (-0.005, 0.04, 0.19), (0.015, 0.04, 0.12), (0.035, 0.042, 0.085),
+             (0.06, 0.045, 0.055), (0.09, 0.048, 0.038), (0.12, 0.048, 0.029), (0.14, 0.044, 0.022),
+             (0.15, 0.036, 0.016), (0.155, 0.024, 0.01)]
+FOOT_ARCH = {"lift": 0.013, "at": 0.03, "spread": 0.055}
+# From the first height (where the leg's open end is) up to the second, the foot narrows by the share, inside the leg.
+FOOT_INSIDE_LEG = (0.1, 0.16, 0.3)
+# Fitting the bare foot into the leg (fit_bare_feet): how far below the leg's open end the fitting blends in, how far
+# inside the leg's skin the foot stays, and how far above the open end the leg is measured.
+FOOT_FIT = {"blend": 0.03, "inset": 0.0015, "measure": 0.012}
+# (along, up, across reach, along reach, how far out): the inner ankle bone higher and a little ahead of the outer.
+ANKLE_BONES = [(-0.025, 0.078, 0.014, 0.018, -0.006), (-0.035, 0.064, 0.014, 0.018, 0.006)]
+# Each toe: (across at its root, along at its root, length, half width, half height). Big toe first.
+TOES = [(-0.029, 0.12, 0.075, 0.0135, 0.011), (-0.009, 0.128, 0.064, 0.0097, 0.0085), (0.009, 0.126, 0.057, 0.0092, 0.008),
+        (0.025, 0.12, 0.05, 0.0087, 0.0075), (0.039, 0.112, 0.042, 0.0082, 0.007)]
+# A toe's rings along it: (share of its length, share of its width), rounding off at the tip.
+TOE_RINGS = [(0.0, 1.0), (0.35, 1.0), (0.65, 0.97), (0.82, 0.9), (0.93, 0.7), (0.99, 0.3)]
+TOE_SIDES = 10
+TOE_NAIL = {"from": 0.7, "to": 0.95, "width": 0.72, "lift": 0.0006, "thick": 0.0009}
+
+
+def foot_outline(along):
+    """The bare foot's half width and top height at a point along it (BARE_FOOT)."""
+    for (y0, w0, t0), (y1, w1, t1) in zip(BARE_FOOT, BARE_FOOT[1:]):
+        if along <= y1:
+            k = max(0.0, (along - y0) / (y1 - y0))
+            return w0 + (w1 - w0) * k, t0 + (t1 - t0) * k
+    return BARE_FOOT[-1][1], BARE_FOOT[-1][2]
+
+
+def foot_section(along):
+    """The body of the foot cut across at a point along it: (across, up) points round it, sole flat on the floor."""
+    w, top = foot_outline(along)
+    arch = FOOT_ARCH["lift"] * math.exp(-((along - FOOT_ARCH["at"]) / FOOT_ARCH["spread"]) ** 2)
+    points = []
+    for i in range(FOOT_SIDES):
+        angle = -math.pi / 2 + 2 * math.pi * i / FOOT_SIDES
+        c, s = math.cos(angle), math.sin(angle)
+        across = w * math.copysign(abs(c) ** 0.85, c)
+        up = top * 0.5 * (1 - abs(s) ** 0.35) if s < 0 else top * 0.5 + top * 0.5 * s ** 0.9
+        if s < 0 and c < 0:  # the inside of the sole, lifted under the arch
+            up += arch * -c * min(1.0, -s * 1.5)
+        # Above where the leg ends, the foot narrows to stay inside it.
+        if up > FOOT_INSIDE_LEG[0]:
+            k = min(1.0, (up - FOOT_INSIDE_LEG[0]) / (FOOT_INSIDE_LEG[1] - FOOT_INSIDE_LEG[0]))
+            across *= 1 - FOOT_INSIDE_LEG[2] * k * k * (3 - 2 * k)
+        for bone_along, bone_up, reach_x, reach_y, out in ANKLE_BONES:
+            if (out < 0) == (c < 0):
+                across += out * math.exp(-((along - bone_along) / reach_y) ** 2 - ((up - bone_up) / reach_x) ** 2)
+        points.append((across, up))
+    return points
+
+
+def fit_bare_feet(spec, feet, body):
+    """
+    Draws the top of each bare foot inside her leg: every point near and above where the leg ends is brought in
+    towards the leg's middle until it lies just inside the leg's skin, fully from the leg's open end up and blending
+    in from FOOT_FIT below it, so the foot narrows smoothly into the ankle with no rim.
+    """
+    tree = BVHTree.FromPolygons([v.co.copy() for v in body.data.vertices], [p.vertices[:] for p in body.data.polygons])
+    blend, inset = FOOT_FIT["blend"], FOOT_FIT["inset"]
+    # Where the legs' skin ends, read off the skin itself; then each leg's middle, measured a little above that.
+    # Below the knee the shin stands upright, so the same middle serves all the way down.
+    leg_end = min(v.co.z for v in body.data.vertices if abs(v.co.x) > 0.05 and v.co.z < 0.4)
+    at = leg_end + FOOT_FIT["measure"]
+    middles = {}
+    for sign in (-1, 1):
+        ring = [v.co for v in body.data.vertices if abs(v.co.z - at) < 0.006 and v.co.x * sign > 0.04]
+        if ring:
+            middles[sign] = (sum(p.x for p in ring) / len(ring), sum(p.y for p in ring) / len(ring))
+    for foot in feet:
+        for vertex in foot.data.vertices:
+            co = vertex.co
+            if co.z < leg_end - blend:
+                continue
+            k = min(1.0, (co.z - (leg_end - blend)) / blend)
+            k = k * k * (3 - 2 * k)
+            # The leg's middle at this height, measured no lower than a little above its open end: the smoothing
+            # rounds that edge up a touch, and an aim at it can miss.
+            z = max(co.z, at)
+            sign = 1 if co.x > 0 else -1
+            if sign not in middles:
+                continue
+            middle = Vector((middles[sign][0], middles[sign][1], z))
+            out = Vector((co.x - middle.x, co.y - middle.y, 0.0))
+            if out.length < 1e-6:
+                continue
+            reach = out.length
+            out.normalize()
+            hit = tree.ray_cast(middle, out)[0]
+            if hit is None:
+                continue
+            room = (hit - middle).length - inset
+            if reach > room:
+                fitted = room + (reach - room) * (1 - k)
+                co.x, co.y = middle.x + out.x * fitted, middle.y + out.y * fitted
+        foot.data.update()
+
+
+def bare_foot(part, leg_x, sx, scale, mat):
+    """Her bare foot on the leg at leg_x (sx: +1 her right, -1 her left), placed as her own shoe is."""
+    def world(across, along, up):
+        return (leg_x + sx * (along * TOE_OUT + across * scale), along * scale, up * scale)
+
+    steps = [y for y, _, _ in BARE_FOOT]
+    steps = [a + (b - a) * k / 2 for a, b in zip(steps, steps[1:]) for k in range(2)] + [steps[-1]]
+    part.loft([[world(a, along, u) for a, u in foot_section(along)] for along in steps], mat)
+    for across, root, length, half_w, half_h in TOES:
+        rings = []
+        for share, width in TOE_RINGS:
+            along = root + length * share
+            # The toe rests on the floor and rises a little over its knuckle.
+            middle = half_h * width + 0.0025 * math.sin(math.pi * min(1.0, share / 0.8))
+            ring = []
+            for i in range(TOE_SIDES):
+                angle = 2 * math.pi * i / TOE_SIDES
+                ring.append(world(across + half_w * width * math.cos(angle), along,
+                                  middle + half_h * width * math.sin(angle)))
+            rings.append(ring)
+        part.loft(rings, mat)
+        # The nail: a thin plate on the top of the toe towards its tip.
+        nail = []
+        for share in (TOE_NAIL["from"], (TOE_NAIL["from"] + TOE_NAIL["to"]) / 2, TOE_NAIL["to"]):
+            width = next(w for s, w in reversed(TOE_RINGS) if s <= share)
+            along = root + length * share
+            top = half_h * width + 0.0025 * math.sin(math.pi * min(1.0, share / 0.8)) + half_h * width
+            half = half_w * width * TOE_NAIL["width"]
+            low, high = top + TOE_NAIL["lift"] - 0.0006, top + TOE_NAIL["lift"] + TOE_NAIL["thick"]
+            nail.append([world(across - half, along, low), world(across + half, along, low),
+                         world(across + half * 0.85, along, high), world(across - half * 0.85, along, high)])
+        part.loft(nail, mat)
+
+
 def shoe_tables(toe):
     """(sole, upper) cross-sections for a toe shape: SHOE_SOLE and SHOE_UPPER with their toe ends changed."""
     sole, upper = list(SHOE_SOLE[:-2]), list(SHOE_UPPER[:-2])
@@ -856,13 +1003,7 @@ def build_shoe_style(part, style, leg_x, sx, scale, m, spec):
     """One shoe of a style, on the leg at leg_x, in the same place and space as her own shoe."""
     if style.get("bare"):
         # All in the instep's material, so the game shows it in her skin, or in her stockings where they reach.
-        rings = []
-        for y, w, top in FOOT:
-            cx, ys, ws, top = leg_x + sx * y * TOE_OUT, y * scale, w * scale, top * scale
-            mid = top * 0.45
-            rings.append([(cx - ws * 0.9, ys, 0.0), (cx + ws * 0.9, ys, 0.0), (cx + ws, ys, mid), (cx + ws * 0.7, ys, top),
-                          (cx, ys, top + 0.004), (cx - ws * 0.7, ys, top), (cx - ws, ys, mid)])
-        part.loft(rings, m["instep"])
+        bare_foot(part, leg_x, sx, scale, m["instep"])
         return
     sole_rows, upper_rows = shoe_tables(style.get("toe", "round"))
     heel = style.get("heel", 0.0)
@@ -1061,7 +1202,7 @@ THUMB = ((0.015, 0.046, 0.006), (0.075, 0.09, 0.02), (0.122, 0.104, 0.034))
 HAND_RINGS = {}
 
 
-def add_hand(part, cx, wrist_z, sx, scale, skin, y0=0.0):
+def add_hand(part, cx, wrist_z, sx, scale, skin, y0=0.0, detail=False):
     """A broad back of the hand, two-joint fingers and a thumb. The palm faces the body."""
     def section(depth, w, f, b, n=8, cy=0.0, out=0.0):
         return ring(wrist_z - depth * scale, w * scale, f * scale, b * scale,
@@ -1072,6 +1213,9 @@ def add_hand(part, cx, wrist_z, sx, scale, skin, y0=0.0):
 
     part.bm.verts.ensure_lookup_table()
     tags = HAND_RINGS.setdefault(part.name, {"HandFingers": [], "HandTips": [], "HandThumb": []})
+    if detail:
+        detailed_hand(part, section, rings_of, tags, skin, sx, scale)
+        return
     part.loft([section(-0.015, 0.028, 0.034, 0.034), section(0.03, 0.036, 0.058, 0.054),
                section(0.09, 0.036, 0.066, 0.062), section(0.118, 0.024, 0.06, 0.056)], skin)
     for y, first, second in FINGERS:
@@ -1087,6 +1231,91 @@ def add_hand(part, cx, wrist_z, sx, scale, skin, y0=0.0):
                section(middle[0], 0.0125, 0.015, 0.015, 6, middle[1], -middle[2]),
                section(tip[0], 0.0085, 0.01, 0.01, 6, tip[1], -tip[2])], skin)
     tags["HandThumb"] += rings_of(start, 6, [1, 2])
+
+
+# The detailed hand (detailed_hand), in the same hand units and on the same joints as FINGERS and THUMB, so the
+# game's fist still closes on it. The palm: (depth below the wrist, half thickness, half breadth to the front, to the
+# back, forwards shift), thinner than the old paddle, widest across the knuckles, with the thumb's pad.
+PALM = [(-0.02, 0.022, 0.03, 0.03, 0.0), (0.0, 0.02, 0.046, 0.038, 0.0), (0.025, 0.02, 0.064, 0.046, 0.004),
+        (0.055, 0.018, 0.062, 0.054, 0.002), (0.085, 0.016, 0.059, 0.058, 0.0), (0.1, 0.0145, 0.06, 0.06, 0.0),
+        (0.112, 0.012, 0.057, 0.058, 0.0), (0.12, 0.009, 0.046, 0.048, 0.0), (0.125, 0.005, 0.026, 0.028, 0.0)]
+PALM_SIDES = 12
+# Her palm a little narrower than the hand units draw it, and her fingers closer together with it: the back of
+# the hand about twice as broad as the wrist is deep, as a slender hand is.
+HAND_BREADTH = 0.9
+# Each finger, down from its knuckle: (share of the way to the middle joint or on to the tip, half thickness, half
+# width, towards the palm). The first ring is at the knuckle, inside the palm; the middle joint is FINGERS' first
+# length down; the last joint about halfway down the second; then the tip rounds off.
+FINGER_RINGS = [(-0.3, 0.008, 0.009, 0.0), (0.0, 0.0115, 0.0132, 0.0), (0.5, 0.0102, 0.0122, 0.004),
+                (1.0, 0.0095, 0.0112, FINGER_MID_IN), (1.5, 0.0085, 0.0102, 0.016), (1.85, 0.0078, 0.0094, 0.022),
+                (1.97, 0.006, 0.0072, 0.026), (2.0, 0.0022, 0.0028, 0.027)]
+FINGER_SIDES = 8
+# The nail on the back of each fingertip and the thumb's: from and to (as FINGER_RINGS' share), its share of the
+# finger's width, how far it stands off, how thick.
+FINGERNAIL = {"from": 1.62, "to": 1.95, "width": 0.7, "lift": 0.0006, "thick": 0.0008}
+THUMB_RINGS = [(-0.3, 0.012, 0.015), (0.0, 0.018, 0.024), (0.5, 0.0145, 0.0165), (1.0, 0.0118, 0.0125), (1.5, 0.0098, 0.0105),
+               (1.85, 0.0092, 0.0098), (1.97, 0.007, 0.0075), (2.0, 0.0025, 0.003)]
+
+
+def detailed_hand(part, section, rings_of, tags, skin, sx, scale):
+    """The palm, three-jointed fingers and the thumb, rounded at the tips, with nails; tagged for the finger bones."""
+    part.loft([section(d, w, f * HAND_BREADTH, b * HAND_BREADTH, PALM_SIDES, cy, 0.0) for d, w, f, b, cy in PALM],
+              skin)
+
+    def along(points, share):
+        """A point along a jointed line of (depth, forwards, in) points, share 1 per joint."""
+        i = min(int(share), len(points) - 2)
+        k = share - i
+        return tuple(a + (b - a) * k for a, b in zip(points[i], points[i + 1]))
+
+    for y, first, second in FINGERS:
+        y *= HAND_BREADTH
+        joints = [(KNUCKLE_DEPTH, y, 0.0), (KNUCKLE_DEPTH + first, y * 1.08, FINGER_MID_IN),
+                  (KNUCKLE_DEPTH + first + second, y * 1.14, 0.027)]
+        start = len(part.bm.verts)
+        rings = []
+        for share, thick, wide, _ in FINGER_RINGS:
+            depth, fwd, inward = along(joints, share)
+            rings.append(section(depth, thick, wide * HAND_BREADTH, wide * HAND_BREADTH, FINGER_SIDES, fwd, -inward))
+        part.loft(rings, skin)
+        for r, (share, *_rest) in enumerate(FINGER_RINGS):
+            if share <= 0.0:
+                continue
+            tags["HandFingers" if share <= 1.0 else "HandTips"] += rings_of(start, FINGER_SIDES, [r])
+        start = len(part.bm.verts)
+        part.loft(finger_nail(section, joints, along, FINGER_RINGS, sx, scale), skin)
+        tags["HandTips"] += list(range(start, len(part.bm.verts)))
+    (root, middle, tip) = THUMB
+    joints = [root, middle, tip]
+    start = len(part.bm.verts)
+    rings = []
+    for share, thick, wide in THUMB_RINGS:
+        depth, fwd, inward = along(joints, share)
+        rings.append(section(depth, thick, wide, wide, FINGER_SIDES, fwd, -inward))
+    part.loft(rings, skin)
+    tags["HandThumb"] += [i for r, (share, *_rest) in enumerate(THUMB_RINGS) if share > 0.0
+                          for i in rings_of(start, FINGER_SIDES, [r])]
+    start = len(part.bm.verts)
+    part.loft(finger_nail(section, joints, along, [(s, t, w, 0.0) for s, t, w in THUMB_RINGS], sx, scale), skin)
+    tags["HandThumb"] += list(range(start, len(part.bm.verts)))
+
+
+def finger_nail(section, joints, along, rings, sx, scale):
+    """
+    A thin plate on the back of a finger or thumb towards its tip (the back is away from the palm, out from her body
+    by sx), lofted from three flat four-cornered sections.
+    """
+    out = []
+    for share in (FINGERNAIL["from"], (FINGERNAIL["from"] + FINGERNAIL["to"]) / 2, FINGERNAIL["to"]):
+        depth, fwd, inward = along(joints, share)
+        thick, wide = next((t, w) for s, t, w, *_ in reversed(rings) if s <= share)
+        half = wide * FINGERNAIL["width"] * scale
+        low = (thick + FINGERNAIL["lift"] - 0.0006) * scale
+        high = (thick + FINGERNAIL["lift"] + FINGERNAIL["thick"]) * scale
+        cx, cy, z = section(depth, 0.0, 0.0, 0.0, 4, fwd, -inward)[0]  # the finger's middle line here
+        out.append([(cx + sx * low, cy - half, z), (cx + sx * low, cy + half, z),
+                    (cx + sx * high, cy + half * 0.85, z), (cx + sx * high, cy - half * 0.85, z)])
+    return out
 
 
 def hand_joints(spec, side, sx):
@@ -2038,7 +2267,8 @@ def build_character(c, m, spec):
         cuff = spec["cuff_bands"]
         sleeve = [skin] * forearm_bands if spec.get("bare_forearm") else [leather] * cuff + [tunic] * (forearm_bands - cuff)
         fore = body(part(f"ForeArm_{side}", elbow_at), arm_rings(spec["forearm"], cx, sx, sides, fore_y), sleeve)
-        add_hand(fore, cx, spec["wrist_z"], sx, spec["hand_scale"], skin, fore_y(spec["wrist_z"]))
+        add_hand(fore, cx, spec["wrist_z"], sx, spec["hand_scale"], skin, fore_y(spec["wrist_z"]),
+                 detail=spec.get("hand_detail", False))
         fore.finish(upper_obj, shoulder_at)
 
         leg_x = sx * spec["hip_x"]
@@ -2175,8 +2405,16 @@ BUST = {"crease": {"C": 1.0, "F": 1.0}, "under": {"C": 0.86, "F": 1.0}, "low": {
 # it runs on smoothly, the slope down from the collarbone. In between round the sides. `lean`: how far the outer
 # half moves outwards as well as forwards, at its edge (1 is as far out as forwards). Each sits 6 cm from the
 # middle: further out, a full bust left a broad flat V of chest between them at the top of the cleavage.
-BREAST_DOME = {"x": 0.06, "z": 1.14, "out": 0.05, "inner": 0.06, "outer": 0.045, "up": 0.078, "down": 0.05,
-               "fold": 0.45, "flank": 0.85, "slope": 1.6, "lean": 0.8}
+# "up" reaches over the chest the rings pull in above the bust: shorter (0.078), a shallow valley was left
+# between the top of the breast and the upper chest, a band across the side of the chest.
+BREAST_DOME = {"x": 0.06, "z": 1.14, "out": 0.05, "inner": 0.06, "outer": 0.045, "up": 0.098, "down": 0.05,
+               "fold": 0.65, "flank": 0.9, "slope": 2.0, "lean": 0.8}
+# The breasts' moves averaged over the skin this many times, each this share of the way to the neighbours' mean, so
+# the fold beneath is a clean crease; clothes further than "reach" from the skin's moved points stay put.
+BREAST_SMOOTH = {"passes": 6, "rate": 0.5, "reach": 0.05}
+# The rise eases off where the skin turns to face sideways, fully kept where its normal points at least this much
+# forwards (the y of a unit normal); looser than this, the outer sides of the bust came out lumpy.
+BREAST_FACING = 0.5
 # Through the bust each loop has two more columns: M between the centre and front columns, G between the front
 # and side. They give the bust a round underside and enough corners to grow much larger in the game.
 BUST_ZONE = ("crease", "under", "low", "bust", "high")
@@ -2738,6 +2976,10 @@ BUST_WEIGHT = {"Bust": {"most": 0.58, "full": 0.5, "spread": 1.3, "cleavage": 2.
 # flat panel or a ragged edge seen from behind.
 REFINE_REGIONS = [
     ([(-0.072, 0.085, 1.14), (0.072, 0.085, 1.14)], (0.12, 0.135, 0.1), 0),
+    # A band under the bust, front and sides, split once only: the bust's twice-split faces stepped straight down
+    # to the belly's broad ones in a single row of long, thin fans; this way the faces grow in two steps. It stops
+    # short of the navel's own splitting (NAVEL_REFINE), which over its faces left slivers standing out.
+    ([(-0.06, 0.06, 1.065), (0.06, 0.06, 1.065)], (0.12, 0.12, 0.045), 0),
     ([(-0.065, -0.08, 0.83), (0.065, -0.08, 0.83)], (0.1, 0.1, 0.12), -1),
 ]
 # The breasts are split once more: the game grows them up to a Q cup, four times the size they are built,
@@ -2755,6 +2997,10 @@ RIBS = {"centre": (0.0, -0.005, 1.25), "radii": (0.17, 0.16, 0.1), "ease": 0.5, 
         "shoulder": 0.3, "neck": 1.32}
 # How far the new corners move towards a smooth surface, from 0 (flat on the old faces) to 1.
 REFINE_SMOOTH = 0.6
+# Each shoulder and armpit, from the top of the shoulder down past the armpit, front and back (as built).
+SHOULDER_REFINE = [([(-0.125, -0.015, 1.255), (0.125, -0.015, 1.255)], (0.075, 0.1, 0.085), 0)]
+# The bust and glute regions are split on faces the arm holds up to this share of.
+REFINE_ARM_SHARE = 0.5
 # Long hair blends from the head onto the back over this height below the neck.
 HAIR_ONTO_BACK = 0.08
 # Her hair's springs. What hangs from the head, from about the tops of her ears down to the ends of a bob or a
@@ -2843,8 +3089,29 @@ def refine_soft_parts(obj, name, regions=REFINE_REGIONS, smooth=None, touching=F
     faces = [f for f in bm.faces if chosen(f) and not any(on_arm(v) for v in f.verts)]
     edges = list({e for f in faces for e in f.edges})
     if edges:
-        bmesh.ops.subdivide_edges(bm, edges=edges, cuts=1, use_grid_fill=True,
+        picked = set(faces)
+        # The region's border: its faces round out, but the faces outside it stay flat, so a new corner pushed out
+        # in the middle of a border edge stood proud of them in a crease all along the border.
+        tag = bm.verts.layers.int.new("refine_id")
+        for i, v in enumerate(bm.verts):
+            v[tag] = i + 1
+        border = [(e.verts[0][tag], e.verts[1][tag]) for e in edges if any(f not in picked for f in e.link_faces)]
+        bmesh.ops.subdivide_edges(bm, edges=edges, cuts=1, use_grid_fill=True, use_single_edge=True,
                                   smooth=REFINE_SMOOTH if smooth is None else smooth)
+        by_id = {v[tag]: v for v in bm.verts if v[tag]}
+        for ia, ib in border:
+            a, b = by_id[ia], by_id[ib]
+            for edge in a.link_edges:
+                middle = edge.other_vert(a)
+                if not middle[tag] and any(e.other_vert(middle) == b for e in middle.link_edges):
+                    middle.co = (a.co + b.co) / 2
+        bm.verts.layers.int.remove(tag)
+        # The faces beside the region keep the new corners on their shared edges; any left with more than four
+        # sides is cut into well-shaped triangles here. Left whole, the export fanned them, and a fan from a
+        # corner along that edge made a sliver as thin as nothing, whose normal threw the shading out in a notch.
+        many = [f for f in bm.faces if len(f.verts) > 4]
+        if many:
+            bmesh.ops.triangulate(bm, faces=many, quad_method="BEAUTY", ngon_method="BEAUTY")
     bm.to_mesh(obj.data)
     bm.free()
     obj.data.update()
@@ -2935,13 +3202,50 @@ def round_breasts(body, layers):
             rise = breast_rise(spot.x, spot.z)
             if rise <= 0.0:
                 continue
-            facing = min(1.0, max(0.0, smoothed_normal(bm.faces[index], spot).y / 0.5))
+            facing = min(1.0, max(0.0, smoothed_normal(bm.faces[index], spot).y / BREAST_FACING))
             rise *= facing * facing * (3 - 2 * facing)
             outwards = min(1.0, max(0.0, (abs(spot.x) - dome["x"]) / dome["outer"]))
             side = 1.0 if co.x >= 0 else -1.0
             shift[v.index] = Vector((side * outwards * dome["lean"], 1.0, 0.0)).normalized() * rise
         moves.append((obj, shift))
+        if obj is body and BREAST_SMOOTH["passes"]:
+            break
     bm.free()
+    if BREAST_SMOOTH["passes"]:
+        # The fold beneath turns in so steeply that, across faces lying slantwise to it, neighbouring corners took
+        # a full rise and none at all: a sawtooth edge. The skin's moves are averaged with their neighbours' a few
+        # times, which rounds the fold into a clean crease; the clothes then move as the skin nearest them does.
+        _, shift = moves[0]
+        n = len(body.data.vertices)
+        field = np.zeros((n, 3))
+        for index, move in shift.items():
+            field[index] = move
+        edges = np.array([e.vertices[:] for e in body.data.edges])
+        a, b = edges[:, 0], edges[:, 1]
+        count = np.maximum(np.bincount(a, minlength=n) + np.bincount(b, minlength=n), 1)
+        reach = np.array([v.co.y > 0.0 and abs(v.co.x) < reach_x + 0.02 and low - 0.02 < v.co.z < high + 0.02
+                          for v in body.data.vertices])
+        for _ in range(BREAST_SMOOTH["passes"]):
+            total = np.zeros_like(field)
+            np.add.at(total, a, field[b])
+            np.add.at(total, b, field[a])
+            field[reach] += (total[reach] / count[reach, None] - field[reach]) * BREAST_SMOOTH["rate"]
+        moved = np.flatnonzero(np.any(field != 0, axis=1))
+        moves = [(body, {int(i): Vector(field[i]) for i in moved})]
+        tree = KDTree(len(moved))
+        for i in moved:
+            tree.insert(body.data.vertices[int(i)].co, int(i))
+        tree.balance()
+        for obj in layers:
+            shift = {}
+            for v in obj.data.vertices:
+                co = v.co
+                if co.y <= 0.0 or abs(co.x) >= reach_x + 0.02 or not low - 0.02 < co.z < high + 0.02:
+                    continue
+                found, i, gap = tree.find(co)
+                if found is not None and gap < BREAST_SMOOTH["reach"]:
+                    shift[v.index] = Vector(field[i])
+            moves.append((obj, shift))
     for obj, shift in moves:
         for index, move in shift.items():
             obj.data.vertices[index].co += move
@@ -6778,6 +7082,61 @@ def skin_character(c, m, spec, root):
     painted = [(f, m["smalls"] if i in smalls else m["bra"] if i in band else bare) for i, (f, _) in enumerate(bare_skin.faces)]
     body, kept = bare_skin.mesh(f"{name}_Body", painted)
     body_obj = bare_skin.link(c, body, kept, name, f"{name}_Body")
+    if spec.get("subdivide"):
+        # The skin of the trunk and limbs split and smoothed on its own, before the head and hands are joined on:
+        # they are separate pieces, and smoothing them with it would pull them away from the neck and wrists.
+        subdivide_layers((body_obj,), spec["subdivide"])
+        # Smoothing rounds the top of the shoulders down, away from the bottom of the neck that stood on it; the
+        # neck's bottom ring goes down into the shoulders so no gap opens between them.
+        # Only the neck itself: the head's piece has more below it, hidden inside the trunk, which stays put.
+        neck_base = spec["neck"][0][0]
+        flare_top = neck_base + NECK_FLARE["above"]
+        # The flare's band cut into finer faces first, so its bottom can follow the curve of the shoulders: as one
+        # row of long faces their straight edges cut across the rounded shoulders, which showed through in a
+        # ragged line between them.
+        head = parts[f"{name}_Head"]
+        mesh = bmesh.new()
+        mesh.from_mesh(head.data)
+        band = [e for e in mesh.edges if all(neck_base - 0.004 < v.co.z < flare_top + 0.004 for v in e.verts)]
+        bmesh.ops.subdivide_edges(mesh, edges=band, cuts=NECK_FLARE["cuts"], use_grid_fill=True,
+                                  use_single_edge=True)
+        # Faces beside the band left with extra corners on their edges are cut into well-shaped triangles, not
+        # left for the export to fan into slivers (see refine_soft_parts).
+        many = [f for f in mesh.faces if len(f.verts) > 4]
+        if many:
+            bmesh.ops.triangulate(mesh, faces=many, quad_method="BEAUTY", ngon_method="BEAUTY")
+        mesh.to_mesh(head.data)
+        mesh.free()
+        neck = [v for v in head.data.vertices if neck_base - 0.004 < v.co.z < flare_top]
+        for vertex in neck:
+            if vertex.co.z < neck_base + 0.004:
+                vertex.co.z -= NECK_SINK
+        # The neck's lower part flares out into the shoulders, wider to the sides and the back, the slope of the
+        # trapezius, so it grows out of them instead of standing on them like a post.
+        # Its bottom then comes down onto the shoulders under each point, just beneath the skin, so the flared edge
+        # never stands out where the shoulders fall away to the sides and back.
+        bottom = neck_base - NECK_SINK
+        shoulders = BVHTree.FromPolygons([v.co.copy() for v in body_obj.data.vertices],
+                                         [p.vertices[:] for p in body_obj.data.polygons])
+        for vertex in neck:
+            t = min(1.0, max(0.0, (flare_top - vertex.co.z) / (flare_top - bottom)))
+            if t <= 0:
+                continue
+            t = t * t
+            vertex.co.x *= 1 + NECK_FLARE["side"] * t
+            vertex.co.y *= 1 + (NECK_FLARE["back"] if vertex.co.y < 0 else NECK_FLARE["front"]) * t
+            hit = shoulders.ray_cast(Vector((vertex.co.x, vertex.co.y, flare_top)), Vector((0, 0, -1)))[0]
+            # Over the opening the neck goes into, the aim falls through to the inside of the trunk far below;
+            # there the neck's bottom stays buried where it is.
+            if hit is not None and hit.z > bottom - NECK_FLARE["reach"]:
+                floor = hit.z - NECK_FLARE["under"]
+                vertex.co.z = floor + (vertex.co.z - bottom) * (flare_top - floor) / (flare_top - bottom)
+    if spec.get("shoe_styles"):
+        bare_feet = [parts[f"{name}_ShoesBarefoot_{side}"] for side in "LR" if f"{name}_ShoesBarefoot_{side}" in parts]
+        fit_bare_feet(spec, bare_feet, body_obj)
+        if spec.get("subdivide"):
+            # Smoothed like the skin; the nails, small pieces of their own, keep their edges.
+            subdivide_layers((None, *bare_feet), spec["subdivide"])
 
     # The clothes are pushed out along the normals of their own closed surface.
     surface, surface_kept = skin.mesh(f"{name}_ClothSurface", [(f, bare) for f, mat in skin.faces if mat is not stripe])
@@ -6918,6 +7277,10 @@ def skin_character(c, m, spec, root):
                 head_group.add([vertex.index], 1 - t, "REPLACE")
             if t > 0:
                 torso_group.add([vertex.index], t, "REPLACE")
+    if spec.get("subdivide"):
+        # The clothes split in four and smoothed like the skin under them (see above), before anything is laid on
+        # them, so the soft parts, patches and coat all sit on the finer surface and they keep following the skin.
+        subdivide_layers((None, cloth_obj, *outfits), spec["subdivide"])
     if spec.get("jiggle"):
         hair_spring_weights(spec, name, [hair, *styles], (body_obj, cloth_obj, *outfits))
 
@@ -6927,9 +7290,18 @@ def skin_character(c, m, spec, root):
         underbust = {label(f"Cloth{outfit}") for outfit in UNDERBUST_OUTFITS}
         for layer in (body_obj, cloth_obj, *outfits):
             flat = 0.0 if layer.name in underbust else None
-            round_ribs(layer, name)
-            refine_soft_parts(layer, name, smooth=flat)
-            refine_soft_parts(layer, name, REFINE_AGAIN, smooth=flat)
+            # A subdivided body is already round there; easing its upper trunk again only leaves a ridge at the
+            # edge of the eased region, across the back at the height of the bust band.
+            if not spec.get("subdivide"):
+                round_ribs(layer, name)
+            # Up into the armpit, past where the arm holds a fifth of the skin: stopped there, the split, rounded
+            # faces stood out against the whole ones above them in a crease across the side of the chest.
+            refine_soft_parts(layer, name, smooth=flat, arm_share=REFINE_ARM_SHARE)
+            if spec.get("subdivide"):
+                # The shoulders and armpits split once more, flat (round already): a raised arm folded their few
+                # broad faces into flat facets whatever their weights.
+                refine_soft_parts(layer, name, SHOULDER_REFINE, smooth=0.0, arm_share=1.01)
+            refine_soft_parts(layer, name, REFINE_AGAIN, smooth=flat, arm_share=REFINE_ARM_SHARE)
             if spec.get("navel"):
                 for reach in NAVEL_REFINE:
                     refine_soft_parts(layer, name, navel_regions(spec, reach))
@@ -6942,6 +7314,11 @@ def skin_character(c, m, spec, root):
         add_jiggle_weights(name, (body_obj, cloth_obj, *outfits))
     for dress in dresses:
         join(dress, [build_garter(c, m, name, dress)])
+    if spec.get("landmarks"):
+        # Her anatomy pressed into the smoothed skin, and into the clothes with it, before anything is laid on top.
+        sculpt_landmarks(spec, body_obj, (body_obj, cloth_obj, *outfits))
+        # Then the clothes kept off it, before the stains are laid on them, so the stains move with them.
+        keep_clothes_clear(body_obj, (cloth_obj, *outfits))
     if spec.get("jiggle"):
         # Built on the finished body, so it lies on the refined bust and takes the springs' weights too. Not on the
         # factions' outfits, which only guests wear, and guests never show what's on them.
@@ -6994,6 +7371,1098 @@ def skin_character(c, m, spec, root):
     for layer in (body_obj, cloth_obj, *outfits, shoes, *shoe_styles, hair, *styles, *coat, *jewels):
         layer.parent = rig
         layer.modifiers.new("Bones", "ARMATURE").object = rig
+    if spec.get("heroic"):
+        heroic_reshape(HEROIC, rig, [o for o in c.objects if o.type == "MESH"])
+        if spec.get("landmarks"):
+            # Once more after the reshaping, which can bring them a hair closer; the stains on the clothes kept
+            # just as far over them.
+            keep_clothes_clear(body_obj, (cloth_obj, *outfits))
+            stains = [o for o in c.objects if o.type == "MESH" and "_CumOn" in o.name]
+            keep_clothes_clear(body_obj, stains, dict(CLEAR, gap=CLEAR["gap"] + STAIN_LIFT))
+        if spec.get("subdivide"):
+            # The shoulders' weights eased from the steps the rings left into a gradual blend, on the skin and on
+            # everything worn over it, so a raised arm bends them smoothly instead of in flat bands.
+            for layer in (body_obj, cloth_obj, *outfits):
+                ease_shoulder_weights(layer, name, rig)
+        # Last of all, so every height above stays as it was worked out: the legs lengthened to the hero
+        # shooters' and the whole of her scaled back to her height.
+        heroic_legs(HEROIC_LEGS, rig, body_obj, [o for o in c.objects if o.type == "MESH"])
+        if spec.get("study_fit"):
+            # Her proportions and masses brought to the reference study's, then the clothes kept off the fuller skin.
+            study_fit(STUDY_FIT, rig, body_obj, [o for o in c.objects if o.type == "MESH"], HEROIC_LEGS["stature"])
+            keep_clothes_clear(body_obj, (cloth_obj, *outfits))
+
+
+# Her anatomy, as bumps, dents and grooves pressed into the skin along its normals (see sculpt_landmarks). Placed
+# on the body as built, before HEROIC reshapes it. Each spot is found by aiming at the body at a height:
+#   ("front", x, z) / ("back", x, z): straight in from in front of her or behind, at x across and z up
+#   ("side", y, z): in from her right side at depth y (+y is her front)
+#   ("top", x, y): straight down onto her shoulders
+# One spot makes a rounded bump (r: its half sizes across, deep, up); several make a groove or ridge running
+# through them (w: its half width). a is how far it pushes out (+) or in (-), in metres. Mirrored to her other
+# side unless "centre". Worked out from figure and pelvis references: the bony landmarks that show through on a
+# fit, soft heroine, kept soft.
+LANDMARKS = [
+    # Pelvis: the hip bones at the front, the groove from them down to the mound, the swell at the trochanters,
+    # the dimples above the glutes, and the crease under each one.
+    {"name": "hip bone", "at": [("front", 0.105, 0.905)], "r": (0.018, 0.02, 0.022), "a": 0.005},
+    # The crest of the hip bone running round her side from the point at the front, and the hollow behind the
+    # trochanter where the glute meets the side of the hip.
+    # In a fit body the flank pad (the oblique's mass) overhangs the crest, so the crest reads as a furrow under it.
+    {"name": "hip crest", "at": [("side", 0.045, 0.92), ("side", 0.0, 0.932), ("side", -0.045, 0.928)],
+     "w": 0.01, "a": -0.004},
+    {"name": "flank pad", "at": [("side", 0.015, 0.968)], "r": (0.024, 0.055, 0.04), "a": 0.0075},
+    # The serratus: three small fingers on the side of the ribcage, stepping down and forwards from just under the
+    # outer edge of the bust (higher up they landed on the bust itself, in a row of lumps).
+    {"name": "rib finger 1", "at": [("side", 0.005, 1.112)], "r": (0.012, 0.014, 0.011), "a": 0.0035},
+    {"name": "rib finger 2", "at": [("side", 0.016, 1.078)], "r": (0.012, 0.014, 0.011), "a": 0.0035},
+    {"name": "rib finger 3", "at": [("side", 0.027, 1.044)], "r": (0.012, 0.014, 0.011), "a": 0.003},
+    {"name": "hip hollow", "at": [("side", -0.035, 0.79)], "r": (0.02, 0.03, 0.035), "a": -0.003},
+    {"name": "groin line", "at": [("front", 0.112, 0.895), ("front", 0.08, 0.845), ("front", 0.045, 0.795)],
+     "w": 0.011, "a": -0.003},
+    {"name": "trochanter", "at": [("side", 0.0, 0.8)], "r": (0.03, 0.05, 0.05), "a": 0.004},
+    {"name": "back dimple", "at": [("back", 0.032, 0.935)], "r": (0.011, 0.012, 0.011), "a": -0.004},
+    {"name": "glute crease", "at": [("back", 0.025, 0.738), ("back", 0.07, 0.728), ("back", 0.125, 0.745)],
+     "w": 0.01, "a": -0.006},
+    # Legs: kneecap, the hollow behind the knee, the shin's bump below the kneecap, the two calf heads (the inner
+    # one lower).
+    {"name": "kneecap", "at": [("front", 0.1145, 0.482)], "r": (0.02, 0.018, 0.022), "a": 0.009},
+    {"name": "above kneecap", "at": [("front", 0.118, 0.53)], "r": (0.028, 0.02, 0.018), "a": -0.004},
+    {"name": "inner knee", "at": [("front", 0.088, 0.505)], "r": (0.016, 0.02, 0.028), "a": 0.003},
+    {"name": "below kneecap", "at": [("front", 0.114, 0.43)], "r": (0.012, 0.012, 0.012), "a": 0.002},
+    {"name": "knee hollow", "at": [("back", 0.1145, 0.47)], "r": (0.025, 0.02, 0.028), "a": -0.003},
+    {"name": "inner calf", "at": [("back", 0.105, 0.33)], "r": (0.022, 0.03, 0.05), "a": 0.004},
+    # The thigh's muscles, broad as the leg's faces are: the teardrop above the inside of the knee and the sweep of
+    # the outer thigh; and the front edge of the shin bone.
+    {"name": "inner quad", "at": [("front", 0.092, 0.535)], "r": (0.025, 0.025, 0.04), "a": 0.004},
+    # The adductors filling the top of the inner thigh up to the pelvis, and the soft crease where the thigh meets
+    # the pelvis at the front; both kept 5 cm and more from the middle.
+    {"name": "adductor", "at": [("front", 0.068, 0.665)], "r": (0.022, 0.03, 0.06), "a": 0.004},
+    {"name": "thigh crease", "at": [("front", 0.058, 0.735), ("front", 0.085, 0.76), ("front", 0.11, 0.8)],
+     "w": 0.009, "a": -0.0022},
+    {"name": "outer thigh", "at": [("side", 0.0, 0.62)], "r": (0.03, 0.05, 0.09), "a": 0.003},
+    {"name": "shin edge", "at": [("front", 0.113, 0.42), ("front", 0.115, 0.3), ("front", 0.116, 0.16)],
+     "w": 0.01, "a": 0.0015},
+    {"name": "outer calf", "at": [("back", 0.137, 0.37)], "r": (0.022, 0.03, 0.045), "a": 0.003},
+    # Belly: the soft rise below the navel, the faint line down the middle above it, and the edge of the ribcage.
+    {"name": "lower belly", "at": [("front", 0.0, 0.915)], "r": (0.075, 0.05, 0.045), "a": 0.002, "centre": True},
+    # In profile the ribcage arches forwards under the bust, a little proud of the lower belly, and the notch
+    # under each breast fills in, short of the fold itself. Broad and low: on the belly's broad faces a narrower,
+    # taller one (and a second at the middle) stood out as flat, faceted patches.
+    {"name": "under bust", "at": [("front", 0.062, 1.02)], "r": (0.045, 0.036, 0.036), "a": 0.007},
+    {"name": "belly line", "at": [("front", 0.0, 0.985), ("front", 0.0, 1.035)], "w": 0.009, "a": -0.0015,
+     "centre": True},
+    # The ribcage's arch, from just off the middle: at the middle itself (the breastbone's tip) it stood up on the
+    # belly's broad faces as a flat, raised patch.
+    {"name": "ribcage edge", "at": [("front", 0.032, 1.06), ("front", 0.05, 1.05), ("front", 0.075, 1.03),
+                                    ("front", 0.095, 1.0)], "w": 0.015, "a": 0.0025},
+    # A fit stomach, kept soft: the two columns either side of the belly line, two faint lines across them above
+    # the navel, the obliques at the sides running down to the hips, and the shallow groove between the two.
+    {"name": "stomach column", "at": [("front", 0.028, 1.015)], "r": (0.022, 0.015, 0.05), "a": 0.004},
+    {"name": "stomach line", "at": [("front", -0.04, 1.036), ("front", 0.0, 1.032), ("front", 0.04, 1.036)],
+     "w": 0.01, "a": -0.002, "centre": True},
+    {"name": "stomach line low", "at": [("front", -0.042, 1.003), ("front", 0.0, 0.998), ("front", 0.042, 1.003)],
+     "w": 0.008, "a": -0.0025, "centre": True},
+    {"name": "oblique", "at": [("front", 0.085, 1.04), ("front", 0.1, 0.96), ("front", 0.097, 0.905)],
+     "w": 0.016, "a": 0.0055},
+    {"name": "stomach side line", "at": [("front", 0.058, 1.04), ("front", 0.055, 0.96)], "w": 0.01, "a": -0.0025},
+    # Chest and neck: the collarbones, the hollow above each, the notch between them, and the slope of the
+    # trapezius from the neck out to the shoulder.
+    {"name": "collarbone", "at": [("front", 0.018, 1.312), ("front", 0.06, 1.316), ("front", 0.1, 1.326)],
+     "w": 0.007, "a": 0.005},
+    {"name": "breastbone", "at": [("front", 0.0, 1.3), ("front", 0.0, 1.23)], "w": 0.012, "a": -0.0012,
+     "centre": True},
+    # The chest muscle the bust lies on fans out from the breastbone to the upper arm; its lower edge is the front
+    # fold of the armpit, which carries the outer bust into the arm. Behind it, the hollow of the armpit.
+    {"name": "armpit fold", "at": [("front", 0.1, 1.19), ("front", 0.118, 1.225), ("front", 0.13, 1.255)],
+     "w": 0.022, "a": 0.0018, "arm": True},
+    # (An armpit hollow pressed in beside the fold made, with it and the upper chest's edge, a ridge-and-dip band
+    # across the side of the chest; the armpit's own shape is hollow enough.)
+    {"name": "chest-shoulder groove", "at": [("front", 0.12, 1.305), ("front", 0.13, 1.255)], "w": 0.014,
+     "a": -0.001},
+    {"name": "above collarbone", "at": [("front", 0.035, 1.328), ("front", 0.08, 1.333)], "w": 0.012, "a": -0.0022},
+    {"name": "throat notch", "at": [("front", 0.0, 1.322)], "r": (0.012, 0.01, 0.01), "a": -0.004, "centre": True},
+    {"name": "trapezius", "at": [("top", 0.07, -0.012)], "r": (0.035, 0.035, 0.03), "a": 0.008},
+    {"name": "shoulder cap", "at": [("top", 0.125, -0.015)], "r": (0.03, 0.04, 0.03), "a": 0.007, "arm": True},
+    # Back: the groove of the spine and the shoulder blades.
+    {"name": "spine", "at": [("back", 0.0, 0.95), ("back", 0.0, 1.05), ("back", 0.0, 1.15), ("back", 0.0, 1.25),
+                             ("back", 0.0, 1.3)], "w": 0.011, "a": -0.004, "centre": True},
+    {"name": "shoulder blade", "at": [("back", 0.07, 1.22)], "r": (0.035, 0.02, 0.05), "a": 0.004},
+    {"name": "shoulder blade edge", "at": [("back", 0.045, 1.27), ("back", 0.055, 1.17)], "w": 0.008, "a": -0.002},
+    {"name": "back column", "at": [("back", 0.026, 0.95), ("back", 0.026, 1.04), ("back", 0.026, 1.13)],
+     "w": 0.012, "a": 0.005},
+    {"name": "back flank", "at": [("back", 0.1, 1.13)], "r": (0.03, 0.03, 0.07), "a": 0.003},
+    # The lat: a broad sheet from under the arm down the side of the back, its edge sweeping in to the lower back.
+    {"name": "lat", "at": [("back", 0.112, 1.21), ("back", 0.098, 1.12), ("back", 0.078, 1.04), ("back", 0.055, 0.98)],
+     "w": 0.022, "a": 0.005},
+    # The upper chest under the collarbones, full enough that the bust grows out of it instead of sitting on it.
+    # Broad and low, the hero look: one clean mass over the upper chest, not a lump.
+    {"name": "upper chest", "at": [("front", 0.058, 1.225)], "r": (0.065, 0.045, 0.045), "a": 0.005},
+    # Arms: the round of the deltoid and the point of the elbow.
+    {"name": "deltoid", "at": [("side", -0.03, 1.26)], "r": (0.022, 0.035, 0.045), "a": 0.007, "arm": True},
+    {"name": "elbow", "at": [("back", 0.177, 1.05)], "r": (0.015, 0.015, 0.02), "a": 0.003, "arm": True},
+]
+LANDMARK_NORMAL_PASSES = 6  # times each corner's normal is averaged with its neighbours' before the push
+LANDMARK_STEP = 0.02  # a groove's spots are filled in this far apart, in metres
+LANDMARK_TOP = 1.39  # where the "top" spots aim down from: above the shoulders, below the jaw
+
+
+def landmark_spots(body):
+    """Each landmark's centres on the skin, both sides, as (centres, half sizes or half width, push, is groove)."""
+    mesh = body.data
+    points = [body.matrix_world @ v.co for v in mesh.vertices]
+    arm_groups = {g.index for g in body.vertex_groups if g.name.split("_", 1)[-1].startswith(ARM_BONES)}
+
+    def on_arm(index):
+        groups = mesh.vertices[index].groups
+        total = sum(g.weight for g in groups)
+        return total > 0 and sum(g.weight for g in groups if g.group in arm_groups) / total > 0.5
+
+    arm_vertex = [on_arm(i) for i in range(len(mesh.vertices))]
+    whole = BVHTree.FromPolygons(points, [p.vertices[:] for p in mesh.polygons])
+    # The hands hang beside the hips: spots on the trunk and legs are found past the arms.
+    trunk = BVHTree.FromPolygons(points, [p.vertices[:] for p in mesh.polygons if not arm_vertex[p.vertices[0]]])
+    bvh = trunk
+
+    def aim(how, a, b, side):
+        if how == "front":
+            hit = bvh.ray_cast(Vector((side * a, 2.0, b)), Vector((0, -1, 0)))
+        elif how == "back":
+            hit = bvh.ray_cast(Vector((side * a, -2.0, b)), Vector((0, 1, 0)))
+        elif how == "side":
+            hit = bvh.ray_cast(Vector((side * 2.0, a, b)), Vector((-side, 0, 0)))
+        else:
+            hit = bvh.ray_cast(Vector((side * a, b, LANDMARK_TOP)), Vector((0, 0, -1)))
+        return hit[0]
+
+    spots = []
+    for mark in LANDMARKS:
+        bvh = whole if mark.get("arm") else trunk
+        for side in (1,) if mark.get("centre") else (1, -1):
+            at = mark["at"]
+            if len(at) == 1:
+                centre = aim(*at[0], side)
+                if centre is not None:
+                    spots.append(([centre], Vector(mark["r"]), mark["a"], False))
+                continue
+            path = []
+            for (how, a0, b0), (_, a1, b1) in zip(at, at[1:]):
+                steps = max(1, math.ceil(math.hypot(a1 - a0, b1 - b0) / LANDMARK_STEP))
+                path += [aim(how, a0 + (a1 - a0) * i / steps, b0 + (b1 - b0) * i / steps, side) for i in range(steps)]
+            path.append(aim(*at[-1], side))
+            path = [p for p in path if p is not None]
+            if len(path) > 1:
+                spots.append((path, mark["w"], mark["a"], True))
+    return spots
+
+
+def smoothed_normals(mesh, normal, passes=None):
+    """
+    Each corner's normal averaged with its neighbours' a few times: where the faces change size, their corners'
+    own normals lean with the fans of thin triangles there, and a push along them came out in notched steps.
+    """
+    passes = LANDMARK_NORMAL_PASSES if passes is None else passes
+    if not passes or not len(mesh.edges):
+        return normal
+    edges = np.empty(len(mesh.edges) * 2, dtype=np.int64)
+    mesh.edges.foreach_get("vertices", edges)
+    a, b = edges[0::2], edges[1::2]
+    count = np.maximum(np.bincount(a, minlength=len(normal)) + np.bincount(b, minlength=len(normal)), 1)
+    out = normal.copy()
+    for _ in range(passes):
+        total = out.copy()
+        np.add.at(total, a, out[b])
+        np.add.at(total, b, out[a])
+        out = total / (count + 1)[:, None]
+        out /= np.maximum(np.linalg.norm(out, axis=1), 1e-9)[:, None]
+    return out
+
+
+def sculpt_landmarks(spec, body, layers):
+    """Pushes every layer's corners along their normals by the landmarks around them (see LANDMARKS)."""
+    spots = landmark_spots(body)
+    for obj in layers:
+        mesh = obj.data
+        count = len(mesh.vertices)
+        co = np.empty(count * 3)
+        normal = np.empty(count * 3)
+        mesh.vertices.foreach_get("co", co)
+        mesh.vertices.foreach_get("normal", normal)
+        co, normal = co.reshape(-1, 3), normal.reshape(-1, 3)
+        normal = smoothed_normals(mesh, normal)
+        push = np.zeros(count)
+        for centres, size, amount, groove in spots:
+            if not groove:
+                d2 = (((co - np.array(centres[0])) / np.array(size)) ** 2).sum(axis=1)
+            else:
+                d2 = np.full(count, np.inf)
+                for a, b in zip(centres, centres[1:]):
+                    a, b = np.array(a), np.array(b)
+                    ab = b - a
+                    t = np.clip(((co - a) @ ab) / max(ab @ ab, 1e-12), 0.0, 1.0)
+                    d2 = np.minimum(d2, (((a + t[:, None] * ab) - co) ** 2).sum(axis=1))
+                d2 /= size * size
+            near = d2 < 9.0
+            push[near] += amount * np.exp(-d2[near])
+        mesh.vertices.foreach_set("co", (co + normal * push[:, None]).ravel())
+        mesh.update()
+
+
+SUBDIVIDE_CREASE = 55  # degrees
+NECK_SINK = 0.03  # how far the neck's bottom ring goes down into the smoothed shoulders, in metres
+# How the neck flares into the shoulders: from this far above its base, widening to these shares at the bottom.
+# "reach": how far below the neck's sunk bottom the shoulders may slope and still be followed down; further than
+# that, the aim has fallen through the neck's opening into the trunk.
+# No flare at the back: the trunk there is no deeper than the neck, so any would stand out behind it as a lip.
+NECK_FLARE = {"above": 0.03, "side": 0.45, "back": 0.0, "front": 0.08, "under": 0.008, "reach": 0.12,
+              "cuts": 3}
+SUBDIVIDE_TRIM = 0.15  # a separate piece of clothing smaller than this across, in metres, is a trim and stays crisp
+
+
+def subdivide_layers(layers, levels):
+    """
+    Catmull-Clark on each layer, applied: weights, UVs and materials carry over to the new faces. The first layer
+    is the skin (None to leave it out), which rounds off everywhere. On the clothes, the small separate pieces (buckles, ribbons, trims,
+    laces) keep their edges folded sharper than SUBDIVIDE_CREASE, so they don't melt into blobs; the big panels
+    (sleeves, bodice, skirt, hose) round off with the skin under them, though their few-sided rings are as sharp.
+    """
+    for index, obj in enumerate(layers):
+        if obj is None:
+            continue
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        limit = math.radians(SUBDIVIDE_CREASE)
+        creased = [0.0] * len(bm.edges)
+        if index:
+            bm.edges.ensure_lookup_table()
+            seen = set()
+            for start in bm.faces:
+                if start.index in seen:
+                    continue
+                piece, todo = [], [start]
+                seen.add(start.index)
+                while todo:
+                    face = todo.pop()
+                    piece.append(face)
+                    for edge in face.edges:
+                        for other in edge.link_faces:
+                            if other.index not in seen:
+                                seen.add(other.index)
+                                todo.append(other)
+                points = [v.co for f in piece for v in f.verts]
+                size = (Vector([max(p[i] for p in points) for i in range(3)]) -
+                        Vector([min(p[i] for p in points) for i in range(3)])).length
+                if size < SUBDIVIDE_TRIM:
+                    for face in piece:
+                        for edge in face.edges:
+                            if edge.is_manifold and edge.calc_face_angle(0.0) > limit:
+                                creased[edge.index] = 1.0
+        # The skin's open edges (the ends of the legs, the wrists, the neck's opening), where the head, hands and
+        # feet go in: smoothing would shrink each one inward like a drawstring and pinch the limb, so they are put
+        # back where they were afterwards.
+        edge_at = {v.index: v.co.copy() for v in bm.verts if v.is_boundary} if not index else {}
+        original = len(bm.verts)
+        bm.free()
+        crease = obj.data.attributes.get("crease_edge") or obj.data.attributes.new("crease_edge", "FLOAT", "EDGE")
+        crease.data.foreach_set("value", creased)
+        mod = obj.modifiers.new("Subdivide", "SUBSURF")
+        mod.levels = mod.render_levels = levels
+        mod.boundary_smooth = "PRESERVE_CORNERS"
+        mod.uv_smooth = "PRESERVE_BOUNDARIES"
+        with bpy.context.temp_override(object=obj, active_object=obj):
+            bpy.ops.object.modifier_apply(modifier=mod.name)
+        if edge_at:
+            keep_open_edges(obj, edge_at, original)
+
+
+def keep_open_edges(obj, edge_at, original):
+    """
+    After subdividing: the original corners on the open edges back where they were (the subdivided mesh keeps the
+    original corners first, in order), and the new corners between them on the edge halfway along, with the ring
+    next to the edge eased to meet them.
+    """
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.verts.ensure_lookup_table()
+    for index, co in edge_at.items():
+        bm.verts[index].co = co
+    edge_verts = [v for v in bm.verts if v.is_boundary]
+    for vert in edge_verts:
+        if vert.index >= original:
+            ends = [e.other_vert(vert) for e in vert.link_edges if e.is_boundary]
+            if len(ends) == 2:
+                vert.co = (ends[0].co + ends[1].co) / 2
+    on_edge = set(edge_verts)
+    next_ring = {e.other_vert(v) for v in edge_verts for e in v.link_edges} - on_edge
+    moves = {}
+    for vert in next_ring:
+        around = [e.other_vert(vert).co for e in vert.link_edges]
+        moves[vert] = vert.co * 0.5 + sum(around, Vector()) / len(around) * 0.5
+    for vert, co in moves.items():
+        vert.co = co
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+
+
+# The stylised-heroine proportions, worked out from figure references rather than from any one character:
+# about 8 heads tall instead of 7.3, the extra height in the legs; the widest point of the hips at the greater
+# trochanters, a little below the hip joints, and never narrower than the shoulders; a higher, tighter waist; the
+# glutes fuller and higher, the pelvis tipped forward; and squarer, athletic shoulders. Every layer (skin, clothes,
+# shoes, hair, jewellery, the coat) and the bones go through the same reshaping, so nothing comes apart and every
+# pose the game plays still fits. The bones stay upright, as the game expects.
+def heroic_curves(h, arms=None, sections=None):
+    """
+    The reshaping as a function of a point and how much of it rides on the arms. `arms` gives each side's
+    shoulder, elbow and knuckles ({1: (s, e, k), -1: ...} by the sign of x), for fuller arms grown round their own
+    middle line.
+    """
+    def fuller_arm(p):
+        side = arms.get(1 if p.x >= 0 else -1)
+        best = None
+        for (a, b), (low, peak, high, amount) in zip(((side[0], side[1]), (side[1], side[2])), h["arm_shape"]):
+            ab = b - a
+            t = max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared))
+            centre = a + ab * t
+            gap = (p - centre).length
+            if best is None or gap < best[0]:
+                grow = amount * (smooth(t, low, peak) if t < peak else 1 - smooth(t, peak, high))
+                best = (gap, centre, grow)
+        gap, centre, grow = best
+        # Only the arm itself: the back and chest near the shoulder ride on it partly but lie further from its
+        # middle line, and stay where they are.
+        grow *= 1 - smooth(gap, *h["arm_reach"])
+        return centre + (p - centre) * (1 + grow)
+
+    def bump(z, centre, spread):
+        return math.exp(-((z - centre) / spread) ** 2)
+
+    def smooth(z, a, b):
+        t = min(1.0, max(0.0, (z - a) / (b - a)))
+        return t * t * (3 - 2 * t)
+
+    ankle, hip, stretch = h["ankle"], h["hip"], h["leg_stretch"]
+    lift = (hip - ankle) * (stretch - 1)
+
+    def height(z):
+        if z <= ankle:
+            return z
+        if z <= hip:
+            return ankle + (z - ankle) * stretch
+        return z + lift
+
+    def shoulder_line(x, z):
+        """
+        The trapezius sloping down from the neck to the shoulder, and the deltoid's cap rounded over the corner
+        where the shoulder's flat top met the side of the arm: in the build's own heights, before the rest.
+        """
+        ax = abs(x)
+        # The corner's square, seen from the front, eased towards a circle round its centre.
+        cx, cz = h["cap_centre"]
+        dx, dz = ax - cx, z - cz
+        if dx > 0 and dz > 0:
+            square, round_ = max(dx, dz), math.hypot(dx, dz)
+            k = 1 - h["cap_round"] * (1 - square / round_)
+            ax, z = cx + dx * k, cz + dz * k
+        # The slope: the shoulder's top lowered more the further out it lies, only round its own height.
+        z -= h["trap_drop"] * smooth(ax, *h["trap_across"]) * smooth(z, *h["trap_below"]) * (1 - smooth(z, *h["trap_above"]))
+        return math.copysign(ax, x), z
+
+    def along(table, v):
+        """A (key, value) table's value at v, straight between its rows and level past its ends."""
+        if v <= table[0][0]:
+            return table[0][1]
+        for (k0, v0), (k1, v1) in zip(table, table[1:]):
+            if v <= k1:
+                return v0 + (v1 - v0) * (v - k0) / (k1 - k0)
+        return table[-1][1]
+
+    def shoulder_edges(x, y, z):
+        """
+        The shoulder's top rounded over into the back and into the upper chest, seen from the side, where the flat
+        back and front met the flat top of the shoulders in square edges. The rounding follows the top down from the
+        neck to the arm, and fades out up the neck, so the head keeps its size.
+        """
+        top = along(h["shoulder_top"], abs(x))
+        fade = 1 - smooth(z, *h["trap_above"])
+        for face, r, out in (h["edge_back"] + (-1,), h["edge_front"] + (1,)):
+            cy, cz = face - out * r, top - r
+            dy, dz = (y - cy) * out, z - cz
+            if dy > 0 and dz > 0:
+                square, round_ = max(dy, dz), math.hypot(dy, dz)
+                k = 1 - h["edge_round"] * (1 - square / round_) * fade
+                y, z = cy + out * dy * k, cz + dz * k
+        return y, z
+
+    def round_section(x, y, z):
+        """
+        The trunk's outline seen from above eased towards an oval of its own width and depth: `sections` holds,
+        by height, how far out her skin lies in each direction round her middle and how far the oval would; every
+        point moves in or out along its direction by their ratio. Muscle and bone detail ride along, since the
+        outline is measured smoothed. All round below the bust and on the upper chest above it; behind only
+        beside it, where the breasts lie in front.
+        """
+        k = smooth(z, *h["section_below"]) * (1 - smooth(z, *h["section_above"]))
+        if k <= 0:
+            return x, y
+        dy = y - h["section_middle"]
+        if dy > 0:
+            # Not over the breasts: the front rounds below them and again above them, on the upper chest.
+            k *= 1 - smooth(z, *h["section_front"]) * (1 - smooth(z, *h["section_front_top"])) * smooth(dy, 0.0, 0.03)
+            if k <= 0:
+                return x, y
+        heights, ratios = sections
+        angle = math.atan2(dy, x) % (2 * math.pi)
+        steps = len(ratios[0])
+        at = angle / (2 * math.pi) * steps
+        i0, t = int(at) % steps, at - int(at)
+        i1 = (i0 + 1) % steps
+        if z <= heights[0]:
+            row0 = row1 = ratios[0]; w = 0.0
+        elif z >= heights[-1]:
+            row0 = row1 = ratios[-1]; w = 0.0
+        else:
+            j = min(len(heights) - 2, int((z - heights[0]) / (heights[1] - heights[0])))
+            row0, row1 = ratios[j], ratios[j + 1]
+            w = (z - heights[j]) / (heights[1] - heights[0])
+        ratio = ((row0[i0] * (1 - t) + row0[i1] * t) * (1 - w) + (row1[i0] * (1 - t) + row1[i1] * t) * w)
+        scale = 1 + k * h["section_round"] * (ratio - 1)
+        return x * scale, h["section_middle"] + dy * scale
+
+    def reshape(p, arm):
+        x, y, z = p
+        y, z_edges = shoulder_edges(x, y, z)
+        x, z = shoulder_line(x, z)
+        z += z_edges - p[2]
+        # Widths and depths are judged at the original heights, where the old outlines were drawn.
+        hips = h["trochanter"] * bump(z, *h["trochanter_at"])
+        waist = h["waist"] * bump(z, *h["waist_at"])
+        shoulders = h["shoulders"] * bump(z, *h["shoulders_at"])
+        ribs = h["ribs"] * bump(z, *h["ribs_at"])
+        # The trunk's cross-section rounded first: built, it was a box seen from above (a flat back with square
+        # corners, straight sides, a flat front under the bust).
+        tx, ty = round_section(x, y, z) if sections and arm < 1 else (x, y)
+        trunk_x = tx * (1 + hips - waist + shoulders + ribs)
+        # The ribcage as an egg, widest at the lower ribs: its sides and back move out by up to `ribcage` metres
+        # there, easing in from the middle and fading towards the front, so the bust over it keeps its shape and
+        # place and only the ribcage beneath it fills out.
+        cage = along(h["ribcage_w"], z)
+        if cage and abs(tx) > 1e-6:
+            sides = smooth(abs(tx), *h["ribcage_across"]) * (1 - smooth(ty, *h["ribcage_front"]))
+            trunk_x += math.copysign(cage * sides, tx)
+        trunk_y = ty * (1 - 0.6 * waist)
+        if ty < 0:  # the glutes: rounder and higher at the back
+            trunk_y *= 1 + h["glutes"] * bump(z, *h["glutes_at"])
+        else:  # her front over the pubic mound, tipped forward with the pelvis
+            trunk_y *= 1 + h["mound"] * bump(z, *h["mound_at"])
+        # The trunk deeper from front to back through the ribcage and waist: the front and back move out, each
+        # by its share, and whatever lies on them (the breasts, the clothes, hair down the back) moves with them;
+        # the sides, near the middle plane, ease in from staying put.
+        deep = along(h["trunk_depth"], z)
+        if deep:
+            share = h["depth_front"] if ty > 0 else h["depth_front"] - 1
+            trunk_y += deep * share * smooth(abs(ty), *h["depth_ease"])
+        # Fuller thighs and calves, grown round each leg's own middle so the gap between them stays. Only what lies
+        # on or close round a leg grows: a skirt hanging well clear of it stays as it is.
+        if z < h["hip"]:
+            legs = (h["thigh"] * bump(z, *h["thigh_at"]) + h["calf"] * bump(z, *h["calf_at"])
+                    + h["ankle_full"] * bump(z, *h["ankle_at"]))
+            # Below the knee the shin stands upright (the build cancels the thigh's splay there).
+            middle = math.copysign(h["leg_x"] + (h["hip"] - 0.06 - max(z, h["knee_z"])) * math.sin(h["leg_splay"]), tx)
+            legs *= 1 - smooth(math.hypot(tx - middle, ty), *h["leg_reach"])
+            trunk_x = middle + (trunk_x - middle) * (1 + legs)
+            trunk_y *= 1 + legs
+        # The arms hang beside the hips, so they move out with the shoulders as one piece instead of stretching,
+        # and fill out round their own middle line: the deltoid and upper arm, and the forearm below the elbow.
+        arm_z = z
+        arm_x, arm_y = x, y
+        if arms and arm > 0:
+            arm_x, arm_y, arm_z = fuller_arm(Vector((x, y, z)))
+        arm_x += math.copysign(h["arm_out"], x)
+        x = trunk_x * (1 - arm) + arm_x * arm
+        y = trunk_y * (1 - arm) + arm_y * arm
+        new_z = height(z * (1 - arm) + arm_z * arm)
+        # A fuller neck: round the middle of it, easing out before the shoulders and the jaw.
+        neck = h["neck"] * bump(z, *h["neck_at"]) * (1 - arm)
+        x, y = x * (1 + neck), y * (1 + neck)
+        # The head scaled about the neck to the figure's head count, and set down on a shorter neck.
+        k = smooth(z, *h["head_blend"])
+        if k > 0:
+            s = 1 - (1 - h["head"]) * k
+            pivot = h["head_blend"][0]
+            x, y = x * s, y * s
+            new_z = height(pivot) + (z - pivot) * h["head"] - h["head_drop"] * k
+        return (x, y, new_z)
+
+    return reshape
+
+
+HEROIC = {
+    # The legs stretch between these heights (the ankle's top and the hip joint).
+    "ankle": 0.14, "hip": 0.86, "leg_stretch": 1.07,
+    "trochanter": 0.06, "trochanter_at": (0.8, 0.06),
+    # The waist's narrowest just above the navel, not up under the bust where it squeezed the bottom of the ribcage.
+    "waist": 0.06, "waist_at": (0.995, 0.04),
+    # The ribcage widest at the lower ribs (an egg, narrower up under the arms): metres out at its sides and back,
+    # by height. It reaches down to the tenth rib (ANSUR II women: 0.649 of stature), the waist narrowest just
+    # above the navel below it: built, she was narrowest at the tenth rib, a 46 cm waist.
+    "ribcage_w": ((0.94, 0.0), (0.98, 0.008), (1.0, 0.016), (1.02, 0.023), (1.04, 0.025), (1.06, 0.029),
+                  (1.08, 0.027), (1.1, 0.028), (1.12, 0.025), (1.14, 0.0153), (1.16, 0.0081), (1.18, 0.0032),
+                  (1.2, 0.0)),
+    "ribcage_across": (0.03, 0.08), "ribcage_front": (0.025, 0.07),
+    # The trunk's depth added from front to back by height (metres), the front's share of it, and how far from
+    # the middle plane a point must lie to move fully. Built, she was 12 cm deep under the bust; a slim woman's
+    # ribcage is about 20.
+    "trunk_depth": ((0.86, 0.0), (0.92, 0.008), (0.96, 0.016), (1.0, 0.028), (1.04, 0.036), (1.08, 0.04),
+                    (1.16, 0.04), (1.24, 0.028), (1.32, 0.0)),
+    "depth_front": 0.5, "depth_ease": (0.0, 0.04),
+    # The trunk's cross-section eased from a box towards an oval (round_section): fully between the first two
+    # heights' ends, all round below the bust and behind only above it, by this share of the way; measured in steps
+    # this tall about a middle this far forward.
+    "section_below": (0.9, 0.96), "section_above": (1.24, 1.29), "section_front": (1.04, 1.09),
+    "section_front_top": (1.19, 1.31),  # (and out again before the neck, whose flare sits on the shoulders)
+    # Measured in this many directions round her and steps this tall, eased this many times round and up.
+    "section_round": 0.7, "section_steps": 36, "section_step": 0.01, "section_ease": 2, "section_middle": -0.005,
+    # Shoulders about as broad as the hips (near two heads across at the deltoids), the arms moved out with them.
+    "shoulders": 0.24, "shoulders_at": (1.3, 0.04), "arm_out": 0.03,
+    # The trapezius sloping from the neck (metres dropped at the shoulder's end, over these widths, between these
+    # heights) and the deltoid's cap rounded over the shoulder's corner (its centre across and up, and how round).
+    "trap_drop": 0.012, "trap_across": (0.055, 0.14), "trap_below": (1.21, 1.29), "trap_above": (1.35, 1.38),
+    "cap_centre": (0.12, 1.27), "cap_round": 0.85,
+    # The same rounding from the back and the upper chest over the top of the shoulders, seen from the side: the
+    # top's height out from the middle (as built), and each face's depth and the rounding's radius.
+    "shoulder_top": ((0.0, 1.36), (0.05, 1.345), (0.07, 1.32), (0.09, 1.31), (0.13, 1.297), (0.16, 1.28)),
+    "edge_back": (-0.05, 0.028), "edge_front": (0.045, 0.02), "edge_round": 0.9,
+    "ribs": 0.0, "ribs_at": (1.16, 0.06),  # (was a flare under the arms; the egg above does the job, low down)
+    "glutes": 0.09, "glutes_at": (0.84, 0.05),
+    "thigh": 0.1, "thigh_at": (0.62, 0.08), "calf": 0.08, "calf_at": (0.34, 0.06),
+    "ankle_full": 0.14, "ankle_at": (0.115, 0.035),  # the ankle, and the top of the bare foot inside it, fuller with it
+    "leg_x": 0.098, "leg_splay": 0.05, "knee_z": 0.47,  # each leg's middle line, as FEMALE builds it
+    "leg_reach": (0.1, 0.14),  # what lies this far from a leg's middle grows with it, fading out to the second
+    # The upper arm (shoulder to elbow) and the forearm (elbow to knuckles): along each, where the fullness starts,
+    # peaks and is gone again (0 to 1 along it), and how much fuller it is at the peak.
+    "arm_shape": ((0.0, 0.3, 0.9, 0.14), (0.0, 0.18, 0.75, 0.16)),
+    "arm_reach": (0.055, 0.08),  # what lies this far from an arm's middle grows with it, fading out to the second
+    "mound": 0.03, "mound_at": (0.76, 0.03),
+    # Eight heads tall (Loomis's ideal figure; hero shooters keep the head this size or a touch bigger to read
+    # at a distance): the head grown about the neck and set down on it, the neck a little fuller.
+    # The reference study (MODEL_STUDY.md) puts the head at 0.119 of barefoot stature (8.4 heads); after the legs
+    # were lengthened she measured 0.111 (9.0 heads) at 1.04, so it grows to match.
+    "head": 1.075, "head_blend": (1.36, 1.41), "head_drop": 0.012,
+    "neck": 0.08, "neck_at": (1.385, 0.025),
+    "sharp_angle": 55,
+}
+ARM_BONES = ("UpperArm_", "ForeArm_", "Hand")
+
+
+# Her shoulders' weights eased (ease_shoulder_weights): over the skin above this height and this far out from her
+# middle, each arm's share of a corner's weight is averaged with its neighbours' this many times; the arm itself,
+# past "arm_from" of the way from the shoulder joint to the elbow, keeps its own.
+SHOULDER_EASE = {"above": 1.15, "out": 0.045, "passes": 24, "rate": 0.5, "arm_from": 0.25}
+
+
+def ease_shoulder_weights(obj, name, rig, ease=SHOULDER_EASE):
+    """
+    Each arm's share of the weight round her shoulder and armpit, averaged with the neighbouring corners' a number
+    of times. Built, it came in flat steps, one for each ring of the coarse body (0.25, 0.37, 0.5, 0.68, 0.85), and
+    a raised arm bent the skin in a flat band at every step. The other bones' weights make up the rest as before,
+    each keeping its share of it.
+    """
+    mesh = obj.data
+    if not len(mesh.edges):
+        return
+    groups = {g.name: g.index for g in obj.vertex_groups}
+    world = obj.matrix_world
+    count = len(mesh.vertices)
+    co = np.array([tuple(world @ v.co) for v in mesh.vertices])
+    edges = np.empty(len(mesh.edges) * 2, dtype=np.int64)
+    mesh.edges.foreach_get("vertices", edges)
+    a, b = edges[0::2], edges[1::2]
+    links = np.maximum(np.bincount(a, minlength=count) + np.bincount(b, minlength=count), 1)
+    region = (co[:, 2] > ease["above"]) & (np.abs(co[:, 0]) > ease["out"])
+    weights = [{g.group: g.weight for g in v.groups} for v in mesh.vertices]
+    for side in ("L", "R"):
+        arm = groups.get(f"{name}_UpperArm_{side}")
+        if arm is None:
+            continue
+        mine = region & ((co[:, 0] < 0) if side == "L" else (co[:, 0] > 0))
+        # The arm itself keeps its weights: past a share of the way from the shoulder joint to the elbow.
+        bones = rig.data.bones
+        joint = np.array(rig.matrix_world @ bones[f"{name}_UpperArm_{side}"].head_local)
+        elbow = np.array(rig.matrix_world @ bones[f"{name}_ForeArm_{side}"].head_local)
+        along = elbow - joint
+        t = ((co - joint) @ along) / max(float(along @ along), 1e-9)
+        mine &= t < ease["arm_from"]
+        totals = np.array([sum(w.values()) for w in weights])
+        share = np.array([w.get(arm, 0.0) for w in weights]) / np.maximum(totals, 1e-9)
+        # Only where the arm's share changes: the arm itself (all of it) and the trunk away from it (none) stay.
+        moved = share.copy()
+        for _ in range(ease["passes"]):
+            total = np.zeros(count)
+            np.add.at(total, a, moved[b])
+            np.add.at(total, b, moved[a])
+            mean = total / links
+            moved = np.where(mine, moved + (mean - moved) * ease["rate"], moved)
+        torso = groups.get(f"{name}_Torso")
+        for i in np.flatnonzero(mine & (np.abs(moved - share) > 1e-4)):
+            w, total = weights[i], totals[i]
+            if total <= 0:
+                continue
+            old, new = share[i], float(moved[i])
+            rest = {g: x for g, x in w.items() if g != arm}
+            if old < 1 - 1e-6 and rest:
+                factor = (1 - new) / (1 - old)
+                rest = {g: x * factor for g, x in rest.items()}
+            elif torso is not None:
+                rest = {torso: (1 - new) * total}
+            for g, x in rest.items():
+                w[g] = x
+            w[arm] = new * total
+    by_group = {}
+    for i, w in enumerate(weights):
+        for g, x in w.items():
+            by_group.setdefault(g, []).append((i, x))
+    for group in obj.vertex_groups:
+        for i, x in by_group.get(group.index, []):
+            group.add([i], x, "REPLACE")
+
+
+# The clothes' clearance over the finished skin: anything closer than "gap" is pushed out to it, along the skin's
+# normal; a point further than "near" from the skin is loose cloth and left alone, and none moves more than "most".
+CLEAR = {"gap": 0.003, "near": 0.03, "most": 0.015,
+         "skip": ("T_areola", "T_pubic", "T_lingerie")}
+
+
+def keep_clothes_clear(body, layers, clear=CLEAR):
+    """
+    The clothes kept off the skin once it is finished. The muscle pressed into both and the reshaping move them
+    alike, but a bump narrower than the cloth's faces stood through it between its corners; each corner of the
+    cloth that ends up inside the skin, or closer to it than the gap, goes back out along the skin's normal.
+    """
+    names = [m.name if m else "" for m in body.data.materials]
+    world = body.matrix_world
+    skin = [p.vertices[:] for p in body.data.polygons if names[p.material_index] not in clear["skip"]]
+    tree = BVHTree.FromPolygons([world @ v.co for v in body.data.vertices], skin)
+    for layer in layers:
+        to_world, to_local = layer.matrix_world, layer.matrix_world.inverted()
+        for vertex in layer.data.vertices:
+            spot = to_world @ vertex.co
+            near, normal, _, gap = tree.find_nearest(spot, clear["near"])
+            if near is None:
+                continue
+            height = (spot - near).dot(normal)
+            if height < clear["gap"]:
+                push = min(clear["gap"] - height, clear["most"])
+                vertex.co = to_local @ (spot + normal * push)
+        layer.data.update()
+
+
+def trunk_sections(h, meshes):
+    """
+    For round_section: by height, in each direction round her middle (seen from above), the ratio of an oval's
+    reach to her skin's, the oval as wide as she is and as deep behind and in front. Measured on the built skin,
+    the arms left out, and smoothed round and up so single muscles don't count as the outline.
+    """
+    body = next(o for o in meshes if o.name.endswith("_Body"))
+    world = body.matrix_world
+    mesh = body.data
+    arm_groups = {g.index for g in body.vertex_groups if g.name.split("_", 1)[-1].startswith(ARM_BONES)}
+    names = [m.name if m else "" for m in mesh.materials]
+
+    def armish(index):
+        groups = mesh.vertices[index].groups
+        total = sum(g.weight for g in groups)
+        return total and sum(g.weight for g in groups if g.group in arm_groups) / total > 0.5
+
+    faces = [p.vertices[:] for p in mesh.polygons
+             if names[p.material_index] not in CLEAR["skip"] and not armish(p.vertices[0])]
+    tree = BVHTree.FromPolygons([world @ v.co for v in mesh.vertices], faces)
+    steps = h["section_steps"]
+    low, high = h["section_below"][0] - 0.02, h["section_above"][1] + 0.02
+    count = int(round((high - low) / h["section_step"])) + 1
+    heights = [low + i * h["section_step"] for i in range(count)]
+    reach = []
+    for z in heights:
+        row = []
+        for i in range(steps):
+            angle = 2 * math.pi * i / steps
+            out = Vector((math.cos(angle), math.sin(angle), 0.0))
+            middle = Vector((0.0, h["section_middle"], z))
+            hit = tree.ray_cast(middle + out * 0.5, -out)[0]
+            row.append((hit - middle).length if hit is not None else None)
+        reach.append(row)
+    # Gaps (a ray through a hole) take their neighbours' reach; then eased round and up.
+    for row in reach:
+        known = [r for r in row if r is not None]
+        fill = sum(known) / len(known) if known else 0.1
+        for i, r in enumerate(row):
+            if r is None:
+                row[i] = fill
+    for _ in range(h["section_ease"]):
+        reach = [[(row[i - 1] + 2 * row[i] + row[(i + 1) % steps]) / 4 for i in range(steps)] for row in reach]
+        reach = [[(reach[max(0, j - 1)][i] + 2 * reach[j][i] + reach[min(len(reach) - 1, j + 1)][i]) / 4
+                  for i in range(steps)] for j in range(len(reach))]
+    ratios = []
+    quarter = steps // 4
+    for row in reach:
+        half = (row[0] + row[steps // 2]) / 2
+        front, back = row[quarter], row[3 * quarter]
+        out = []
+        for i in range(steps):
+            angle = 2 * math.pi * i / steps
+            depth = front if math.sin(angle) > 0 else back
+            oval = 1 / math.sqrt((math.cos(angle) / half) ** 2 + (math.sin(angle) / depth) ** 2)
+            out.append(oval / row[i])
+        ratios.append(out)
+    return heights, ratios
+
+
+def heroic_reshape(h, rig, meshes):
+    bones = {b.name.split("_", 1)[-1]: rig.matrix_world @ b.head_local for b in rig.data.bones}
+    arms = {sign: tuple(bones[f"{part}_{side}"] for part in ("UpperArm", "ForeArm", "HandFingers"))
+            for side, sign in (("L", -1), ("R", 1))}
+    reshape = heroic_curves(h, arms, trunk_sections(h, meshes))
+    for obj in meshes:
+        to_world, to_local = obj.matrix_world.copy(), obj.matrix_world.inverted()
+        arm_groups = {g.index for g in obj.vertex_groups if g.name.split("_", 1)[-1].startswith(ARM_BONES)}
+        for vertex in obj.data.vertices:
+            total = sum(g.weight for g in vertex.groups)
+            arm = sum(g.weight for g in vertex.groups if g.group in arm_groups) / total if total else 0.0
+            vertex.co = to_local @ Vector(reshape(tuple(to_world @ vertex.co), arm))
+        # Smooth shading for the clean, sculpted read of the style; only real creases (a shoe's sole, a cuff's
+        # edge, a nail) stay sharp.
+        for poly in obj.data.polygons:
+            poly.use_smooth = True
+        obj.data.set_sharp_from_angle(angle=math.radians(h["sharp_angle"]))
+        obj.data.update()
+    bpy.context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="EDIT")
+    for bone in rig.data.edit_bones:
+        arm = 1.0 if bone.name.split("_", 1)[-1].startswith(ARM_BONES) else 0.0
+        head = Vector(reshape(tuple(rig.matrix_world @ bone.head), arm))
+        bone.head = rig.matrix_world.inverted() @ head
+        bone.tail = bone.head + Vector((0, 0, BONE_LENGTH))
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+
+# Her legs against the hero-shooter heroines studied (front views, measured on a grid): the crotch at 0.52 to 0.56
+# of their height and the knee near 0.3, about nine heads tall; built, she was 0.477 and 8.3, her thigh short
+# (hip joint to knee 0.21 of her height). The shin (ankle top to knee) and the thigh (knee to hip joint) lengthen
+# by these factors, each easing in over these heights about its ends (the ankle's top, the knee, then out again
+# over the hip so the glutes and belly keep their shape), and then the whole figure is scaled about her feet to
+# her stature (metres).
+HEROIC_LEGS = {"shin": 1.12, "thigh": 1.38, "ankle": (0.12, 0.18), "knee_ease": 0.04, "hip": (0.8, 0.9),
+               "stature": 1.7, "step": 0.001,
+               # Stretched, her lower legs were thin against theirs and against life (calf 8 cm across, knee 7.7,
+               # ankle 4.4; they run about 11, 11 and 6): each leg fuller about its middle line by these shares
+               # at these heights (shares of her stature), out to the first distance from it and gone by the
+               # second, so a skirt hanging clear of her legs stays as it is.
+               "fuller": ((0.055, 0.0), (0.09, 0.15), (0.13, 0.2), (0.2, 0.32), (0.25, 0.35), (0.3, 0.33),
+                          (0.35, 0.22), (0.4, 0.1), (0.45, 0.03), (0.5, 0.0)),
+               "fuller_reach": (0.08, 0.13)}
+
+
+def heroic_legs(legs, rig, body, meshes):
+    """
+    Her legs lengthened and the figure scaled back, after everything else, on every mesh and bone. Each height
+    below the hip is stretched by a factor that eases between the shin's, the thigh's and none (so no kink shows
+    where it changes); the arms, hanging beside the hips, only move up with the trunk, as one piece.
+    """
+    knee = (rig.matrix_world @ rig.data.bones[f"{rig.name.split('_')[0]}_Shin_L"].head_local).z
+
+    def smooth(z, a, b):
+        t = min(1.0, max(0.0, (z - a) / (b - a)))
+        return t * t * (3 - 2 * t)
+
+    def factor(z):
+        return (1 + (legs["shin"] - 1) * smooth(z, *legs["ankle"])
+                + (legs["thigh"] - legs["shin"]) * smooth(z, knee - legs["knee_ease"], knee + legs["knee_ease"])
+                + (1 - legs["thigh"]) * smooth(z, *legs["hip"]))
+
+    step, top = legs["step"], legs["hip"][1]
+    table, z, at = [0.0], 0.0, 0.0
+    while z < top:
+        at += factor(z + step / 2) * step
+        z += step
+        table.append(at)
+    lift = table[-1] - z
+
+    def height(z):
+        if z >= top:
+            return z + lift
+        if z <= 0:
+            return z
+        i = int(z / step)
+        t = z / step - i
+        return table[i] + (table[i + 1] - table[i]) * t
+
+    stretched = max(height((body.matrix_world @ v.co).z) for v in body.data.vertices)
+    scale = legs["stature"] / stretched
+    prefix = rig.name.split("_")[0]
+    joint = {part: rig.matrix_world @ rig.data.bones[f"{prefix}_{part}_R"].head_local for part in ("Thigh", "Shin")}
+    hip_at = Vector((joint["Thigh"].x * scale, joint["Thigh"].y * scale, height(joint["Thigh"].z) * scale))
+    knee_at = Vector((joint["Shin"].x * scale, joint["Shin"].y * scale, height(joint["Shin"].z) * scale))
+
+    def along(table, v):
+        if v <= table[0][0]:
+            return table[0][1]
+        for (a, fa), (b, fb) in zip(table, table[1:]):
+            if v <= b:
+                return fa + (fb - fa) * (v - a) / (b - a)
+        return table[-1][1]
+
+    def move(p, arm):
+        z = (height(p.z) * (1 - arm) + (p.z + lift) * arm) * scale
+        x, y = p.x * scale, p.y * scale
+        grow = along(legs["fuller"], z / legs["stature"]) * (1 - arm)
+        if grow > 0:
+            t = min(1.0, max(0.0, (z - knee_at.z) / (hip_at.z - knee_at.z)))
+            mx = math.copysign(knee_at.x + (hip_at.x - knee_at.x) * t, x)
+            my = knee_at.y + (hip_at.y - knee_at.y) * t
+            grow *= 1 - smooth(math.hypot(x - mx, y - my), *legs["fuller_reach"])
+            x, y = mx + (x - mx) * (1 + grow), my + (y - my) * (1 + grow)
+        return Vector((x, y, z))
+
+    for obj in meshes:
+        to_world, to_local = obj.matrix_world.copy(), obj.matrix_world.inverted()
+        arm_groups = {g.index for g in obj.vertex_groups if g.name.split("_", 1)[-1].startswith(ARM_BONES)}
+        for vertex in obj.data.vertices:
+            total = sum(g.weight for g in vertex.groups)
+            arm = sum(g.weight for g in vertex.groups if g.group in arm_groups) / total if total else 0.0
+            vertex.co = to_local @ move(to_world @ vertex.co, arm)
+        obj.data.update()
+    bpy.context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="EDIT")
+    for bone in rig.data.edit_bones:
+        arm = 1.0 if bone.name.split("_", 1)[-1].startswith(ARM_BONES) else 0.0
+        bone.head = rig.matrix_world.inverted() @ move(rig.matrix_world @ bone.head, arm)
+        bone.tail = bone.head + Vector((0, 0, BONE_LENGTH))
+    bpy.ops.object.mode_set(mode="OBJECT")
+    print(f"heroic legs: lift {lift:.3f}, stretched {stretched:.3f}, scale {scale:.3f}")
+
+
+# Her figure fitted to the reference study (MODEL_STUDY.md): stylised hero-shooter heroines measured in 3D, heels
+# taken out, as shares of barefoot stature. Applied last, after heroic_legs, on every mesh and bone, in three steps:
+#   heights: (share before, share after) for her landmarks, measured on the build before this pass: knee joint,
+#            crotch, waist (narrowest), nipple, shoulder joint. Heights between them move smoothly (the feet held,
+#            the head riding on top as one piece); the arms move with the shoulder.
+#   trunk:   then her trunk filled out by height about her middle, front and back each by its own factor, the
+#            glutes swelling behind (tuned against the refs' girths and their slices, see MODEL_STUDY.md; an
+#            automatic slice-by-slice fit was tried and dropped: one depth per height can't tell bust, belly and back
+#            apart, and it bloated the belly and flattened the bust).
+#   legs:    by height (share): how much fuller each leg is about its own middle line, out to the first distance
+#            (share of stature) and gone by the second, so a skirt hanging clear keeps its shape.
+#   arms:    along the upper arm (shoulder to elbow, 0 to 1) and the forearm (elbow to knuckles): fuller about the
+#            arm's own line, by arm weight.
+# Built before this pass she measured (refs' medians after the slash): knee 0.295 / 0.327, crotch 0.502 / 0.526,
+# shoulder joint 0.835 / 0.817, head 0.111 / 0.119 (grown in HEROIC); thigh girth 0.271 / 0.344, upper arm 0.102 /
+# 0.155, forearm about 0.088 / 0.15 (bare-armed refs), neck 0.131 / 0.162.
+STUDY_FIT = {
+    "heights": ((0.0, 0.0), (0.05, 0.05), (0.295, 0.331), (0.502, 0.527), (0.671, 0.666), (0.751, 0.767),
+                (0.835, 0.824), (0.9, 0.9)),
+    "crotch_at": 0.526,
+    # By height (share): width, front and back factors about her middle (seen from above), so the glutes, bust and
+    # upper chest gain depth on their own side. Compared slice by slice with the refs, she lacked most above the bust
+    # (the upper chest 3 to 5 cm shallower) and at the neck's base; her belly needs none pushed forward.
+    "trunk": ((0.47, 1.0, 1.0, 1.0), (0.53, 1.38, 1.0, 1.75), (0.6, 1.3, 1.0, 1.4), (0.663, 1.38, 1.05, 1.15),
+              (0.699, 1.0, 1.2, 1.2), (0.761, 1.1, 1.3, 1.15), (0.8, 1.04, 1.3, 1.15), (0.83, 1.0, 1.2, 1.15),
+              (0.845, 1.0, 1.25, 1.2), (0.86, 1.0, 1.22, 1.22), (0.875, 1.0, 1.15, 1.15), (0.89, 1.0, 1.0, 1.0)),
+    # (No widening from the shoulders up: at those heights it squared off the shoulders' tops, not the neck.)
+    # The glutes pushed out behind: centre height (share), half height, how much further out at the centre, and how
+    # far either side of her middle it reaches fully and fades out (shares of stature).
+    "glutes": (0.525, 0.055, 0.25, (0.05, 0.09)),
+    # Round the hips the width grows about each leg's own line (so the legs keep their spacing), easing back to
+    # about her middle by the second height above the crotch.
+    "hip_pivot": (0.04, 0.12),
+    "crotch_blend": (-0.03, 0.02),  # the trunk's shaping fades out over these heights about the crotch
+    "skirt_fade": 0.3,  # beyond the legs' reach (a skirt), the trunk's shaping fades out down to this height instead
+    # Full at the top of the thigh, tapering to a slim knee; the calf as it is.
+    "legs": ((0.06, 1.0), (0.15, 0.97), (0.21, 0.95), (0.27, 1.0), (0.33, 1.0), (0.38, 1.05), (0.44, 1.18),
+             (0.49, 1.27), (0.56, 1.27)),
+    "leg_reach": (0.06, 0.09),
+    "leg_inner": 0.3,  # the share of that fullness on the inside of each leg, keeping the gap between the thighs
+    # Full at the deltoid and the top of the forearm, slim at the elbow and the wrist.
+    "arms": (((0.0, 1.15), (0.2, 1.38), (0.45, 1.5), (0.75, 1.38), (1.0, 1.15)),
+             ((0.0, 1.15), (0.18, 1.7), (0.4, 1.55), (0.6, 1.32), (0.72, 1.2), (1.0, 1.0))),
+    "arm_reach": (0.05, 0.08),
+}
+
+
+def _table(table, v):
+    """Linear lookup in ((key, value...), ...): one value or a tuple of them."""
+    def pick(row):
+        return row[1] if len(row) == 2 else row[1:]
+    if v <= table[0][0]:
+        return pick(table[0])
+    for a, b in zip(table, table[1:]):
+        if v <= b[0]:
+            t = (v - a[0]) / (b[0] - a[0])
+            pa, pb = pick(a), pick(b)
+            if isinstance(pa, tuple):
+                return tuple(x + (y - x) * t for x, y in zip(pa, pb))
+            return pa + (pb - pa) * t
+    return pick(table[-1])
+
+
+def _monotone(points):
+    """A smooth curve through (x, y) points that never turns back (Fritsch-Carlson), straight beyond the last."""
+    xs, ys = [p[0] for p in points], [p[1] for p in points]
+    n = len(xs)
+    d = [(ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]) for i in range(n - 1)]
+    m = [d[0]] + [(d[i - 1] + d[i]) / 2 if d[i - 1] * d[i] > 0 else 0.0 for i in range(1, n - 1)] + [d[-1]]
+    for i in range(n - 1):
+        if d[i] == 0:
+            m[i] = m[i + 1] = 0.0
+            continue
+        a, b = m[i] / d[i], m[i + 1] / d[i]
+        s = a * a + b * b
+        if s > 9:
+            k = 3 / math.sqrt(s)
+            m[i], m[i + 1] = k * a * d[i], k * b * d[i]
+
+    def f(x):
+        if x >= xs[-1]:
+            return ys[-1] + (x - xs[-1])
+        if x <= xs[0]:
+            return ys[0] + (x - xs[0]) * d[0]
+        i = max(j for j in range(n - 1) if xs[j] <= x)
+        h = xs[i + 1] - xs[i]
+        t = (x - xs[i]) / h
+        h00, h10, h01, h11 = 2 * t ** 3 - 3 * t ** 2 + 1, t ** 3 - 2 * t ** 2 + t, -2 * t ** 3 + 3 * t ** 2, t ** 3 - t ** 2
+        return h00 * ys[i] + h10 * h * m[i] + h01 * ys[i + 1] + h11 * h * m[i + 1]
+    return f
+
+
+def study_fit(fit, rig, body, meshes, stature):
+    """
+    Her proportions and masses brought to the study's (STUDY_FIT): heights remapped; then her trunk, legs and arms
+    filled out about their own middles; on every mesh and on the bones.
+    """
+    def smooth(z, a, b):
+        t = min(1.0, max(0.0, (z - a) / (b - a)))
+        return t * t * (3 - 2 * t)
+
+    def bones_now():
+        return {b.name.split("_", 1)[-1]: rig.matrix_world @ b.head_local for b in rig.data.bones}
+
+    def arm_shares(obj):
+        groups = {g.index for g in obj.vertex_groups if g.name.split("_", 1)[-1].startswith(ARM_BONES)}
+        out = []
+        for v in obj.data.vertices:
+            total = sum(g.weight for g in v.groups)
+            out.append(sum(g.weight for g in v.groups if g.group in groups) / total if total else 0.0)
+        return out
+
+    shares = {obj.name: arm_shares(obj) for obj in meshes}
+
+    def apply(move):
+        for obj in meshes:
+            to_world, to_local = obj.matrix_world.copy(), obj.matrix_world.inverted()
+            for vertex, arm in zip(obj.data.vertices, shares[obj.name]):
+                vertex.co = to_local @ move(to_world @ vertex.co, arm)
+            obj.data.update()
+        bpy.context.view_layer.objects.active = rig
+        bpy.ops.object.mode_set(mode="EDIT")
+        for eb in rig.data.edit_bones:
+            arm = 1.0 if eb.name.split("_", 1)[-1].startswith(ARM_BONES) else 0.0
+            eb.head = rig.matrix_world.inverted() @ move(rig.matrix_world @ eb.head, arm)
+            eb.tail = eb.head + Vector((0, 0, BONE_LENGTH))
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+    # 1. Heights.
+    remap = _monotone(fit["heights"])
+    top_src, top_dst = fit["heights"][-1]
+    shoulder_z = bones_now()["UpperArm_R"].z
+    arm_lift = (remap(shoulder_z / stature) - shoulder_z / stature) * stature
+
+    def lifted(p, arm):
+        share = p.z / stature
+        z = (share - top_src + top_dst) * stature if share >= top_src else remap(share) * stature
+        return Vector((p.x, p.y, z * (1 - arm) + (p.z + arm_lift) * arm))
+    apply(lifted)
+
+    # 2. Her middle (front to back) by height, from the bare skin near the midline as it now stands.
+    world = body.matrix_world
+    rows = {}
+    for v, arm in zip(body.data.vertices, shares[body.name]):
+        p = world @ v.co
+        if abs(p.x) > 0.03 or arm > 0.3:
+            continue
+        k = int(round(p.z / stature * 100))
+        lo, hi = rows.get(k, (p.y, p.y))
+        rows[k] = (min(lo, p.y), max(hi, p.y))
+    middle = sorted((k / 100, (lo + hi) / 2) for k, (lo, hi) in rows.items())
+    for _ in range(3):
+        middle = [(middle[i][0], sum(m[1] for m in middle[max(0, i - 2):i + 3]) / len(middle[max(0, i - 2):i + 3]))
+                  for i in range(len(middle))]
+
+    # 3. The trunk, the legs and the arms filled out about their own middles.
+    bone = bones_now()
+    legs = {s: (bone[f"Thigh_{side}"], bone[f"Shin_{side}"]) for side, s in (("L", -1), ("R", 1))}
+    arms = {s: (bone[f"UpperArm_{side}"], bone[f"ForeArm_{side}"], bone[f"HandFingers_{side}"])
+            for side, s in (("L", -1), ("R", 1))}
+    crotch = fit["crotch_at"]
+
+    def leg_line(p):
+        hip, knee = legs[1 if p.x >= 0 else -1]
+        if p.z >= knee.z:
+            t = min(1.0, (p.z - knee.z) / max(hip.z - knee.z, 1e-6))
+            return knee.x + (hip.x - knee.x) * t, knee.y + (hip.y - knee.y) * t
+        return knee.x, knee.y
+
+    def body_move(p):
+        share = p.z / stature
+        lx, ly = leg_line(p)
+        reach = 1 - smooth(math.hypot(p.x - lx, p.y - ly) / stature, *fit["leg_reach"])
+        below = 1 - smooth(share - crotch, *fit["crotch_blend"])
+        x, y = p.x, p.y
+        lg = _table(fit["legs"], share) - 1
+        if lg and reach > 0 and below > 0:
+            k = 1 + lg * reach * below
+            kx = 1 + lg * reach * below * (fit["leg_inner"] if (x - lx) * lx < 0 else 1.0)
+            x, y = lx + (x - lx) * kx, ly + (y - ly) * k
+        # The trunk: full above the crotch, handing over to the legs below it; far from the legs (a skirt) it fades
+        # down to the skirt height instead, so the skirt follows the hips smoothly.
+        near_crotch = 1 - below
+        w = near_crotch + (1 - near_crotch) * (1 - reach) * smooth(share, fit["skirt_fade"], crotch)
+        my = _table(middle, share)
+        if w > 0:
+            sx, sf, sb = _table(fit["trunk"], share)
+            kx, ky = 1 + (sx - 1) * w, 1 + ((sf if y > my else sb) - 1) * w
+            # Round the hips, about the leg's line rather than her middle: nothing moves at the middle or on the
+            # leg's line, the outer hip grows out from it.
+            hold = (1 - smooth(share - crotch, *fit["hip_pivot"])) * smooth(abs(p.x) / max(abs(lx), 1e-6), 0.3, 0.9)
+            x = x * kx - lx * (kx - 1) * hold
+            y = my + (y - my) * ky
+        # The glutes, behind only: a rounded swell about her middle line.
+        gz, gh, ga, (g0, g1) = fit["glutes"]
+        if y < my and abs(share - gz) < gh:
+            t = (share - gz) / gh
+            y = my + (y - my) * (1 + ga * (1 - t * t) ** 2 * (1 - smooth(abs(p.x) / stature, g0, g1)))
+        return Vector((x, y, p.z))
+
+    def arm_move(p):
+        a, b, c = arms[1 if p.x >= 0 else -1]
+        best = None
+        for seg, (u, v) in enumerate(((a, b), (b, c))):
+            d = v - u
+            t = max(0.0, min(1.0, (p - u).dot(d) / max(d.length_squared, 1e-9)))
+            q = u + d * t
+            dist = (p - q).length
+            if best is None or dist < best[0]:
+                best = (dist, seg, t, q)
+        dist, seg, t, q = best
+        k = (_table(fit["arms"][seg], t) - 1) * (1 - smooth(dist / stature, *fit["arm_reach"]))
+        return q + (p - q) * (1 + k)
+
+    def filled(p, arm):
+        if arm <= 0:
+            return body_move(p)
+        if arm >= 1:
+            return arm_move(p)
+        return body_move(p) * (1 - arm) + arm_move(p) * arm
+    apply(filled)
+    print(f"study fit: arm lift {arm_lift:.3f}")
 
 
 def export_collection(coll, path):

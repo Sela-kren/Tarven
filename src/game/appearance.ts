@@ -494,6 +494,13 @@ const FEMALE_SLIDERS: SliderDef[] = [
       ...terms(["Belly"], [0.15, 0, 0.15]),
     ],
   },
+  // Her stomach on its own, on the belly's soft bone (just inside the front of it, at navel height): -1 flat and
+  // drawn in, 1 a soft round belly that comes forwards and sits a little low, fullest under the navel.
+  {
+    id: "stomach", label: "Stomach", tab: "body", roll: 0.5, terms: terms(["Belly"], [0.12, 0.05, 0.35], {
+      shrink: [0.04, 0, 0.25], shift: [0, -0.006, -0.014], shrinkShift: [0, 0, 0.006],
+    }),
+  },
   {
     id: "hips", label: "Hips", tab: "body", terms: [
       ...terms(["Hips"], [0.14, 0, 0.1]),
