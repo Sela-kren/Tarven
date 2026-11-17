@@ -30,6 +30,18 @@ What already works and should stay: the tavern, the Baron's debt, Wren, last cal
 
 ## 2. The origin
 
+> **World note (2026-11-17):** the setting is now medieval with modern things (`WORLD.md`). People have phones, so the story keeps paper on purpose: every message goes through the Baron's relay stone, Pell reads them, and anyone with a secret writes it down instead. Wren's letters, the ledger and the red book stay paper. Where the origin says Father's "letters stopped", read "messages, then letters": out east there's no relay.
+
+> **Comedy pass (2026-11-17, the user's call):** Tarven is an adult **comedy** (`WORLD.md` §7d), and the story isn't very dark any more. What changed:
+> - **Nobody murdered Wren.** She died in her sleep, as the intro says: old, happy, and smiling. Pell only snuck in the night after to search the house for the book, in his nightshirt, and Oden saw him.
+> - **Pell is a petty, cowardly clerk**, not a killer. He forged the debt to get the book, and he's terrified of Old Hollis, the dwarves' accountant Hero.
+> - **Baron Hesk is greedy and vain.** The stolen toll silver paid for a giant golden statue of himself, hidden in the keep. It's the thing he'd most hate the Crown to see.
+> - **Father isn't in a cell.** He went east with the last pages, got lost, joined an orc clan of the Khanate of Grask, married into it, and is too embarrassed to write home.
+> - **The war in the east stays far away**, in the background. Nobody dies on screen. The Hero of the East is the one real danger.
+> - **The Crown comes in person:** King Edmund and Queen Seraphine join the auditor's tour in disguise (`WORLD.md` §8). Pleasing them is a new way to win the Act 3 plot.
+> - **Dirty choices are funny now, not cruel:** laxatives in a rival's ale, not poison; getting Pell drunk enough to confess on Zane's feed, not killing him.
+
+
 Wren's book is what broke the heroine's family, two years before the game starts. Wren is **Father's mother**.
 
 | When | What happened |
@@ -39,7 +51,7 @@ Wren's book is what broke the heroine's family, two years before the game starts
 | ~20 years ago | Baron Hesk starts keeping the crown's toll silver from the pass. Wren writes that down too. |
 | ~16 years ago | Mother learns what the house used to be and takes the children down the mountain in the night. The heroine is 8. Mother never says why. |
 | 2 years ago | The crown announces an audit of the pass tolls. Wren splits the book among the people she trusts and sends Father east with the last pages. His letters stop, then the money stops, then the marriage ends. |
-| This autumn | A debt note in Wren's name turns up in the Baron's ledgers. Pell, the tax collector, visits, poisons her ale and searches the house. He finds nothing. |
+| This autumn | Wren dies in her sleep, old and happy. That same night Pell, the tax collector, sneaks in to search the house for the book, in his nightshirt, and finds nothing. A week later a debt note in Wren's name turns up in the Baron's ledgers. |
 | Night 1 | The heroine, 24, rides up to Tarven with one bag and the deed. |
 
 ### The intro, rewritten (`story.ts`)
@@ -75,7 +87,7 @@ The order is reversed: Father leaves first, and the split follows. Both parents 
 
 - **The Baron doesn't want 150 gold. He wants the red book.** It proves twenty years of stolen toll silver, and the crown's auditor is coming this winter. The debt is only a lever to get into the tavern.
 - **The debt is forged.** Pell wrote the note after Wren died. Later, her letters show the handwriting doesn't match, which becomes a clue.
-- **Wren didn't die in her sleep.** Pell poisoned her while he searched for the book.
+- **Pell was in the house the night Wren died.** He didn't hurt her (she died in her sleep, smiling); he came to search for the book, and Oden saw him climbing out of the window in his nightshirt.
 - **Wren split the book instead of sending it to the crown,** because half the village is in it too. Exposing the Baron would ruin them as well.
 
 So the heroine's real question is not *"can I pay?"* It is **"whose granddaughter am I?"**:
@@ -94,7 +106,7 @@ Three separate stats, each in the player's hands:
 | Stat | What it measures | Comes from | Opens |
 |---|---|---|---|
 | **Lewdness** | Lust. How far her body and appetite have gone | Touches she allows, after hours, passives | Mind stages, flirting, the lantern |
-| **Corruption** | Evil. What she has done to people | Selling people out, greed, cruelty, dirty tricks | Dark choices: poison, sabotage, blackmail |
+| **Corruption** | Evil. What she has done to people | Selling people out, greed, cruelty, dirty tricks | Dirty tricks: laxatives in the ale, sabotage, blackmail |
 | **Fans** | The tavern's fans. Who keeps coming back, and why | Guests leaving happy | Steady income, allies on the final night, the top-tavern crown |
 
 Lewdness and corruption are separate, so there are four kinds of heroine instead of one track:
@@ -302,7 +314,7 @@ These five beats come early, while most players are Sheltered. Each one should s
 | **Sabine Marrow** (rival) | 46 | The Velvet House | To be what Wren was | One of Wren's girls. She told Pell where Wren slept | |
 | **Grig Tallow** (rival) | 50 | The Drowned Rat | Silas's routes | Informs for the garrison | |
 
-| **Kestrel Vey** | 33 | Adventurers | The ruins on the north road, and the gold under them | Has been east, and has heard of a prisoner with the heroine's surname | |
+| **Kestrel Vey** | 33 | Adventurers | The ruins on the north road, and the gold under them | Has been east, and drank with an orc clan's new husband who has the heroine's surname | |
 | **Corran Black** | 41 | Bandits | The road, and a cut of everything on it | His gang robs the toll wagons on the Baron's orders, so the Baron can blame bandits for the missing silver | Witness to the silver |
 | **Baroness Isolde Varn** | 36 | Nobles | The pass toll rights for her own lowland house | She'd see Hesk hang and take his keep | |
 
@@ -508,7 +520,7 @@ If she promised Pell the book, he doesn't collect. He asks where it is instead, 
 
 | Rival | Steals | Starting fans | Beat it fairly | Beat it dirty |
 |---|---|---|---|---|
-| **The Gilded Stag** (respectable inn in the valley) | Food, Safety | 1,200 | Respect, good food, protecting guests | Poison its ale, expose its silver early |
+| **The Gilded Stag** (respectable inn in the valley) | Food, Safety | 1,200 | Respect, good food, protecting guests | Laxatives in its ale, expose its silver early |
 | **The Velvet House** (the brothel that rose when the Lantern closed) | Her, Girls | 1,000 | Better terms, girls who choose to move | Burn it, blackmail its clients |
 | **The Drowned Rat** (river dive) | Fights, Ale | 800 | Win brawls, win Silas's crew | Inform on Grig to the garrison |
 
@@ -574,10 +586,10 @@ Corruption measures how evil she has become, and the player is answerable for it
 | Deed | Victim | What comes back |
 |---|---|---|
 | Sold the salt (beat 1) | Silas | He starts a brawl the next night. His crew's bottle prices go up |
-| Gave up Ash | Ash | His sister Wenna comes in at the midpoint (The poison) and asks whether you knew him |
+| Gave up Ash | Ash | His sister Wenna comes in at the midpoint (The nightshirt) and asks whether you knew him |
 | Mara arrested | The farmers | A boycott: her Food fans move to the Stag |
 | Turned a beggar out into the snow | A stranger | Oden buries him and stops trusting her |
-| Poisoned the Stag's ale | Three guests | If the auditor lodges at the Stag, he hears about it |
+| Spiked the Stag's ale with laxatives | Three guests (and the Stag's privy) | If the auditor lodges at the Stag, he hears about it |
 | Kept her girls' share | The Lantern's girls | One walks to the Velvet House and talks |
 | Blackmailed a client | A named fan | He becomes a fear-fan and turns on her at the end |
 
@@ -695,7 +707,7 @@ Letters are the story's reward for playing the systems. Each one unlocks at a mi
 
 **The warning letter** (corruption reaches rotten): what the book turned Wren into, and what it cost Father. *"I kept the secrets so long I forgot whose they were."*
 
-**Story letters** (fixed beats): Act 1 finale (Pell), the midpoint (the poison and the forged debt), and Father's letter in Act 3.
+**Story letters** (fixed beats): Act 1 finale (Pell), the midpoint (the nightshirt and the forged debt), and Father's letter in Act 3.
 
 **Open:** the madam's last letter unlocks at mind stage 3, but the lantern gate in section 11 is mind stage 2. Either move that letter to stage 2, or make the gate stage 3. **Proposed** (section 4b, "Wren is the mirror"): move it to Willing, which starts at Lewdness 54, next to the lantern's lewdness-50 gate. Section 4b also lines each letter up with the stage it answers.
 
@@ -703,7 +715,7 @@ Letters are the story's reward for playing the systems. Each one unlocks at a mi
 
 ## 11. Act 2: The Red Book (later, after Tarven: 501 → 1,500 fans)
 
-> **Later.** Not part of the current scope. Act 2 starts after Chapter 1 ends at 501 fans. The fan numbers below are from before the Tarven chapter and will be redone when we get there. Some of its beats may move into Tarven (Sabine's visit, Oden and the poison).
+> **Later.** Not part of the current scope. Act 2 starts after Chapter 1 ends at 501 fans. The fan numbers below are from before the Tarven chapter and will be redone when we get there. Some of its beats may move into Tarven (Sabine's visit, Oden and the nightshirt).
 
 The debt is 300, paid in three instalments of 100 that Pell collects in Chapter 1 (at the Watch Canteen, the Toll-Gate Inn and the Copper Bell), or "forgotten" if she promises Pell the book. Missing one carries the shortfall into the next instalment and puts her in the Baron's debt (a debuff); it never ends the run. The rivals open their doors. Each beat carries a rumour about one piece of the book, won one of the four ways (section 6). Upstairs rooms open in House Plans. Nights between beats are free service nights, with the usual rumours and table talk.
 
@@ -711,16 +723,16 @@ The debt is 300, paid in three instalments of 100 that Pell collects in Chapter 
 |---|---|---|
 | 600 | New terms | Pell's visit sets the terms. A runner from the Gilded Stag hands out cards for cheaper ale: the rivals arrive, and Fans appear on the HUD. Rumour: Oden's lock and key |
 | 700 | The velvet card | Sabine Marrow drinks at the bar and sizes her up. She offers to buy the tavern, or a partnership. She knew Wren, and it shows. Rumour: Mara's pages |
-| 850 | The poison | **Midpoint.** Oden tells her what he saw the night Wren died (Silas tells it if Oden was betrayed). New last-call choice: **pour Pell a drink of her own**. It removes Pell for good, the Baron comes sooner (heat jumps), and it goes in the Ledger |
+| 850 | The nightshirt | **Midpoint.** Oden tells her what he saw the night Wren died: Pell in his nightshirt, searching the house (Silas tells it if Oden was betrayed). New last-call choice: **get Pell drunk enough to confess**, ideally on Zane's feed. It ruins Pell for good, the Baron comes sooner (heat jumps), and it goes in the Ledger |
 | 1,000 | The first Ledger | Grig's men come to break her furniture: a brawl night. Silas's piece is on offer to whoever holds the room. At dawn, the first Pass Ledger card |
 | 1,150 | The inspection | The widow Hesk inspects the tavern "on behalf of the innkeepers' guild". A clean, respectable house wins Food and Safety fans from the Stag |
-| 1,300 | The turn | Ash comes back, or a letter from the east arrives: Father is alive in the keep's cells. The Baron doubles the road toll, guests thin out everywhere, and every rival gets desperate |
+| 1,300 | The turn | Ash comes back, or a letter from the east arrives: Father is alive, married into an orc clan, and very sorry. The Baron doubles the road toll, guests thin out everywhere, and every rival gets desperate |
 
 **The lantern isn't on the fan track.** It is offered on the first night after its gate is met (mind stage 2 and the madam's last letter), at any point from Act 2 on. See section 12.
 
 At **1,500 fans**, Act 2 ends with the second Ledger card.
 
-**Story flags from Act 1 come back:** a shut chapel means Oden's piece must be bought from the Baron's men. A caught Ash means Father's trail runs through the keep's cells, reached through Rhea's route.
+**Story flags from Act 1 come back:** a shut chapel means Oden's piece must be bought from the Baron's men. A caught Ash means Father's trail runs through the garrison's records, reached through Rhea's route.
 
 ---
 

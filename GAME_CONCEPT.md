@@ -10,7 +10,7 @@ You inherit your late grandmother's tavern in **Tarven**, a market town on a mou
 
 Every night you decide what kind of innkeeper you are. You can stay proper and respected, or become the flirt of the pass. You can protect your guests or sell their secrets to the tax collector. You can keep your clothes on, or let the room have a show for a better tip.
 
-**In one line:** a pixel-art tavern sim where everything you serve, say, sell and show feeds a reputation the whole town gossips about, and that reputation decides whether you keep the tavern, lose it, end up in irons, or bring the Baron down.
+**In one line:** a stylised 3D tavern sim where everything you serve, say, sell and show feeds a reputation the whole town gossips about, and that reputation decides whether you keep the tavern, lose it, end up in irons, or bring the Baron down.
 
 ---
 
@@ -26,9 +26,10 @@ Every night you decide what kind of innkeeper you are. You can stay proper and r
 
 ## 3. Setting and tone
 
+- **The world:** medieval fantasy with modern things in it, the way an isekai world works. Many kingdoms and peoples (humans, elves, dwarves, orcs, beastfolk and thinking goblins), barons, knights in armour, adventurers' guilds and gods, but people carry phones, wear modern clothes and post on a town feed. See `WORLD.md`, which is the source of truth for the setting.
 - **Tarven** is a cold little market town under the mountains. One high street, a chapel, a quarry, and the Baron's keep watching over it all.
 - **The tavern** is the biggest building on the street. It's cramped and worn when you arrive, and you can rebuild it (see House Plans).
-- **Tone:** earthy, bawdy and warm, with something darker underneath. Think of a tavern full of dirty songs where the Baron's men are always sitting at the back table. The humour is crude, the romance is sincere, and the politics are nasty.
+- **Tone: an adult comedy** (decided 2026-11-17, `WORLD.md` §7d). Crude, absurd, messed up and sexual: a world that takes ridiculous things seriously, with summoned heroes from every kingdom making it worse. The jokes come out of the systems. A few sincere beats (a romance, Wren's letters, Father) give it heart.
 - **Look:** stylised 3D in the manner of hero-shooter characters (see `MODEL_STUDY.md`): clean sculpted forms, heroic proportions, hand-painted textures with toon shading and outlines. Comic-style panels cut on the slant for big moments, and a visual-novel layer for story beats.
 
 ---
@@ -39,7 +40,7 @@ Pick one of **two siblings** (male or female body). Each is fully customisable:
 
 - **Body:** height, build, bust (size, lift, spacing, projection), rear (size, lift, width, projection)
 - **Face, hair (five styles each), skin**
-- **Clothes:** layered garments, any of which can be removed. Removed garments can be taken in strip dares (see 7.3 and 7.4).
+- **Clothes:** layered garments, medieval and modern (`WORLD.md`), any of which can be removed. Removed garments can be taken in strip dares (see 7.3 and 7.4).
 
 Your look is saved with the run. The NPCs' writing adapts to the body you picked ("handsome" or "beautiful", what they compliment, which garment they reach for).
 
