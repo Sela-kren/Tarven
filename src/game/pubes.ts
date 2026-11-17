@@ -1,4 +1,4 @@
-import { DataTexture, NearestFilter, RGBAFormat, UnsignedByteType } from "three";
+import { DataTexture, LinearFilter, LinearMipmapLinearFilter, RGBAFormat, UnsignedByteType } from "three";
 
 /**
  * Her pubic hair: a patch of skin over her mound, built a hair's breadth out from it in its own material
@@ -19,6 +19,11 @@ const SLIT_HALF = 0.007;
 /** The texture's size: square texels about 3.4 mm across, coarse like the rest of her. */
 export const PUBIC_WIDTH = 64;
 export const PUBIC_HEIGHT = 80;
+/**
+ * The texture it's drawn with is this many times finer (about 0.85 mm a texel) and soft: fine strands thinning out
+ * at the edge, filtered smooth, so up close (a cut-in) it reads as hair, not a jagged cut-out of big square texels.
+ */
+export const PUBIC_FINE = 4;
 
 type Shape = (x: number, h: number) => number;
 
@@ -161,18 +166,63 @@ export function drawPubes(style: PubicStyle, size = 0): Uint8Array {
   return data;
 }
 
+/**
+ * A style drawn soft for her texture, PUBIC_FINE times finer than drawPubes: alpha thinning out smoothly across the
+ * edge (no on-or-off scatter), broken into fine curling strands that lie down and in towards her cleft; the colour
+ * lighter along each strand and darker between, which the material's colour tints.
+ */
+export function drawSoftPubes(style: PubicStyle, size = 0): Uint8Array {
+  const width = PUBIC_WIDTH * PUBIC_FINE;
+  const height = PUBIC_HEIGHT * PUBIC_FINE;
+  const data = new Uint8Array(width * height * 4);
+  const scale = 1 + 0.3 * clamp(size, -1, 1);
+  for (let row = 0; row < height; row++) {
+    for (let column = 0; column < width; column++) {
+      const at = (row * width + column) * 4;
+      const { x, h } = texelAt((column + 0.5) / PUBIC_FINE - 0.5, (row + 0.5) / PUBIC_FINE - 0.5);
+      let alpha = 0;
+      let shade = 0.8;
+      if (style.shape) {
+        let d = style.shape(x / scale, h / scale) * scale;
+        if (style.ragged) d += style.ragged * (noise(x / 0.011, h / 0.011) * 2 - 1);
+        const fuzz = Math.max(0.0012, style.fuzz);
+        let cover = clamp(0.5 + d / fuzz, 0, 1);
+        // Never over the slit, fading out beside it.
+        if (h < 0.002) cover *= clamp((Math.abs(x) - SLIT_HALF * 0.6) / (SLIT_HALF * 0.8), 0, 1);
+        // Strands: fine stretched noise, lying down and in towards her middle (each side leaning its own way), their
+        // way wandering a little.
+        const lean = Math.sign(x || 1) * (0.45 + 0.4 * (noise(x / 0.02 + 5, h / 0.02) - 0.5));
+        const along = h * Math.cos(lean) + x * Math.sin(lean);
+        const across = x * Math.cos(lean) - h * Math.sin(lean);
+        const strand = noise(across / 0.0005 + 2 * noise(x / 0.005, h / 0.005), along / 0.005);
+        const curl = noise(across / 0.0008 + 17, along / 0.003 + 4);
+        const hair = clamp((Math.max(strand, curl * 0.9) - 0.3) / 0.45, 0, 1);
+        // Denser in the middle of the shape, a thin scatter of strands at its edge.
+        alpha = cover * (0.45 + 0.55 * hair) * (0.5 + 0.5 * cover);
+        shade = 0.75 + 0.25 * hair;
+      }
+      const value = Math.round(255 * shade);
+      data[at] = value;
+      data[at + 1] = value;
+      data[at + 2] = value;
+      data[at + 3] = Math.round(255 * clamp(alpha, 0, 1));
+    }
+  }
+  return data;
+}
+
 const textures = new Map<string, DataTexture>();
 
-/** A style's texture at a size, made once and shared. */
+/** A style's texture at a size, made once and shared: drawn soft and fine (drawSoftPubes), filtered smooth. */
 export function pubicTexture(style: PubicStyle, size = 0): DataTexture {
   const step = Math.round(clamp(size, -1, 1) * 10) / 10;
   const key = `${style.id}|${step}`;
   let texture = textures.get(key);
   if (!texture) {
-    texture = new DataTexture(drawPubes(style, step), PUBIC_WIDTH, PUBIC_HEIGHT, RGBAFormat, UnsignedByteType);
-    texture.magFilter = NearestFilter;
-    texture.minFilter = NearestFilter;
-    texture.generateMipmaps = false;
+    texture = new DataTexture(drawSoftPubes(style, step), PUBIC_WIDTH * PUBIC_FINE, PUBIC_HEIGHT * PUBIC_FINE, RGBAFormat, UnsignedByteType);
+    texture.magFilter = LinearFilter;
+    texture.minFilter = LinearMipmapLinearFilter;
+    texture.generateMipmaps = true;
     texture.needsUpdate = true;
     textures.set(key, texture);
   }

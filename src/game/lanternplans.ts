@@ -5,7 +5,7 @@
  */
 import type { Supply } from "./buildmode";
 import { girlLewdness, HOUSE_RULES, LANTERN_COST, ROOM_COST, RULE_TEXT, tierOf } from "./lantern";
-import type { Tavern } from "./tavern";
+import { REVEL_HALL_COST, type Tavern } from "./tavern";
 
 const GROUP = "The Lantern";
 
@@ -78,5 +78,34 @@ export function lanternSupplies(tavern: Tavern): Supply[] {
       }),
     ),
   );
+  return rows;
+}
+
+/** The Revel Hall (revel.ts, REVEL_HOUSE.md): the build in the late game, then tonight's switch once a revel's open. */
+export function revelSupplies(tavern: Tavern): Supply[] {
+  if (tavern.staffStage !== "late") return [];
+  const rows: Supply[] = [
+    {
+      name: "The Revel Hall",
+      icon: "cushions",
+      group: "The Revel Hall",
+      price: REVEL_HALL_COST,
+      detail: "Cushions, drapes and the big table: on the nights you choose, the taproom becomes the pass's revel house (18+). Set the night up from Settings, Revel nights.",
+      owned: tavern.revelHall,
+      canBuy: tavern.canBuildRevelHall,
+      buy: () => tavern.buildRevelHall(),
+    },
+  ];
+  if (tavern.revelHall && (tavern.revelOpen || tavern.revelTonight)) {
+    rows.push({
+      name: tavern.revelTonight ? "Revel tonight" : "No revel tonight",
+      icon: "heart",
+      group: "The Revel Hall",
+      detail: tavern.revelTonight ? "Tonight the hall opens as the tavern shuts. Click to call it off." : "Click to make tonight a revel night.",
+      owned: tavern.revelTonight,
+      canBuy: tavern.phase === "day",
+      buy: () => tavern.setRevelTonight(!tavern.revelTonight),
+    });
+  }
   return rows;
 }

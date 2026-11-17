@@ -64,7 +64,7 @@ import {
   WASH_TUB_SPOT,
 } from "./furnishings";
 import { BuildMode, type Supply } from "./buildmode";
-import { lanternSupplies } from "./lanternplans";
+import { lanternSupplies, revelSupplies } from "./lanternplans";
 import { GuestActor, Walker } from "./guests";
 import { softHeft } from "./heft";
 import { statsOf, type GuestRole } from "./guestroles";
@@ -107,7 +107,7 @@ import { touchLands } from "./touch";
 import { readTouchSettings, writeTouchSettings } from "./touchsettings";
 import { arousalOf, easeArousal } from "./nipples";
 import { easeOpening } from "./vulva";
-import { METER_MAX } from "./passives";
+import { METER_MAX, METERS } from "./passives";
 import type { ShowPart, ShowSide } from "./show";
 import {
   easeFace,
@@ -135,6 +135,9 @@ import { setFlavorSource } from "./flavor";
 import { SpeechBubbles, type Speaker } from "./speech";
 import { buildStreet, type Street } from "./street";
 import { Townsfolk } from "./townsfolk";
+import { StreetTalk } from "./streettalk";
+import { dressOf, outfitStyleOf, type HeatMoment, type TownFacts, type Townsperson } from "./towntalk";
+import { shiftPersona } from "./banter";
 import { formatHour, type WorldClock } from "./time";
 import { NavGrid } from "./path";
 import type { CumSpot } from "./cum";
@@ -153,11 +156,12 @@ import { fightFace } from "./fightface";
 import { restingPose, type BattlePoseName } from "./battlepose";
 import type { Fight, Foe } from "./fight";
 import { brawlBeats, intimateOf, intimateScene, takenOf, takenScene, touchScene, TOUCH_SCENE_HOLD, type IntimateRun } from "./brawlscene";
+import { scenePose } from "./brawlscenes";
 import type { LewdPart } from "./brawlai";
 import { SCENE_JOINS, type ScenePoseName } from "./sexpose";
 import { FATIGUE_LABELS } from "./herstate";
 import { Body, Sibling, SHOW_POSES, WALK_STYLE_NAMES, type Reaction, type ShowPose, type SoftPart } from "./player";
-import { cutInPieces, topPull } from "./wardrobe";
+import { cutInPieces, stripLadder, topPull } from "./wardrobe";
 import { COAT_SECTIONS, COAT_STAGES, type CoatSection } from "./cum";
 import { applyRetroLook, solidRetroMaterial } from "./retro";
 import {
@@ -231,6 +235,14 @@ const COBWEB_ARROW_HEIGHT = 2.6;
 const LISTEN_RANGE = 2.2;
 /** Talk about you can be made out from this close. Further off, it's only whispering. */
 const OVERHEAR_RANGE = 4.5;
+/** How close she must be to stop one of the townsfolk for a word. */
+const TOWNSFOLK_TALK_RANGE = 1.6;
+const TOWN_KINDS: GuestKind[] = ["farmer", "soldier", "noble", "farmer", "adventurer", "fugitive", "smuggler", "farmer", "bandit"];
+/** Who each of the townsfolk is: their kind, and man or woman. */
+const townPerson = (index: number): Townsperson => ({
+  kind: TOWN_KINDS[index % TOWN_KINDS.length],
+  female: index % 3 === 1 || index % 4 === 2,
+});
 const ITEM_SCALE = 1.6;
 const POT_WARNING_SECONDS = 5;
 const STATION_ICON_HEIGHT = 2;
@@ -283,7 +295,7 @@ const BACK_INSIDE: Vec2 = { x: -1.5, z: -3.8 };
 /** Out in the street, the hour she's reminded to head home, before the bell at five (AFTERNOON_HOLD_HOUR). */
 const STREET_REMIND_HOUR = 16;
 /** How much further back the camera stands in the street than in the room. */
-const STREET_ZOOM = 1.45;
+const STREET_ZOOM = 1.25;
 /** What each place on the high street says for now (TOWN_DAY.md). Places that do something come later. */
 const STREET_PLACES: Record<string, { title: string; text: string[] }> = {
   market: {
@@ -506,6 +518,8 @@ const FIGHT_SHOTS: Record<string, Omit<TouchShow, "kind">> = {
   start: { id: "grab", region: "shoulder", answer: "allow", words: { hit: "GRAB!", voice: "hey!" } },
   "strike:hit": { id: "chin", region: "face", answer: "slap", words: { hit: "POW!", voice: "take that!" } },
   "strike:miss": { id: "gaze", region: "face", answer: "allow", noHand: true, words: { hit: "WHIFF", voice: "tch!" } },
+  "kick:hit": { id: "chin", region: "face", answer: "slap", words: { hit: "THWACK!", voice: "hyah!" } },
+  "kick:miss": { id: "gaze", region: "face", answer: "allow", noHand: true, words: { hit: "WHOOSH", voice: "tch!" } },
   "shove:hit": { id: "grab", region: "shoulder", answer: "slap", words: { hit: "SHOVE!", voice: "back off!" } },
   "shove:miss": { id: "grab", region: "shoulder", answer: "allow", words: { hit: "...", voice: "ugh!" } },
   dodge: { id: "gaze", region: "face", answer: "allow", noHand: true, words: { hit: "", voice: "come on!" } },
@@ -730,6 +744,8 @@ export interface Button {
   onCursor?: () => void;
   /** The menu's cursor starts here rather than on the first button. */
   start?: boolean;
+  /** A small pixel icon before the label, as SVG markup of our own (fighticons.ts). */
+  icon?: string;
 }
 
 // Kept for the browser tab only, so a new visit asks again. Storage can be blocked; then it just asks each time.
@@ -849,6 +865,8 @@ export class Game {
   private readonly street: Street;
   /** The people out in the street by day (townsfolk.ts), made the first time she goes out. */
   private townsfolk: Townsfolk | null = null;
+  /** What the townsfolk say to her and to each other (streettalk.ts, towntalk.ts). */
+  private streetTalk: StreetTalk | null = null;
   private readonly townLayer = new Group();
   outdoors = false;
   /** The reminders to head home she's had today out in the street: 1 at four, 2 at five. */
@@ -1612,6 +1630,11 @@ export class Game {
       for (const spot of this.street.spots) {
         consider({ kind: "street", place: spot.place, label: spot.label }, spot.at, STATION_ARROW_HEIGHT, spot.range);
       }
+      // Anyone out in the street can be stopped for a word.
+      for (const person of this.townsfolk?.people() ?? []) {
+        if (!person.visible) continue;
+        consider({ kind: "street", place: `folk:${person.index}`, label: "Talk" }, person.position, GUEST_ARROW_HEIGHT, TOWNSFOLK_TALK_RANGE);
+      }
       return best;
     }
 
@@ -1909,7 +1932,14 @@ export class Game {
       const label = document.createElement("span");
       label.className = "label";
       label.textContent = button.label;
-      el.append(key, label);
+      el.append(key);
+      if (button.icon) {
+        const icon = document.createElement("span");
+        icon.className = "icon";
+        icon.innerHTML = button.icon;
+        el.append(icon);
+      }
+      el.append(label);
       if (button.save) {
         el.append(saveBadges(button.save, PLAYER_LABELS));
         // The icons say it in pictures; screen readers get the words.
@@ -2257,6 +2287,10 @@ export class Game {
       this.goOutside();
       return;
     }
+    if (place.startsWith("folk:")) {
+      this.streetTalk?.talkTo(Number(place.slice(5)), this.townFacts());
+      return;
+    }
     if (place === "home") {
       this.goInside();
       return;
@@ -2277,8 +2311,59 @@ export class Game {
 
   /** One of the townsfolk: every kind of person in Tarven, men and women, each with a look of their own. */
   private townBody(index: number): Body {
-    const kinds: GuestKind[] = ["farmer", "soldier", "noble", "farmer", "adventurer", "fugitive", "smuggler", "farmer", "bandit"];
-    return this.makeGuestBody(kinds[index % kinds.length], index % 3 === 1 || index % 4 === 2, 1 + index * 3);
+    const { kind, female } = townPerson(index);
+    return this.makeGuestBody(kind, female, 1 + index * 3);
+  }
+
+  /** Everything about her the town's talk reads (towntalk.ts), from where the game keeps it. */
+  private townFacts(): TownFacts {
+    const tavern = this.tavern;
+    const body = tavern.playerBody === "Female" ? "Female" : "Male";
+    const ladder = stripLadder(tavern.playerBody, tavern.playerOutfit, tavern.playerLegwear, tavern.playerUnder);
+    return {
+      body,
+      arc: tavern.arcStage,
+      lewdness: tavern.lewdness,
+      corruption: tavern.corruption,
+      respect: tavern.persona.respect,
+      fame: tavern.persona.fame,
+      flirt: tavern.persona.flirt,
+      lust: tavern.persona.lust,
+      desire: Math.max(...METERS.map((m) => tavern.meters[m])),
+      drunk: tavern.drunk,
+      willpower: tavern.maxWillpower > 0 ? tavern.willpower / tavern.maxWillpower : 1,
+      passives: tavern.passives,
+      titles: tavern.worn,
+      debuffs: tavern.debuffs.map((d) => d.id),
+      messy: tavern.messy,
+      stained: tavern.messy,
+      smellsOfSex: tavern.messy || tavern.wet,
+      dress: dressOf(ladder, tavern.shownPieces),
+      outfit: outfitStyleOf(tavern.playerOutfit),
+      hour: this.clock.hour,
+      day: tavern.nightIndex,
+      fans: tavern.fans,
+      trust: tavern.trust,
+      heat: tavern.heat,
+      lantern: tavern.lantern.lit ? "lit" : tavern.lantern.hung ? "dark" : "none",
+      plot: tavern.plotFlags,
+      // Her standing (TOWN_DAY.md 6.1). Careers aren't built yet; a lit Lantern makes her its madam.
+      role: tavern.lantern.lit ? "madam" : "keeper",
+      consentOff: tavern.consentOff,
+    };
+  }
+
+  /** A heat moment in the street has played out (towntalk.ts): what it does to her, and a line for the log. */
+  private applyHeat(moment: HeatMoment): void {
+    const tavern = this.tavern;
+    const { respect = 0, fame = 0, lust = 0, desire = 0 } = moment.effects;
+    shiftPersona(tavern.persona, { respect, fame, lust });
+    if (desire) {
+      const meter = tavern.playerBody === "Female" ? "pussy" : "cock";
+      tavern.meters[meter] = MathUtils.clamp(tavern.meters[meter] + desire, 0, tavern.desireCap(meter));
+    }
+    this.log.add(moment.summary);
+    // moment.offer ("kiss" | "touch" | "tonight" | "alley" | "upstairs") is the hook for a scene later.
   }
 
   /** Out of the front door onto the high street, for the rest of the day. */
@@ -2291,6 +2376,9 @@ export class Game {
         const { activities, doors, colliders, walkable } = this.street;
         this.townsfolk = new Townsfolk(activities, doors, colliders, walkable, (index) => this.townBody(index));
         this.townLayer.add(this.townsfolk.group);
+        const chatPairs = activities.flatMap((a, i) => (a.pair !== undefined && i < a.pair ? [[i, a.pair] as const] : []));
+        this.streetTalk = new StreetTalk(townPerson, chatPairs, (thought) => this.log.add(thought));
+        this.streetTalk.onHeat = (moment) => this.applyHeat(moment);
       }
       this.streetReminders = this.clock.hour >= STREET_REMIND_HOUR ? 1 : 0;
       // The street's walls take the room's place until she comes back in.
@@ -2299,7 +2387,7 @@ export class Game {
       colliders.push(...this.street.colliders);
       const player = this.siblings[this.active];
       player.position.setX(this.street.spawn.x).setZ(this.street.spawn.z);
-      player.face(0);
+      player.face(this.street.spawnHeading);
       this.screen = "play";
       this.log.add(`Out on Tarven's high street. It's ${formatHour(this.clock.hour)}: be back to ring the bell by five.`);
     });
@@ -2309,6 +2397,7 @@ export class Game {
   private goInside(): void {
     this.clearTarget();
     this.audio.play("doorClose");
+    this.streetTalk?.clear();
     this.fadeTo(() => {
       this.nav = this.applyPlan();
       const player = this.siblings[this.active];
@@ -3005,7 +3094,7 @@ export class Game {
       };
     });
     // The Lantern's builds, switches and girls, once the brothel is open to her (lanternplans.ts).
-    return [...upgrades, ...wares, ...repairs, ...drinks, ...rules, ...lanternSupplies(tavern)];
+    return [...upgrades, ...wares, ...repairs, ...drinks, ...rules, ...lanternSupplies(tavern), ...revelSupplies(tavern)];
   }
 
   /** The night's report. Spending happens at the house plans, during the day. */
@@ -3246,7 +3335,11 @@ export class Game {
     }
 
     this.remindToHeadHome();
-    if (this.outdoors) this.townsfolk?.update(dt);
+    if (this.outdoors && this.townsfolk) {
+      this.townsfolk.update(dt);
+      const her = this.siblings[this.active].position;
+      this.streetTalk?.update(dt, this.townsfolk.people(), her, this.townFacts());
+    }
     const found = this.findTarget();
     if (found && found.prompt.actionable && input.pressed("KeyE") && found.target.kind === "bed" && (tavern.restless || tavern.duelOffer())) {
       this.clearTarget();
@@ -3323,7 +3416,11 @@ export class Game {
    */
   renderSpeech(): void {
     const speakers: Speaker[] = [];
-    if (this.screen === "play") {
+    if (this.screen === "play" && this.outdoors) {
+      if (this.townsfolk && this.streetTalk) {
+        speakers.push(...this.streetTalk.speakers(this.townsfolk.people(), this.siblings[this.active].position));
+      }
+    } else if (this.screen === "play") {
       for (const [id, actor] of this.actors) {
         const said = this.chatter.saying(id);
         if (!said) continue;
@@ -3559,7 +3656,8 @@ export class Game {
     const female = this.guestFemale(with_.guestId);
     const sceneOf = (event: string): ScenePoseName | null => {
       const area = takenOf(event);
-      if (area) return takenScene(area, with_.kind, female);
+      // KP's scenes have their own pose (brawlscenes.ts; Tarven's nearest for now), Tarven's own his type's way.
+      if (area) return scenePose(fight.taken?.scene) ?? takenScene(area, with_.kind, female);
       const move = intimateOf(event);
       if (!move) return null;
       // Her mouth on them twice running goes deeper; riding them again, she turns round.

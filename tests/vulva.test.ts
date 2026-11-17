@@ -7,6 +7,7 @@ import {
   VULVA_TYPES,
   VULVA_CANAL,
   VULVA_CUT,
+  CLIT_AT,
   cutShare,
   easeOpening,
   gridOf,
@@ -20,6 +21,15 @@ import {
 } from "../src/game/vulva";
 
 const COLS = VULVA_COLUMNS.length;
+const MIDDLE = (COLS - 1) / 2;
+/** The flat test grid's rows are this far apart: it's 10.8 cm long, whatever its rows. */
+const ROW_STEP = 0.108 / (VULVA_ROWS - 1);
+/** A row halfway down the slit, and two rows of the cut: its middle and a quarter of the way in from its top. */
+const HALF_ROW = (VULVA_ROWS - 1) / 2;
+const CUT_MIDDLE = Math.floor((VULVA_CUT[0] + VULVA_CUT[1]) / 2);
+const CUT_NEAR_TOP = VULVA_CUT[0] + Math.round((VULVA_CUT[1] - VULVA_CUT[0]) / 4);
+/** A column by where it lies across. */
+const column = (s: number) => VULVA_COLUMNS.indexOf(s);
 const type = (id: string) => VULVA_TYPES.find((t) => t.id === id)!;
 const shape = (id: string, arousal = 0, lips = 0) => vulvaShape(type(id), 0, 0, lips, arousal);
 /** The outer lips' crest and the inner lips' ridge, halfway down the slit. */
@@ -36,7 +46,7 @@ function flatPatch() {
     for (let c = 0; c < COLS; c++) {
       const mesh = Math.abs(VULVA_COLUMNS[c]) < 0.2 ? 0 : 1;
       meshes[mesh].uv.push(c / (COLS - 1), 1 - r / (VULVA_ROWS - 1));
-      meshes[mesh].pos.push(VULVA_COLUMNS[c] * 0.03, 0.8 - r * 0.009, 0.06);
+      meshes[mesh].pos.push(VULVA_COLUMNS[c] * 0.03, 0.8 - r * ROW_STEP, 0.06);
     }
   }
   const uvs = meshes.map(({ uv }) => ({ count: uv.length / 2, getX: (i: number) => uv[i * 2], getY: (i: number) => uv[i * 2 + 1] }));
@@ -94,17 +104,30 @@ describe("vulva types", () => {
     }
   });
 
+  it("has a clit under the hood's edge, standing out from it, and a groove down the slit between the inner lips", () => {
+    for (const t of VULVA_TYPES) {
+      const sh = shape(t.id, 0.5);
+      const clitT = 0.5 + CLIT_AT * 0.36;
+      // The bead stands over the skin just round it, and swells as she's aroused.
+      expect(vulvaAt(sh, 0, clitT).h).toBeGreaterThan(vulvaAt(sh, 0.15, clitT).h);
+      expect(vulvaAt(shape(t.id, 1), 0, clitT).h).toBeGreaterThan(vulvaAt(shape(t.id, 0), 0, clitT).h);
+      // Halfway down, the inner lips stand higher than the slit between them.
+      expect(vulvaAt(sh, 0.08, 0.5).h).toBeGreaterThan(vulvaAt(sh, 0, 0.5).h + 0.0008);
+    }
+  });
+
   it("is the same on both sides", () => {
     const s = shape("long", 0.5);
     for (const x of [0.09, 0.2, 0.5]) expect(vulvaAt(s, -x, 0.6)).toEqual(vulvaAt(s, x, 0.6));
   });
 
   it("wears the slit's material only in the middle of the grid", () => {
-    expect(isInner(5, 6)).toBe(true);
-    expect(isInner(6, 6)).toBe(true);
-    expect(isInner(3, 6)).toBe(false);
-    expect(isInner(6, 0)).toBe(false);
-    expect(isInner(6, VULVA_ROWS - 2)).toBe(false);
+    expect(isInner(column(-0.075), HALF_ROW)).toBe(true);
+    expect(isInner(MIDDLE, HALF_ROW)).toBe(true);
+    expect(isInner(column(-0.2), HALF_ROW)).toBe(true);
+    expect(isInner(column(-0.28), HALF_ROW)).toBe(false);
+    expect(isInner(MIDDLE, 0)).toBe(false);
+    expect(isInner(MIDDLE, VULVA_ROWS - 2)).toBe(false);
   });
 });
 
@@ -148,7 +171,7 @@ describe("the vulva's grid", () => {
     const grid = gridOf(patch, on);
     // A point over the outer lip's crest, a hair off the skin, and one far away.
     const crest = type("puffy").crest * vulvaShape(type("puffy"), 0, 0, 0, 0).scale;
-    const coat = Float32Array.from([crest * 0.03, 0.8 - 6 * 0.009, 0.0586, 0.5, 0.5, 0.5]);
+    const coat = Float32Array.from([crest * 0.03, 0.8 - HALF_ROW * ROW_STEP, 0.0586, 0.5, 0.5, 0.5]);
     const riders = vulvaRiders(coat, grid)!;
     expect(Array.from(riders.verts)).toEqual([0]);
     const frame = shapeVulva(patch, on, shape("puffy"), on.map((p) => new Float32Array(p.length)));
@@ -168,7 +191,7 @@ describe("her opening", () => {
     const [top, bottom] = VULVA_CUT;
     const middle = (COLS - 1) / 2;
     const meshes: { uv: number[]; pos: number[] }[] = [{ uv: [], pos: [] }, { uv: [], pos: [] }, { uv: [], pos: [] }];
-    const at = (c: number, r: number) => [VULVA_COLUMNS[c] * 0.03, 0.8 - r * 0.009, 0.06];
+    const at = (c: number, r: number) => [VULVA_COLUMNS[c] * 0.03, 0.8 - r * ROW_STEP, 0.06];
     for (let r = 0; r < VULVA_ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const sides = c === middle && r > top && r < bottom ? [-0.25, 0.25] : [0];
@@ -208,7 +231,7 @@ describe("her opening", () => {
   };
 
   it("parts the cut's two sides as it opens, most at its middle, and keeps them together closed", () => {
-    const gap = (open: number) => gapAt(open, 7);
+    const gap = (open: number) => gapAt(open, CUT_MIDDLE);
     expect(gap(0)).toBeCloseTo(0, 6);
     expect(gap(1)).toBeGreaterThan(0.008);
     expect(cutShare(VULVA_CUT[0])).toBe(0);
@@ -229,9 +252,9 @@ describe("her opening", () => {
   });
 
   it("stretches past fully open: wider and rounder, longer at its top, its canal deeper", () => {
-    expect(gapAt(VULVA_STRETCHED, 7)).toBeGreaterThan(gapAt(1, 7) * 1.8);
+    expect(gapAt(VULVA_STRETCHED, CUT_MIDDLE)).toBeGreaterThan(gapAt(1, CUT_MIDDLE) * 1.8);
     // Rounder: the rows near its ends open nearly as wide as its middle.
-    expect(gapAt(VULVA_STRETCHED, 6) / gapAt(VULVA_STRETCHED, 7)).toBeGreaterThan(gapAt(1, 6) / gapAt(1, 7));
+    expect(gapAt(VULVA_STRETCHED, CUT_NEAR_TOP) / gapAt(VULVA_STRETCHED, CUT_MIDDLE)).toBeGreaterThan(gapAt(1, CUT_NEAR_TOP) / gapAt(1, CUT_MIDDLE));
     const middleOf = (open: number, row: number) => {
       const { patch, out } = shaped(open);
       const g = patch.pick[((COLS - 1) / 2 + row * COLS) * 2 + 1];

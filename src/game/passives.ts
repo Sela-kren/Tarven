@@ -14,11 +14,13 @@
  * always say no.
  */
 import { CUM_SPOTS, type CumSpot } from "./cum";
+import { DEFEAT_IDS, type DefeatId } from "./defeat";
 import { GUEST_KIND_LIST } from "./guestroles";
 import type { GuestKind } from "./tavern";
 import type { TouchRegion } from "./touchtalk";
 import type { SkillId, StatId } from "./skills";
 import type { DuelMove } from "./duel";
+import { REVEL_HONOURS } from "./revel";
 
 /**
  * Her desires. `cock` is her wanting to be intimate with someone: it fills when the bold touches land (a lap, a
@@ -31,6 +33,25 @@ export const METER_NAMES: Record<Meter, string> = { body: "Body", mouth: "Mouth"
 export const INTIMATE_REGIONS: ReadonlySet<TouchRegion> = new Set(["thigh", "lap", "intimate", "invite"]);
 export const METER_MAX = 100;
 export type Meters = Record<Meter, number>;
+
+/**
+ * How high each desire can go: Karryn's Prison's max desire (RemtairyKarrynPassives.js calculateMax...Desire). Every
+ * meter starts capped low, so the boldest things (mouth, breasts, pussy and rear scenes at 80) can't happen on her
+ * first nights. Reaching DESIRE_CAP_UNLOCK[0] on a night earns the passive that lifts it (KP: max 70, then reach 50
+ * and it's 95), and reaching DESIRE_CAP_UNLOCK[1] the one that takes the cap off (KP: reach 75 and it's open).
+ */
+export const DESIRE_CAPS: readonly number[] = [60, 75, METER_MAX];
+export const DESIRE_CAP_UNLOCK: readonly number[] = [50, 70];
+/** How high a meter can go tonight, by how many times her passives have lifted its cap. */
+export function desireCap(e: { capUp: Meters }, meter: Meter): number {
+  return DESIRE_CAPS[Math.min(DESIRE_CAPS.length - 1, Math.max(0, e.capUp[meter] ?? 0))];
+}
+/** Every meter's cap at once. */
+export function desireCaps(e: { capUp: Meters }): Meters {
+  const out = emptyMeters();
+  for (const m of METERS) out[m] = desireCap(e, m);
+  return out;
+}
 
 /** Which meter a touch on each part of her fills, and needs. */
 export const METER_OF: Record<TouchRegion, Meter> = {
@@ -155,8 +176,10 @@ export interface Records {
   redressed: number;
   /** Times a guest asked for adult play on her last clear drink (barwork.ts). */
   lastClearAsks: number;
-  /** Nights each meter reached the top. */
+  /** Nights each meter reached the top (as high as her cap let it go that night). */
   maxed: Partial<Record<Meter, number>>;
+  /** The highest each meter has ever reached on a night (what lifts its cap: desireCap). */
+  best: Partial<Record<Meter, number>>;
   /** Nights every meter reached 60. */
   allHigh: number;
   clothesLost: number;
@@ -208,6 +231,20 @@ export interface Records {
   /** Every load a man has left on or in her, in ml by where it landed, and how many loads in all. */
   cum: Partial<Record<CumSpot, number>>;
   loads: number;
+  /** Defeats (defeat.ts, KP's defeat battles), by where; and the most in one. */
+  defeats: Partial<Record<DefeatId, number>>;
+  defeatMost: number;
+  /** Side jobs (sidejobs.ts, KP's): dances on the bar, rooms rented, lodgers who asked for more; riot nights put down. */
+  shows: number;
+  roomsRented: number;
+  roomAsks: number;
+  riotsDown: number;
+  /** KP's toys she let in, and times she denied them inside her. */
+  toys: number;
+  /** The Revel House (revel.ts): revel nights held, the most partners she's had in one, and mixed nights. */
+  revelNights: number;
+  revelPartnersMost: number;
+  mixedNights: number;
 }
 
 export function newRecords(): Records {
@@ -243,6 +280,7 @@ export function newRecords(): Records {
     redressed: 0,
     lastClearAsks: 0,
     maxed: {},
+    best: {},
     allHigh: 0,
     clothesLost: 0,
     bareNights: 0,
@@ -279,6 +317,16 @@ export function newRecords(): Records {
     duelMoves: {},
     cum: {},
     loads: 0,
+    defeats: {},
+    defeatMost: 0,
+    shows: 0,
+    roomsRented: 0,
+    roomAsks: 0,
+    riotsDown: 0,
+    toys: 0,
+    revelNights: 0,
+    revelPartnersMost: 0,
+    mixedNights: 0,
   };
 }
 
@@ -307,6 +355,10 @@ export const ROUGH_TOUCHES: ReadonlySet<string> = new Set([
 export interface Effects {
   /** Where each meter starts each night. */
   start: Meters;
+  /** How many times each meter's cap has been lifted (desireCap). */
+  capUp: Meters;
+  /** How much less (negative: more) each desire a brawl scene needs of her (trinkets.ts, KP's accessories). */
+  sceneEase: Partial<Record<Meter, number>>;
   /** How much less each kind of touch needs, in meter points (10 is one step of boldness). */
   ease: Partial<Record<TouchRegion, number>>;
   /** How much faster each meter fills, as a fraction: 0.25 is a quarter faster. */
@@ -426,11 +478,17 @@ export interface Effects {
   tidy: number;
   /** How much less willpower saying no costs her, as a fraction. */
   refuseEase: number;
+  /** The Revel House (revel.ts): more guests at the door, more of the women wanting her, more in the centrepiece. */
+  revelGuests: number;
+  revelWomen: number;
+  centrepieceExtra: number;
 }
 
 export function noEffects(): Effects {
   return {
     start: emptyMeters(),
+    capUp: emptyMeters(),
+    sceneEase: {},
     ease: {},
     sens: emptyMeters(),
     touchGold: {},
@@ -504,6 +562,9 @@ export function noEffects(): Effects {
     burnGrace: 0,
     tidy: 0,
     refuseEase: 0,
+    revelGuests: 0,
+    revelWomen: 0,
+    centrepieceExtra: 0,
   };
 }
 
@@ -636,6 +697,163 @@ export interface PassiveDef {
 }
 
 const count = (n: number, need: number): [number, number] => [Math.min(n, need), need];
+
+/**
+ * The passives that lift each desire's cap (desireCap), Karryn's Prison's "Max ... desire increased": the first for
+ * reaching DESIRE_CAP_UNLOCK[0] on a night, the second for reaching DESIRE_CAP_UNLOCK[1].
+ */
+const CAP_WORDS: Record<Meter, { first: string; second: string; thoughtFirst: string; thoughtSecond: string }> = {
+  body: { first: "Restless Skin", second: "Skin Hunger", thoughtFirst: "(Every brush of a sleeve lingers on me now.)", thoughtSecond: "(I want hands on me. Anyone's.)" },
+  mouth: { first: "Wondering Lips", second: "Hungry Mouth", thoughtFirst: "(I keep wetting my lips when they talk to me.)", thoughtSecond: "(I think about what I'd do with my mouth. A lot.)" },
+  breasts: { first: "Tender Chest", second: "Aching Breasts", thoughtFirst: "(My chest feels tight under my top all night.)", thoughtSecond: "(I want them touched. Squeezed. Used.)" },
+  butt: { first: "Aware Behind", second: "Wanting Behind", thoughtFirst: "(I feel every look at my backside now.)", thoughtSecond: "(I want a hand there. More than a hand.)" },
+  pussy: { first: "Warm Between", second: "Aching Between", thoughtFirst: "(I'm wet half the night now, and they can tell.)", thoughtSecond: "(I need something inside me. I can't stop thinking it.)" },
+  cock: { first: "Curious Thoughts", second: "Cock on the Mind", thoughtFirst: "(I caught myself staring at their laps tonight.)", thoughtSecond: "(I want one. There, I said it.)" },
+};
+const best = (f: PassiveFacts, meter: Meter) => f.records.best[meter] ?? 0;
+const CAP_PASSIVES: PassiveDef[] = METERS.flatMap((m): PassiveDef[] => {
+  const w = CAP_WORDS[m];
+  const name = METER_NAMES[m];
+  return [
+    {
+      id: `cap1_${m}`,
+      name: w.first,
+      group: "desire",
+      need: `Reach ${DESIRE_CAP_UNLOCK[0]} ${name} desire on a night`,
+      progress: (f) => count(best(f, m) >= DESIRE_CAP_UNLOCK[0] ? 1 : 0, 1),
+      benefit: `${name} desire can go up to ${DESIRE_CAPS[1]} (was ${DESIRE_CAPS[0]})`,
+      effect: (e) => (e.capUp[m] += 1),
+      lewd: 2,
+      thought: w.thoughtFirst,
+    },
+    {
+      id: `cap2_${m}`,
+      name: w.second,
+      group: "desire",
+      need: `Reach ${DESIRE_CAP_UNLOCK[1]} ${name} desire on a night`,
+      progress: (f) => count(best(f, m) >= DESIRE_CAP_UNLOCK[1] ? 1 : 0, 1),
+      benefit: `${name} desire can go all the way to ${DESIRE_CAPS[2]}`,
+      effect: (e) => (e.capUp[m] += 1),
+      lewd: 4,
+      thought: w.thoughtSecond,
+    },
+  ];
+});
+
+/**
+ * Passives for KP's defeats, side jobs, riots and toys (defeat.ts, sidejobs.ts, fight.ts): one for each place she's
+ * been beaten three times (KP's per-defeat passives), and one for each side job.
+ */
+const DEFEAT_WORDS: Record<DefeatId, { name: string; thought: string; meter: Meter }> = {
+  taproom: { name: "The Floor Remembers", thought: "(I know every knot in those floorboards now. From below.)", meter: "mouth" },
+  yard: { name: "Mud on My Knees", thought: "(I can't look at the rain barrel without blushing.)", meter: "pussy" },
+  room: { name: "No Lock Holds", thought: "(My own bed doesn't feel like mine any more.)", meter: "body" },
+  storeroom: { name: "Among the Casks", thought: "(The smell of the storeroom does something to me now.)", meter: "butt" },
+  baron: { name: "The Captain's Due", thought: "(They'll be back. Part of me is counting the days.)", meter: "cock" },
+  garrison: { name: "Drilled", thought: "(I know the squad's order by heart now. All of it.)", meter: "pussy" },
+};
+const KP_EXTRA_PASSIVES: PassiveDef[] = [
+  ...DEFEAT_IDS.map((id): PassiveDef => ({
+    id: `defeat_${id}`,
+    name: DEFEAT_WORDS[id].name,
+    group: "masochism",
+    need: `Be beaten there 3 times (${id})`,
+    progress: (f) => count(f.records.defeats[id] ?? 0, 3),
+    benefit: `${METER_NAMES[DEFEAT_WORDS[id].meter]} desire starts each night at +5; +1 willpower at the top`,
+    cost: "Guests reach for you a little more",
+    effect: (e) => {
+      e.start[DEFEAT_WORDS[id].meter] += 5;
+      e.willMax += 1;
+      e.reach += 0.05;
+    },
+    lewd: 6,
+    thought: DEFEAT_WORDS[id].thought,
+  })),
+  {
+    id: "barDancer",
+    name: "Bar-top Dancer",
+    group: "exhibition",
+    need: "Dance on the bar 5 times",
+    progress: (f) => count(f.records.shows, 5),
+    benefit: "+1 gold on every tipped serve; guests offer coin for a look more often",
+    effect: (e) => {
+      e.serveTip += 1;
+      e.showAsk += 0.25;
+    },
+    lewd: 6,
+    thought: "(I look forward to it now. The coins, the noise, all of it.)",
+  },
+  {
+    id: "frontDesk",
+    name: "Keeper of Keys",
+    group: "bar",
+    need: "Let 10 rooms",
+    progress: (f) => count(f.records.roomsRented, 10),
+    benefit: "+5% pay on everything",
+    effect: (e) => (e.payPct += 0.05),
+    lewd: 1,
+    thought: "(Every room full, and every lodger knows my name.)",
+  },
+  {
+    id: "riotBreaker",
+    name: "Riot Breaker",
+    group: "brawler",
+    need: "Put down 2 riot nights",
+    progress: (f) => count(f.records.riotsDown, 2),
+    benefit: "+1 damage in a brawl; trouble starts 10% less often",
+    effect: (e) => {
+      e.fightDamage += 1;
+      e.trouble += 0.1;
+    },
+    thought: "(Let them come. I've cleared this room before.)",
+  },
+  {
+    id: "toyBox",
+    name: "Toy Box",
+    group: "masturbation",
+    need: "Let them put a toy in you 5 times",
+    progress: (f) => count(f.records.toys, 5),
+    benefit: "Pussy and Butt desire fill 15% faster",
+    effect: (e) => {
+      e.sens.pussy += 0.15;
+      e.sens.butt += 0.15;
+    },
+    lewd: 8,
+    thought: "(I caught myself looking at the smuggler's pockets tonight.)",
+  },
+];
+
+/**
+ * The Revel House's passives (revel.ts, REVEL_HONOURS): earned from her revel records. Their names and needs come
+ * from the honours table; what they do is wired here and in tavern.ts (`holdRevel`).
+ */
+const REVEL_WIRING: Record<string, Pick<PassiveDef, "group" | "benefit" | "effect" | "lewd" | "thought">> = {
+  openHall: {
+    group: "fame",
+    benefit: "Revel nights draw two more guests",
+    effect: (e) => (e.revelGuests += 2),
+    lewd: 6,
+    thought: "(They know the door's open now. They come from all over the pass.)",
+  },
+  roomForEveryone: {
+    group: "invitations",
+    benefit: "On mixed nights, more of the women want you",
+    effect: (e) => (e.revelWomen += 2),
+    lewd: 8,
+    thought: "(Their hands are softer. I didn't know I'd want that too.)",
+  },
+  theWholePass: {
+    group: "afterHours",
+    benefit: "The centrepiece holds one more",
+    effect: (e) => (e.centrepieceExtra += 1),
+    lewd: 12,
+    thought: "(I lost count. I didn't want to stop counting.)",
+  },
+};
+const REVEL_PASSIVES: PassiveDef[] = REVEL_HONOURS.filter((h) => h.kind === "passive" && REVEL_WIRING[h.id]).map((h): PassiveDef => {
+  const [key, need] = Object.entries(h.needs)[0] as [keyof Pick<Records, "revelNights" | "revelPartnersMost" | "mixedNights">, number];
+  return { id: h.id, name: h.name, need: h.need, progress: (f) => count(f.records[key] ?? 0, need), ...REVEL_WIRING[h.id] };
+});
 
 export const PASSIVES: readonly PassiveDef[] = [
   // ---- Hands ----
@@ -1377,6 +1595,9 @@ export const PASSIVES: readonly PassiveDef[] = [
   },
 
   // ---- Desire ----
+  ...CAP_PASSIVES,
+  ...KP_EXTRA_PASSIVES,
+  ...REVEL_PASSIVES,
   {
     id: "restless",
     name: "Restless",
@@ -2617,6 +2838,11 @@ export interface ProgressSave {
   /** Tavern rules she's adopted, and the ones on (tavernrules.ts). */
   rulesAdopted?: string[];
   rules?: string[];
+  /** Trinkets worn (trinkets.ts). */
+  trinkets?: string[];
+  /** A riot night on (sidejobs.ts), and nights since her hair was trimmed. */
+  riot?: boolean;
+  hairNights?: number;
 }
 
 const DUEL_MOVES: readonly DuelMove[] = ["kiss", "caress", "tease", "undress", "hands", "mouth", "tits", "ride", "anal", "hold", "stop"];
@@ -2636,6 +2862,9 @@ export function readProgress(raw: unknown): ProgressSave {
   const ids = (list: unknown) => (Array.isArray(list) ? list.filter((id): id is string => typeof id === "string") : undefined);
   out.titles = ids(fields.titles);
   out.worn = ids(fields.worn);
+  out.trinkets = ids(fields.trinkets);
+  out.riot = fields.riot === true;
+  out.hairNights = Math.floor(num(fields.hairNights, 1000));
   out.rulesAdopted = ids(fields.rulesAdopted);
   out.rules = ids(fields.rules);
   if (Array.isArray(fields.passives)) out.passives = [...new Set(fields.passives.filter((id): id is string => typeof id === "string" && PASSIVE_BY_ID.has(id)))];
@@ -2705,6 +2934,15 @@ export function readProgress(raw: unknown): ProgressSave {
       "heldBack",
       "undressed",
       "loads",
+      "defeatMost",
+      "shows",
+      "roomsRented",
+      "roomAsks",
+      "riotsDown",
+      "toys",
+      "revelNights",
+      "revelPartnersMost",
+      "mixedNights",
     ] as const) {
       rec[key] = Math.floor(num(src[key]));
     }
@@ -2720,6 +2958,20 @@ export function readProgress(raw: unknown): ProgressSave {
         if (n > 0) rec.maxed[meter] = n;
       }
     }
+    if (src.defeats && typeof src.defeats === "object") {
+      for (const id of DEFEAT_IDS) {
+        const n = Math.floor(num((src.defeats as Record<string, unknown>)[id]));
+        if (n > 0) rec.defeats[id] = n;
+      }
+    }
+    if (src.best && typeof src.best === "object") {
+      for (const meter of METERS) {
+        const n = num((src.best as Record<string, unknown>)[meter], METER_MAX);
+        if (n > 0) rec.best[meter] = n;
+      }
+    }
+    // Saves from before the caps: a meter she's already maxed counts as reached all the way, so she keeps it open.
+    for (const meter of METERS) if ((rec.maxed[meter] ?? 0) > 0) rec.best[meter] = Math.max(rec.best[meter] ?? 0, METER_MAX);
     if (src.duelMoves && typeof src.duelMoves === "object") {
       for (const move of DUEL_MOVES) {
         const n = Math.floor(num((src.duelMoves as Record<string, unknown>)[move]));

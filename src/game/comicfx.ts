@@ -46,6 +46,12 @@ export interface FxPlan {
   mark?: number;
   /** Sweat beads and shine on her skin round his hands (KP's glossy, sweating breasts): how many beads a hand. */
   skin?: number;
+  /** KP's nipple cut-in: a small pink zigzag spark under each pinched nipple as he tugs it. */
+  spark?: boolean;
+  /** KP's petting pussy: a small pink jolt either side of her vulva, up high, as his fingers go in. */
+  jolts?: boolean;
+  /** KP's speed hatching: short faint strokes along the panel's edges. */
+  edgeLines?: boolean;
 }
 
 /** Her voice by how worked up she is: caught out, getting into it, then past holding it in. */
@@ -118,6 +124,12 @@ export interface FxSpots {
   bodySize: number;
   /** Where each hand on her is (a cut-in's both hands), for what shows round them. */
   hands?: PanelPoint[];
+  /** Each nipple he's pinching, where it is now, how hard he's tugging it (0 to 1) and how big it is on the panel. */
+  pinches?: (PanelPoint & { tug: number; size: number })[];
+  /** His fingers in her: where, how far in they are now (0 to 1) and how wide her vulva is there on the panel. */
+  jolt?: PanelPoint & { beat: number; size: number };
+  /** The panel's outline, corner by corner, as shares of its width and height (its slanted cut). */
+  outline?: [number, number][];
 }
 
 /** A steady pseudo-random number from 0 to 1 for a seed, so a puff or a drop looks the same each frame. */
@@ -127,6 +139,18 @@ function hash(n: number): number {
 }
 
 const PINK = "#ff7aa8";
+/**
+ * KP's nipple spark: how hard he must be tugging before it shows (it's full at the top of the tug), how wide it is
+ * and how far under her nipple it sits, in nipple sizes.
+ */
+const SPARK = { from: 0.55, width: 1.3, below: 0.75 } as const;
+/**
+ * KP's petting-pussy jolts: how far in his fingers must be before they show, how wide each is, how far out from the
+ * hole and how far up (in her vulva's half widths), and their pink glow's and white core's line widths (of their width).
+ */
+const JOLT = { from: 0.7, width: 0.85, out: 1.9, up: 2.2, glow: 0.16, core: 0.06 } as const;
+/** KP's edge hatching, in panel pixels: its ink, stroke width, how long and far apart, how slanted, how fast it drifts. */
+const EDGE = { ink: "rgba(200, 120, 190, 0.45)", line: 0.7, length: 7, gap: 2.8, lean: 0.35, drift: 6 } as const;
 const DEEP_PINK = "#e8506e";
 const BLUSH_INK = "rgba(200, 40, 70, 0.85)";
 
@@ -171,6 +195,7 @@ export class ComicFx {
     if (plan.mark) this.mark(spots, plan.mark, since);
     if (plan.skin) this.skinShine(spots, plan.skin, clock, grow);
     if (plan.cum) this.cum(spots, plan.cum, since, clock);
+    if (plan.edgeLines) this.edgeLines(spots.outline, clock, grow);
     if (plan.focus) this.focusLines(clock, grow);
     if (plan.skinSteam > 0) this.skinSteam(spots, clock, plan.skinSteam * grow);
     if (plan.blushLines) this.blushLines(spots, grow);
@@ -180,6 +205,8 @@ export class ComicFx {
     if (plan.hearts > 0) this.hearts(spots, plan.hearts, since);
     if (plan.burst) this.burst(spots, since);
     if (plan.sparkle) this.sparkles(spots, clock, grow);
+    if (plan.spark) this.sparks(spots, clock);
+    if (plan.jolts) this.jolts(spots, clock);
     if (plan.flash) this.flash(plan.flash, since);
     ctx.restore();
   }
@@ -461,6 +488,122 @@ export class ComicFx {
         ctx.stroke();
       }
     }
+    ctx.restore();
+  }
+
+  /**
+   * KP's nipple spark: just under each nipple he's tugging, a short zigzag like a jolt, white with a pink glow and a
+   * dot off each end; it shows only as he pulls, about a nipple wide, and trembles a little.
+   */
+  private sparks(spots: FxSpots, clock: number): void {
+    const { ctx } = this;
+    const frame = Math.floor(clock * 15);
+    for (const [i, p] of (spots.pinches ?? []).entries()) {
+      const show = MathUtils.smoothstep(p.tug, SPARK.from, 1);
+      if (show <= 0) continue;
+      const w = p.size * SPARK.width;
+      const y = p.y + p.size * SPARK.below;
+      ctx.save();
+      ctx.globalAlpha *= show;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.shadowColor = PINK;
+      ctx.shadowBlur = 2.5 * this.k;
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = Math.max(0.35, w * 0.06);
+      ctx.beginPath();
+      const steps = 6;
+      for (let s = 0; s <= steps; s++) {
+        const x = p.x - w / 2 + (w * s) / steps;
+        // Up and down, highest in the middle; a touch different every few frames, so it trembles.
+        const peak = s === 0 || s === steps ? 0 : (s % 2 ? -1 : 0.6) * w * 0.28 * (1 - Math.abs(s / steps - 0.5)) * (0.8 + hash(frame * 7 + i * 13 + s) * 0.4);
+        if (s === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y + peak);
+      }
+      ctx.stroke();
+      ctx.fillStyle = "#fff";
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(p.x + side * w * 0.62, y - w * 0.05, Math.max(0.3, w * 0.045), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
+  /**
+   * KP's petting-pussy jolts: as his fingers push in, a short spiky zigzag either side of her vulva, up high, leaning
+   * out, pink with a glow and a white core; gone as they draw back. Small: about her vulva's width each.
+   */
+  private jolts(spots: FxSpots, clock: number): void {
+    const p = spots.jolt;
+    if (!p) return;
+    const show = MathUtils.smoothstep(p.beat, JOLT.from, 1);
+    if (show <= 0) return;
+    const { ctx } = this;
+    const frame = Math.floor(clock * 15);
+    const w = p.size * JOLT.width;
+    ctx.save();
+    ctx.globalAlpha *= show;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "miter";
+    for (const side of [-1, 1]) {
+      const x0 = p.x + side * p.size * JOLT.out;
+      const y0 = p.y - p.size * JOLT.up;
+      const points: [number, number][] = [];
+      const steps = 6;
+      for (let s = 0; s <= steps; s++) {
+        const along = s / steps - 0.5;
+        // Sharp peaks up, the middle ones tallest; the whole leaning out and a touch different every few frames.
+        const peak = s % 2 ? -(0.55 + 0.45 * (1 - Math.abs(along) * 2)) * w * 0.5 * (0.85 + hash(frame * 5 + s + (side > 0 ? 9 : 0)) * 0.3) : 0;
+        points.push([x0 + along * w, y0 + peak + side * along * w * 0.35]);
+      }
+      for (const [width, colour, blur] of [[JOLT.glow, PINK, 3], [JOLT.core, "#fff", 0]] as const) {
+        ctx.shadowColor = PINK;
+        ctx.shadowBlur = blur * this.k;
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = Math.max(0.4, w * width);
+        ctx.beginPath();
+        points.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  /**
+   * KP's speed hatching round a cut-in: short faint strokes in from each side of the panel's outline (its slanted
+   * cut, or the whole panel), leaning a little the same way, drifting slowly along it.
+   */
+  private edgeLines(outline: [number, number][] | undefined, clock: number, grow: number): void {
+    const { ctx, width, height } = this;
+    const corners = (outline ?? [[0, 0], [1, 0], [1, 1], [0, 1]]).map(([x, y]) => ({ x: x * width, y: y * height }));
+    const middle = corners.reduce((sum, c) => ({ x: sum.x + c.x / corners.length, y: sum.y + c.y / corners.length }), { x: 0, y: 0 });
+    ctx.save();
+    ctx.strokeStyle = EDGE.ink;
+    ctx.globalAlpha *= grow;
+    ctx.lineWidth = EDGE.line;
+    ctx.lineCap = "round";
+    let n = 0;
+    corners.forEach((a, i) => {
+      const b = corners[(i + 1) % corners.length];
+      const side = Math.hypot(b.x - a.x, b.y - a.y);
+      if (side < 1) return;
+      const along = { x: (b.x - a.x) / side, y: (b.y - a.y) / side };
+      // In toward the middle of the panel, square to this side.
+      let inward = { x: -along.y, y: along.x };
+      if (inward.x * (middle.x - a.x) + inward.y * (middle.y - a.y) < 0) inward = { x: -inward.x, y: -inward.y };
+      const way = { x: inward.x + along.x * EDGE.lean, y: inward.y + along.y * EDGE.lean };
+      for (let d = (clock * EDGE.drift) % EDGE.gap; d < side; d += EDGE.gap) {
+        const len = EDGE.length * (0.6 + hash(n++) * 0.8);
+        const x = a.x + along.x * d;
+        const y = a.y + along.y * d;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + way.x * len, y + way.y * len);
+        ctx.stroke();
+      }
+    });
     ctx.restore();
   }
 

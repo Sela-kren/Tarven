@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { desirePenalties, desireStep, horny, suppressCost, wet } from "../src/game/desire";
 import { Fight, type FighterStats } from "../src/game/fight";
-import { emptyMeters, type Meters } from "../src/game/passives";
+import { emptyMeters, METERS, type Meters } from "../src/game/passives";
 import { Tavern } from "../src/game/tavern";
+
+/** Her desire caps all lifted (passives.ts desireCap): a heroine far enough along for the boldest things. */
+function openCaps(t: Tavern): void {
+  for (const m of METERS) {
+    t.passives.add(`cap1_${m}`);
+    t.passives.add(`cap2_${m}`);
+  }
+  (t as unknown as { refreshEffects(): void }).refreshEffects();
+}
 
 const BASE: FighterStats = { levels: { strength: 1, agility: 1, endurance: 1, charm: 1, mind: 1 }, damage: 0, dodge: 0, talk: 0, stare: 0 };
 const meters = (set: Partial<Meters>): Meters => ({ ...emptyMeters(), ...set });
@@ -121,6 +130,7 @@ describe("desire between the tavern and a brawl", () => {
     for (let i = 0; i < 40; i++) t.tick(0.1, { listeningTo: null, night: true });
     const guest = t.guests[0];
     t.guestArrived(guest.id);
+    openCaps(t);
     t.meters.cock = 100;
     t.meters.pussy = 100;
     t.pleasure = 40;

@@ -7,8 +7,14 @@ import type { BufferGeometry } from "three";
  */
 
 /** The rings and spokes each disc is built with: NIPPLE_RINGS and NIPPLE_SPOKES in build_world.py. */
-export const DISC_RINGS = 5;
-export const DISC_SPOKES = 12;
+export const DISC_RINGS = 10;
+export const DISC_SPOKES = 24;
+/**
+ * Which of the profile's rings (nippleProfile) is the nipple's side, at its full radius, and which is the first of
+ * the areola, just out from the crease round the nipple's base.
+ */
+export const NIPPLE_SIDE_RING = 4;
+export const AREOLA_RING = 6;
 /** The material the discs are built in. */
 export const DISC_MATERIAL = "T_areola";
 /** How far out the disc is built: NIPPLE_RADIUS in build_world.py. */
@@ -99,13 +105,21 @@ export function nippleProfile(type: NippleType, nippleSize: number, areolaSize: 
   const puff = type.puff * (1 - 0.6 * a);
   // Never smaller than the nipple's own base, with a ring of areola around it.
   const ra = Math.min(AREOLA_MOST, Math.max(rn * 1.8, type.areola * (1 + (areolaSize > 0 ? 0.6 : 0.45) * areolaSize) * withBust * (1 - 0.18 * a)));
-  const base = rn * 1.15;
+  // Tip first: a rounded cap, the nipple's near-upright side, a soft crease at its base, then the areola's dome
+  // rising out of the crease and easing down into the skin at its edge, with no rim (KP's soft, puffy areola).
+  const base = rn * 1.35;
+  const out = (f: number) => base + (ra - base) * f;
   return [
     { r: 0, h: puff + hn },
-    { r: rn * 0.65, h: puff + hn * 0.9 },
-    { r: rn, h: puff + hn * 0.45 },
-    { r: base, h: puff * 0.97 },
-    { r: base + (ra - base) * 0.55, h: puff * 0.6 },
+    { r: rn * 0.38, h: puff + hn * 0.985 },
+    { r: rn * 0.68, h: puff + hn * 0.93 },
+    { r: rn * 0.9, h: puff + hn * 0.78 },
+    { r: rn, h: puff + hn * 0.42 },
+    { r: rn * 1.1, h: puff * 0.9 + hn * 0.06 },
+    { r: base, h: puff },
+    { r: out(0.3), h: puff * 0.88 },
+    { r: out(0.58), h: puff * 0.56 },
+    { r: out(0.82), h: puff * 0.17 },
     { r: ra, h: 0 },
   ];
 }
@@ -250,7 +264,7 @@ export function shapeDisc(disc: Disc, on: Float32Array, profile: Ring[], out: Fl
  * would hardly feel it otherwise. Over a raised areola it rises with it; over a tucked-in nipple it lies flat.
  */
 export function tentHeight(profile: Ring[], r: number): number {
-  const reach = profile[2].r * TENT;
+  const reach = profile[NIPPLE_SIDE_RING].r * TENT;
   const t = Math.min(1, r / reach);
   let h = Math.max(0, profile[0].h) * (1 - t * t * (3 - 2 * t));
   for (let k = 1; k < profile.length; k++) {

@@ -41,7 +41,7 @@ export function intimateOf(event: string): IntimateMove | null {
 function breaksScene(event: string, taken: boolean): boolean {
   if (event === "struggle:free" || event === "lost") return true;
   if (taken) return false;
-  return /^(strike|shove|grab|headlock|hairpull|tackle|talk|stare|suppress):/.test(event) || ["dodge", "steel", "throw", "suppress"].includes(event);
+  return /^(strike|kick|shove|grab|headlock|hairpull|tackle|talk|stare|suppress):/.test(event) || ["dodge", "steel", "throw", "suppress"].includes(event);
 }
 
 /** The part of her a foe has, if a brawl event is her letting him start a scene (fight.ts `taken:<area>`). */

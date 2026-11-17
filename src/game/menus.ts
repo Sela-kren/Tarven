@@ -1,5 +1,5 @@
 /** The settings, save and load menus, and the yes/no question they ask before overwriting or losing progress. */
-import type { Game } from "./game";
+import type { Button, Game } from "./game";
 import { CUT_INS, type CutKind } from "./cutin";
 import type { GuestKind } from "./tavern";
 import { pixelSvg } from "./icons";
@@ -7,7 +7,9 @@ import { MANUAL_SLOTS, readSave, slotName, SLOTS } from "./save";
 import { desirePenalties, horny, WET_PLEASURE, type DesirePenalties } from "./desire";
 import { KINK_NAMES } from "./kinktalk";
 import { METER_NAMES, METERS, PASSIVE_BY_ID, PASSIVE_GROUPS } from "./passives";
-import { AUTO_TOUCH_MAX, HOLD_BASE, PREFER_PUSH, writeTouchSettings } from "./touchsettings";
+import { AUTO_TOUCH_MAX, DIFFICULTIES, HOLD_BASE, PREFER_PUSH, writeTouchSettings, type Difficulty } from "./touchsettings";
+import { FRIEND_AT, FRIEND_PERK, FRIEND_RARITY, POSTING_FEE, RARITY_NAME, STAFF_BY_ID, STAFF_PERK_BY_ID, type StaffMember } from "./staff";
+import { REVEL_HALL_COST } from "./tavern";
 
 /** The gear that marks a settings board, in the same pixel art as the HUD's icons. */
 const GEAR = pixelSvg(
@@ -135,7 +137,60 @@ export function showSettingsMenu(game: Game, back: () => void): void {
       save();
     },
   );
-  for (const row of [heading, note, toggle, boldness]) box.insertBefore(row, menu);
+  // Karryn's Prison's switches for two of the brawl scenes (brawlscenes.ts).
+  const sceneToggle = (which: "rimjob" | "footjob", name: string) => {
+    const button = document.createElement("button");
+    button.className = "settings-toggle";
+    const show = () => {
+      button.textContent = `${name} scenes: ${touch[which] ? "On" : "Off"}`;
+      button.classList.toggle("on", touch[which]);
+    };
+    show();
+    button.addEventListener("click", () => {
+      touch[which] = !touch[which];
+      save();
+      show();
+      game.audio.play("click");
+    });
+    return button;
+  };
+  // Karryn's Prison's difficulty: how tough they are in a brawl, and how fast she grows.
+  const difficulty = document.createElement("button");
+  difficulty.className = "settings-toggle";
+  const order: Difficulty[] = ["easy", "normal", "hard"];
+  const showDifficulty = () => {
+    const d = DIFFICULTIES[touch.difficulty];
+    difficulty.textContent = `Difficulty: ${d.name} (foes ×${d.foes}, growth ×${d.growth})`;
+  };
+  showDifficulty();
+  difficulty.addEventListener("click", () => {
+    touch.difficulty = order[(order.indexOf(touch.difficulty) + 1) % order.length];
+    save();
+    showDifficulty();
+    game.audio.play("click");
+  });
+  const rimjob = sceneToggle("rimjob", "Rimjob");
+  const footjob = sceneToggle("footjob", "Footjob");
+  // KP's accessories: her trinkets, to put on and take off (trinkets.ts).
+  const trinkets = document.createElement("button");
+  trinkets.className = "settings-toggle";
+  trinkets.textContent = "Trinkets (wear up to 2)";
+  trinkets.addEventListener("click", () => showTrinkets(game, () => showSettingsMenu(game, back)));
+  // KP's side jobs, from a menu until their art is made (sidejobs.ts).
+  const work = document.createElement("button");
+  work.className = "settings-toggle";
+  work.textContent = "Side work (dance, rooms, bathhouse)";
+  work.addEventListener("click", () => showSideWork(game, () => showSettingsMenu(game, back)));
+  // Staff (staff.ts) and the Revel House (revel.ts), from menus until their art is made.
+  const staff = document.createElement("button");
+  staff.className = "settings-toggle";
+  staff.textContent = "Staff (hire, wages, stories)";
+  staff.addEventListener("click", () => showStaff(game, () => showSettingsMenu(game, back)));
+  const revel = document.createElement("button");
+  revel.className = "settings-toggle";
+  revel.textContent = "Revel nights (18+)";
+  revel.addEventListener("click", () => showRevel(game, () => showSettingsMenu(game, back)));
+  for (const row of [heading, note, toggle, boldness, rimjob, footjob, difficulty, trinkets, work, staff, revel]) box.insertBefore(row, menu);
 }
 
 /** One number for the dev panel: whole numbers plain, the rest to one place. */
@@ -314,4 +369,149 @@ export function showLoadMenu(game: Game, back: () => void): void {
 /** A yes/no question; `warning` says what's at stake, when something is. */
 export function confirmMenu(game: Game, title: string, warning: string | null, yes: () => void, no: () => void): void {
   game.openMenu(title, warning ? [warning] : [], [{ label: "Yes", onPick: yes }], no);
+}
+
+/** Her trinkets (KP's accessories, trinkets.ts): each with what it does; the ones she has can be worn or taken off. */
+export function showTrinkets(game: Game, back: () => void): void {
+  const tavern = game.tavern;
+  const list = tavern.trinkets();
+  const again = () => showTrinkets(game, back);
+  game.openMenu(
+    "Trinkets",
+    ["Wear up to two. What they look like on you is still to come; for now they change your numbers."],
+    list.map((t) => ({
+      label: `${t.worn ? "✓ " : ""}${t.name} · ${t.about}${t.owned ? "" : ` (needs ${t.needs})`}`,
+      disabled: !t.owned,
+      onPick: () => {
+        tavern.toggleTrinket(t.id);
+        game.audio.play("click");
+        again();
+      },
+    })),
+    back,
+  );
+}
+
+/** KP's side jobs and the bathhouse (sidejobs.ts), from a menu until the stage, the front desk and her hair are drawn. */
+export function showSideWork(game: Game, back: () => void): void {
+  const tavern = game.tavern;
+  const again = () => showSideWork(game, back);
+  game.openMenu(
+    "Side work",
+    [
+      `A riot night: ${tavern.riot ? "yes, trouble starts twice as easily (win 2 brawls to put it down)" : "no"}.`,
+      `Your hair: ${tavern.hairGrowth} (${tavern.hairNights} nights since a trim).`,
+    ],
+    [
+      { label: "Dance on the bar (18+) · once a night, during service", disabled: !tavern.canDance, onPick: () => { tavern.danceOnBar(); game.audio.play("cheers"); again(); } },
+      { label: "Let the rooms upstairs · at last call or bedtime", disabled: !tavern.canRentRooms, onPick: () => { tavern.rentOutRooms(); game.audio.play("cheers"); again(); } },
+      { label: "Get trimmed at the bathhouse", disabled: tavern.hairNights === 0, onPick: () => { tavern.trimHair(); game.audio.play("click"); again(); } },
+    ],
+    back,
+  );
+}
+
+/** A perk's name and what it does, for the menus. */
+const perkText = (ids: readonly string[]) =>
+  ids.length === 0 ? "no perk" : ids.map((id) => `${STAFF_PERK_BY_ID[id]?.name ?? id}: ${STAFF_PERK_BY_ID[id]?.detail ?? ""}`).join("; ");
+
+/** One of her staff, or an applicant, in a line. */
+const memberText = (m: StaffMember) =>
+  `${m.name} (${m.age}, ${m.female ? "woman" : "man"}), ${m.job} · ${RARITY_NAME[m.rarity]} · skill ${m.skill}, appeal ${m.appeal}, charm ${m.charm}, stamina ${m.stamina.current}/${m.stamina.max}, loyalty ${Math.round(m.loyalty)}, fame ${Math.round(m.fame)}, wage ${m.wage} · ${perkText(m.perks)}`;
+
+/**
+ * Her staff (staff.ts, STAFF.md), from a menu until the Staff page and the HUD's staff bar are drawn: the stage and
+ * the cap, each one she has (wage up or down, let go, their story's beat when it's due), the applicants answering
+ * her notice, the friends who'll work for her, and the people she's getting to know.
+ */
+export function showStaff(game: Game, back: () => void): void {
+  const tavern = game.tavern;
+  const again = () => showStaff(game, back);
+  const click = (run: () => unknown) => () => {
+    run();
+    game.audio.play("click");
+    again();
+  };
+  const { have, cap } = tavern.staffCap;
+  const can = tavern.canManageStaff;
+  const paragraphs = [
+    `Stage: ${tavern.staffStage}. Staff ${have} of ${cap} (the Lantern's girls don't count).${tavern.staffStage === "early" ? " Nobody's asking for work yet: you work alone for now." : ""}`,
+    `Hiring, wages and letting go are done while the tavern's shut. Their portraits and work clothes are still to come.`,
+    ...tavern.staff.map((m) => {
+      const beat = tavern.staffBeat(m.id);
+      return `${memberText(m)}${beat ? ` · Story: "${beat.title}": ${beat.text}` : ""}`;
+    }),
+    ...tavern.lantern.girls.filter((g) => !g.quit).map((g) => `${g.name}, a girl at the Lantern (off the cap; see the house plans).`),
+  ];
+  const buttons: Button[] = [];
+  for (const m of tavern.staff) {
+    buttons.push({ label: `${m.name}: wage +1 (${m.wage})`, onPick: click(() => tavern.setWage(m.id, m.wage + 1)) });
+    buttons.push({ label: `${m.name}: wage -1 (${m.wage})`, disabled: m.wage <= 0, onPick: click(() => tavern.setWage(m.id, m.wage - 1)) });
+    const beat = tavern.staffBeat(m.id);
+    if (beat) for (const o of beat.outcomes) buttons.push({ label: `${m.name}, "${beat.title}": ${o.text}`, onPick: click(() => tavern.playStaffBeat(m.id, o.id)) });
+    buttons.push({ label: `Let ${m.name} go`, disabled: !can, onPick: click(() => tavern.fireStaff(m.id)) });
+  }
+  const room = have < cap;
+  for (const d of tavern.staffHireable()) {
+    const perk = FRIEND_PERK[d.id];
+    buttons.push({
+      label: `Hire your friend ${d.name} (${d.age}), ${d.job} · ${RARITY_NAME[FRIEND_RARITY[d.id] ?? "epic"]} · wage ${d.wage} · ${perkText(perk ? [perk] : [])} · ${d.about}`,
+      disabled: !can,
+      onPick: click(() => tavern.hireStaff(d.id)),
+    });
+  }
+  for (const a of tavern.applicants) {
+    buttons.push({ label: `Hire applicant: ${memberText(a)}`, disabled: !can || !room, onPick: click(() => tavern.hireApplicant(a.id)) });
+  }
+  if (tavern.staffStage !== "early") {
+    buttons.push({ label: `Post for work: a fresh lot of applicants (${POSTING_FEE} gold)`, disabled: !can || tavern.gold < POSTING_FEE, onPick: click(() => tavern.postForWork()) });
+  }
+  for (const f of tavern.staffToBefriend()) {
+    buttons.push({
+      label: `Spend time with ${f.def.name} (friendship ${f.friendship}/${FRIEND_AT}${STAFF_BY_ID[f.def.id] ? `, ${f.def.job}` : ""})${f.spentToday ? " · done today" : ""}`,
+      disabled: f.spentToday,
+      onPick: click(() => tavern.spendTimeWith(f.def.id)),
+    });
+  }
+  game.openMenu("Staff", paragraphs, buttons, back);
+}
+
+/**
+ * Revel nights (revel.ts, REVEL_HOUSE.md), from a menu until the Revel Hall and the group poses are drawn: whether
+ * it's open (and what's missing), the night's three settings, and the switch for tonight. Everyone who comes
+ * through the door has come for it; with Consent on she's still asked about her own part.
+ */
+export function showRevel(game: Game, back: () => void): void {
+  const tavern = game.tavern;
+  const again = () => showRevel(game, back);
+  const s = tavern.revelSettings;
+  const day = tavern.phase === "day";
+  const missing = tavern.revelMissing();
+  const click = (run: () => unknown) => () => {
+    run();
+    game.audio.play("click");
+    again();
+  };
+  const WHO = { men: "Mostly men", mixed: "Mixed (men and women)", women: "Women only" };
+  const PART = { host: "Hosting (you run the room)", join: "Joining in", centrepiece: "The centrepiece (it's about you)" };
+  const DOOR = { open: "Open", invite: "By invitation (regulars and fans)", paying: "Paying (a fee at the door)" };
+  game.openMenu(
+    "Revel nights",
+    [
+      tavern.revelOpen ? "The Revel House is open to you. Choose by day; the hall opens as the tavern shuts." : `Not yet. Still needed: ${missing.join("; ")}.`,
+      `The Revel Hall: ${tavern.revelHall ? "built" : `not built (house plans, ${REVEL_HALL_COST} gold, late game)`}.`,
+      "The hall, the groups around the room and the revel outfits are still to be drawn; for now the night plays out in the log.",
+    ],
+    [
+      { label: `Who's invited: ${WHO[s.who]}`, disabled: !day, onPick: click(() => tavern.cycleRevel("who")) },
+      { label: `Your part: ${PART[s.herPart]}`, disabled: !day, onPick: click(() => tavern.cycleRevel("herPart")) },
+      { label: `The door: ${DOOR[s.door]}`, disabled: !day, onPick: click(() => tavern.cycleRevel("door")) },
+      {
+        label: `${tavern.revelTonight ? "✓ " : ""}Hold a revel tonight`,
+        disabled: !day || (!tavern.revelOpen && !tavern.revelTonight),
+        onPick: click(() => tavern.setRevelTonight(!tavern.revelTonight)),
+      },
+    ],
+    back,
+  );
 }

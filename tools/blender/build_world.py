@@ -3260,8 +3260,8 @@ def round_breasts(body, layers):
 # it into the areola and nipple from her look and how aroused she is (nippleProfile in appearance.ts), on the skin
 # as the breast is at that moment, so it keeps its size whatever the cup. Each corner's ring and spoke ride in its
 # UVs, as the material is one flat colour: u is the ring, 0 at the tip to 1 at the edge, and v the spoke around.
-NIPPLE_RINGS = 5
-NIPPLE_SPOKES = 12
+NIPPLE_RINGS = 10
+NIPPLE_SPOKES = 24
 # The disc as built: as wide as the widest areola the game makes (wide, at full size), so it always lays the
 # areola on skin the disc has measured. The game sets the areola's own size, and measures it against this.
 NIPPLE_RADIUS = 0.026
@@ -3403,13 +3403,20 @@ def press_navel(spec, m, body_obj):
 # materials are flat colours: u is the column, 0 at -x to 1 at +x, and v the row, 0 at the top to 1 at the bottom.
 # The groin is built in a few large faces meeting in a point, so its skin is split finer first, on every layer at
 # once so the clothes over it keep their place, and the grid lies on a rounded surface.
-VULVA_COLUMNS = (-1.0, -0.72, -0.5, -0.34, -0.2, -0.09, 0.0, 0.09, 0.2, 0.34, 0.5, 0.72, 1.0)  # across, finer inside
-VULVA_ROWS = 13  # evenly spaced along her
+# Across, finest in the middle, where the inner lips, the hood and the clit are shaped; a column at 0.2 either side,
+# where the slit's material meets the outer lips' (VULVA_INNER).
+VULVA_COLUMNS = (-1.0, -0.8, -0.62, -0.48, -0.37, -0.28, -0.2, -0.15, -0.11, -0.075, -0.045, -0.02, 0.0,
+                 0.02, 0.045, 0.075, 0.11, 0.15, 0.2, 0.28, 0.37, 0.48, 0.62, 0.8, 1.0)
+VULVA_ROWS = 49  # evenly spaced along her, about 1.5 mm apart: a multiple of 12 apart, so the cut's ends fall on rows
 # The grid as built, as big as the game ever makes it (Size at 1); at smaller sizes the shape fills less of it.
 VULVA_HALF = 0.034  # its half width
 # Its length over the skin: from the front of her mound down to where her groin turns under. Past that her trunk
 # is only a narrow ridge between her thighs, which close over anything laid there and push it out as they move.
 VULVA_LENGTH = 0.085
+# Where its first row lies down her middle from the top of the line it's laid along, and over how long a stretch of
+# that line each row takes its way out from: a twelfth of the length, as the grid was first built 13 rows long.
+VULVA_START = VULVA_LENGTH / 12
+VULVA_SPAN = VULVA_LENGTH / 12
 VULVA_TOP = 0.812  # the height of its top row, on the front of her mound
 # Her middle is found by rays from inside her groin at (y, z), turning from a little above forwards round to back
 # between her legs.
@@ -3423,6 +3430,8 @@ VULVA_WRAP = 0.008
 VULVA_NARROW = 0.45
 VULVA_TAPER = 0.35  # how much narrower its last row is
 VULVA_FILL = 0.01
+# How many passes fill it: as many as the grid had rows when it was 13 by 13, so it fills as it did.
+VULVA_FILL_PASSES = 13
 VULVA_LIFT = 0.0008
 # The faces that wear T_vulva: those this close to the middle across, and along (a share of the length): the
 # slit. isInner in vulva.ts.
@@ -3441,8 +3450,8 @@ OPENING_REFINE = [([(0.0, 0.042, 0.742), (0.0, 0.06, 0.775)], (0.021, 0.02, 0.02
 # them (vulva.ts). Each side of the cut has its own corners: u a quarter column to the left or right of the middle.
 # The canal's corners carry their place across it in u, 0 on the left side of the cut to 1 on the right, and their
 # row in v; this many lie between the two sides, down into her and back up.
-VULVA_CUT = (5, 10)
-VULVA_CANAL = 5
+VULVA_CUT = (20, 40)
+VULVA_CANAL = 9
 VULVA_CANAL_DEPTH = 0.03  # how deep it is as built, at the middle of the cut; the game sets its own
 # The skin under her opening is hidden while it shows (T_hole), so it never stands in front of her canal: the faces
 # whose middles lie within this far either side of the line of the cut, stretched as wide as the game opens it, and
@@ -3451,6 +3460,10 @@ VULVA_CANAL_DEPTH = 0.03  # how deep it is as built, at the middle of the cut; t
 # covered it wears her smallclothes, as the skin around it does.
 VULVA_HOLE = 0.017
 VULVA_HOLE_ENDS = (0.008, 0.0)
+# The grid as it was first built, 13 columns by 13 rows cut between rows 5 and 10: its columns, rows and cut. The
+# finer grid lies on the surface it made (its crease filled as it was), and the skin hidden under the opening is
+# found from it, so both stay as they were however finely the grid is built.
+VULVA_FIRST_GRID = ((-1.0, -0.72, -0.5, -0.34, -0.2, -0.09, 0.0, 0.09, 0.2, 0.34, 0.5, 0.72, 1.0), 13, (5, 10))
 # The skin's many-sided faces this near her slit are split into triangles first (SkinProbe.split): a point and how
 # far from it.
 VULVA_SPLIT = ((0.0, 0.05, 0.758), 0.05)
@@ -3583,34 +3596,51 @@ def add_vulva(m, name, body_obj):
                 return line[k - 1].lerp(line[k], f)
         raise RuntimeError("add_vulva: her middle ends before the grid does")
 
-    step = VULVA_LENGTH / (VULVA_ROWS - 1)
-    grid = {}
-    normals = []
-    for r in range(VULVA_ROWS):
-        middle = along(r * step + step)
-        tangent = (along(r * step + step * 1.5) - along(r * step + step * 0.5)).normalized()
+    def row_at(d, share, columns):
+        """A row across her `d` down her middle from the top and `share` of the way down the grid: its way out, each
+        column's place, and the skin under each."""
+        middle = along(d)
+        tangent = (along(d + VULVA_SPAN / 2) - along(d - VULVA_SPAN / 2)).normalized()
         normal = Vector((0.0, -tangent.z, tangent.y))  # out of her, square to her middle
         # Narrower where it faces down, and narrower again in its last rows, which reach into the notch where her
         # thighs meet; there her trunk's skin runs inside her thighs.
         width = VULVA_HALF * (VULVA_NARROW + (1 - VULVA_NARROW) * max(0.0, normal.y))
-        width *= 1 - VULVA_TAPER * smooth01((r / (VULVA_ROWS - 1) - 0.65) / 0.35)
-        points = []
-        for s in VULVA_COLUMNS:
+        width *= 1 - VULVA_TAPER * smooth01((share - 0.65) / 0.35)
+
+        def skin(s):
             planned = middle + Vector((s * width, 0.0, 0.0)) - normal * VULVA_WRAP * s * s
             # The skin under the aim, looking in from outside her; failing that, the skin nearest it.
             point = tree.ray_cast(planned + normal * 0.04, -normal, 0.08)[0]
-            if point is None:
-                point = tree.find_nearest(planned)[0]
-            points.append(point)
+            return point if point is not None else tree.find_nearest(planned)[0]
+
         # The crease down her middle, filled: no point lies further in than its neighbours, so the crease's walls
-        # never stand in front of the slit. Only so far, so the notch between her thighs stays as it is.
-        depths = [(p - middle).dot(normal) for p in points]
+        # never stand in front of the slit. Only so far, so the notch between her thighs stays as it is. Filled
+        # across the columns the grid was first built with (VULVA_FIRST_GRID), and between them straight across,
+        # as its faces lay then, so a finer grid lies on the same surface.
+        first = VULVA_FIRST_GRID[0]
+        depths = [(skin(s) - middle).dot(normal) for s in first]
         filled = list(depths)
-        for _ in range(VULVA_ROWS):
+        for _ in range(VULVA_FILL_PASSES):
             for c in range(1, len(filled) - 1):
                 filled[c] = max(filled[c], min(depths[c] + VULVA_FILL, (filled[c - 1] + filled[c + 1]) / 2))
-        for c, (point, depth, fill) in enumerate(zip(points, depths, filled)):
-            grid[c, r] = probe.vert(point + normal * (fill - depth + VULVA_LIFT), probe.weights(point))
+        placed, points = [], []
+        for s in columns:
+            point = skin(s)
+            k = min(len(first) - 2, max(i for i in range(len(first) - 1) if first[i] <= s))
+            f = (s - first[k]) / (first[k + 1] - first[k])
+            depth = (point - middle).dot(normal)
+            fill = max(depth, filled[k] + (filled[k + 1] - filled[k]) * f)
+            placed.append(point + normal * (fill - depth + VULVA_LIFT))
+            points.append(point)
+        return normal, placed, points
+
+    step = VULVA_LENGTH / (VULVA_ROWS - 1)
+    grid = {}
+    normals = []
+    for r in range(VULVA_ROWS):
+        normal, placed, points = row_at(VULVA_START + r * step, r / (VULVA_ROWS - 1), VULVA_COLUMNS)
+        for c, (co, point) in enumerate(zip(placed, points)):
+            grid[c, r] = probe.vert(co, probe.weights(point))
         normals.append(normal)
 
     # The cut down the middle column: each side of it gets its own corners, at the same place while she's closed.
@@ -3670,8 +3700,12 @@ def add_vulva(m, name, body_obj):
             uvs = [(kk / (VULVA_CANAL + 1), rr / (VULVA_ROWS - 1)) for kk, rr in corners]
             probe.face(verts, "canal", uvs, outwards=opening - centre)
 
-    # The skin under the opening, within reach of the line of the cut.
-    line = [grid[middle_column, r].co.copy() for r in range(top, bottom + 1)]
+    # The skin under the opening, within reach of the line of the cut: the line through the middle of the grid as it
+    # was first built (VULVA_FIRST_GRID), so the skin hidden under it is just as it was.
+    columns_then, rows_then, cut_then = VULVA_FIRST_GRID
+    step_then = VULVA_LENGTH / (rows_then - 1)
+    line = [row_at(VULVA_START + r * step_then, r / (rows_then - 1), columns_then)[1][len(columns_then) // 2]
+            for r in range(cut_then[0], cut_then[1] + 1)]
 
     def near_cut(point):
         for i, (a, b) in enumerate(zip(line, line[1:])):
@@ -6854,8 +6888,8 @@ PIERCING_RING = {"Nipples": (0.0085, 0.0009), "Hood": (0.0055, 0.0008)}  # (radi
 PIERCING_BEAD = {"Nipples": 0.0022, "Hood": 0.0019}
 NAVEL_BAR = {"top": 0.0024, "gem": 0.0042}  # the ball above its rim and the gem in the pit, their radii
 # Where along her vulva's grid (a row, from the top) the hood is as built: the shape's hood (vulvaAt in vulva.ts)
-# at the default size, 0.5 + (0.5 - 0.85 * 0.36 - 0.5) * 0.84 of the way down, of 12 rows.
-HOOD_ROW = 12 * (0.5 - 0.85 * 0.36 * 0.84)
+# at the default size, 0.5 + (0.5 - 0.85 * 0.36 - 0.5) * 0.84 of the way down.
+HOOD_ROW = (VULVA_ROWS - 1) * (0.5 - 0.85 * 0.36 * 0.84)
 
 
 def add_torus(piece, key, centre, a, b, radius, wire, weights, mat, n=16, k=6):
@@ -6948,7 +6982,7 @@ def build_piercings(c, m, name, spec, body_obj, surface):
                 for li in poly.loop_indices:
                     u, v = uv[li].uv
                     if abs(u - 0.5) < 1e-4:
-                        rows[round(v * 12)] = mesh.vertices[mesh.loops[li].vertex_index].co.copy()
+                        rows[round(v * (VULVA_ROWS - 1))] = mesh.vertices[mesh.loops[li].vertex_index].co.copy()
             low = int(HOOD_ROW)
             if low in rows and low + 1 in rows:
                 f = HOOD_ROW - low
@@ -7464,6 +7498,14 @@ def skin_character(c, m, spec, root):
             stains = [o for o in c.objects if o.type == "MESH" and "_CumOn" in o.name]
             keep_clothes_clear(body_obj, stains, dict(CLEAR, gap=CLEAR["gap"] + STAIN_LIFT))
         slider_joint_shifts(rig)
+    else:
+        # Without the reshaping, still the smooth shading it gives (see heroic_reshape): flat faces split every point
+        # per face in the export, three times the file, and the look is the painted, smooth one either way.
+        for obj in (o for o in c.objects if o.type == "MESH"):
+            for poly in obj.data.polygons:
+                poly.use_smooth = True
+            obj.data.set_sharp_from_angle(angle=math.radians(HEROIC["sharp_angle"]))
+            obj.data.update()
 
 
 # The sliders' shapes (BoneTerm in src/game/appearance.ts) are in metres from each bone's joint, measured on her as
@@ -7719,6 +7761,7 @@ NECK_SINK = 0.03  # how far the neck's bottom ring goes down into the smoothed s
 NECK_FLARE = {"above": 0.03, "side": 0.45, "back": 0.0, "front": 0.08, "under": 0.008, "reach": 0.12,
               "cuts": 3}
 SUBDIVIDE_TRIM = 0.15  # a separate piece of clothing smaller than this across, in metres, is a trim and stays crisp
+LEG_CAP_BELOW = 0.3  # a flat, downward many-sided face below this height, off her middle, closes a leg's end
 
 
 def subdivide_layers(layers, levels):
@@ -7763,6 +7806,16 @@ def subdivide_layers(layers, levels):
         # feet go in: smoothing would shrink each one inward like a drawstring and pinch the limb, so they are put
         # back where they were afterwards.
         edge_at = {v.index: v.co.copy() for v in bm.verts if v.is_boundary} if not index else {}
+        # The legs' closed ends (the skin's and the stockings' flat many-sided caps at the ankle, inside the shoe):
+        # smoothing would round each cap into a dome and draw the shin in to a point above the shoe, a gap round
+        # the ankle at the shoe's top. Their rims stay creased and are put back where they were afterwards.
+        caps = [f for f in bm.faces if len(f.verts) > 4 and f.normal.z < -0.9 and f.calc_center_median().z < LEG_CAP_BELOW
+                and abs(f.calc_center_median().x) > 0.04]
+        cap_at = {v.index: v.co.copy() for f in caps for v in f.verts}
+        cap_edges = [(e.verts[0].index, e.verts[1].index) for f in caps for e in f.edges]
+        for f in caps:
+            for edge in f.edges:
+                creased[edge.index] = 1.0
         original = len(bm.verts)
         bm.free()
         crease = obj.data.attributes.get("crease_edge") or obj.data.attributes.new("crease_edge", "FLOAT", "EDGE")
@@ -7775,6 +7828,48 @@ def subdivide_layers(layers, levels):
             bpy.ops.object.modifier_apply(modifier=mod.name)
         if edge_at:
             keep_open_edges(obj, edge_at, original)
+        if cap_at:
+            keep_leg_caps(obj, cap_at, cap_edges, original)
+
+
+def keep_leg_caps(obj, cap_at, cap_edges, original):
+    """
+    After subdividing: each leg cap's original corners back where they were, the new point on each of its rim's
+    edges halfway along it, the cap's middle in the middle of its rim (flat, as built), and the ring just above the
+    rim eased to meet it.
+    """
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.verts.ensure_lookup_table()
+    for index, co in cap_at.items():
+        bm.verts[index].co = co
+    rim = set(cap_at)
+    mids = set()
+    for a, b in cap_edges:
+        near_a = {e.other_vert(bm.verts[a]) for e in bm.verts[a].link_edges}
+        near_b = {e.other_vert(bm.verts[b]) for e in bm.verts[b].link_edges}
+        for vert in near_a & near_b:
+            if vert.index >= original:
+                vert.co = (bm.verts[a].co + bm.verts[b].co) / 2
+                mids.add(vert)
+    rim_verts = {bm.verts[i] for i in rim} | mids
+    # The cap's middle: a new point whose every neighbour is on the rim.
+    for vert in {e.other_vert(m) for m in mids for e in m.link_edges} - rim_verts:
+        around = [e.other_vert(vert) for e in vert.link_edges]
+        if len(around) >= 3 and all(o in rim_verts for o in around):
+            vert.co = sum((o.co for o in around), Vector()) / len(around)
+    # The ring above the rim (on the leg's side, not the cap) eased halfway to its neighbours.
+    moves = {}
+    for vert in {e.other_vert(r) for r in rim_verts for e in r.link_edges} - rim_verts:
+        around = [e.other_vert(vert).co for e in vert.link_edges]
+        if all(e.other_vert(vert) in rim_verts for e in vert.link_edges):
+            continue
+        moves[vert] = vert.co * 0.5 + sum(around, Vector()) / len(around) * 0.5
+    for vert, co in moves.items():
+        vert.co = co
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
 
 
 def keep_open_edges(obj, edge_at, original):

@@ -54,7 +54,8 @@ describe("more of them in a brawl, Karryn's Prison style", () => {
   });
 
   it("while one has her, another joins in at her mouth, once she's let him; struggling free throws them both off", () => {
-    const f = new Fight(1, "farmer", false, { ...BASE, ...READY, joiners: [mate(2, { horny: true })] }, () => 0.2);
+    // A bandit: his gangbang (KP's thug, brawlscenes.ts) leaves her mouth free for another.
+    const f = new Fight(1, "bandit", false, { ...BASE, ...READY, joiners: [mate(2, { horny: true })] }, () => 0.2);
     f.act("dodge");
     expect(f.offering).toBe("pussy");
     f.answerOffer("yes");

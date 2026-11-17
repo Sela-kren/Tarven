@@ -6,7 +6,7 @@
  * Their bodies are made the way the guests' are (game.ts `makeGuestBody`), so they're as varied as the guests. They
  * only move while she's out in the street; the rest of the time they wait where they were.
  */
-import { Group } from "three";
+import { Group, type Vector3 } from "three";
 import type { Body } from "./player";
 import type { Rect, Vec2 } from "./collision";
 import { NavGrid } from "./path";
@@ -19,10 +19,24 @@ export interface TownActivity {
   heading: number;
   /** Seconds to stay, at least and at most. */
   stay: [number, number];
+  /** For a chat: the index of the activity facing this one, where whoever they're talking to stands. */
+  pair?: number;
 }
 
-/** How many townsfolk are out in the street at once. */
-const PEOPLE = 9;
+/** One of the townsfolk as the game sees them, read-only (for their street talk, towntalk.ts). */
+export interface TownPersonView {
+  /** The index their body was made with (`makeBody(index)`). */
+  readonly index: number;
+  /** Where they stand, in the world (their walker's own position: don't move it). */
+  readonly position: Vector3;
+  readonly visible: boolean;
+  readonly state: "walking" | "doing" | "indoors";
+  /** The activity they're at or heading to (an index into the street's activities), or -1 for a door. */
+  readonly activity: number;
+}
+
+/** How many townsfolk are out in the town at once (street.ts has ~25 things for them to do). */
+const PEOPLE = 12;
 /** How often (0-1) someone done with what they were doing goes indoors or out of town instead. */
 const GO_IN_CHANCE = 0.3;
 /** Seconds someone stays indoors before coming back out of a door. */
@@ -41,7 +55,7 @@ interface Person {
 
 export class Townsfolk {
   readonly group = new Group();
-  private readonly people: Person[] = [];
+  private readonly crowd: Person[] = [];
   private readonly nav: NavGrid;
   private readonly taken = new Set<number>();
 
@@ -69,13 +83,24 @@ export class Townsfolk {
       } else {
         this.goIndoors(person);
       }
-      this.people.push(person);
+      this.crowd.push(person);
       this.group.add(walker.group);
     }
   }
 
+  /** Everyone, in the order their bodies were made. */
+  people(): TownPersonView[] {
+    return this.crowd.map((person, index) => ({
+      index,
+      position: person.walker.group.position,
+      visible: person.walker.group.visible,
+      state: person.state,
+      activity: person.activity,
+    }));
+  }
+
   update(dt: number): void {
-    for (const person of this.people) {
+    for (const person of this.crowd) {
       if (person.state === "indoors") {
         person.left -= dt;
         if (person.left <= 0) this.comeOut(person);

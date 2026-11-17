@@ -1,4 +1,4 @@
-import { Color, Material, Matrix4, MeshLambertMaterial, Object3D, Quaternion, SkinnedMesh, Texture, Vector3 } from "three";
+import { BufferAttribute, Color, Material, Matrix3, Matrix4, MeshLambertMaterial, Object3D, Quaternion, SkinnedMesh, Texture, Vector3 } from "three";
 import {
   DISC_MATERIAL, NIPPLE_TYPES, nippleProfile, readDiscs, shapeDisc, skinUnder, tentHeight, type Disc, type NippleType,
 } from "./nipples";
@@ -1394,8 +1394,10 @@ function paint(original: Material, color: Color): MeshLambertMaterial {
 const pubicMaterials = new Map<string, MeshLambertMaterial>();
 
 /**
- * Her pubic hair as she wears it: the colour its swatch gives the patch (`worn`), cut out in the style's shape at
- * its size. Drawn a little in front of the skin, like the coat, so the vertex snapping never sinks it in.
+ * Her pubic hair as she wears it: the colour its swatch gives the patch (`worn`), drawn in the style's shape at its
+ * size as soft, fine strands (pubicTexture) blended over her skin, not cut out. Not snapped like the rest of the
+ * room's models: a close-up copies this material as it is, and her painted skin there isn't snapped either, so a
+ * snapped patch would crawl over it in coarse steps. Drawn a little in front of the skin, like the coat.
  */
 export function pubicMaterial(worn: Material, style: PubicStyle, size: number): MeshLambertMaterial {
   const color = averageColor(worn);
@@ -1403,10 +1405,9 @@ export function pubicMaterial(worn: Material, style: PubicStyle, size: number): 
   const key = `${style.id}|${map.uuid}|${color.r.toFixed(4)},${color.g.toFixed(4)},${color.b.toFixed(4)}`;
   let material = pubicMaterials.get(key);
   if (!material) {
-    material = solidRetroMaterial(PUBIC_MATERIAL, 0xffffff);
-    material.color.copy(color);
-    material.map = map;
-    material.alphaTest = 0.5;
+    material = new MeshLambertMaterial({ name: PUBIC_MATERIAL, color, map, transparent: true, depthWrite: false });
+    // Only what's next to nothing is left out, so the faintest strands at its edge don't darken the depth.
+    material.alphaTest = 0.02;
     material.polygonOffset = true;
     material.polygonOffsetFactor = 0;
     material.polygonOffsetUnits = -4;
@@ -2473,6 +2474,9 @@ export class Dresser {
   private readonly pullPlans = new Map<MeshSlot, PullPlan>();
   /** The pulled meshes' normals as built, to put back once the pull's let go. */
   private readonly pullNormals = new Map<MeshSlot, Float32Array>();
+  /** Each mesh's normals as built, and per mesh group the welded points and their smooth normals as built. */
+  private readonly builtNormals = new Map<MeshSlot, Float32Array>();
+  private readonly normalWelds = new Map<string, { ids: Int32Array[]; count: number; rest: Float32Array }>();
 
   constructor(model: Object3D, readonly body: BodyName) {
     const root = model.getObjectByName(body);
@@ -2927,6 +2931,8 @@ export class Dresser {
       slot.mesh.geometry.boundingBox = null;
       slot.mesh.geometry.boundingSphere = null;
     }
+    // Her skin and clothes lit as they are now shaped, not as built (see refreshNormals).
+    this.refreshNormals(moves.map((m) => m.total));
     // The nipples stand off the disc, so its faces need their own light.
     nipples?.slot.mesh.geometry.computeVertexNormals();
     for (const slot of [...(vulva?.slots ?? []), ...(anus?.slots ?? []), ...(this.penis?.slots ?? [])]) {
@@ -3592,6 +3598,113 @@ export class Dresser {
   }
 
   /** Puts a mesh's points where their moves take them, less the joints' part, which the bones carry. */
+  /**
+   * The light follows the reshaping: without this a mesh kept the normals it was built with, so a breast grown from a
+   * C cup was lit as the C cup, the edge of the small breast showing as a line across the big one. Each point's
+   * normal as built turns by as much as the smooth surface there turned (worked out over all of a mesh's materials
+   * together, points at the same spot welded, so there's no seam where the skin's materials meet), keeping the
+   * build's sharp edges. The parts that light themselves (nipple discs, vulva, anus, penis) are left to that.
+   */
+  private refreshNormals(totals: readonly Float32Array[]): void {
+    const own = new Set<MeshSlot>([
+      ...(this.nipples ? [this.nipples.slot] : []), ...(this.vulva?.slots ?? []), ...(this.anus?.slots ?? []),
+      ...(this.penis?.slots ?? []),
+    ]);
+    const groups = new Map<string, number[]>();
+    this.slots.forEach((slot, i) => {
+      if (own.has(slot) || !slot.mesh.geometry.getAttribute("normal")) return;
+      const key = slot.mesh.parent && !(slot.mesh.parent instanceof SkinnedMesh) && slot.mesh.parent.name ? slot.mesh.parent.uuid : slot.mesh.uuid;
+      const list = groups.get(key) ?? [];
+      list.push(i);
+      groups.set(key, list);
+    });
+    const n = new Vector3(), d = new Vector3();
+    // Each welded point's normal, the area-weighted sum of its faces' normals, from each mesh's points (`at`).
+    const sumFaces = (members: number[], ids: Int32Array[], count: number, at: (m: number) => Float32Array) => {
+      const sum = new Float32Array(count * 3);
+      members.forEach((i, m) => {
+        const geometry = this.slots[i].mesh.geometry;
+        const index = geometry.getIndex();
+        const p = at(m);
+        const own = ids[m];
+        const corners = index ? index.count : p.length / 3;
+        const tri = index ? (index.array as ArrayLike<number>) : null;
+        for (let t = 0; t + 2 < corners; t += 3) {
+          const v0 = tri ? tri[t] : t, v1 = tri ? tri[t + 1] : t + 1, v2 = tri ? tri[t + 2] : t + 2;
+          const ax = p[v0 * 3], ay = p[v0 * 3 + 1], az = p[v0 * 3 + 2];
+          const bx = p[v1 * 3], by = p[v1 * 3 + 1], bz = p[v1 * 3 + 2];
+          const ux = p[v2 * 3] - bx, uy = p[v2 * 3 + 1] - by, uz = p[v2 * 3 + 2] - bz;
+          const wx = ax - bx, wy = ay - by, wz = az - bz;
+          const nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
+          for (const v of [v0, v1, v2]) {
+            const id = own[v] * 3;
+            sum[id] += nx; sum[id + 1] += ny; sum[id + 2] += nz;
+          }
+        }
+      });
+      for (let id = 0; id < count; id++) {
+        const x = sum[id * 3], y = sum[id * 3 + 1], z = sum[id * 3 + 2];
+        const length = Math.hypot(x, y, z) || 1;
+        sum[id * 3] = x / length; sum[id * 3 + 1] = y / length; sum[id * 3 + 2] = z / length;
+      }
+      return sum;
+    };
+    const toLocal = new Matrix3();
+    for (const [key, members] of groups) {
+      let weld = this.normalWelds.get(key);
+      if (!weld) {
+        const lookup = new Map<string, number>();
+        const ids = members.map((i) => {
+          const bind = this.slots[i].bind;
+          const out = new Int32Array(bind.length / 3);
+          for (let v = 0; v < out.length; v++) {
+            const k = `${Math.round(bind[v * 3] * 1e4)},${Math.round(bind[v * 3 + 1] * 1e4)},${Math.round(bind[v * 3 + 2] * 1e4)}`;
+            let id = lookup.get(k);
+            if (id === undefined) lookup.set(k, (id = lookup.size));
+            out[v] = id;
+          }
+          return out;
+        });
+        const rest = sumFaces(members, ids, lookup.size, (m) => this.slots[members[m]].bind);
+        weld = { ids, count: lookup.size, rest };
+        this.normalWelds.set(key, weld);
+      }
+      const { ids, count, rest } = weld;
+      const moved = members.some((i) => totals[i].some((x) => x !== 0));
+      const now = moved
+        ? sumFaces(members, ids, count, (m) => {
+          const { bind } = this.slots[members[m]];
+          const total = totals[members[m]];
+          const out = new Float32Array(bind.length);
+          for (let k = 0; k < bind.length; k++) out[k] = bind[k] + total[k];
+          return out;
+        })
+        : rest;
+      members.forEach((i, m) => {
+        const slot = this.slots[i];
+        const normal = slot.mesh.geometry.getAttribute("normal") as BufferAttribute;
+        let built = this.builtNormals.get(slot);
+        if (!built) this.builtNormals.set(slot, (built = Float32Array.from(normal.array as ArrayLike<number>)));
+        const array = normal.array as Float32Array;
+        if (!moved) {
+          array.set(built);
+        } else {
+          toLocal.getNormalMatrix(unbind.copy(slot.mesh.bindMatrix).invert());
+          for (let v = 0; v < ids[m].length; v++) {
+            const id = ids[m][v];
+            d.set(now[id * 3] - rest[id * 3], now[id * 3 + 1] - rest[id * 3 + 1], now[id * 3 + 2] - rest[id * 3 + 2]).applyMatrix3(toLocal);
+            n.set(built[v * 3] + d.x, built[v * 3 + 1] + d.y, built[v * 3 + 2] + d.z);
+            if (n.lengthSq() < 1e-12) n.fromArray(built, v * 3);
+            n.normalize().toArray(array, v * 3);
+          }
+        }
+        normal.needsUpdate = true;
+        // A pull that has these normals saved puts back these, not the old shape's.
+        if (this.pullNormals.has(slot)) this.pullNormals.set(slot, Float32Array.from(array));
+      });
+    }
+  }
+
   private writePositions(slot: MeshSlot, total: Float32Array, settled: Float32Array, only?: Int32Array): void {
     const { bind } = slot;
     const position = slot.mesh.geometry.getAttribute("position");

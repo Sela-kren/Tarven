@@ -18,7 +18,7 @@ const byId = (id: string) => TOUCHES.find((t) => t.id === id)!;
 
 describe("eager guests touching without asking", () => {
   it("starts with Consent on (switched on but not agreed to), up to boldness 5", () => {
-    expect(defaultTouchSettings()).toEqual({ autoTouch: true, agreed: false, upTo: 5 });
+    expect(defaultTouchSettings()).toEqual({ autoTouch: true, agreed: false, upTo: 5, rimjob: true, footjob: true, difficulty: "normal" });
     // No browser storage here: the defaults stand.
     expect(readTouchSettings()).toEqual(defaultTouchSettings());
   });

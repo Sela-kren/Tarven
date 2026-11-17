@@ -20,14 +20,27 @@ export interface TouchSettings {
   agreed: boolean;
   /** The boldest touch it covers, 1 to AUTO_TOUCH_MAX. */
   upTo: number;
+  /** Karryn's Prison's switches: rimjob and footjob scenes in a brawl (brawlscenes.ts). On by default. */
+  rimjob: boolean;
+  footjob: boolean;
+  /** Karryn's Prison's difficulty (DIFFICULTIES): how tough the ones she fights are, and how fast she grows. */
+  difficulty: Difficulty;
 }
+
+export type Difficulty = "easy" | "normal" | "hard";
+/** KP's Easy, Normal and Hard: their toughness (stamina and attack, as a share) and her growth (XP, as a share). */
+export const DIFFICULTIES: Readonly<Record<Difficulty, { name: string; foes: number; growth: number }>> = {
+  easy: { name: "Easy", foes: 0.8, growth: 1.3 },
+  normal: { name: "Normal", foes: 1, growth: 1 },
+  hard: { name: "Hard", foes: 1.25, growth: 0.75 },
+};
 
 export const AUTO_TOUCH_MAX = 9;
 /** A lustful guest with at least this much nerve is impulsive enough to reach without waiting. */
 export const IMPULSE_NERVE = 5;
 
 export function defaultTouchSettings(): TouchSettings {
-  return { autoTouch: true, agreed: false, upTo: 5 };
+  return { autoTouch: true, agreed: false, upTo: 5, rimjob: true, footjob: true, difficulty: "normal" };
 }
 
 /** A guest acting on impulse: lustful, and bold enough to just do it. */
@@ -150,6 +163,9 @@ export function readTouchSettings(): TouchSettings {
       const r = raw as Partial<Record<keyof TouchSettings, unknown>>;
       if (typeof r.autoTouch === "boolean") settings.autoTouch = r.autoTouch;
       if (typeof r.agreed === "boolean") settings.agreed = r.agreed;
+      if (r.difficulty === "easy" || r.difficulty === "normal" || r.difficulty === "hard") settings.difficulty = r.difficulty;
+      if (typeof r.rimjob === "boolean") settings.rimjob = r.rimjob;
+      if (typeof r.footjob === "boolean") settings.footjob = r.footjob;
       if (typeof r.upTo === "number") settings.upTo = Math.min(AUTO_TOUCH_MAX, Math.max(1, Math.round(r.upTo)));
     }
   } catch {

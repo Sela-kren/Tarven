@@ -288,6 +288,11 @@ class Node:
         self.parts.append(("cut", prim, k))
         return self
 
+    def offset(self, prim):
+        """Move the surface in by prim(P) (m, smooth; negative pushes it out): a displacement, no blend."""
+        self.parts.append(("off", prim, 0.0))
+        return self
+
     def sub(self, node, k=None):
         self.parts.append(("node", node, self.k if k is None else k))
         return node
@@ -295,7 +300,7 @@ class Node:
     def bounds(self):
         lo, hi = V(9, 9, 9), V(-9, -9, -9)
         for kind, item, k in self.parts:
-            if kind == "cut":
+            if kind in ("cut", "off"):
                 continue
             b = item.bounds() if kind == "node" else item[1]
             lo, hi = np.minimum(lo, b[0] - k), np.maximum(hi, b[1] + k)
@@ -306,6 +311,11 @@ class Node:
         d = None
         for kind, item, k in self.parts:
             b = item.bounds() if kind == "node" else item[1]
+            if kind == "off":
+                if d is None or np.any(b[0] > hi) or np.any(b[1] < lo):
+                    continue
+                d = d + item[0](P)
+                continue
             if kind != "cut" and (np.any(b[0] - k - 0.02 > hi) or np.any(b[1] + k + 0.02 < lo)):
                 continue
             if kind == "cut":

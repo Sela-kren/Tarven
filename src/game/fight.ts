@@ -54,7 +54,9 @@ import {
   STRIPPED_LINES,
   withPiece,
 } from "./brawlclothes";
-import { ANGER, erect, FOE_PLEASURE, FOE_PLEASURE_MAX, LEWD_METER, lewdTurn, pickScene, readyFor, wantsHer } from "./brawlai";
+import { ANGER, erect, FOE_PLEASURE, FOE_PLEASURE_MAX, LEWD_METER, lewdTurn, wantsHer } from "./brawlai";
+import { AFTER_COME_RATE, FOE_PREFIXES, type FoePrefixId } from "./foeprefix";
+import { FOE_SCENES, joinSlots, kickCounterChance, pickFoeScene, startable, upgradeScene, type FoeSceneId, type HerReadiness } from "./brawlscenes";
 import type { JoinSlot } from "./sexpose";
 import {
   BREATHE,
@@ -98,6 +100,8 @@ import type { FightTier } from "./fightface";
 
 export type FightMove =
   | "strike"
+  /** A kick: harder than a strike, but a bandit or adventurer may catch it (KP's kick counter, brawlscenes.ts). */
+  | "kick"
   | "shove"
   | "grab"
   | "headlock"
@@ -114,6 +118,18 @@ export type FightMove =
   /** Held in a scene a foe started (GAME_PATH.MD 7i): wrench free, or go along with it. */
   | "struggle"
   | "goAlong"
+  /**
+   * Karryn's own lewd moves (KP's Flaunt, Open Pleasure and Give Up, and her starting a sex skill herself): show
+   * herself off to the room, a stance where she gives in to it, give up and go down, or take the lead in a scene.
+   */
+  | "flaunt"
+  /** Pull out whatever toys they've put in her (KP's toys). */
+  | "pullToys"
+  /** KP's Deny Ejaculation (a willpower skill, from her dom side): none of them finishes inside her. */
+  | "deny"
+  | "open"
+  | "giveUp"
+  | "lead"
   /** KP's willpower skills, used before her move (brawl 7j): one a turn, and they don't take her turn. */
   | "release"
   | "releaseCock"
@@ -240,8 +256,23 @@ export const CLIMAX = { will: 5, stamina: 2 } as const;
  * takes her turn. Suppressing and releasing her desire; Eye of the Mind (her next blow can't miss, and hits harder);
  * Edging Control (for a few turns she won't come); Resist (her pleasure down). Dearer while she's horny.
  */
-const MIND_MOVES: ReadonlySet<FightMove> = new Set<FightMove>(["suppress", "suppressCock", "release", "releaseCock", "eye", "edge", "resist"]);
-export const MIND_COST = { release: 2, releaseCock: 3, eye: 5, edge: 5, resist: 6 } as const;
+const MIND_MOVES: ReadonlySet<FightMove> = new Set<FightMove>(["suppress", "suppressCock", "release", "releaseCock", "eye", "edge", "resist", "deny"]);
+export const MIND_COST = { release: 2, releaseCock: 3, eye: 5, edge: 5, resist: 6, deny: 4 } as const;
+
+/**
+ * KP's toys (RemtairyKarryn.js canGet…ToyInserted): a foe who carries one may put it in her, asked like a scene
+ * (Consent off: it just goes in), once she's ready for it. While it's in, it works on her every turn of theirs. She
+ * can pull them out (a turn). Its picture (a cut-in each) is still to be made: POSES_TODO.md.
+ */
+export type ToyId = "rotor" | "dildo" | "beads";
+export const TOYS: Readonly<Record<ToyId, { name: string; meter: Meter; need: number; wet?: boolean; exposure: number; per: number; offer: readonly string[]; worn: readonly string[] }>> = {
+  rotor: { name: "a buzzing charm", meter: "pussy", need: 50, exposure: 0.7, per: 3, offer: ["{Name} pulls a little buzzing charm from his pouch and presses it hard against your clit.", "{Name} holds the rotor in place and tells you to keep fighting while it works.", "{Name} straps the charm tight and steps back so the room can hear it hum."], worn: ["The rotor buzzes steady on your clit while you swing and the benches start laughing.", "Every hit you land makes the charm press harder and your knees threaten to buckle.", "The fight keeps going and the little buzz never stops between your legs."] },
+  dildo: { name: "a carved toy", meter: "pussy", need: 70, wet: true, exposure: 0.7, per: 5, offer: ["{Name} pulls a smooth carved wooden toy from his belt and pushes it into your pussy.", "{Name} works the dildo deep and tells you to keep it in while you brawl.", "{Name} leaves the toy seated and grins as the room watches you try to fight."], worn: ["The wooden dildo stays buried in your pussy while you trade blows on the sawdust.", "Every step makes the toy shift and the watching room bets you'll drop first.", "The fight drags on and the carved wood keeps you wet and distracted."] },
+  beads: { name: "a string of beads", meter: "butt", need: 70, exposure: 0.7, per: 4, offer: ["{Name} pulls a string of glass beads from his pocket and starts pushing them into your ass.", "{Name} works each bead in one by one and tells you to hold them while you fight.", "{Name} leaves the string seated and the end dangling so the room can see."], worn: ["The glass beads shift in your ass every time you move and the benches cheer.", "You try to swing and the string tugs, making your hole clench around them.", "The fight keeps going and the beads stay deep while the room watches you squirm."] },
+};
+/** Who carries toys (KP: the nerds and their like), and the chance on a lewd turn he tries one. */
+const TOY_KINDS: ReadonlySet<GuestKind> = new Set<GuestKind>(["noble", "smuggler"]);
+const TOY_CHANCE = 0.25;
 /** What horny adds to holding herself back (edging, resisting). */
 const HORNY_MIND = 3;
 export const RELEASE_AMOUNT = 15;
@@ -270,6 +301,8 @@ export interface FighterStats {
   desire?: Meters;
   /** How much faster each desire fills, from her passives. */
   sens?: Meters;
+  /** How high each desire can go (passives.ts desireCap, KP's max desire); none is the top. */
+  caps?: Meters;
   /** Her pleasure going in, 0 to 100. */
   pleasure?: number;
   /** The part of her the foe's type goes for. */
@@ -290,6 +323,17 @@ export interface FighterStats {
   exposure?: number;
   /** Whether a foe can start a scene with her at all: not while she's too drunk to say yes (the consent rule). */
   sexOk?: boolean;
+  /** Each guest's prefix (foeprefix.ts, KP's enemy prefixes), by their id; left out, nobody has one. */
+  prefixOf?: (guestId: number) => FoePrefixId | undefined;
+  /** How tough the ones she fights are, as a share (the difficulty: Easy 0.8, Normal 1, Hard 1.25). */
+  foeScale?: number;
+  /** How much less each desire a scene needs of her (her trinkets, KP's accessories). */
+  sceneEase?: Partial<Record<Meter, number>>;
+  /** Whether she has KP's Deny Ejaculation (from her dom side). */
+  denyOk?: boolean;
+  /** Settings switches (KP's): false keeps rimjobs, or footjobs, out of her brawls. */
+  rimjob?: boolean;
+  footjob?: boolean;
   /** Her Slut Level's tier, for how she answers in the log (brawlher.ts). */
   tier?: FightTier;
   /** How many times she's done each act before, for how she talks and goes about it in a scene (brawlher.ts). */
@@ -323,6 +367,8 @@ export interface FoeSpec {
   rolled?: RoleStats;
   prefers?: DuelArea;
   horny?: boolean;
+  /** KP's enemy prefix (foeprefix.ts): "a big rogue". */
+  prefix?: FoePrefixId;
 }
 
 /** How a foe's out of it: knocked out, thrown out, talked down, stared down, or spent. */
@@ -342,6 +388,11 @@ export interface Foe {
   accuracy: number;
   /** Their pleasure, 0 to 100: erect past half, spent at the top. */
   pleasure: number;
+  /** KP's prefix, if they have one (foeprefix.ts). */
+  prefix?: FoePrefixId;
+  /** How fast their pleasure rises, as a share; and how many more times they can come before they're spent (KP's ejaculation stock). */
+  rate: number;
+  stock: number;
   horny: boolean;
   angry: boolean;
   anger: number;
@@ -361,6 +412,8 @@ const SLOT_AREA: Readonly<Record<JoinSlot, DuelArea>> = { mouth: "mouth", left: 
 /** A scene a foe has her in mid-brawl (GAME_PATH.MD 7i): the part of her he has, turns it's gone on, and who (a foes index). */
 export interface TakenScene {
   area: DuelArea;
+  /** Which scene it is (brawlscenes.ts): one of Tarven's own (the part), or one of KP's. */
+  scene: FoeSceneId;
   turns: number;
   foe: number;
 }
@@ -370,8 +423,36 @@ const SKILL_OF_VOICE: Readonly<Record<HerVoice, Skill>> = { first: "awkward", pr
 
 /** What she does with a foe in a scene counts toward her records like her own moves (riding them, like the bed). */
 const ACT_OF_AREA: Partial<Record<DuelArea, IntimateMove>> = { hands: "hands", mouth: "mouth", pussy: "ride", butt: "ride" };
+/** Flaunt: what it does to each of them (more the more of her is bare), and the chance it makes one horny. */
+const FLAUNT_PLEASURE = 8;
+const FLAUNT_HORNY = 0.3;
+/** Open Pleasure: how much faster her desire climbs. */
+const OPEN_DESIRE = 1.5;
+/** In a scene, after this many of his turns, he may move it on to a bolder one: his pleasure × this, against 100. */
+const UPGRADE_AFTER = 2;
+const UPGRADE_SHARE = 0.5;
 /** How many times a fight a foe who wants her can grope her (each one asks on the touch screen). */
 const MAX_REACHES_WANTING = 3;
+
+/** Her moves that are rolled for, and their names in the log's roll tags. */
+type RolledMove = "strike" | "kick" | "shove" | "grab" | "headlock" | "hairpull" | "tackle" | "talk" | "stare" | "struggle";
+const ROLLED_NAMES: Readonly<Record<RolledMove, string>> = {
+  strike: "Strike",
+  kick: "Kick",
+  shove: "Shove",
+  grab: "Grab",
+  headlock: "Headlock",
+  hairpull: "Hair pull",
+  tackle: "Tackle",
+  talk: "Talk down",
+  stare: "Stare down",
+  struggle: "Struggle",
+};
+
+/** A foe's name for a roll tag: "The archer" → "Archer". */
+function foeTag(name: string): string {
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
 
 export interface FightChoice {
   move: FightMove;
@@ -427,8 +508,19 @@ export class Fight {
   joined: { foe: number; slot: JoinSlot }[] = [];
   /** A foe wants to start a scene with her, or join her in one: the fight waits for her answer (`answerOffer`). */
   offering: DuelArea | null = null;
+  /** The scene on offer (brawlscenes.ts), and whether it's moving the one she's in on to a bolder one. */
+  offeringScene: FoeSceneId | null = null;
+  offerUpgrade = false;
   private offerer = 0;
   private offerSlot: JoinSlot | null = null;
+  /** KP's toys she has in, and one on offer; whether she's denying them inside her (KP's Deny Ejaculation). */
+  readonly toys = new Set<ToyId>();
+  offeringToy: ToyId | null = null;
+  /** Toys she's let in this fight, for the records. */
+  toysIn = 0;
+  denying = false;
+  /** Times one of them came, in all (a foe with more in him counts each time). */
+  comes = 0;
   /** Times they stared at her bare, for the records. */
   sightings = 0;
   /** Lines of the log picked so far (picked apart from the fight's own dice), and whether the room's had its say this turn. */
@@ -436,6 +528,8 @@ export class Fight {
   private crowdSpoke = false;
   /** Whether the foes have had a word among themselves this turn. */
   private mateSpoke = false;
+  /** Her chances as they stood when she made this turn's move, for the log's roll tags. */
+  private rolled: Record<FightMove, number> | null = null;
   /**
    * Her energy (7k), the stance she's in and its turns left, whether she's changed stance this turn; down with no
    * stamina left (Second Wind, or stay down), and whether she's had her Second Wind; turns she's taken, for her fatigue.
@@ -489,20 +583,28 @@ export class Fight {
   /** Someone in the brawl, from who they are: their type's numbers (or their own, rolled), and a name of their own. */
   private makeFoe(spec: FoeSpec): Foe {
     const who = spec.rolled ?? statsOf(spec.kind);
-    const base = who.label.toLowerCase();
+    const prefix = spec.prefix ?? this.stats.prefixOf?.(spec.guestId);
+    const pre = prefix ? FOE_PREFIXES[prefix] : undefined;
+    const base = `${pre ? `${pre.word} ` : ""}${who.label.toLowerCase()}`;
     const same = this.foes.filter((f) => f.name === base || f.name.startsWith(`${base} `)).length;
-    const horny = Boolean(spec.horny);
+    const horny = Boolean(spec.horny) || Boolean(pre?.horny);
+    // The difficulty, and their prefix: tougher or softer, harder hitting or not (KP's enemy prefixes).
+    const scale = this.stats.foeScale ?? 1;
+    const stamina = Math.max(4, Math.round(who.fight.stamina * scale * (1 + (pre?.stamina ?? 0))));
     return {
       guestId: spec.guestId,
       kind: spec.kind,
       name: same === 0 ? base : `${base} ${"BCDEFG"[same - 1]}`,
       drunk: spec.drunk,
       prefers: spec.prefers,
-      max: who.fight.stamina,
-      stamina: who.fight.stamina,
-      attack: who.fight.attack + (spec.drunk ? 1 : 0),
-      accuracy: who.fight.accuracy - (spec.drunk ? 0.15 : 0),
+      max: stamina,
+      stamina,
+      attack: Math.max(1, Math.round(who.fight.attack * scale) + (pre?.attack ?? 0) + (spec.drunk ? 1 : 0)),
+      accuracy: who.fight.accuracy + (pre?.accuracy ?? 0) - (spec.drunk ? 0.15 : 0),
       pleasure: 0,
+      prefix,
+      rate: pre?.rate ?? 1,
+      stock: 1 + (pre?.stock ?? 0),
       horny,
       angry: !spec.drunk && !horny,
       anger: horny ? 30 : spec.drunk ? ANGER.drunk : ANGER.angry,
@@ -619,6 +721,23 @@ export class Fight {
     while (this.joinQueue.length > 0 && this.standing.length < MAX_FOES) this.foes.push(this.makeFoe(this.joinQueue.shift()!));
   }
 
+  /**
+   * A line for a move that was rolled for: a tag first with who did it, what it was, the chance it had and whether
+   * it came off ("[You · Strike · 73% · HIT] ..."), so the log shows every roll, hers and theirs. fightpanels.ts
+   * draws the tag as a badge.
+   */
+  private rollTag(who: string, what: string, chance: number, ok: boolean, words: readonly [string, string] = ["HIT", "MISS"]): string {
+    const pct = Math.round(Math.min(1, Math.max(0, chance)) * 100);
+    return `[${who} · ${what} · ${pct}% · ${ok ? words[0] : words[1]}] `;
+  }
+
+  /** Her rolled move's line, tagged with the chance it had when she picked it (`rolled`) and how it went. */
+  private sayRolled(move: RolledMove, result: string, text: string): void {
+    const ok = result === "hit" || result === "ok" || result === "win" || result === "free";
+    const words = move === "talk" || move === "stare" || move === "struggle" ? (["SUCCESS", "FAIL"] as const) : undefined;
+    this.say(`${move}:${result}`, this.rollTag("You", ROLLED_NAMES[move], this.rolled?.[move] ?? 0, ok, words) + text);
+  }
+
   private say(event: string, text: string): void {
     this.log.push(text);
     this.events.push(event);
@@ -679,6 +798,7 @@ export class Fight {
     const sure = (n: number) => (this.eyeOpen ? 1 : n);
     return {
       strike: sure(Math.min(0.95, 0.7 + agi) - off),
+      kick: sure(Math.min(0.9, 0.62 + agi) - off),
       shove: sure(Math.min(0.95, 0.8 + agi) - off),
       grab: sure(Math.min(0.95, 0.75 + agi + grip) - off),
       headlock: sure(Math.min(0.95, 0.65 + str + grip) - off),
@@ -715,6 +835,12 @@ export class Fight {
       mouth: 1,
       ride: 1,
       throw: 1,
+      flaunt: 1,
+      pullToys: 1,
+      deny: 1,
+      open: 1,
+      giveUp: 1,
+      lead: 1,
     };
   }
 
@@ -725,11 +851,18 @@ export class Fight {
     return this.eyeOpen ? Math.round(damage * EYE_DAMAGE) : damage;
   }
 
+  /** How high a desire can go in this fight (KP's max desire). */
+  private capOf(meter: Meter): number {
+    return this.stats.caps?.[meter] ?? METER_MAX;
+  }
+
   /** Raises a desire mid-fight, faster with passives that make it so. */
   private stir(meter: Meter, n: number): number {
     if (!this.desire || n <= 0) return 0;
     const before = this.desire[meter];
-    this.desire[meter] = Math.min(METER_MAX, before + n * (1 + (this.stats.sens?.[meter] ?? 0)));
+    // Open Pleasure: she lets it in, and it climbs faster.
+    const open = this.stance === "open" ? OPEN_DESIRE : 1;
+    this.desire[meter] = Math.min(this.capOf(meter), before + n * open * (1 + (this.stats.sens?.[meter] ?? 0)));
     return Math.round(this.desire[meter] - before);
   }
 
@@ -740,12 +873,35 @@ export class Fight {
   private intimateChoices(): FightChoice[] {
     const desire = this.desire;
     if (!desire) return [];
-    return (Object.keys(INTIMATE_MOVES) as IntimateMove[])
+    // Karryn's own (KP): showing off, taking the lead in a scene she's done before, and giving up.
+    const lead = this.leadScene();
+    const own: FightChoice[] = [
+      { move: "flaunt", label: "Flaunt yourself · works them all up, and you", chance: null, disabled: false },
+      ...(lead ? [{ move: "lead" as const, label: `Take the lead (18+) · ${FOE_SCENES[lead].label}`, chance: null, disabled: false }] : []),
+      { move: "giveUp", label: "Give up · let your legs go", chance: null, disabled: false },
+      ...(this.toys.size > 0 ? [{ move: "pullToys" as const, label: "Pull the toys out", chance: null, disabled: false }] : []),
+    ];
+    return [...own, ...(Object.keys(INTIMATE_MOVES) as IntimateMove[])
       .filter((move) => desire.cock >= INTIMATE_MOVES[move].cock && (INTIMATE_MOVES[move].wet !== true || this.wet))
       .map((move) => {
         const def = INTIMATE_MOVES[move];
         return { move, label: `${def.label} · -${def.drain} their stamina`, chance: null, disabled: false };
-      });
+      })];
+  }
+
+  /**
+   * The scene she'd start with the one she's going for herself (KP: Karryn's sex skills, once a passive unlocks
+   * them): the boldest of his she's ready for and has done before, if he's erect; or null.
+   */
+  private leadScene(): FoeSceneId | null {
+    if (!this.desire || !this.stats.sexOk || this.drunk || this.taken) return null;
+    const foe = this.targeted;
+    if (!erect(foe)) return null;
+    const her = this.herState();
+    const done = (id: FoeSceneId) => (her.experience?.[FOE_SCENES[id].area] ?? 0) > 0;
+    const mine = startable(foe.kind, foe.prefers, her).filter(done);
+    if (mine.length === 0) return null;
+    return mine.reduce((a, b) => (FOE_SCENES[b].boldness > FOE_SCENES[a].boldness ? b : a));
   }
 
   /** KP's willpower skills she has now (7j): one a turn, before her move; greyed once used, or short of willpower. */
@@ -763,6 +919,7 @@ export class Fight {
       ...free("eye", "Eye of the Mind", this.mindCost("eye")!, !inScene),
       ...free("edge", "Edging Control", this.mindCost("edge")!, this.pleasure >= 50 && this.edgeTurns === 0),
       ...free("resist", "Resist", this.mindCost("resist")!, this.pleasure >= 30),
+      ...free("deny", "Deny them inside you", this.mindCost("deny")!, Boolean(this.stats.denyOk) && !this.denying),
     ];
   }
 
@@ -777,6 +934,7 @@ export class Fight {
       case "release":
       case "releaseCock":
       case "eye":
+      case "deny":
         return MIND_COST[move];
       case "edge":
       case "resist":
@@ -807,6 +965,7 @@ export class Fight {
     const canThrow = this.foeStamina <= this.foeMax * THROW_AT;
     return [
       { move: "strike", label: "Strike", chance: c.strike, disabled: false },
+      { move: "kick", label: "Kick", chance: c.kick, disabled: false },
       { move: "shove", label: "Shove", chance: c.shove, disabled: false },
       // One button: grab their arm, then, with hold of them, it's a headlock.
       this.holding
@@ -876,7 +1035,7 @@ export class Fight {
     if (this.maxEnergy <= 0) return [];
     const stances: FightChoice[] = inScene
       ? []
-      : (["cautious", "defensive", "counter"] as const).map((stance) => ({
+      : (["cautious", "defensive", "counter", "open"] as const).map((stance) => ({
           move: stance,
           label: `${STANCE_NAMES[stance]} (Energy · no turn) · ${ENERGY_COST[stance]} energy`,
           chance: null,
@@ -934,7 +1093,7 @@ export class Fight {
       this.mind(move);
       return;
     }
-    if (move === "cautious" || move === "defensive" || move === "counter") {
+    if (move === "cautious" || move === "defensive" || move === "counter" || move === "open") {
       this.takeStance(move);
       return;
     }
@@ -943,6 +1102,7 @@ export class Fight {
     this.mateSpoke = false;
     if (move === "headlock" && !this.holding) return;
     const c = this.chances();
+    this.rolled = c;
     const roll = this.random();
     const { levels } = this.stats;
     // Whatever she does, she twists out of their grip doing it; and lets go of them unless she's locking it.
@@ -953,11 +1113,25 @@ export class Fight {
         if (roll < c.strike) {
           const damage = this.blow(3 + (levels.strength - 1) + this.stats.damage);
           this.foeStamina = Math.max(0, this.foeStamina - damage);
-          this.say("strike:hit", `You land a solid blow. (-${damage})`);
+          this.sayRolled("strike", "hit", `You land a solid blow. (-${damage})`);
           this.crowdSays("hit");
           this.mateSays("hit");
           this.gain("strength", 2);
-        } else this.say("strike:miss", "You swing and miss.");
+        } else this.sayRolled("strike", "miss", "You swing and miss.");
+        break;
+      }
+      case "kick": {
+        // A bandit or adventurer, erect, may catch it and turn it into a scene (KP's kick counter), if she's ready.
+        if (this.tryKickCounter()) break;
+        if (roll < c.kick) {
+          const damage = this.blow(4 + (levels.strength - 1) + this.stats.damage);
+          this.foeStamina = Math.max(0, this.foeStamina - damage);
+          this.sayRolled("kick", "hit", `Your boot lands square. (-${damage})`);
+          this.crowdSays("hit");
+          this.mateSays("hit");
+          this.gain("strength", 2);
+          this.gain("agility", 1);
+        } else this.sayRolled("kick", "miss", "Your kick catches nothing but air.");
         break;
       }
       case "shove": {
@@ -965,9 +1139,9 @@ export class Fight {
           const damage = 1 + Math.floor((levels.strength - 1) / 2);
           this.foeStamina = Math.max(0, this.foeStamina - damage);
           this.staggered = this.random() < 0.5 + (levels.strength - 1) * 0.05;
-          this.say("shove:hit", this.staggered ? `You shove them into a table. They stagger. (-${damage})` : `You shove them back. (-${damage})`);
+          this.sayRolled("shove", "hit", this.staggered ? `You shove them into a table. They stagger. (-${damage})` : `You shove them back. (-${damage})`);
           this.gain("strength", 1);
-        } else this.say("shove:miss", "They stand their ground.");
+        } else this.sayRolled("shove", "miss", "They stand their ground.");
         break;
       }
       case "grab": {
@@ -975,10 +1149,10 @@ export class Fight {
           this.foeStamina = Math.max(0, this.foeStamina - 1);
           this.holding = true;
           this.grapplesLanded++;
-          this.say("grab:hit", "You catch their wrist and twist it up behind them. (-1)");
+          this.sayRolled("grab", "hit", "You catch their wrist and twist it up behind them. (-1)");
           this.gain("strength", 1);
           this.gain("agility", 1);
-        } else this.say("grab:miss", "You grab for their arm and get a fistful of air.");
+        } else this.sayRolled("grab", "miss", "You grab for their arm and get a fistful of air.");
         break;
       }
       case "headlock": {
@@ -988,9 +1162,9 @@ export class Fight {
           this.foeStamina = Math.max(0, this.foeStamina - damage);
           this.staggered = true;
           this.grapplesLanded++;
-          this.say("headlock:hit", `You get an arm round their neck and squeeze till they sag. (-${damage})`);
+          this.sayRolled("headlock", "hit", `You get an arm round their neck and squeeze till they sag. (-${damage})`);
           this.gain("strength", 3);
-        } else this.say("headlock:miss", "They wrench free before you can lock it.");
+        } else this.sayRolled("headlock", "miss", "They wrench free before you can lock it.");
         break;
       }
       case "hairpull": {
@@ -998,9 +1172,9 @@ export class Fight {
           this.foeStamina = Math.max(0, this.foeStamina - 2);
           this.foeAccuracy = Math.max(MIN_ACCURACY, this.foeAccuracy - HAIRPULL_ACCURACY);
           this.grapplesLanded++;
-          this.say("hairpull:hit", "You grab a fistful of hair and yank. Their eyes water. (-2)");
+          this.sayRolled("hairpull", "hit", "You grab a fistful of hair and yank. Their eyes water. (-2)");
           this.gain("agility", 1);
-        } else this.say("hairpull:miss", "They jerk their head out of reach.");
+        } else this.sayRolled("hairpull", "miss", "They jerk their head out of reach.");
         break;
       }
       case "tackle": {
@@ -1009,14 +1183,14 @@ export class Fight {
           this.foeStamina = Math.max(0, this.foeStamina - damage);
           this.staggered = true;
           this.grapplesLanded++;
-          this.say("tackle:hit", `You drive a shoulder into their middle and take them down over a bench. (-${damage})`);
+          this.sayRolled("tackle", "hit", `You drive a shoulder into their middle and take them down over a bench. (-${damage})`);
           this.crowdSays("hit");
           this.gain("strength", 2);
           this.gain("endurance", 1);
         } else {
           const lost = Math.max(0, Math.min(this.stamina - 1, TACKLE_MISS));
           this.stamina -= lost;
-          this.say("tackle:miss", `They sidestep, and you hit the floor. (-${lost})`);
+          this.sayRolled("tackle", "miss", `They sidestep, and you hit the floor. (-${lost})`);
         }
         break;
       }
@@ -1027,13 +1201,13 @@ export class Fight {
       case "talk":
         this.gain("charm", 2);
         if (roll < c.talk) {
-          this.say("talk:ok", "You talk them round. They sit back down, sheepish.");
+          this.sayRolled("talk", "ok", "You talk them round. They sit back down, sheepish.");
           this.gain("charm", 5);
           this.foeOut("talked");
           break;
         }
         this.foeAttack++;
-        this.say("talk:fail", "They don't want to hear it. That made it worse.");
+        this.sayRolled("talk", "fail", "They don't want to hear it. That made it worse.");
         break;
       case "stare":
         if (this.will < STARE_WILL) return;
@@ -1045,12 +1219,12 @@ export class Fight {
           this.foeAccuracy -= 0.1;
           this.gain("mind", 4);
           if (this.foeStamina <= this.foeMax / 2) {
-            this.say("stare:win", "You stare them down. They back away and leave.");
+            this.sayRolled("stare", "win", "You stare them down. They back away and leave.");
             this.foeOut("stared");
             break;
           }
-          this.say("stare:ok", "You stare them down. Their nerve falters.");
-        } else this.say("stare:fail", "They meet your stare and laugh.");
+          this.sayRolled("stare", "ok", "You stare them down. Their nerve falters.");
+        } else this.sayRolled("stare", "fail", "They meet your stare and laugh.");
         break;
       case "steel": {
         if (this.will < STEEL_WILL) return;
@@ -1134,6 +1308,49 @@ export class Fight {
         }
         break;
       }
+      case "flaunt": {
+        // KP's Flaunt: she shows herself off, and every one of them is worked up by it; so is she.
+        this.say("flaunt", "You roll your hips and give the whole room a long, slow look at you.");
+        this.stir("body", 4);
+        this.stir("cock", 3);
+        this.gain("charm", 2);
+        this.crowdSays("lewd");
+        const me = this.actor;
+        for (let i = 0; i < this.foes.length && !this.outcome; i++) {
+          if (this.foes[i].out) continue;
+          this.actor = i;
+          if (!this.foe.horny && this.random() < FLAUNT_HORNY) this.foe.horny = true;
+          this.raiseFoe(FLAUNT_PLEASURE * (0.5 + this.exposure));
+        }
+        this.actor = me;
+        break;
+      }
+      case "pullToys": {
+        if (this.toys.size === 0) return;
+        this.toys.clear();
+        this.say("toys:out", "You pull everything out of you and toss it under a table.");
+        break;
+      }
+      case "giveUp": {
+        // KP's Give Up: she lets herself go down.
+        this.stamina = 0;
+        this.fallDown("You stop fighting it and let your legs give out.");
+        return;
+      }
+      case "lead": {
+        // KP: Karryn starts a sex skill herself. Her choice, so nothing to ask.
+        const scene = this.leadScene();
+        if (!scene) return;
+        const def = FOE_SCENES[scene];
+        this.taken = { area: def.area, scene, turns: 0, foe: this.target };
+        this.countAct(def.area);
+        this.gain("charm", 2);
+        this.say(`taken:${def.area}`, `You take the lead. ${line(def.taken.length > 0 ? def.taken : TAKEN_LINES[def.area], this.textRoll(), this.name)}`);
+        this.herSays("taken");
+        this.mateSays("taken");
+        this.crowdSays("taken");
+        break;
+      }
       case "struggle": {
         this.herSays("struggle");
         if (roll < c.struggle) {
@@ -1142,10 +1359,10 @@ export class Fight {
           this.taken = null;
           this.joined = [];
           this.staggered = true;
-          this.say("struggle:free", line(STRUGGLE_LINES.free, this.textRoll(), this.name));
+          this.sayRolled("struggle", "free", line(STRUGGLE_LINES.free, this.textRoll(), this.name));
           this.gain("strength", 2);
           this.crowdSays("free");
-        } else this.say("struggle:fail", line(STRUGGLE_LINES.fail, this.textRoll(), this.name));
+        } else this.sayRolled("struggle", "fail", line(STRUGGLE_LINES.fail, this.textRoll(), this.name));
         break;
       }
       case "goAlong": {
@@ -1243,6 +1460,7 @@ export class Fight {
     this.stanceUsed = true;
     const what = {
       cautious: "You keep your distance, watching their hands. (their aim worse, your dodges better)",
+      open: "You stop fighting the feeling and let it show. (your desire rises faster; they want you more than they want a fight)",
       defensive: "You tuck your chin and set your feet. (their blows take less out of you, and can't pin you)",
       counter: "You wait for them to swing. (when they miss, you hit back)",
     }[stance];
@@ -1286,6 +1504,11 @@ export class Fight {
     this.gain("mind", 2);
     const levels = this.stats.levels;
     switch (move) {
+      case "deny": {
+        this.denying = true;
+        this.say("deny", "You make it plain: whoever finishes, finishes outside you. (Deny)");
+        break;
+      }
       case "suppress":
       case "suppressCock": {
         const cock = move === "suppressCock";
@@ -1301,7 +1524,7 @@ export class Fight {
       case "releaseCock": {
         // KP's Release: she lets herself feel it, and opens up what she can do (and what they can).
         const cock = move === "releaseCock";
-        for (const m of METERS) if (cock === (m === "cock")) desire[m] = Math.min(METER_MAX, desire[m] + RELEASE_AMOUNT);
+        for (const m of METERS) if (cock === (m === "cock")) desire[m] = Math.min(this.capOf(m), desire[m] + RELEASE_AMOUNT);
         this.say(cock ? "release:cock" : "release", cock ? `You stop fighting the thought of them. (Cock desire +${RELEASE_AMOUNT})` : `You let the want in, and stop pushing it away. (desire +${RELEASE_AMOUNT})`);
         break;
       }
@@ -1371,7 +1594,7 @@ export class Fight {
       this.joined = [];
     }
     this.joined = this.joined.filter((j) => j.foe !== this.actor);
-    if (this.offering && this.offerer === this.actor) this.offering = null;
+    if (this.offering && this.offerer === this.actor) this.clearOffer();
     const standing = this.standing;
     if (standing.length === 0) {
       const words = this.foes.every((f) => f.out === "talked" || f.out === "stared") && this.foes.some((f) => f.out === "talked");
@@ -1417,9 +1640,11 @@ export class Fight {
   private theirTurn(): void {
     if (this.staggered) {
       this.staggered = false;
-      this.say("staggered", "They're still finding their feet.");
+      this.say("staggered", `The ${this.name} is still finding their feet. (no attack)`);
       return;
     }
+    // KP's toys: whatever's in her works on her, his turn and every one of theirs.
+    this.toysWork();
     // In a scene with her, he keeps at it, and anyone joined in with him; nobody swings at her (KP's sex poses).
     // The rest want in.
     if (this.taken) {
@@ -1431,16 +1656,15 @@ export class Fight {
     // Karryn-style (brawlai.ts): watching her bare works him up; then he wants her, or her hurt.
     if (this.desire) {
       if (this.raiseFoe(FOE_PLEASURE.watch * this.exposure)) return;
-      const foe = { horny: this.foeHorny, angry: this.foeAngry, anger: this.foeAnger, pleasure: this.foePleasure };
+      // Open Pleasure: they'd rather have her than hurt her.
+      const foe = { horny: this.foeHorny, angry: this.foeAngry, anger: this.stance === "open" ? 0 : this.foeAnger, pleasure: this.foePleasure };
       if (wantsHer(foe, this.random())) {
         // Erect, and she's ready for it: he starts a scene (never with either of them too drunk: the consent rule).
-        const area = erect(foe) && this.stats.sexOk && !this.drunk ? pickScene(this.foe.prefers, this.herState()) : null;
-        if (area) {
-          this.offering = area;
-          this.offerer = this.actor;
-          this.offerSlot = null;
+        // Which: one of his kind's (KP's), or the part his type goes for (brawlscenes.ts).
+        const scene = erect(foe) && this.stats.sexOk && !this.drunk ? pickFoeScene(this.kind, this.foe.prefers, this.herState(), this.random()) : null;
+        if (scene) {
           this.dodging = false;
-          this.say(`their:offer:${area}`, `${line(OFFER_LINES[area], this.textRoll(), this.name)} ${this.heSays(this.voice.offer)}`);
+          this.offerScene(scene, false);
           return;
         }
         if (this.lewdTurn()) return;
@@ -1466,10 +1690,13 @@ export class Fight {
     this.dodging = false;
     // Her hold on their arm throws their swing off; they shake loose as they swing.
     const off = (this.holding ? HOLD_ACCURACY : 0) + (cautious ? CAUTIOUS.theirAim : 0);
-    if (this.random() < this.foeAccuracy - dodge - off) {
-      this.theirBlow();
+    const aim = this.foeAccuracy - dodge - off;
+    const hit = this.random() < aim;
+    const tag = this.rollTag(foeTag(this.name), "Attack", aim, hit);
+    if (hit) {
+      this.theirBlow(tag);
     } else {
-      this.say(dodged ? "their:dodged" : "their:miss", dodged ? "You duck under their swing." : "They swing wide.");
+      this.say(dodged ? "their:dodged" : "their:miss", tag + (dodged ? "You duck under their swing." : "They swing wide."));
       if (dodged) {
         this.dodges++;
         this.gain("agility", 3);
@@ -1534,20 +1761,110 @@ export class Fight {
   }
 
   /** What a foe needs to know of her to start a scene (brawlai.ts SCENE_NEEDS). */
-  private herState(): { desire: Readonly<Meters>; wet: boolean; exposure: number } {
-    return { desire: this.desire!, wet: this.wet, exposure: this.exposure };
+  private herState(): HerReadiness {
+    const { experience, rimjob, footjob } = this.stats;
+    return { desire: this.desire!, wet: this.wet, exposure: this.exposure, experience, rimjob, footjob, ease: this.stats.sceneEase };
+  }
+
+  /**
+   * Him (the actor) putting a scene to her: starting one, or moving the one she's in on to a bolder one. The fight
+   * waits for her answer (`answerOffer`); Consent off, the tavern answers yes for her.
+   */
+  private offerScene(scene: FoeSceneId, upgrade: boolean): void {
+    const def = FOE_SCENES[scene];
+    this.offering = def.area;
+    this.offeringScene = scene;
+    this.offerUpgrade = upgrade;
+    this.offerer = this.actor;
+    this.offerSlot = null;
+    const lines = def.offer.length > 0 ? def.offer : OFFER_LINES[def.area];
+    this.say(`their:offer:${def.area}`, `${line(lines, this.textRoll(), this.name)} ${this.heSays(this.voice.offer)}`);
+  }
+
+  /** His toy, offered (KP's toy insertion), if he carries one and she's ready for one she hasn't got in. */
+  private tryToy(): boolean {
+    if (!this.desire || !TOY_KINDS.has(this.kind) || this.random() >= TOY_CHANCE) return false;
+    const toy = (Object.keys(TOYS) as ToyId[]).find((t) => {
+      const def = TOYS[t];
+      return !this.toys.has(t) && this.desire![def.meter] >= def.need && (!def.wet || this.wet) && this.exposure >= def.exposure;
+    });
+    if (!toy) return false;
+    const def = TOYS[toy];
+    this.offering = def.meter === "butt" ? "butt" : "pussy";
+    this.offeringToy = toy;
+    this.offerer = this.actor;
+    this.offerSlot = null;
+    this.say(`toy:offer:${toy}`, line(def.offer, this.textRoll(), this.name));
+    return true;
+  }
+
+  /** Each toy in her works on her (a turn of theirs): its desire, and her pleasure. */
+  private toysWork(): void {
+    if (this.toys.size === 0 || this.actor !== this.standingIndex()) return;
+    for (const toy of this.toys) {
+      const def = TOYS[toy];
+      this.stir(def.meter, def.per);
+      this.addPleasure(def.per);
+      if (this.textRoll() < 0.4) this.say(`toy:work:${toy}`, line(def.worn, this.textRoll(), this.name));
+    }
+  }
+
+  /** The first of them still standing: whose turn the toys work on, once a round. */
+  private standingIndex(): number {
+    return this.foes.findIndex((f) => !f.out);
+  }
+
+  private clearOffer(): void {
+    this.offering = null;
+    this.offeringToy = null;
+    this.offeringScene = null;
+    this.offerUpgrade = false;
+    this.offerSlot = null;
+  }
+
+  /**
+   * Her kick, caught (KP's kick counter): the one she kicked, if he's a bandit or an adventurer, erect, and she's
+   * ready for it, may catch her leg and put the scene to her. Says whether he did.
+   */
+  private tryKickCounter(): boolean {
+    if (!this.desire || !this.stats.sexOk || this.drunk || this.taken) return false;
+    const chance = kickCounterChance(
+      this.kind,
+      { erect: erect({ horny: this.foeHorny, pleasure: this.foePleasure }), horny: this.foeHorny, angry: this.foeAngry },
+      { ...this.herState(), horny: this.horny },
+    );
+    if (chance <= 0 || this.random() >= chance) return false;
+    this.offerScene("kickCounter", false);
+    return true;
   }
 
   /** Works the foe up; at the top he comes, and he's spent: the fight's won. Says whether he came. */
   private raiseFoe(n: number): boolean {
     if (n <= 0 || this.outcome) return false;
-    this.foePleasure = Math.min(FOE_PLEASURE_MAX, this.foePleasure + n);
+    this.foePleasure = Math.min(FOE_PLEASURE_MAX, this.foePleasure + n * this.foe.rate);
     if (this.foePleasure < FOE_PLEASURE_MAX) return false;
-    const area = this.sceneAreaOf(this.actor);
+    // Denied (KP's Deny Ejaculation): he pulls out of her mouth, pussy or rear before he comes.
+    const at = this.sceneAreaOf(this.actor);
+    const area = this.denying && (at === "mouth" || at === "pussy" || at === "butt") ? "none" : at;
+    if (area !== at) this.say("their:denied", `The ${this.name} pulls out of you just in time, cursing.`);
     this.say("their:come", `${line(COME_LINES[area], this.textRoll(), this.name)} ${this.heSays(this.voice.come)}`);
     this.herSaysCome(area);
     this.crowdSays("come");
     this.mateSays("come");
+    this.comes++;
+    // More in him (KP's ejaculation stock): he's out of the scene, but not the fight, and slower to get there again.
+    if (this.foe.stock > 1) {
+      this.foe.stock--;
+      this.foe.pleasure = 0;
+      this.foe.rate *= AFTER_COME_RATE;
+      if (this.taken?.foe === this.actor) {
+        this.taken = null;
+        this.joined = [];
+      }
+      this.joined = this.joined.filter((j) => j.foe !== this.actor);
+      this.say("their:again", `The ${this.name} isn't done yet. He catches his breath and comes back for more.`);
+      return true;
+    }
     this.foeOut("spent");
     return true;
   }
@@ -1567,7 +1884,14 @@ export class Fight {
       return true;
     }
     const exposure = this.exposure;
-    const turn = lewdTurn(this.foe.prefers, exposure, canGrope && this.reaches < MAX_REACHES_WANTING, this.random(), this.random());
+    // KP's toys: one who carries them may put one in her, if she's ready for it.
+    if (this.tryToy()) return true;
+    // A talker would rather talk, a starer stare (KP's Talk and Sight prefixes).
+    let roll = this.random();
+    const pre = this.foe.prefix ? FOE_PREFIXES[this.foe.prefix] : undefined;
+    if (pre?.talk) roll = Math.min(0.99, roll + pre.talk);
+    if (pre?.sight && roll >= 0.4) roll = 0.45;
+    const turn = lewdTurn(this.foe.prefers, exposure, canGrope && this.reaches < MAX_REACHES_WANTING, roll, this.random());
     if (turn.kind === "grope") {
       this.reaches++;
       this.reach("touch");
@@ -1604,11 +1928,21 @@ export class Fight {
     this.stir(METER_OF_AREA[taken.area], 5);
     // What he does, and now and then what he says doing it; her, as it goes on; the room, cheering him on.
     const said = this.textRoll() < 0.5 ? ` ${this.heSays(this.voice.pose)}` : "";
-    this.say(`their:pose:${taken.area}`, `${line(POSE_LINES[taken.area], this.textRoll(), this.name)}${said}`);
+    const def = FOE_SCENES[taken.scene];
+    const lines = def.pose_.length > 0 ? def.pose_ : POSE_LINES[taken.area];
+    this.say(`their:pose:${taken.area}`, `${line(lines, this.textRoll(), this.name)}${said}`);
     if (this.textRoll() < 0.6) this.herSays("pose");
     this.crowdSays("pose");
     if (this.raiseFoe(FOE_PLEASURE.pose)) return;
-    if (this.stamina <= 0) this.fallDown("Your legs give out under you.");
+    if (this.stamina <= 0) {
+      this.fallDown("Your legs give out under you.");
+      return;
+    }
+    // Worked up, he may want more: a bolder scene of his, if she's ready for it (KP's tryUpgradeSexPose).
+    if (taken.turns >= UPGRADE_AFTER && !this.drunk && this.random() * 100 < this.foePleasure * UPGRADE_SHARE) {
+      const next = upgradeScene(this.kind, this.foe.prefers, taken.scene, this.herState(), this.random());
+      if (next) this.offerScene(next, true);
+    }
   }
 
   /** The part of her a foe has in a scene: the scene's, or his slot's if he's joined in; "none" if he isn't in it. */
@@ -1623,10 +1957,8 @@ export class Fight {
     const taken = this.taken;
     if (!taken || !this.desire) return null;
     const used = new Set(this.joined.map((j) => j.slot));
-    const her = this.herState();
-    const slots: JoinSlot[] = [];
-    if (taken.area !== "mouth" && readyFor("mouth", her)) slots.push("mouth");
-    if (readyFor("hands", her)) slots.push("left", ...(taken.area === "hands" ? [] : (["right"] as const)));
+    // The slots the scene leaves free (KP's pose joins), that she's ready for, and he'd go for (brawlscenes.ts).
+    const slots = joinSlots(taken.scene, this.kind, this.herState());
     return slots.find((s) => !used.has(s)) ?? null;
   }
 
@@ -1693,20 +2025,71 @@ export class Fight {
   answerOffer(answer: "yes" | "slap" | "pull"): void {
     const area = this.offering;
     if (!area || this.outcome) return;
-    this.offering = null;
+    const scene = this.offeringScene ?? (area as FoeSceneId);
+    const upgrade = this.offerUpgrade;
+    const toy = this.offeringToy;
+    const slot = this.offerSlot;
+    this.clearOffer();
     this.crowdSpoke = false;
     this.mateSpoke = false;
     this.actor = this.offerer;
-    const slot = this.offerSlot;
-    this.offerSlot = null;
     try {
-      this.answerOfferAs(area, slot, answer);
+      if (toy) this.answerToyAs(toy, answer);
+      else if (upgrade) this.answerUpgradeAs(scene, answer);
+      else this.answerOfferAs(area, slot, answer, scene);
     } finally {
       this.actor = this.target;
     }
   }
 
-  private answerOfferAs(area: DuelArea, slot: JoinSlot | null, answer: "yes" | "slap" | "pull"): void {
+  /**
+   * Her answer to him moving the scene she's in on to a bolder one. Yes, and it's the new one (anyone joined at a
+   * slot it doesn't leave free drops out); a slap keeps it as it was; pulling away gets her clear of all of them.
+   */
+  private answerUpgradeAs(scene: FoeSceneId, answer: "yes" | "slap" | "pull"): void {
+    const taken = this.taken;
+    if (!taken) return;
+    if (answer === "yes") {
+      const def = FOE_SCENES[scene];
+      taken.scene = scene;
+      taken.area = def.area;
+      taken.turns = 0;
+      const keep = new Set(def.joins);
+      this.joined = this.joined.filter((j) => keep.has(j.slot));
+      this.countAct(def.area);
+      const lines = def.taken.length > 0 ? def.taken : TAKEN_LINES[def.area];
+      this.say(`taken:${def.area}`, line(lines, this.textRoll(), this.name));
+      this.herSays("taken");
+      this.mateSays("taken");
+      this.crowdSays("taken");
+      return;
+    }
+    this.herSays("refuse");
+    this.say("their:say", `The ${this.name}: ${this.heSays(this.voice.refused)}`);
+    if (answer === "slap") {
+      this.say("reach:slap", "You slap his hand away. He'll have to make do with what he's got.");
+      return;
+    }
+    this.taken = null;
+    this.joined = [];
+    this.staggered = true;
+    this.say("struggle:free", "You twist out from under him and get your feet back.");
+    this.crowdSays("free");
+  }
+
+  /** Her answer to his toy: in it goes, or she turns it away. */
+  private answerToyAs(toy: ToyId, answer: "yes" | "slap" | "pull"): void {
+    if (answer === "yes") {
+      this.toys.add(toy);
+      this.toysIn++;
+      this.say(`toy:in:${toy}`, `${TOYS[toy].name.charAt(0).toUpperCase()}${TOYS[toy].name.slice(1)} goes in, and the room cheers.`);
+      this.raiseFoe(FOE_PLEASURE.touch);
+      return;
+    }
+    this.say(answer === "slap" ? "reach:slap" : "reach:pull", answer === "slap" ? "You knock it out of his hand." : "You twist away from it.");
+  }
+
+  private answerOfferAs(area: DuelArea, slot: JoinSlot | null, answer: "yes" | "slap" | "pull", scene: FoeSceneId = area): void {
     if (answer === "yes" && slot && this.taken) {
       // Joined in, at her mouth or a hand.
       this.joined.push({ foe: this.actor, slot });
@@ -1718,9 +2101,10 @@ export class Fight {
       return;
     }
     if (answer === "yes") {
-      this.taken = { area, turns: 0, foe: this.actor };
+      this.taken = { area, scene, turns: 0, foe: this.actor };
       this.countAct(area);
-      this.say(`taken:${area}`, line(TAKEN_LINES[area], this.textRoll(), this.name));
+      const def = FOE_SCENES[scene];
+      this.say(`taken:${area}`, line(def.taken.length > 0 ? def.taken : TAKEN_LINES[area], this.textRoll(), this.name));
       this.herSays("taken");
       this.mateSays("taken");
       this.crowdSays("taken");
@@ -1741,14 +2125,14 @@ export class Fight {
   }
 
   /** A blow of theirs that lands: a fist, or now and then a grapple. Fighting, every one of them. */
-  private theirBlow(): void {
+  private theirBlow(tag = ""): void {
     // Defensive Stance: their blows take less out of her, body and will, and can't pin her.
     const defensive = this.stance === "defensive";
     const hurt = (damage: number, will: number, event: string, text: string) => {
       const n = Math.max(1, damage - (defensive ? DEFENSIVE.damage : 0));
       this.stamina = Math.max(0, this.stamina - n);
       this.will = Math.max(0, this.will - (defensive ? Math.floor(will / 2) : will));
-      this.say(event, `${text} (-${n})`);
+      this.say(event, `${tag}${text} (-${n})`);
       this.gain("endurance", 1);
     };
     this.holding = false;
@@ -1757,8 +2141,6 @@ export class Fight {
       hurt(this.foeAttack, HIT_WILL, "their:hit", "They catch you one.");
       return;
     }
-    // A grapple: their hands wander on the way, to the part of her their type goes for.
-    this.wander();
     const pick = pickGrapple(this.kind, this.random());
     const def = FOE_GRAPPLES[pick];
     this.grapplesTaken++;
@@ -1768,6 +2150,8 @@ export class Fight {
     }
     // Thick Skin: their grapples hurt less.
     hurt(this.foeAttack + def.damage - (this.stats.grappleGuard ?? 0), HIT_WILL * def.will, `their:${pick}`, def.text);
+    // A grapple: their hands wander while they have hold of her, to the part of her their type goes for.
+    this.wander();
     // Consent off (KP's clothing damage): the grapple can tear the next piece off her.
     if (this.stats.forceful && this.nextPiece && this.random() < GRAPPLE_TEAR) {
       const piece = this.nextPiece;

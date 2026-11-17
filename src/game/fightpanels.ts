@@ -3,6 +3,7 @@
  * to the end, and the 18+ cards (the table, alone, and how a duel ended). The duel's rules are in duel.ts and its
  * moves in duelmoves.ts; this file only draws them and passes her picks on.
  */
+import { FOE_PREFIXES } from "./foeprefix";
 import { CUM_NAMES, CUM_SPOTS, type CumSpot } from "./cum";
 import { AREA_NAMES, DUEL_AREAS, MAX_PARTNERS, STATE_NAMES, type Duel, type DuelArea, type DuelLogEntry, type DuelTest, type Partner } from "./duel";
 import { ROLE_PLAYS, type RolePlay } from "./duellines";
@@ -24,6 +25,7 @@ import { erect } from "./brawlai";
 import { STANCE_NAMES } from "./herstate";
 import { restingPose } from "./battlepose";
 import { duelShake } from "./screenshake";
+import { GROUP_ICONS, MOVE_ICONS, type MoveGroup } from "./fighticons";
 
 /** Her desire in a brawl, in a line: horny or wet first, then each desire past 50 that's getting in her way. */
 function desireSummary(fight: Fight): string {
@@ -63,8 +65,18 @@ function fightLog(lines: readonly string[]): HTMLElement {
   log.className = "fight-log";
   for (const line of lines.slice(-FIGHT_LOG_LINES)) {
     const p = document.createElement("p");
-    p.textContent = line;
-    const kind = logKind(line);
+    // A rolled move (fight.ts rollTag): its "[who · what · chance · result]" tag as a badge, then what happened.
+    const roll = /^\[([^\]]+)\] /.exec(line);
+    const text = roll ? line.slice(roll[0].length) : line;
+    if (roll) {
+      const tag = document.createElement("span");
+      const parts = roll[1].split(" · ");
+      const result = parts[parts.length - 1];
+      tag.className = `roll ${parts[0] === "You" ? "mine" : "theirs"} ${result === "HIT" || result === "SUCCESS" ? "ok" : "fail"}`;
+      tag.textContent = parts.join(" · ");
+      p.append(tag, " ", text);
+    } else p.textContent = text;
+    const kind = logKind(text);
     if (kind) p.classList.add(kind);
     log.append(p);
   }
@@ -308,7 +320,10 @@ export function showBrawlOffer(game: Game, lost = ""): void {
 /** How a foe is, on his card: drunk, horny or angry, and erect once he's worked up past half (brawlai.ts). */
 function foeState(fight: Fight, foe: Foe): string {
   const mood = foe.drunk ? "Roaring drunk" : foe.horny ? "Horny" : "Angry";
-  return fight.desire && erect(foe) ? `${mood} · erect` : mood;
+  // KP's enemy prefix, and how many more times he can come.
+  const pre = foe.prefix ? ` · ${FOE_PREFIXES[foe.prefix].note}` : "";
+  const more = fight.desire && foe.stock > 1 ? ` · ${foe.stock - 1} more in him` : "";
+  return `${fight.desire && erect(foe) ? `${mood} · erect` : mood}${pre}${more}`;
 }
 
 /** Who's in it with her, for the brawl's title: the one who started it, and how many more piled in. */
@@ -321,6 +336,7 @@ function brawlTitle(fight: Fight): string {
 /** Her moves that land on one of them: with more than one standing, she picks who (KP's enemy select). */
 const AIMED_MOVES: ReadonlySet<FightMove> = new Set<FightMove>([
   "strike",
+  "kick",
   "shove",
   "grab",
   "hairpull",
@@ -331,10 +347,69 @@ const AIMED_MOVES: ReadonlySet<FightMove> = new Set<FightMove>([
   "hands",
   "mouth",
   "ride",
+  "lead",
 ]);
 
 /** The move she's picked and is choosing who to aim it at, if she is. */
 let aiming: FightChoice | null = null;
+
+/** The group of moves she has open in the brawl's menu, or null on the main menu. */
+let openGroup: MoveGroup | null = null;
+
+/**
+ * Which group each move sits in on the brawl's menu, Karryn's Prison style: a short main menu of groups, and the
+ * moves inside. Moves with no group (Dodge, Throw, Struggle, Go along, and when she's down or dazed) sit on the main
+ * menu by themselves.
+ */
+const GROUP_OF: Partial<Record<FightMove, MoveGroup>> = {
+  strike: "attack",
+  kick: "attack",
+  shove: "attack",
+  grab: "attack",
+  headlock: "attack",
+  hairpull: "attack",
+  tackle: "attack",
+  talk: "words",
+  stare: "words",
+  steel: "recover",
+  restore: "recover",
+  revitalize: "recover",
+  breathe: "recover",
+  fixClothes: "recover",
+  suppress: "mind",
+  suppressCock: "mind",
+  release: "mind",
+  releaseCock: "mind",
+  eye: "mind",
+  edge: "mind",
+  resist: "mind",
+  cautious: "stance",
+  defensive: "stance",
+  counter: "stance",
+  hands: "intimate",
+  mouth: "intimate",
+  ride: "intimate",
+  flaunt: "intimate",
+  lead: "intimate",
+  giveUp: "intimate",
+  pullToys: "intimate",
+  deny: "mind",
+  open: "stance",
+};
+
+/** The groups' names on the main menu, and the order they come in. The free ones (no turn) are marked so. */
+const GROUP_LABELS: Readonly<Record<MoveGroup, string>> = {
+  attack: "Attack",
+  words: "Words",
+  recover: "Recover",
+  mind: "Willpower (free · one a turn)",
+  stance: "Stance (free · one a turn)",
+  intimate: "Intimate",
+};
+const GROUP_ORDER: readonly MoveGroup[] = ["attack", "words", "recover", "intimate", "mind", "stance"];
+
+/** Where an ungrouped move sits among the groups: Dodge after Attack, the rest at the end. */
+const LOOSE_AFTER: Partial<Record<FightMove, MoveGroup>> = { dodge: "attack" };
 
 /**
  * A brawl, turn by turn: both sides' stamina, what just happened, and her moves with the chance each has.
@@ -344,7 +419,10 @@ export function showFight(game: Game): void {
   const { tavern } = game;
   const fight = tavern.fight;
   game.aimAtFoe(null);
-  if (!fight) aiming = null;
+  if (!fight) {
+    aiming = null;
+    openGroup = null;
+  }
   if (!fight) {
     game.hideDuelMoment();
     const result = tavern.takeFightResult();
@@ -401,6 +479,7 @@ export function showFight(game: Game): void {
     : [];
   const makeMove = (choice: FightChoice) => {
     aiming = null;
+    openGroup = null;
     const before = fight.events.length;
     tavern.fightMove(choice.move);
     playTurn(before);
@@ -438,21 +517,54 @@ export function showFight(game: Game): void {
     })),
     { label: "Back", onPick: back },
   ];
-  const moveButtons = (): Button[] =>
-    fight.choices().map((choice) => ({
-      label: choice.chance === null ? choice.label : `${choice.label} · ${Math.round(choice.chance * 100)}%`,
-      disabled: choice.disabled,
-      onPick: () => {
-        if (choosing && AIMED_MOVES.has(choice.move)) {
-          aiming = choice;
-          showFight(game);
-          return;
-        }
-        makeMove(choice);
-      },
-    }));
-  const buttons: Button[] = fight.offering ? offerButtons : aiming ? aimButtons() : moveButtons();
-  game.openPanel(aiming ? `${aiming.label.split(" · ")[0]}: who?` : brawlTitle(fight), [], buttons);
+  const moveButton = (choice: FightChoice): Button => ({
+    // Inside its group, "(Mind · no turn)" goes without saying: the group's name says it.
+    label: `${GROUP_OF[choice.move] ? choice.label.replace(/ \((Mind|Energy) · no turn\)/, "") : choice.label}${choice.chance === null ? "" : ` · ${Math.round(choice.chance * 100)}%`}`,
+    icon: MOVE_ICONS[choice.move],
+    disabled: choice.disabled,
+    onPick: () => {
+      if (choosing && AIMED_MOVES.has(choice.move)) {
+        aiming = choice;
+        showFight(game);
+        return;
+      }
+      makeMove(choice);
+    },
+  });
+  // Throwing them out only shows once they're worn down enough for it.
+  const choices = fight.choices().filter((c) => c.move !== "throw" || !c.disabled);
+  const inGroup = (group: MoveGroup) => choices.filter((c) => GROUP_OF[c.move] === group);
+  if (openGroup && inGroup(openGroup).length === 0) openGroup = null;
+  const closeGroup = () => {
+    openGroup = null;
+    showFight(game);
+  };
+  // The main menu: each group with moves in it, greyed when none of them can be used now; loose moves among them.
+  const mainButtons = (): Button[] => {
+    const loose = choices.filter((c) => !GROUP_OF[c.move]);
+    const buttons: Button[] = [];
+    for (const group of GROUP_ORDER) {
+      const moves = inGroup(group);
+      if (moves.length > 0)
+        buttons.push({
+          label: GROUP_LABELS[group],
+          icon: GROUP_ICONS[group],
+          disabled: moves.every((c) => c.disabled),
+          onPick: () => {
+            openGroup = group;
+            showFight(game);
+          },
+        });
+      buttons.push(...loose.filter((c) => LOOSE_AFTER[c.move] === group).map(moveButton));
+    }
+    // Struggle, Go along, Throw, and the down and dazed moves: first if she's in a scene, down or dazed, else last.
+    const rest = loose.filter((c) => !LOOSE_AFTER[c.move]).map(moveButton);
+    return fight.taken || fight.downed || fight.dazed ? [...rest, ...buttons] : [...buttons, ...rest];
+  };
+  const groupButtons = (group: MoveGroup): Button[] => [...inGroup(group).map(moveButton), { label: "Back", onPick: closeGroup }];
+  const buttons: Button[] = fight.offering ? offerButtons : aiming ? aimButtons() : openGroup ? groupButtons(openGroup) : mainButtons();
+  const title = aiming ? `${aiming.label.split(" · ")[0]}: who?` : openGroup && !fight.offering ? GROUP_LABELS[openGroup].split(" (")[0] : brawlTitle(fight);
+  game.openPanel(title, [], buttons);
   game.panelEl.classList.add("fight-open", "battle-open");
   const off = tavern.strippedPieces.length;
   game.showBattle("brawl", "You · Brawl", 0, false, [
@@ -489,7 +601,7 @@ export function showFight(game: Game): void {
   box.insertBefore(log, box.querySelector(".menu"));
   box.insertBefore(bars, log);
   // No running from it: Esc does nothing until it's settled, bar backing out of choosing who.
-  game.panelBack = aiming ? back : () => undefined;
+  game.panelBack = aiming ? back : openGroup && !fight.offering ? closeGroup : () => undefined;
   // Choosing: the cursor starts over the one she was going for, and follows the menu's cursor.
   if (aiming) game.aimAtFoe(Math.max(0, standing.indexOf(fight.targeted)), aimAt);
 }
@@ -511,7 +623,9 @@ export function showBedChoice(game: Game): void {
   const offer = tavern.duelOffer();
   if (offer) {
     paragraphs.push(
-      tavern.duelOfferFrom === "talked"
+      tavern.duelOfferFrom === "revel"
+        ? `The revel's still going in the hall, and the room wants you in the middle of it, starting with a ${offer}. Yours to say yes or no to.`
+        : tavern.duelOfferFrom === "talked"
         ? `The ${offer} you talked down earlier is lingering at the door, sheepish. "About before... let me make it up to you? One game before bed. Loser pays."`
         : `A ${offer} you warmed to tonight is lingering at the door. "One more game before bed? Loser pays."`,
     );

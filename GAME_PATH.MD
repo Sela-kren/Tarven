@@ -419,6 +419,12 @@ Six desires, 0–100, reset each night to what her passives start them at: **Bod
 - In a brawl: each grapple of theirs (grab, headlock, hair-pull, tackle) raises the desire for the part their type goes for by 5, and Body by 2. Her own intimate moves raise Cock and their part.
 - Passives raise starting desire and how fast each fills (sensitivity).
 
+**How high they can go (KP's max desire) [built]**
+- Every desire starts **capped at 60**. Reaching **50** in it on a night earns its first cap passive (*Wondering Lips*, *Warm Between*, …): from the next night it can go to **75**. Reaching **70** earns the second (*Hungry Mouth*, *Aching Between*, …): from then on it's open to **100**. This is Karryn's Prison's max desire (70, then 95 after reaching 50, then open after reaching 75; `calculateMax…Desire` in RemtairyKarrynPassives.js), on Tarven's scale.
+- So the boldest things (a foe's mouth, breasts, pussy and rear scenes at 80, the bed upstairs) can't happen on her first nights: each part has to be woken over two nights first. Hands (Cock 40) and the start of the rest come sooner.
+- "Maxed" (for passives like *Kiss-Hungry* and *Restless*) is reaching her cap that night. A save from before the caps keeps any meter she'd already maxed open.
+- The rules are `desireCap` and `CAP_PASSIVES` in `src/game/passives.ts`; the tests are in `tests/desirecap.test.ts`.
+
 **What they do**
 - **Touches:** *Let it happen* on a touch needs that part's desire ≥ (boldness − 1) × 10; *Lean in* 20 more; *Give in* 30 more. Adult play needs Cock desire (or horny and wet, 7f).
 - **Upstairs:** kiss (Mouth 0), hands (Cock 40), mouth (Cock 60), behind (Butt 60), bed (Pussy 80 **and wet**).
@@ -447,6 +453,50 @@ Six desires, 0–100, reset each night to what her passives start them at: **Bod
 A brawl plays like a battle in Karryn's Prison: several of them at once, each with a mind of their own, sex in the middle of the fight, and a battle log where they talk to her and to each other. The code is in `src/game/brawlai.ts` (their minds), `src/game/brawllines.ts` (the log's lines), `fight.ts` (their turns) and `brawlscene.ts` (the big picture); the tests are in `tests/brawlai.test.ts`.
 
 **Built so far (one foe):** the foe's pleasure, Horny / Angry / Erect, wanting her or wanting her hurt, starting a scene she's ready for (asked, or played with Consent off), holding it (Struggle free or Go along with it), him coming and being spent, lewd talk and staring with their lines, and the scene in the big picture. The log talks, as raw as Karryn's Prison's: each type says his own lines (`brawlvoices.ts`); she answers (`brawlher.ts`) by her Slut Level, but in a scene by how used she is to that act, KP's experience levels (never done it: her first time; 1+: proper; 5+: easy; 15+: lewd, from her records), horny or broken over either, and when he comes, by where he had her; what she does goes from clumsy to eager the same way; and the guests watching (their table, then the room) shout at most once a turn (`brawllines.ts`, with the narration); the log shows the last 7 lines, hers pink, his gold, the room's blue. More of them (`fight.ts` `foes`): each turn the next of their table (their party, or else their table; angry, drunk or lusting; never the Baron) may jump in, 30% a turn (45% drunk or worked up), up to 4 foes; each has a name of their own ("rogue", "rogue B"), their own numbers, pleasure and mind, and takes a turn; she picks who she goes for (no turn spent); one down, the rest fight on; all down, she's won (talked down, if words did it). While one has her in a scene, the rest don't swing: an erect one may join in at her mouth or a hand (if she's ready for it: Mouth 80 / Cock 50, or Cock 40), asked like any scene; his turns work him up, and he comes and is out; the one who has her coming, or her struggling free, throws them all off. The foes talk among themselves at most once a turn (egging on, dibs, laughing at one she laid out or who didn't last). Each ends as it went for them: spent, out the door, back in their seat, or standing over her. The big picture puts the one joined in at his slot in the scene. **Still to come:** her own state (coming mid-brawl, more mental skills).
+
+**Every KP battle scene [built, rules and lines; poses in POSES_TODO.md]**
+All 18 of Karryn's Prison's battle sex scenes (RemtairyPoses.js POSE 11 to 28) are in a brawl (`src/game/brawlscenes.ts`, tests in `tests/brawlscenes.test.ts`):
+- **Tarven's five**, one per part of her (her hands, mouth, breasts, pussy, rear), shown his type's way, as before.
+- **KP's thirteen**, each started by the kind of guest that matches its KP enemy (KP's `<AI PoseStart Skills>`): bandit (thug, slime): gangbang, piledriver; soldier (guard): hands, mouth, breasts, rimjob, the squad's gangbang; fugitive (prisoner): hands, mouth; farmer (goblin, orc): his mouth on her (`licked`), standing paizuri; smuggler (rogue, homeless): rimjob, reverse on his lap; noble (nerd): footjob; adventurer (werewolf, lizardman, yeti): from behind (pussy or rear), cowgirl, carried. Every kind still goes for the part his type likes too.
+- **What she has to be ready for** is KP's numbers × 0.8 on Tarven's scale (in her: Pussy 80, Cock 70 and wet; his mouth on her: Pussy 70; a footjob: Cock 50; a rimjob: Mouth 80).
+- **Eight more of Tarven's own**, for variety: deep throat, on her back, laid across a table, bent over the bar (pussy or rear), against the wall, flat on her belly, on his lap. Each kind starts a couple (26 scenes in all).
+- **Who joins and where** goes by the scene (KP's pose joins): a gangbang leaves her mouth and both hands free, a carry leaves nothing.
+- **Moving it on (KP tryUpgradeSexPose):** from his 2nd turn in a scene, he may move it on to a bolder one of his (his pleasure × 0.5 against 100). It's asked like any scene: *Let it happen*, *Slap* (it stays as it was), *Pull away* (she's clear of all of them). The farmer's mouth on her can move on to having her (KP's goblin).
+- **First times (KP's prisoners):** a fugitive won't start or join her mouth, pussy or rear until she's done that act before.
+- **Kick (new move) and the kick counter (KP):** a kick hits harder than a strike but is easier to miss. A bandit or adventurer who's erect may catch it and put a scene to her: 30%, +40% if he's horny, +30% if she's horny, +20% if she's bare below, never if he's angry.
+- **Settings:** rimjob and footjob scenes each have their own switch (on by default), as in KP.
+- The big picture shows Tarven's nearest pose for KP's scenes until their own are made (POSES_TODO.md). Their log lines were written with Grok in the house voice: 4 openings, 3 starts and 4 turns each for the newer scenes, with 3 more openings and 3 more turns for each of KP's 13. Defeat scenes, KP-style, are planned in DEFEAT_SCENES.md.
+
+**KP's enemy prefixes, ejaculation stock and difficulty [built]** (`src/game/foeprefix.ts`, tests in `tests/kpextras.test.ts`)
+- About a third of guests carry a prefix, fixed by who they are, shown in their name and on the fight panel: big, hardened (elite), strong, tireless, quick, scrawny, sluggish, clumsy, randy, virgin, twitchy (sensitive), greedy (hungry), mouthy (talker), leering (starer). Each changes stamina, attack, aim, how fast he's worked up, whether he starts horny, or whether he'd rather talk or stare.
+- **Coming more than once (KP's ejaculation stock):** big and hardened ones have one more in them, greedy ones two. He comes, leaves the scene but not the fight, and is slower to get there again (his rate × 0.75).
+- **Difficulty (Settings):** Easy, Normal or Hard. Foes' stamina and attack ×0.8, ×1 or ×1.25; her XP ×1.3, ×1 or ×0.75.
+
+**Her own moves, KP-style [built]**
+- **Flaunt** (Intimate): she shows herself off. Every foe's pleasure rises (more the more of her is bare), each may turn horny (30%), and her Body and Cock desire rise.
+- **Open Pleasure** (a stance, 2 energy): for 4 turns her desire climbs 50% faster, and foes would rather have her than hurt her (their anger counts for nothing in the want-her roll).
+- **Give Up** (Intimate): she lets her legs go: down, and the brawl's lost.
+- **Take the lead (18+)** (Intimate): with the one she's going for, once he's erect, she starts the boldest of his scenes she's ready for and has done before (KP: Karryn's own sex skills, unlocked by experience). Her choice, so nothing is asked.
+
+**More of KP, as rules (art to come: POSES_TODO.md) [built]** (tests in `tests/kpsystems.test.ts`)
+- **Defeats** (`defeat.ts`, plan in DEFEAT_SCENES.md): a lost brawl becomes one of 6 by where it ends and who won.
+  - The six: the taproom floor, the yard, her room (also a lost invasion), the storeroom (a smuggler won), the garrison (a soldier won), or the Baron's men (a soldier won at heat 8+).
+  - The room's keenest join, up to how many her records allow (2, plus 1 for every 10 partners, plus 1 for every 3 brawls lost, plus up to 2 for defeats there before; 8 at most, 3 in her room). Each still asks with Consent on.
+  - Each has an opening line and a morning-after line, and counts in her records. Being beaten in the same place 3 times earns that place's passive.
+- **Toys** (KP): a noble or smuggler may offer a toy once she's ready for it. There are three: a buzzing charm (Pussy 50), a carved toy (Pussy 70, wet) and beads (Butt 70).
+  - It's asked like a scene; with Consent off it just goes in.
+  - While it's in, it works on her every round.
+  - *Pull the toys out* takes a turn.
+- **Deny them inside you** (KP's Deny Ejaculation, a willpower skill, 4 will): she gets it once her dom side reaches 10 (slaps plus stands). After she uses it, a foe pulls out before he comes.
+- **Trinkets** (`trinkets.ts`, KP's accessories): 12, from her Charm level or her records, wear up to 2 (Settings › Trinkets).
+  - Some lower what a scene needs of one desire, as KP's lip gloss and nail polish do.
+  - Others give fight, pay, willpower or start-of-night bonuses, a few with a catch.
+- **Side work** (`sidejobs.ts`, Settings › Side work until it has its art):
+  - **Dance on the bar** (KP's stripper job): once a night during service. Pays by the room, her fame and how much she shows; works the men up; costs respect.
+  - **Let the rooms** (KP's receptionist job): at last call or bedtime, up to 3 rooms at 6 gold each. Lodgers who are keen ask her up; those asks are counted for now.
+  - **The bathhouse:** a trim.
+- **Riot nights** (KP's riots): 3 brawls in a night make the next a riot night, when trouble starts twice as easily. Winning 2 brawls puts it down (+2 fame, +2 respect).
+- **Her hair** grows one step every 3 nights, from bare to wild (KP's RemtairyHair). Its look on her model is still to come.
 
 **Who's in it (KP's bar brawl, "joins the brawl")**
 - The one who started it, and then their table: each turn, one of their tablemates who's angry, drunk or worked up may join (30%, ×1.5 drunk or lustful), up to **4 foes** in all. Never anyone too drunk to stand, never the Baron. The foes' column shows them all.
@@ -591,3 +641,9 @@ It does **not**:
 It only shows how strong the current allowed contact is and can give small bonuses (extra tip, meter rise, After Hours power) when the bar is high.
 
 This is the same as any other game UI bar. It is safe to implement.
+
+## Staff and the Revel House [built, art to come]
+
+- **Staff** (STAFF.md, `staff.ts`): no staff in the early game (nights 1 to 5). Mid game (Pell's first visit, gold 150, or night 6): up to 3; late game (first in Tarven, or fame 60): up to 6. The Lantern's girls don't count. Two ways in: random applicants with a rarity (Common to Legendary) and sometimes a perk, or friends from the roster (friendship 5), each with a perk of their own. Eight newer friends (an elf herbalist, a dwarf brewer, an orc bouncer, a cat-folk dancer, a summoned hero, a widowed seamstress, a runaway maid and a goblin bard) join the first seven. Wages come out of the till at bedtime (what she can pay), each one's night runs (`nightFor`), and their dawn lines and story beats show in the morning. A cook keeps the stew from burning, a barmaid keeps guests waiting longer, a doorman keeps trouble down. Settings › Staff for now.
+- **The Revel House** (REVEL_HOUSE.md, `revel.ts`): late game, the Revel Hall (house plans, 200 gold), and her history (lewdness or corruption, and the table scene). Chosen by day; the night plays out as the tavern shuts: guests, groups, and gold, fame, respect and heat at dawn. Her part, if she joins in or is the centrepiece, is an After Hours game: asked with Consent on, the Consent-off rules with it off. Settings › Revel nights for now.
+- The consent rule applies to all of it: staff choose their work and can quit; revel guests came for it and anyone can stop or walk out.

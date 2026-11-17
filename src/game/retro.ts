@@ -18,6 +18,7 @@ import {
   WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
+import { addSkinDetail } from "./skindetail";
 
 /** Target lines on screen: the PS1's high-resolution mode, so faces stay readable. */
 const RETRO_HEIGHT = 480;
@@ -193,6 +194,8 @@ function withPs1Rasterizer<T extends MeshLambertMaterial | MeshPhongMaterial>(ma
       );
   };
   material.customProgramCacheKey = () => (SKIN_GLOW_NAMES.test(material.name) ? "retro-ps1-skin" : "retro-ps1");
+  // Her areolae's and vulva's painted detail, over the glow.
+  addSkinDetail(material);
   return material;
 }
 

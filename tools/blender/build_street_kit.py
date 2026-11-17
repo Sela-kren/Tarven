@@ -11,8 +11,15 @@ Run headless (about 10 s):
 Set PLANET_ASSETS if the kits live somewhere else, and TARVEN_ROOT to write into another checkout.
 
 What's left out on purpose (WORLD.md: no cars): the tractor, traffic light, bus stop, stop sign, hydrant, garage.
+
+The medieval pieces the kits don't have (her tavern, the Copper Bell, the chapel, the Warm House, three burgage
+townhouses, the Baron's keep, the town gate, market stalls, the notice board, the market cross) are built here too,
+in the kits' style, by tools/blender/kit_new/medieval.py (NEW below). They go in the same GLB.
+A table of every piece's size and door point is written next to the GLB build log (streetkit_pieces.json in TEMP).
 """
+import json
 import os
+import sys
 
 import bpy
 
@@ -56,6 +63,10 @@ PIECES = {
     "barn": ("kit_country", "Red barn (gambrel)"),
     "outhouse": ("kit_country", "Outhouse (moon door)"),
 }
+
+# Built by kit_new/medieval.py (no fitting piece in the kits). Every id here must come out as Kit_<id>.
+NEW = ["tavern", "copperBell", "chapel", "warmHouse", "houseA", "houseB", "houseC", "keep", "gatehouse",
+       "stall", "stallB", "noticeBoard", "marketCross"]
 
 
 def append(blend, name):
@@ -108,6 +119,20 @@ def realise(coll, piece_id):
     return piece
 
 
+def dedupe_materials():
+    """
+    The two kit files both carry homekit's materials, so appending gives copies like hk_stone.003. Point every user of
+    a copy at the base material (when it exists) and drop the copy, so the GLB carries each colour once.
+    """
+    import re
+    for m in list(bpy.data.materials):
+        hit = re.fullmatch(r"(.+)\.\d{3}", m.name)
+        base = bpy.data.materials.get(hit.group(1)) if hit else None
+        if base is not None and base is not m:
+            m.user_remap(base)
+            bpy.data.materials.remove(m)
+
+
 def flatten_colours():
     """
     The kit tints wood, stone, leaves and hay with a noise texture into the base colour, which glTF can't carry (it
@@ -126,12 +151,44 @@ def flatten_colours():
             base.default_value = m.diffuse_color
 
 
+def build_new():
+    """the NEW pieces, after the kit ones so they share the kit's materials by name"""
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    from kit_new import medieval
+    out = []
+    for piece_id in NEW:
+        if piece_id not in medieval.BUILDERS:
+            raise SystemExit(f"build_street_kit: no builder for NEW piece {piece_id!r}")
+        out.append(medieval.BUILDERS[piece_id]())
+    return out
+
+
+def measure(p):
+    """size (x, y, z), and the door: its centre if it has a door material, else the front centre (Blender axes)"""
+    me = p.data
+    xs = [v.co.x for v in me.vertices]; ys = [v.co.y for v in me.vertices]; zs = [v.co.z for v in me.vertices]
+    if "door" in p.keys():
+        door = list(p["door"])
+    else:
+        dv = [me.vertices[i].co for poly in me.polygons
+              if me.materials[poly.material_index] and "door" in me.materials[poly.material_index].name.lower()
+              for i in poly.vertices]
+        door = [round((min(v.x for v in dv) + max(v.x for v in dv)) / 2, 2), round(min(v.y for v in dv), 2)] if dv             else [0.0, round(min(ys), 2)]
+    return dict(id=p.name[4:], new=p.name[4:] in NEW, size=[round(max(a) - min(a), 2) for a in (xs, ys, zs)],
+                min=[round(min(a), 2) for a in (xs, ys, zs)], max=[round(max(a), 2) for a in (xs, ys, zs)],
+                door=[round(d, 2) for d in door], tris=sum(len(poly.vertices) - 2 for poly in me.polygons))
+
+
 def main():
     for o in list(bpy.data.objects):
         bpy.data.objects.remove(o)
     pieces = []
     for piece_id, (blend, name) in PIECES.items():
         pieces.append(realise(append(blend, name), piece_id))
+    pieces += build_new()
+    dedupe_materials()
     flatten_colours()
     bpy.ops.object.select_all(action="DESELECT")
     for p in pieces:
@@ -140,6 +197,11 @@ def main():
     bpy.ops.export_scene.gltf(filepath=OUT, use_selection=True, export_apply=True, export_yup=True)
     tris = sum(sum(len(poly.vertices) - 2 for poly in p.data.polygons) for p in pieces)
     print(f"streetkit.glb: {len(pieces)} pieces, {tris} triangles, {os.path.getsize(OUT) // 1024} KB")
+    table = [measure(p) for p in pieces]
+    path = os.path.join(os.environ.get("TEMP", "."), "streetkit_pieces.json")
+    with open(path, "w") as f:
+        json.dump(table, f, indent=1)
+    print(f"piece table: {path}")
 
 
 if __name__ == "__main__":

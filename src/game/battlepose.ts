@@ -148,7 +148,7 @@ export const BATTLE_POSES: Readonly<Record<BattlePoseName, BattlePose>> = {
 
 /** A brawl event's pose in the picture, or null if it doesn't change her pose (fight.ts events). */
 export function poseForEvent(event: string): BattlePoseName | null {
-  if (event.startsWith("strike:") || event === "reach:slap") return "strike";
+  if (event.startsWith("strike:") || event.startsWith("kick:") || event === "reach:slap") return "strike";
   if (event.startsWith("shove:") || event === "throw") return "shove";
   if (/^(grab|headlock|hairpull|tackle):/.test(event)) return "grapple";
   if (event === "dodge" || event === "their:dodged" || event === "reach:pull") return "dodge";

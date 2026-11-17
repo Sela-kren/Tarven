@@ -570,6 +570,8 @@ After Last Call the game can go on in an **Expand** mode. More houses open down 
 
 ## 8. Corruption and the Ledger
 
+*How each stage of the fall is written (the manipulation tropes and the five beats, for her, her staff and recruits): CORRUPTION_TROPES.md.*
+
 Corruption measures how evil she has become, and the player is answerable for it. Wren's red book recorded other people's sins. The heroine's journal keeps a **Ledger** of hers: every corrupt act, with a named victim. **Victims come back.**
 
 | Tier | Corruption | What changes |

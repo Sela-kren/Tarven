@@ -32,6 +32,13 @@ import { setupWorld } from "./game/world";
 
 // 3/4 view: looking 45 degrees down, so both tops and fronts of things show.
 const CAMERA_OFFSET = new Vector3(0, 10, 10);
+/**
+ * Out in the town the camera sits lower and further back, so the houses' roofs, the chapel tower and the keep on its
+ * mound come into the shot (nothing tall stands south of where she walks, street.ts).
+ */
+const STREET_CAMERA_OFFSET = new Vector3(0, 9, 15);
+/** ...and aims higher over her, at the first floors rather than her feet. */
+const STREET_FOCUS_HEIGHT = 3;
 const CAMERA_FOLLOW_RATE = 8;
 const MAX_FRAME_TIME = 1 / 20;
 const SHADOW_UPDATE_INTERVAL = 0.1;
@@ -128,6 +135,8 @@ async function start(): Promise<void> {
     streetKit,
     furniture: claimed.defaults,
   }, camera, renderer, clock, audio);
+  // For testing in the browser (development only): the game, reachable from the console.
+  if (import.meta.env.DEV) (window as unknown as { __game?: Game }).__game = game;
 
   const focus = new Vector3();
   const updateCameraTarget = () => {
@@ -143,13 +152,15 @@ async function start(): Promise<void> {
     const limits = game.cameraLimits;
     focus.set(
       MathUtils.clamp(game.focus.x, limits.minX, limits.maxX),
-      0.8,
+      game.outdoors ? STREET_FOCUS_HEIGHT : 0.8,
       MathUtils.clamp(game.focus.z, limits.minZ, limits.maxZ),
     );
   };
   updateCameraTarget();
   const look = focus.clone();
   let zoom = 1;
+  const offset = CAMERA_OFFSET.clone();
+  let wasOutdoors = false;
   camera.position.copy(look).add(CAMERA_OFFSET);
   camera.lookAt(look);
 
@@ -187,7 +198,9 @@ async function start(): Promise<void> {
       const follow = 1 - Math.exp(-CAMERA_FOLLOW_RATE * dt);
       look.lerp(focus, follow);
       zoom += (game.cameraZoom - zoom) * follow;
-      camera.position.copy(look).addScaledVector(CAMERA_OFFSET, zoom);
+      offset.lerp(game.outdoors ? STREET_CAMERA_OFFSET : CAMERA_OFFSET, game.outdoors === wasOutdoors ? follow : 1);
+      wasOutdoors = game.outdoors;
+      camera.position.copy(look).addScaledVector(offset, zoom);
       camera.lookAt(look);
     }
 

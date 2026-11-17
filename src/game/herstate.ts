@@ -22,7 +22,7 @@ export function maxEnergy(levels: Readonly<Record<StatId, number>>): number {
 }
 
 /** What her energy skills cost. */
-export const ENERGY_COST = { revitalize: 5, secondWind: 10, cautious: 3, defensive: 4, counter: 5 } as const;
+export const ENERGY_COST = { revitalize: 5, secondWind: 10, cautious: 3, defensive: 4, counter: 5, open: 2 } as const;
 /** Revitalize: stamina back, plus one per Endurance level past 1. */
 export const REVITALIZE_STAMINA = 6;
 /** Breathe: a little energy back, and a breath of stamina. */
@@ -40,8 +40,8 @@ export const NAP_ENERGY = 0.5;
  * KP's stances: Cautious (their aim off, her dodges better), Defensive (their blows and grapples take less out of her,
  * and can't pin her), Counter (when they miss, she hits back).
  */
-export type Stance = "cautious" | "defensive" | "counter";
-export const STANCE_NAMES: Readonly<Record<Stance, string>> = { cautious: "Cautious Stance", defensive: "Defensive Stance", counter: "Counter Stance" };
+export type Stance = "cautious" | "defensive" | "counter" | "open";
+export const STANCE_NAMES: Readonly<Record<Stance, string>> = { cautious: "Cautious Stance", defensive: "Defensive Stance", counter: "Counter Stance", open: "Open Pleasure" };
 export const CAUTIOUS = { theirAim: 0.15, dodge: 0.1 } as const;
 export const DEFENSIVE = { damage: 2 } as const;
 /** Counter Stance: her answer to a miss hits for this share of a strike. */

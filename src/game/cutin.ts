@@ -35,7 +35,7 @@ export type CutKind =
  * rubbing up and down, a fingertip circling, spreading her open, fingers in and out of her mouth, a spank wound up
  * and landed, lips pressing, a hand pumping, or no hand (her arching as she comes, her posing, or still).
  */
-export type CutMotion = "knead" | "pinch" | "rub" | "circle" | "spread" | "suck" | "spank" | "kiss" | "pump" | "arch" | "pose" | "still";
+export type CutMotion = "knead" | "pinch" | "rub" | "circle" | "finger" | "spread" | "suck" | "spank" | "kiss" | "pump" | "arch" | "pose" | "still";
 
 /** Where what a man left on her shows: dribbling from her mouth, on her face, over her body, or running out of her. */
 export type CutCum = "mouth" | "face" | "body" | "inside" | "behind";
@@ -44,7 +44,7 @@ export type CutCum = "mouth" | "face" | "body" | "inside" | "behind";
 export type CutFormat = "wide" | "tall";
 
 /** How she stands to the camera: facing it (angled to the guest, or square on), side on, or with her back to it. */
-export type CutView = "front" | "square" | "under" | "above" | "between" | "profile" | "behind";
+export type CutView = "front" | "square" | "under" | "low" | "above" | "between" | "profile" | "behind";
 
 export interface CutIn {
   /** The Karryn's Prison cut-in it answers. */
@@ -121,10 +121,11 @@ export const CUT_INS: Record<CutKind, CutIn> = {
     region: "chest",
     bone: "Bust",
     offset: [0, -0.01, -0.09],
-    // KP's frames: close over her breasts from a little above, her collarbone at the top; a hand at each nipple,
-    // thumb and finger pinching it and tugging it out (12 frames, 0.8s).
+    // KP's frames: in front of her and a little below, her breasts filling the panel with her belly and navel under
+    // them and her shoulder at the top; a hand at each nipple, thumb and finger pinching it and tugging it, the one
+    // on the panel's left out to her side, the other down (12 frames, 0.8s).
     distance: 0.4,
-    view: "above",
+    view: "low",
     hands: 2,
     motion: "pinch",
     loop: 0.55,
@@ -133,23 +134,30 @@ export const CUT_INS: Record<CutKind, CutIn> = {
     drift: [0.12, 0],
     hit: "pinch♥",
     voice: "n-not there...!",
-    closeUp: { roll: -0.12 },
+    // KP's picture sits level; the slant is the panel's outline.
+    closeUp: { roll: 0 },
   },
   pussy: {
     kp: "Petting pussy (cutin_pt_ps)",
     region: "intimate",
+    // KP's frames: the same shot as on her clit, right up between her spread thighs from a little below; his hand up
+    // from the bottom left, thumb out, two fingers in the hole low in her opening, pushed in and drawn back (8
+    // frames, 0.67s), her lips parted round them and the pink between them showing above; a small pink jolt either
+    // side at the top as they go in. (The panel finds the hole itself; this is the fallback.)
     bone: "Hips",
-    offset: [0, -0.16, -0.1],
-    distance: 1.15,
-    view: "front",
+    offset: [0, -0.12, -0.06],
+    distance: 0.27,
+    view: "between",
     hands: 1,
-    motion: "rub",
-    loop: 0.6,
+    motion: "finger",
+    loop: 0.67,
     format: "tall",
     shape: TALL_STRIP,
     drift: [-0.1, 0],
     hit: "rub rub♥",
     voice: "so wet... damn it...",
+    closeUp: { roll: 0.06 },
+    legs: { raise: 0.5, out: 0.5, knee: 0.4 },
   },
   clit: {
     kp: "Petting clit (cutin_pt_ct)",
@@ -159,7 +167,7 @@ export const CUT_INS: Record<CutKind, CutIn> = {
     // fingertips circling her clit (8 frames, 0.44s). (The panel finds her clit itself; this is the fallback.)
     bone: "Hips",
     offset: [0, -0.1, -0.06],
-    distance: 0.34,
+    distance: 0.27,
     view: "between",
     hands: 1,
     motion: "circle",

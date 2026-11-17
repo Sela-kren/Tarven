@@ -16,10 +16,16 @@
  * across the patch, which always stays on her skin.
  */
 
-/** Where each column lies across the patch as built: VULVA_COLUMNS in build_world.py. Finer in the middle. */
-export const VULVA_COLUMNS: readonly number[] = [-1, -0.72, -0.5, -0.34, -0.2, -0.09, 0, 0.09, 0.2, 0.34, 0.5, 0.72, 1];
-/** The rows, evenly spaced along her: VULVA_ROWS in build_world.py. */
-export const VULVA_ROWS = 13;
+/**
+ * Where each column lies across the patch as built: VULVA_COLUMNS in build_world.py. Finest in the middle, where the
+ * inner lips, the hood and the clit are shaped, with a column at 0.2 either side where the slit's faces end.
+ */
+export const VULVA_COLUMNS: readonly number[] = [
+  -1, -0.8, -0.62, -0.48, -0.37, -0.28, -0.2, -0.15, -0.11, -0.075, -0.045, -0.02, 0,
+  0.02, 0.045, 0.075, 0.11, 0.15, 0.2, 0.28, 0.37, 0.48, 0.62, 0.8, 1,
+];
+/** The rows, evenly spaced along her, about 1.5 mm apart: VULVA_ROWS in build_world.py. */
+export const VULVA_ROWS = 49;
 const COLS = VULVA_COLUMNS.length;
 /** How many points the grid has. */
 export const VULVA_GRID = COLS * VULVA_ROWS;
@@ -34,9 +40,9 @@ export const CANAL_MATERIAL = "T_canal";
  */
 export const HOLE_MATERIAL = "T_hole";
 /** The rows between which the grid is cut: VULVA_CUT in build_world.py. */
-export const VULVA_CUT: readonly [number, number] = [5, 10];
+export const VULVA_CUT: readonly [number, number] = [20, 40];
 /** The canal's corners between the cut's two sides: VULVA_CANAL in build_world.py. */
-export const VULVA_CANAL = 5;
+export const VULVA_CANAL = 9;
 /** How open she is at her widest: 0 is closed, 1 fully open, and past it she stretches, as wide as she goes at 2. */
 export const VULVA_STRETCHED = 2;
 /** How far each side of the cut moves from the middle, fully open, at its middle and her usual size. */
@@ -70,6 +76,8 @@ export interface VulvaType {
   droop: number;
   /** How high the hood over the clitoris stands. */
   hood: number;
+  /** How high the clit's glans stands, a small bead just under the hood's edge. */
+  clit: number;
   /** How far each outer lip is parted from the middle when she's calm. */
   part: number;
 }
@@ -77,15 +85,15 @@ export interface VulvaType {
 /** The first is the default. */
 export const VULVA_TYPES: VulvaType[] = [
   // The outer lips closed over the inner ones: a neat slit.
-  { id: "tucked", label: "Tucked", outer: 0.0045, crest: 0.42, inner: 0.0016, reach: 0.75, droop: 0, hood: 0.0018, part: 0 },
+  { id: "tucked", label: "Tucked", outer: 0.0045, crest: 0.42, inner: 0.0016, reach: 0.75, droop: 0, hood: 0.0018, clit: 0.0017, part: 0 },
   // Full, rounded outer lips.
-  { id: "puffy", label: "Puffy", outer: 0.0075, crest: 0.48, inner: 0.0018, reach: 0.7, droop: 0, hood: 0.0018, part: 0 },
+  { id: "puffy", label: "Puffy", outer: 0.0075, crest: 0.48, inner: 0.0018, reach: 0.7, droop: 0, hood: 0.0018, clit: 0.0017, part: 0 },
   // The inner lips show a little between the outer ones.
-  { id: "peeking", label: "Peeking", outer: 0.004, crest: 0.44, inner: 0.0048, reach: 0.85, droop: 0.15, hood: 0.0024, part: 0.0004 },
+  { id: "peeking", label: "Peeking", outer: 0.004, crest: 0.44, inner: 0.0048, reach: 0.85, droop: 0.15, hood: 0.0024, clit: 0.002, part: 0.0004 },
   // Long inner lips, fullest low down, well past the outer ones.
-  { id: "long", label: "Long lips", outer: 0.0035, crest: 0.5, inner: 0.0068, reach: 0.9, droop: 0.35, hood: 0.0026, part: 0.0008 },
+  { id: "long", label: "Long lips", outer: 0.0035, crest: 0.5, inner: 0.0068, reach: 0.9, droop: 0.35, hood: 0.0026, clit: 0.002, part: 0.0008 },
   // A full hood standing out at the top of the slit.
-  { id: "hooded", label: "Prominent hood", outer: 0.0042, crest: 0.44, inner: 0.0024, reach: 0.8, droop: 0, hood: 0.0048, part: 0.0002 },
+  { id: "hooded", label: "Prominent hood", outer: 0.0042, crest: 0.44, inner: 0.0024, reach: 0.8, droop: 0, hood: 0.0048, clit: 0.0015, part: 0.0002 },
 ];
 
 /** Her vulva as it is shaped now: a type with her sliders and arousal put in, and how big. */
@@ -96,6 +104,7 @@ export interface VulvaShape {
   reach: number;
   droop: number;
   hood: number;
+  clit: number;
   part: number;
   /** How much of the patch as built she fills: the patch is built at the largest size. */
   scale: number;
@@ -177,6 +186,8 @@ export function vulvaShape(type: VulvaType, size: number, fullness: number, lips
     reach: Math.min(1, Math.max(0.3, type.reach + 0.2 * lips)),
     droop: type.droop,
     hood: type.hood * (1 + 0.3 * a) * grow,
+    // Aroused, the clit swells and stands out from under the hood.
+    clit: type.clit * (1 + 0.6 * a) * grow,
     part: (type.part + 0.0012 * a) * grow,
     scale,
     // Stretched, she's as wide as what's in her, whatever her size.
@@ -197,6 +208,18 @@ export function cutShare(row: number): number {
   return Math.sin((Math.PI * (row - top)) / (bottom - top));
 }
 
+/**
+ * How deep her canal goes at a row of the cut, as a share of its deepest (KP's look): shallow near the top, under
+ * her clit, where the pink between her inner lips shows, and deepest low down, where the hole into her is; none at
+ * the cut's ends. HOLE_AT is the power that moves the deepest place down (2: about seven tenths of the way).
+ */
+export const HOLE_AT = 2;
+export function holeShare(row: number): number {
+  const [top, bottom] = VULVA_CUT;
+  if (row <= top || row >= bottom) return 0;
+  return Math.sin(Math.PI * ((row - top) / (bottom - top)) ** HOLE_AT);
+}
+
 /** How far across the patch (a share of its half width) the skin gives as her opening parts: further stretched. */
 const giving = (shape: VulvaShape) => 0.6 + 0.4 * shape.stretch;
 
@@ -210,6 +233,10 @@ function parting(shape: VulvaShape, row: number): number {
 
 /** The slit runs this far either side of the middle of the patch, as a share of its length. */
 const SLIT = 0.36;
+/** Where the clit is down the slit (in its half lengths from the middle, -1 its top). */
+export const CLIT_AT = -0.7;
+/** Where the cut runs down the slit, likewise. */
+const CUT_W = VULVA_CUT.map((row) => (row / (VULVA_ROWS - 1) - 0.5) / SLIT);
 
 /**
  * How high the shape stands over the skin at (s, t), and how far it moves away from the middle there: the outer
@@ -225,16 +252,27 @@ export function vulvaAt(shape: VulvaShape, s: number, t: number): { h: number; l
   const floor = crest * 0.38;
   const across = a < crest ? smooth((a - floor) / (crest - floor)) : 1 - smooth((a - crest) / (1 - crest));
   const outer = shape.outer * along * across;
-  // The inner lips, from the hood down as far as they reach, each side of a crease in the middle. Every pair draws
-  // in towards the bottom, where her thighs close in and would sweep over anything standing out as she walks.
+  // The inner lips, from round the clit down as far as they reach: a thin ridge each side of the slit, steep on its
+  // inner face (down into the slit, the vestibule between them) and easing out under the outer lip, its edge
+  // rippling in soft folds along its length. Closer together at their top, where they meet round the clit. Every
+  // pair draws in towards the bottom, where her thighs close in and would sweep over anything standing out as she
+  // walks.
   const end = -1 + 2 * shape.reach;
-  const length = smooth((w + 1.05) / 0.3) * (1 - smooth((w - end) / 0.35)) * (1 - smooth((w - 0.7) / 0.45));
+  const length = smooth((w + 0.85) / 0.25) * (1 - smooth((w - end) / 0.35)) * (1 - smooth((w - 0.7) / 0.45));
   const low = 1 + shape.droop * Math.max(-0.5, Math.min(0.6, w));
-  const inner = shape.inner * length * low * bump((a - 0.08) / 0.17);
-  // The hood at the top of the slit.
-  const hood = shape.hood * bump(a / 0.24) * bump((w + 0.85) / 0.3);
+  const folds = 1 + 0.12 * Math.sin(w * 9 + 1.3) + 0.06 * Math.sin(w * 23 + 0.4);
+  const ridge = 0.05 + 0.035 * smooth((w + 0.75) / 0.5);
+  const off = a - ridge;
+  const inner = shape.inner * length * low * folds * bump(off < 0 ? off / (ridge - 0.012) : off / 0.12);
+  // The hood: rising from the mound to a rounded fold, its free edge arching over the clit.
+  const peak = -0.84 - 1.2 * s * s;
+  const hood = shape.hood * bump(a / 0.22) * bump((w - peak) / (w < peak ? 0.3 : 0.11));
+  // The clit: a small round bead just under the hood's edge.
+  const clit = shape.clit * bump(Math.hypot(s / 0.11, (w - CLIT_AT) / 0.12));
+  // A soft rim round the mouth of her opening, either side of the cut.
+  const mouth = 0.00035 * bump((a - 0.015) / 0.025) * smooth((w - CUT_W[0]) / 0.1) * (1 - smooth((w - CUT_W[1] + 0.1) / 0.1));
   const lat = shape.part * along * smooth(a / 0.25) * (1 - smooth((a - 0.45) / 0.55));
-  return { h: Math.max(outer, inner, hood), lat };
+  return { h: Math.max(outer, inner, hood, clit, mouth), lat };
 }
 
 /** Whether the face between these columns and rows is part of the slit (T_vulva): VULVA_INNER in build_world.py. */
@@ -489,9 +527,13 @@ export function shapeVulva(patch: VulvaPatch, on: Float32Array[], shape: VulvaSh
       const g = (middle + row * COLS) * 3;
       const cut = row > top && row < bottom;
       const a = (Math.PI * canal.across[v]) / (VULVA_CANAL + 1);
-      const wide = -Math.cos(a) * (1 - 0.3 * Math.sin(a));
-      // Shallow at the cut's ends, where it closes into a wall, so the wall stays behind the skin under the slit.
-      const down = Math.sin(a) * deep * (0.1 + 0.9 * cutShare(row));
+      // Its walls narrow as they go in from the mouth, and ripple in soft ridges across and along them.
+      const wide = -Math.cos(a) * (1 - 0.35 * Math.sin(a)) * (1 + 0.06 * Math.sin(a) * Math.sin(row * 2.4));
+      const ridges = 1 + 0.07 * Math.sin(a) * Math.sin(row * 2.4 + 0.8) + 0.04 * Math.sin(a * 7);
+      // Shallow at the cut's ends, where it closes into a wall, so the wall stays behind the skin under the slit, and
+      // under her clit, where it's the pink floor between her lips; deepest low down, at the hole into her (KP).
+      // Fuller across than a half round, so its mouth goes in steeply from the opening's rim.
+      const down = Math.sin(a) ** 0.75 * deep * (0.08 + 0.92 * holeShare(row)) * ridges;
       for (let k = 0; k < 3; k++) {
         const left = cut ? sides[row * 6 + k] : shaped[g + k];
         const right = cut ? sides[row * 6 + 3 + k] : shaped[g + k];

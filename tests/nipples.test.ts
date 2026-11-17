@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { BufferGeometry, Float32BufferAttribute } from "three";
 import {
+  AREOLA_RING,
   arousalOf,
   DISC_RINGS,
   DISC_SPOKES,
   easeArousal,
   NIPPLE_TYPES,
+  NIPPLE_SIDE_RING,
   nippleProfile,
   readDiscs,
   shapeDisc,
@@ -17,7 +19,7 @@ const type = (id: string) => NIPPLE_TYPES.find((t) => t.id === id)!;
 /** How far the nipple stands off the areola around its base. */
 const tip = (id: string, arousal: number) => {
   const rings = nippleProfile(type(id), 0, 0, arousal);
-  return rings[0].h - rings[3].h;
+  return rings[0].h - rings[AREOLA_RING].h;
 };
 
 describe("nipple types", () => {
@@ -42,9 +44,9 @@ describe("nipple types", () => {
     const full = nippleProfile(type("full"), 0, 0, 1);
     const neat = nippleProfile(type("neat"), 0, 0, 1);
     expect(full[DISC_RINGS].r).toBeGreaterThan(neat[DISC_RINGS].r * 1.4);
-    expect(full[2].r).toBeGreaterThan(neat[2].r * 1.25);
+    expect(full[NIPPLE_SIDE_RING].r).toBeGreaterThan(neat[NIPPLE_SIDE_RING].r * 1.25);
     // Raised, calm (aroused, an areola firms and flattens a little).
-    expect(nippleProfile(type("full"), 0, 0, 0)[3].h).toBeGreaterThan(nippleProfile(type("neat"), 0, 0, 0)[3].h + 0.002);
+    expect(nippleProfile(type("full"), 0, 0, 0)[AREOLA_RING].h).toBeGreaterThan(nippleProfile(type("neat"), 0, 0, 0)[AREOLA_RING].h + 0.002);
   });
 
   it("stands every nipple taller as she's aroused", () => {
@@ -58,7 +60,7 @@ describe("nipple types", () => {
 
   it("raises a puffy areola, and gives a wide one the widest edge", () => {
     const edge = (id: string) => nippleProfile(type(id), 0, 0, 0)[DISC_RINGS].r;
-    expect(nippleProfile(type("puffy"), 0, 0, 0)[3].h).toBeGreaterThan(nippleProfile(type("neat"), 0, 0, 0)[3].h + 0.002);
+    expect(nippleProfile(type("puffy"), 0, 0, 0)[AREOLA_RING].h).toBeGreaterThan(nippleProfile(type("neat"), 0, 0, 0)[AREOLA_RING].h + 0.002);
     expect(edge("wide")).toBeGreaterThan(Math.max(edge("neat"), edge("puffy"), edge("inverted")));
   });
 
@@ -68,6 +70,17 @@ describe("nipple types", () => {
     expect(edge(1, 0)).toBeGreaterThan(edge(0, 0));
     expect(edge(-1, 0)).toBeLessThan(edge(0, 0));
     expect(nippleProfile(type("neat"), 1, 0, 0)[0].h).toBeGreaterThan(tip("neat", 0));
+  });
+
+  it("has a ring for every ring of the disc: a rounded nipple, a crease at its base and a soft areola", () => {
+    for (const t of NIPPLE_TYPES) {
+      const rings = nippleProfile(t, 0, 0, 1);
+      expect(rings).toHaveLength(DISC_RINGS + 1);
+      // The crease round the nipple's base sits below the areola just out from it.
+      if (t.puff > 0.001) expect(rings[NIPPLE_SIDE_RING + 1].h).toBeLessThan(rings[AREOLA_RING].h + rings[0].h * 0.1);
+      // The areola eases down to the skin: each ring out from the crease no higher than the one before.
+      for (let k = AREOLA_RING + 1; k <= DISC_RINGS; k++) expect(rings[k].h).toBeLessThanOrEqual(rings[k - 1].h);
+    }
   });
 
   it("goes out from the tip to the edge, and the edge lies on the skin", () => {
@@ -170,13 +183,13 @@ describe("the clothes over her nipples", () => {
   it("tent out over a standing nipple, wider than the nipple, and lie flat a little way off", () => {
     const profile = nippleProfile(type("neat"), 0, 0, 1);
     expect(tentHeight(profile, 0)).toBeCloseTo(profile[0].h);
-    expect(tentHeight(profile, profile[2].r * 1.5)).toBeGreaterThan(profile[0].h * 0.4);
+    expect(tentHeight(profile, profile[NIPPLE_SIDE_RING].r * 1.5)).toBeGreaterThan(profile[0].h * 0.4);
     expect(tentHeight(profile, 0.03)).toBe(0);
   });
 
   it("lie flat over a tucked-in nipple, and rise over a puffy areola", () => {
     expect(tentHeight(nippleProfile(type("inverted"), 0, 0, 0), 0)).toBeLessThan(0.0011);
     const puffy = nippleProfile(type("puffy"), 0, 0, 0);
-    expect(tentHeight(puffy, puffy[4].r)).toBeGreaterThanOrEqual(puffy[4].h);
+    expect(tentHeight(puffy, puffy[AREOLA_RING + 2].r)).toBeGreaterThanOrEqual(puffy[AREOLA_RING + 2].h);
   });
 });

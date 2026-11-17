@@ -13,6 +13,16 @@ import {
   trayDropChance,
 } from "../src/game/barwork";
 import { Tavern, type Guest } from "../src/game/tavern";
+import { METERS } from "../src/game/passives";
+
+/** Her desire caps all lifted (passives.ts desireCap): a heroine far enough along for the boldest things. */
+function openCaps(t: Tavern): void {
+  for (const m of METERS) {
+    t.passives.add(`cap1_${m}`);
+    t.passives.add(`cap2_${m}`);
+  }
+  (t as unknown as { refreshEffects(): void }).refreshEffects();
+}
 
 const TABLES = ["A", "A", "B", "B", "C", "C", "C", "Bar", "Bar", "Bar", "Bar"];
 const idle = { listeningTo: null, night: true };
@@ -205,6 +215,7 @@ describe("her last clear drink", () => {
     const guest = t.guests[0];
     guest.lust = 9;
     guest.mood = "lust";
+    openCaps(t);
     t.meters.cock = 100;
     t.drunk = 0.75;
     (t as unknown as { takeDrink(w: Guest[]): void }).takeDrink([guest]);
@@ -224,6 +235,7 @@ describe("her last clear drink", () => {
     const guest = t.guests[0];
     guest.lust = 9;
     guest.mood = "lust";
+    openCaps(t);
     t.meters.cock = 100;
     t.touchSettings = { ...t.touchSettings, autoTouch: true, agreed: true };
     t.drunk = 0.75;

@@ -28,9 +28,10 @@ import {
 } from "three";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { DISC_MATERIAL } from "./nipples";
-import { VULVA_MATERIAL } from "./vulva";
+import { CANAL_MATERIAL, VULVA_MATERIAL } from "./vulva";
 import type { Effect } from "./audio";
 import { PANEL_SHAPE } from "./comic";
+import { addSkinDetail } from "./skindetail";
 import { ComicFx, fxPlan, makeMoanBubble, touchHeat, type FxPlan, type FxSpots } from "./comicfx";
 import { Jiggle } from "./jiggle";
 import { chestOverHips } from "./player";
@@ -70,11 +71,12 @@ const T = {
 const HOLD_AT = T.release - 0.05;
 
 /** How she stands to the camera: facing it (angled toward the guest), side on, or with her back to it. */
-type View = "front" | "square" | "under" | "above" | "between" | "profile" | "behind";
+type View = "front" | "square" | "under" | "low" | "above" | "between" | "profile" | "behind";
 const TURN: Record<View, number> = {
   front: Math.PI - 0.5,
   square: Math.PI - 0.12,
   under: Math.PI - 0.42,
+  low: Math.PI - 0.1,
   above: Math.PI - 0.2,
   between: Math.PI,
   profile: Math.PI - 1.15,
@@ -281,7 +283,13 @@ const REACH_PAST = 0.25;
  * how much of the pull the whole breast follows (on its spring), and how
  * steeply his pinch lies across her nipple (up, to in toward her middle, 1).
  */
-const PINCH = { thumbTip: 0.3, gap: [2.4, 1.2], curled: 0.85, spread: 0.6, tug: 0.065, pullUp: [1, 0.3, 0.45], pullDown: [0.7, -0.8, 0.4], tugOut: 1.25, reach: 1.4, whole: 0.85, follow: 0.4, rise: 0.8 } as const;
+const PINCH = { thumbTip: 0.3, gap: [2.4, 1.2], curled: 0.85, spread: 0.6, tug: 0.045, pullUp: [1, 0.1, 0.35], pullDown: [0.3, -1, 0.35], tugOut: 1.1, reach: 1.4, whole: 0.6, follow: 0.4, rise: 0.8 } as const;
+/** About how wide her nipple is, in metres at her build: the spark under it is sized from it. */
+const NIPPLE_SIZE = 0.012;
+/** About how wide her vulva is either side of the hole, in metres at her build: the jolts beside it are placed by it. */
+const JOLT_WIDTH = 0.02;
+/** KP's nipple cut-in, low and square on: how far under her breasts the camera looks, and how far below that it is. */
+const LOW = { below: 0.05, camera: 0.18 } as const;
 /** How far his fingers fan on her breasts (1 as they rest): wide, as KP draws them. */
 const GRIP_SPREAD = 3;
 /** How big a guest's hand is next to hers. */
@@ -1156,6 +1164,23 @@ const BETWEEN = { below: 0.25, low: 0.9, ahead: 0.6, light: 1.4 } as const;
  * how bent each finger is (index, middle, ring, little: two out, two curled under) and his thumb.
  */
 const CLIT = { sink: -0.001, circle: 0.0045, reach: 0.018, follow: 0.8, bends: [0.12, 0.22, 0.85, 0.85], thumb: 0.55 } as const;
+/**
+ * His fingers in her (KP's petting pussy): where his hand comes from (shares of the camera's distance: left and down
+ * on the panel, and out toward the camera), how far down her opening the hole is (a share of its length from the
+ * top), how deep his fingertips sit in her and how much further each push takes them (metres at her build), how far
+ * round the hole her skin goes in and out with them and how much of their move it takes, and how bent each finger is
+ * (index, middle, ring, little: two in her, two curled) and his thumb (out).
+ */
+const FINGERING = {
+  from: [0.5, 0.6, 0.12],
+  down: 0.72,
+  sink: -0.004,
+  push: 0.01,
+  reach: 0.02,
+  follow: 0.5,
+  bends: [0.08, 0.12, 1, 1],
+  thumb: 0.05,
+} as const;
 
 /**
  * Spreads her legs (her copy in the panel): each thigh raised forward and swung out to her side by the turns given,
@@ -1207,6 +1232,39 @@ function clitPoint(model: Object3D): Vector3 | null {
     }
   });
   return best;
+}
+
+/**
+ * The hole into her, low in her opening, in the world: the middle of her canal's mouth (its rim, where it meets her
+ * opening's two sides) at FINGERING.down of the way down it. Null if she has none.
+ */
+function holePoint(model: Object3D): Vector3 | null {
+  model.updateMatrixWorld(true);
+  const toModel = model.matrixWorld.clone().invert();
+  const v = new Vector3();
+  const points: { world: Vector3; y: number }[] = [];
+  model.traverse((object) => {
+    if (!(object instanceof SkinnedMesh) || !object.visible) return;
+    const worn = Array.isArray(object.material) ? object.material[0] : object.material;
+    if (worn.name !== CANAL_MATERIAL) return;
+    object.skeleton.update();
+    const position = object.geometry.getAttribute("position");
+    const uv = object.geometry.getAttribute("uv");
+    for (let i = 0; i < position.count; i++) {
+      // Its rim only: the first and last points across it (its u runs from one side down into her and back up).
+      const across = uv ? uv.getX(i) : 0;
+      if (across > 0.01 && across < 0.99) continue;
+      const world = object.applyBoneTransform(i, v.fromBufferAttribute(position, i)).applyMatrix4(object.matrixWorld).clone();
+      points.push({ world, y: world.clone().applyMatrix4(toModel).y });
+    }
+  });
+  if (!points.length) return null;
+  const top = Math.max(...points.map((p) => p.y));
+  const bottom = Math.min(...points.map((p) => p.y));
+  const level = top - FINGERING.down * (top - bottom);
+  const near = points.filter((p) => Math.abs(p.y - level) <= 0.12 * (top - bottom));
+  const from = near.length ? near : points;
+  return from.reduce((sum, p) => sum.add(p.world), new Vector3()).divideScalar(from.length);
 }
 
 /**
@@ -1385,6 +1443,8 @@ gl_FragColor.rgb += vec3(${SKIN_GLOSS.rimColor.map((v) => v.toFixed(2)).join(", 
 #include <dithering_fragment>`,
         );
       };
+      // Her areolae and vulva painted in detail on top, as in the room (skindetail.ts): it builds on the shader above.
+      addSkinDetail(painted);
       return painted;
     };
     object.material = Array.isArray(worn) ? worn.map(swap) : swap(worn);
@@ -1630,6 +1690,7 @@ const MOTION_GESTURE: Record<CutMotion, Gesture> = {
   pinch: "tap",
   rub: "stroke",
   circle: "tap",
+  finger: "press",
   spread: "hold",
   suck: "press",
   spank: "smack",
@@ -1640,6 +1701,11 @@ const MOTION_GESTURE: Record<CutMotion, Gesture> = {
   still: "none",
 };
 
+/** A CSS polygon's corners as shares of the box ("polygon(8% 6%, 100% 0%, ...)"). */
+function outlineOf(shape: string): [number, number][] {
+  return [...shape.matchAll(/(-?[\d.]+)%\s+(-?[\d.]+)%/g)].map((m) => [Number(m[1]) / 100, Number(m[2]) / 100]);
+}
+
 export class TouchComic {
   private readonly scene = new Scene();
   private readonly camera = new PerspectiveCamera(30, 4 / 3, 0.05, 20);
@@ -1649,6 +1715,8 @@ export class TouchComic {
   /** Whether this panel is a close-up, drawn sharper: how many of its pixels to one of a plain panel's. */
   private pixelScale = 1;
   private format: CutFormat = "wide";
+  /** The panel's outline now (its CSS clip), for the effects drawn along its edges. */
+  private outline: [number, number][] = [];
   private readonly root: HTMLElement;
   private readonly rim: HTMLElement;
   private readonly picture: HTMLElement;
@@ -1767,6 +1835,7 @@ export class TouchComic {
   /** Puts the panel in this shape: wide or tall, cut on this outline. */
   private useFormat(format: CutFormat, shape: string): void {
     this.format = format;
+    this.outline = outlineOf(shape);
     const { canvas, fx, width, height } = this.surface;
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
@@ -1791,6 +1860,15 @@ export class TouchComic {
     const model = cloneSkinned(body);
     model.position.set(0, 0, 0);
     if (cut?.closeUp) paintSkin(model, this.underShade);
+    // Every cut-in shows her naked, as KP's do (user, 2026-11-17): on the panel's copy of her only, her clothes and
+    // jewellery are off, nothing pulled down or bunched up showing. Her shoes and boots stay on.
+    if (cut) {
+      model.traverse((object) => {
+        if (!(object instanceof Mesh) || !/_(Cloth|Jewel)/.test(object.name)) return;
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        if (!materials.some((m: Material) => /boot|shoe/i.test(m.name))) object.visible = false;
+      });
+    }
     if (show.ownCloth || (kind && ON_BREASTS.has(kind)) || cut?.legs) {
       model.traverse((object) => {
         if (object instanceof Mesh) object.geometry = object.geometry.clone();
@@ -1859,12 +1937,15 @@ export class TouchComic {
     };
     const contacts: Vector3[] = [toWorld(anchor, shot.offset)];
     // On her clit: drawn bigger than life, as KP's (a smooth swell round her vulva), then the top of her slit.
-    if (kind === "clit") {
+    if (kind === "clit" || kind === "pussy") {
       const middle = vulvaMiddle(model);
       if (middle) lensSkin(model, middle, CLIT_LENS.radius * scale, CLIT_LENS.gain);
     }
     const clit = kind === "clit" ? clitPoint(model) : null;
     if (clit) contacts[0] = clit;
+    // In her (KP's petting pussy): the hole low in her opening, his two fingers in it.
+    const hole = kind === "pussy" ? holePoint(model) : null;
+    if (hole) contacts[0] = hole;
     // Kneading her breasts: a hand on the front of each, the heel of it low so the fingers spread up over her.
     const fronts = kind && ON_BREASTS.has(kind) ? breastFronts(model, name, middle) : null;
     // However big her sliders have made her breasts, the panel holds them as it holds a C cup: further back for a
@@ -1969,7 +2050,8 @@ export class TouchComic {
     }
     if (shot.view === "square") look.copy(this.contact);
     // Between her legs: her vulva just above the middle, her belly over it, the undersides of her cheeks below.
-    if (shot.view === "between") look.copy(this.contact).add(new Vector3(0, -BETWEEN.below * d, 0));
+    // Between her legs the shot is framed on her clit, as KP's are; his fingers in her sit lower in it.
+    if (shot.view === "between") look.copy(hole ? (clitPoint(model) ?? this.contact) : this.contact).add(new Vector3(0, -BETWEEN.below * d, 0));
     // From under and to her side: on the middle of her breasts, between the two.
     if (shot.view === "above" && fronts) look.copy(fronts.reduce((sum, f) => sum.add(model.localToWorld(f.centre.clone())), new Vector3()).divideScalar(fronts.length));
     if (shot.view === "under") {
@@ -1982,6 +2064,12 @@ export class TouchComic {
     // Square on: straight at her, from a touch below, as KP draws her breasts.
     if (shot.view === "square") this.camera.position.set(look.x + 0.03 * d, look.y - 0.08 * d, look.z + d);
     if (shot.view === "under") this.camera.position.set(look.x + 0.04 * d, look.y - 0.34 * d, look.z + 0.94 * d);
+    // Low and square on (KP's nipple cut-in): her breasts from in front and a little below, her belly under them.
+    if (shot.view === "low") {
+      if (fronts) look.copy(fronts.reduce((sum, f) => sum.add(model.localToWorld(f.centre.clone())), new Vector3()).divideScalar(fronts.length));
+      look.y -= LOW.below * d;
+      this.camera.position.set(look.x, look.y - LOW.camera * d, look.z + d);
+    }
     // From a little above: down over her breasts, her collarbone at the top of the panel (KP's nipple cut-in).
     if (shot.view === "above") this.camera.position.set(look.x + 0.05 * d, look.y + 0.3 * d, look.z + 0.95 * d);
     // From between her knees, a little below: up at her, as KP draws her spread.
@@ -2033,11 +2121,22 @@ export class TouchComic {
       // On her breasts: up from below and from the viewer's side, KP-style, the forearms foreshortened.
       // On her breasts: in from below and outside each, KP-style, so his fingers wrap up and in over her.
       // KP: his forearms straight up from the bottom of the panel, his palms under the front of each breast.
+      // On her nipples (KP): his arms round her, the hand on the panel's left in from her side, the other up from
+      // under her breast.
+      else if (fronts && kind === "nipples") start.add(right ? new Vector3(0.2 * d, -1 * d, 0.1 * d) : new Vector3(-1 * d, -0.25 * d, 0));
       else if (fronts) start.add(new Vector3((right ? 0.6 : -0.6) * d, -0.85 * d, 0.1 * d));
       else if (count === 2) start.add(new Vector3((right ? 0.5 : -0.5) * d, -0.9 * d, 0.2 * d));
       // Between her legs, or to her mouth: up from below on the left, so it doesn't cross her.
       // On her clit: down over her mound from the top of the panel, from her right (KP).
       else if (cut?.motion === "circle") start.add(new Vector3(0.9 * d, 0.8 * d, 0.35 * d));
+      // In her: up from the bottom left of the panel, his fingers pointing up into her (KP).
+      else if (cut?.motion === "finger") {
+        // As the panel sees it: from its bottom left, and out toward the viewer.
+        this.camera.updateMatrixWorld(true);
+        const [right, up] = [0, 1].map((axis) => new Vector3().setFromMatrixColumn(this.camera.matrixWorld, axis));
+        const toward = this.camera.position.clone().sub(contact).normalize();
+        start.addScaledVector(right, -FINGERING.from[0] * d).addScaledVector(up, -FINGERING.from[1] * d).addScaledVector(toward, FINGERING.from[2] * d);
+      }
       else if (cut && (cut.motion === "rub" || cut.motion === "suck")) start.add(new Vector3(-0.55 * d, -0.85 * d, 0.25 * d));
       else start.add(new Vector3((right ? 0.95 : -0.95) * d, -0.22 * d, 0.3 * d));
       if (cut?.motion === "pump") {
@@ -2058,7 +2157,11 @@ export class TouchComic {
       arm.group.visible = true;
       // On her breasts his bare forearm, as KP draws it, not his sleeve filling the bottom of the panel. (His arms are
       // kept between panels, so the sleeve comes back for the others.)
-      for (const piece of arm.group.children) if (piece instanceof Mesh) piece.visible = !fronts || arm.hand.includes(piece) || /skin/i.test((piece.material as Material).name);
+      // In her, only his hand, as KP draws it: from the low camera his forearm would come right past the lens.
+      const handOnly = cut?.motion === "finger";
+      for (const piece of arm.group.children) {
+        if (piece instanceof Mesh) piece.visible = handOnly ? arm.hand.includes(piece) : !fronts || arm.hand.includes(piece) || /skin/i.test((piece.material as Material).name);
+      }
       this.scene.add(arm.group);
       this.rigs.push({
         group: arm.group,
@@ -2084,7 +2187,7 @@ export class TouchComic {
     }
 
     if (this.bust) this.soft = softSkin(model, this.bust, show.ownCloth ? name : null);
-    this.clitDrag = clit ? dragSkin(model, clit, CLIT.reach * scale) : null;
+    this.clitDrag = clit ? dragSkin(model, clit, CLIT.reach * scale) : hole ? dragSkin(model, hole, FINGERING.reach * scale) : null;
     this.breastMiddles = fronts ? fronts.map((front) => front.centre.clone()) : [];
     this.breastSprings = this.breastMiddles.map(() => ({ at: new Vector3(), speed: new Vector3() }));
     this.springAt = this.clock;
@@ -2106,13 +2209,18 @@ export class TouchComic {
       if (cut.sparkle) plan.sparkle = true;
       if (kind === "spank") plan.mark = this.strength;
       if (cut.motion === "arch") plan.focus = true;
-      if (kind === "clit") {
-        // KP's: just the picture, her skin wet round his hand; nothing else drawn over it.
+      if (kind === "clit" || kind === "pussy") {
+        // KP's: just the picture, her skin wet round his hand; nothing else drawn over it. In her, a small pink jolt
+        // either side as his fingers go in.
         Object.assign(plan, { steam: 0, skinSteam: 0, quiver: false, blushLines: false, sweat: 0, hearts: 0, burst: false, focus: false, sparkle: false });
         plan.skin = 1 + Math.round(this.heat);
+        if (kind === "pussy") plan.jolts = true;
       } else if (kind === "breasts" || kind === "nipples") {
-        // KP's petting cut-in is just the picture: no drops, sweat, steam, hearts or marks drawn over it.
+        // KP's petting cut-in is just the picture: no drops, sweat, steam, hearts or marks drawn over it. On her
+        // nipples, KP's two small touches: a spark under each as he tugs, and faint hatching round the edge (user,
+        // 2026-11-17: small, never in the way).
         Object.assign(plan, { steam: 0, skinSteam: 0, quiver: false, blushLines: false, sweat: 0, hearts: 0, burst: false, focus: false, skin: 0, sparkle: false });
+        if (kind === "nipples") Object.assign(plan, { spark: true, edgeLines: true });
       } else if (kind && ON_BREASTS.has(kind)) {
         // Her skin glistening; no quiver marks, which would frame his hands.
         plan.skin = 1 + Math.round(this.heat);
@@ -2435,7 +2543,11 @@ export class TouchComic {
     const pinching = motion === "pinch" && rig.aim !== null;
     // On her clit, his index fingertip right on it.
     const flicking = motion === "circle" && this.clitDrag !== null;
-    const target = rig.contact.clone().addScaledVector(n, (pinching ? -0.002 : flicking ? CLIT.sink : tips ? 0.03 : 0.015) * scale);
+    // In her, his two fingertips just inside the hole.
+    const fingering = motion === "finger" && this.clitDrag !== null;
+    const target = rig.contact
+      .clone()
+      .addScaledVector(n, (pinching ? -0.002 : flicking ? CLIT.sink : fingering ? FINGERING.sink : tips ? 0.03 : 0.015) * scale);
 
     let into = ease(span(t, T.reachFrom, T.contact));
     // A smack hangs back, then comes in fast.
@@ -2520,6 +2632,11 @@ export class TouchComic {
           curl = 0.35 * closing;
           position.addScaledVector(right, c * 0.012 * scale).addScaledVector(up, s * 0.012 * scale);
           break;
+        case "finger":
+          // KP: his two fingers pushed into her and drawn back a little, her lips going in and out with them.
+          rig.press = wave;
+          position.addScaledVector(n, -wave * FINGERING.push * scale).addScaledVector(back, -wave * FINGERING.push * 0.5 * scale);
+          break;
         case "spread":
           press = 0.5;
           curl = 0.35 * closing;
@@ -2601,12 +2718,15 @@ export class TouchComic {
     // more as he squeezes. Elsewhere his wrist lifts off her.
     const gripping = rig.touch.length > 0 && motion === "knead";
     const dip = pinching ? 0 : gripping ? press * 0.06 : (motion === "pump" ? 0 : WRIST_LIFT) + (tips ? 0.35 : 0) + press * 0.15;
-    const fingersOn = along.clone().multiplyScalar(Math.cos(dip)).addScaledVector(n, -Math.sin(dip)).normalize();
+    // In her, his fingers point straight in along the way his hand came, not along her skin.
+    const fingersOn = fingering ? way.clone() : along.clone().multiplyScalar(Math.cos(dip)).addScaledVector(n, -Math.sin(dip)).normalize();
     // A mirrored arm's palm side is its -X: aim that at her instead.
     const palmTo = (toward: Vector3) => (rig.mirror ? toward.clone().negate() : toward);
     const inward = n.clone().negate();
     const reaching = this.orient(way, palmTo(inward.clone().addScaledVector(way, -inward.dot(way)).normalize()));
-    let lying = this.orient(fingersOn, palmTo(inward));
+    // In her, his palm turned up the panel, as KP's: his two fingers one behind the other going in, his curled ones
+    // and his thumb at the side.
+    let lying = this.orient(fingersOn, palmTo(fingering ? new Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1) : inward));
     if (flicking) {
       // Two fingers out (index and middle, the index a little ahead), the others curled under, his thumb tucked:
       // his index fingertip is what lands on her clit.
@@ -2615,6 +2735,15 @@ export class TouchComic {
       hand.updateMatrixWorld(true);
       const index = rig.arm.fingers[0]?.tip.getWorldPosition(new Vector3());
       if (index) rig.palm.copy(hand.worldToLocal(index));
+    }
+    if (fingering) {
+      // Index and middle out, together, in her; the other two curled; his thumb out. Between their tips is what goes in.
+      rig.arm.fingers.forEach((finger, f) => finger.bend(FINGERING.bends[f] ?? FINGERING.bends[3]));
+      rig.arm.thumb?.bend(FINGERING.thumb);
+      hand.updateMatrixWorld(true);
+      const index = rig.arm.fingers[0]?.tip.getWorldPosition(new Vector3());
+      const middle = rig.arm.fingers[1]?.tip.getWorldPosition(new Vector3());
+      if (index && middle) rig.palm.copy(hand.worldToLocal(index.add(middle).multiplyScalar(0.5)));
     }
     if (pinching) {
       // Pinching: thumb and finger closing on her nipple, harder as he tugs. His hand is turned from the pinch itself:
@@ -2653,7 +2782,7 @@ export class TouchComic {
     hand.quaternion.copy(reaching).slerp(lying, settle);
     if (spin) hand.quaternion.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), spin));
 
-    if (pinching || flicking) {
+    if (pinching || flicking || fingering) {
       // The point between his thumb's tip and his finger's (or his fingertip) is what lands on her (rig.palm, above),
       // and her skin there goes where it goes.
       rig.pull.copy(position).sub(target).multiplyScalar(there ? 1 : 0);
@@ -3223,7 +3352,8 @@ export class TouchComic {
     this.pose(this.time);
     if (this.soft) this.squeezeSkin(this.soft);
     if (this.pixelScale > 1) this.placeUnderShade();
-    if (this.clitDrag) this.clitDrag.move(this.rigs[0]?.pull.clone().multiplyScalar(CLIT.follow) ?? new Vector3());
+    const follow = this.cutKind === "pussy" ? FINGERING.follow : CLIT.follow;
+    if (this.clitDrag) this.clitDrag.move(this.rigs[0]?.pull.clone().multiplyScalar(follow) ?? new Vector3());
     const { renderer } = this;
     const { target, pixels, width, height, ctx, image } = this.surface;
     const previousTarget = renderer.getRenderTarget();
@@ -3259,7 +3389,27 @@ export class TouchComic {
     const reach = this.onPanel(this.contact.clone().add(new Vector3(0.1 * this.scale, 0, 0)));
     const bodySize = MathUtils.clamp(Math.hypot(reach.x - contact.x, reach.y - contact.y), 8, 48);
     const hands = this.rigs.map((rig) => this.onPanel(rig.contact));
-    return { mouth: at(MOUTH), temple, cheeks, cheekSize, contact, bodySize, hands };
+    // Her nipples he's pinching, where his pull has them now (the spark under each), and a nipple's size there.
+    const pinches =
+      this.cutKind === "nipples"
+        ? this.rigs.map((rig) => {
+            const at = rig.contact.clone().add(rig.pull);
+            const p = this.onPanel(at);
+            const side = this.onPanel(at.clone().add(new Vector3(NIPPLE_SIZE * this.scale, 0, 0)));
+            return { ...p, tug: rig.press, size: Math.max(2, Math.hypot(side.x - p.x, side.y - p.y)) };
+          })
+        : undefined;
+    // In her: where his fingers are, how far in they are now, and how wide her vulva is there.
+    const rig = this.rigs[0];
+    const jolt =
+      this.cutKind === "pussy" && rig
+        ? (() => {
+            const p = this.onPanel(rig.contact);
+            const side = this.onPanel(rig.contact.clone().add(new Vector3(JOLT_WIDTH * this.scale, 0, 0)));
+            return { ...p, beat: rig.press, size: Math.max(4, Math.hypot(side.x - p.x, side.y - p.y)) };
+          })()
+        : undefined;
+    return { mouth: at(MOUTH), temple, cheeks, cheekSize, contact, bodySize, hands, pinches, jolt, outline: this.outline };
   }
 
   private drawFx(): void {

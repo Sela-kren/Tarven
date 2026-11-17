@@ -1,4 +1,10 @@
 import { fightTier } from "./fightface";
+/** Her dom side that unlocks KP's Deny Ejaculation in a brawl. */
+const DENY_UNLOCK = 10;
+import { growthOf, rentRooms, RIOT_AFTER, RIOT_PUT_DOWN, RIOT_TROUBLE, runShow, type Growth } from "./sidejobs";
+import { TRINKET_BY_ID, TRINKET_SLOTS, TRINKETS, trinketsOwned } from "./trinkets";
+import { crowdFactor, defeatFor, defeatLine, DEFEATS, type DefeatId } from "./defeat";
+import { foePrefixFor } from "./foeprefix";
 import { barVoice, HER_BAR_LINES, type BarMoment } from "./barher";
 import { BAR_VOICES, QUIP_LUST, REACH_PART } from "./barvoices";
 import { DOOR_CREW_LINES, DOOR_LINES, FORCED_ROOM_CREW, FORCED_ROOM_ONE, invaderCount, invasionChance, NOISE_LINES, TALKED_LINES, WON_LINES } from "./invasion";
@@ -202,7 +208,46 @@ import {
   type Regular,
 } from "./regulars";
 import { FOLLOW_UP_BY_ID, followUpsAfter, type FollowUp } from "./favors";
-import { Lantern, LANTERN_COST, ROOM_COST, type HouseRule, type LanternHost, type LanternSave, type RuleChoice } from "./lantern";
+import { HOUSE_RULES, Lantern, LANTERN_COST, ROOM_COST, type HouseRule, type LanternHost, type LanternSave, type RuleChoice } from "./lantern";
+import {
+  APPLICANTS_EVERY,
+  arcDue,
+  FRIEND_AT,
+  FRIEND_TIME,
+  hire,
+  hireable,
+  metAt,
+  nightFor,
+  perkNightly,
+  playBeat,
+  POSTING_FEE,
+  readStaffMember,
+  rollApplicants,
+  STAFF_CAP,
+  STAFF_PERK_BY_ID,
+  type ArcBeat,
+  type StaffDef,
+  type StaffJob,
+  type StaffMember,
+  type Stage as StaffStage,
+} from "./staff";
+import {
+  CENTREPIECE_MAX,
+  centrepieceCrowd,
+  DEFAULT_REVEL,
+  REVEL_GROUP_LINE,
+  REVEL_OPEN_LINES,
+  REVEL_STOP_LINE,
+  REVEL_UNLOCK,
+  revelDawn,
+  revelGuests,
+  revelNight,
+  revelUnlocked,
+  type RevelDoor,
+  type RevelPart,
+  type RevelSettings,
+  type RevelWho,
+} from "./revel";
 
 /** One line of a set, by a roll from 0 to 1. */
 function oneOf(lines: readonly string[], roll: number): string {
@@ -212,6 +257,7 @@ import { DESIRE_STRONG, HORNY_AT, horny, wet } from "./desire";
 import { adultPlayChance, aroused, lewdnessEase, TABLE_COMES, TABLE_DRUNK, tableOpen } from "./adultplay";
 import {
   autoTouchFits,
+  DIFFICULTIES,
   defaultTouchSettings,
   GROUPS_OF_REGION,
   impulseCheck,
@@ -256,11 +302,12 @@ import {
   type StatId,
 } from "./skills";
 import {
+  desireCap,
+  desireCaps,
   effectsOf,
   emptyMeters,
   lewdnessOf,
   lewdWord,
-  METER_MAX,
   METER_NAMES,
   INTIMATE_REGIONS,
   METER_OF,
@@ -280,7 +327,7 @@ import {
   type Records,
   type UpstairsAct,
 } from "./passives";
-import { GUEST_KIND_LIST, ROLES, ROLES_OF, roleLabel, rollStats, type GuestRole, type RoleStats } from "./guestroles";
+import { GUEST_KIND_LIST, ROLES, ROLES_OF, roleLabel, rollStats, statsOf, type GuestRole, type RoleStats } from "./guestroles";
 import { ALLOW_WILL, DRINK_WILL, LEAN_WILL, maxWillpower, NAP_RESTORE, refuseCost, STEADY_WILL } from "./willpower";
 import { applyFields, captureFields } from "./moment";
 import {
@@ -403,6 +450,21 @@ const RESPECT_DEEDS = [-2, 2, -1];
  * is her last clear drink (barwork.ts), and the 9th puts her under the table.
  */
 const SLOPPY_DRUNK = 0.95;
+/** Staff (staff.ts, STAFF.md §1): mid game from this much gold or this night index; late from this fame. */
+const STAFF_MID_GOLD = 150;
+const STAFF_MID_NIGHT = 5;
+const STAFF_LATE_FAME = 60;
+/** The most she can pay any one of them a night. */
+export const STAFF_WAGE_MAX = 20;
+/** A barmaid on: guests wait this much longer, and she takes this share of the night's serves. */
+export const BARMAID_PATIENCE = 0.2;
+const BARMAID_SHARE = 0.3;
+/** A doorman on: trouble starts this much less often; and at most this many thrown out a night. */
+export const DOORMAN_TROUBLE = 0.25;
+const DOORMAN_THROWS = 2;
+/** The Revel Hall's price on the house plans; and the ids given the revel's partners asking at bedtime. */
+export const REVEL_HALL_COST = 200;
+const REVEL_CREW_ID = 900000;
 /**
  * Bottoms she can hold up in her hands to show a guest (they hang on the model's skirt panels, which lift), and
  * those that stay on as she does, round her waist above it all; anything else comes off.
@@ -1258,6 +1320,10 @@ export interface TavernSave {
   lantern?: LanternSave;
   /** Named regulars (regulars.ts). Older saves have none. */
   regulars?: Regular[];
+  /** Her staff (staff.ts), the applicants waiting, and her friendship with the roster. Older saves have none. */
+  staff?: { members: StaffMember[]; applicants: StaffMember[]; applicantsNight: number; nextApplicant: number; friendship: Record<string, number> };
+  /** The Revel House (revel.ts): the hall, the night's settings and whether tonight's one. Older saves have none. */
+  revel?: { hall: boolean; settings: RevelSettings; tonight: boolean };
 }
 
 /** A moment that wants an 18+ card: a guest she's said yes to on the table, or being overwhelmed. */
@@ -1668,6 +1734,412 @@ export class Tavern {
   invading = false;
   /** What the winner of a brawl she lost is asking, until she answers. */
   brawlOffer: BrawlOffer | null = null;
+  /**
+   * Side jobs and the rest (sidejobs.ts): whether she's danced on the bar or let the rooms tonight; a riot night (KP's
+   * riots) and the brawls she's won on it; nights since her hair was last trimmed (KP's RemtairyHair).
+   */
+  private showTonight = false;
+  private roomsTonight = false;
+  riot = false;
+  private riotWins = 0;
+  hairNights = 0;
+
+  /** Her hair, by the nights since it was trimmed (its look on her model is still to come). */
+  get hairGrowth(): Growth {
+    return growthOf(this.hairNights);
+  }
+
+  /** The bathhouse: trimmed bare again. */
+  trimHair(): void {
+    this.hairNights = 0;
+    this.say("You get yourself trimmed at the bathhouse. Smooth as the day you were born.");
+  }
+
+  /** Whether she can dance on the bar now: during service, once a night. */
+  get canDance(): boolean {
+    return this.phase === "service" && !this.showTonight && this.playerBody === "Female";
+  }
+
+  /** KP's stripper job: a dance on the bar (sidejobs.ts runShow). Says whether she did. */
+  danceOnBar(): boolean {
+    if (!this.canDance) return false;
+    this.showTonight = true;
+    const room = this.guests.filter((g) => g.status === "waiting" || g.status === "eating");
+    const men = room.filter((g) => !g.female);
+    const show = runShow({ guests: room.length, men: men.length, fame: this.persona.fame, exposure: this.exposure, slutLevel: this.slutLevel });
+    this.gold += show.gold;
+    for (const g of men) g.lust = Math.min(10, g.lust + show.lust);
+    this.shift({ fame: show.fame, respect: show.respect });
+    this.raise("body", show.desire);
+    this.raise("breasts", show.desire);
+    this.records.shows++;
+    this.say(`${show.line} (+${show.gold} gold)`);
+    return true;
+  }
+
+  /** Whether she can let the rooms tonight: at last call or bedtime, once a night. */
+  get canRentRooms(): boolean {
+    return (this.phase === "lastcall" || this.phase === "bedtime") && !this.roomsTonight;
+  }
+
+  /** KP's receptionist job: lets the rooms upstairs to whoever would stay (sidejobs.ts rentRooms). */
+  rentOutRooms(): boolean {
+    if (!this.canRentRooms) return false;
+    this.roomsTonight = true;
+    const stayers = this.guests.filter((g) => g.status !== "leaving" && g.mood !== "angry").map((g) => g.lust).sort((a, b) => b - a);
+    const result = rentRooms(stayers, STRONG_LUST);
+    this.gold += result.gold;
+    this.records.roomsRented += result.rented;
+    this.records.roomAsks += result.asked;
+    this.say(`${result.line}${result.gold > 0 ? ` (+${result.gold} gold)` : ""}`);
+    return true;
+  }
+
+  /** The trinkets she's wearing (trinkets.ts, KP's accessories): up to TRINKET_SLOTS. */
+  trinketsWorn: string[] = [];
+
+  /** Her trinkets: the ones she has (by Charm, or her records), the rest and what they need, and which she wears. */
+  trinkets(): { id: string; name: string; about: string; owned: boolean; worn: boolean; needs: string }[] {
+    const owned = new Set(trinketsOwned(this.level("charm"), this.records).map((t) => t.id));
+    return TRINKETS.map((t) => ({
+      id: t.id,
+      name: t.name,
+      about: t.about,
+      owned: owned.has(t.id),
+      worn: this.trinketsWorn.includes(t.id),
+      needs: t.charm !== undefined ? `Charm ${t.charm}` : (t.needText ?? ""),
+    }));
+  }
+
+  /** Puts a trinket on, or takes it off; one she hasn't got, or past her slots, does nothing. Says whether it changed. */
+  toggleTrinket(id: string): boolean {
+    const t = this.trinkets().find((x) => x.id === id);
+    if (!t || !t.owned) return false;
+    if (t.worn) this.trinketsWorn = this.trinketsWorn.filter((w) => w !== id);
+    else if (this.trinketsWorn.length < TRINKET_SLOTS) this.trinketsWorn.push(id);
+    else return false;
+    this.refreshEffects();
+    return true;
+  }
+
+  // ---------- Staff (staff.ts, STAFF.md) ----------
+
+  /** The people who work for her. The Lantern's girls are kept by the Lantern, and never count toward the cap. */
+  staff: StaffMember[] = [];
+  /** Random applicants answering her notice (recruitment), the night they came, and the next id to give one. */
+  applicants: StaffMember[] = [];
+  applicantsNight = -1;
+  private nextApplicant = 1;
+  /** Her friendship with each roster person: at FRIEND_AT, they'll work for her. */
+  friendship: Record<string, number> = {};
+  /** Who she's spent time with today (once a day each). */
+  private friendTimeToday = new Set<string>();
+
+  /**
+   * Where the game is, for staff (STAFF.md §1): early (nights 1 to 5, no staff), mid (after Pell's first visit for
+   * the Baron, gold 150 or more, or from night 6), and late (the chapter's end, first in Tarven, or fame 60).
+   */
+  get staffStage(): StaffStage {
+    if (this.beatsDone.has("copperBell") || this.persona.fame >= STAFF_LATE_FAME) return "late";
+    if (this.beatsDone.has("pell") || this.gold >= STAFF_MID_GOLD || this.nightIndex >= STAFF_MID_NIGHT) return "mid";
+    return "early";
+  }
+
+  /** Staff who count toward the cap: everyone still here but a girl. */
+  private get staffCounted(): StaffMember[] {
+    return this.staff.filter((m) => !m.quit && m.job !== "girl");
+  }
+
+  /** How many she can keep at this stage (girls off the cap), and how many she has. */
+  get staffCap(): { have: number; cap: number } {
+    return { have: this.staffCounted.length, cap: STAFF_CAP[this.staffStage] };
+  }
+
+  /** Whether there's room for one more who counts toward the cap. */
+  private get staffRoom(): boolean {
+    return this.staffCounted.length < STAFF_CAP[this.staffStage];
+  }
+
+  /** Staff can be hired, let go and paid differently while the tavern's shut, never in the middle of service. */
+  get canManageStaff(): boolean {
+    return this.phase !== "service" && this.phase !== "lastcall" && this.fight === null && this.duel === null;
+  }
+
+  /** Roster people who'll work for her now: met by this stage, friends, not on her books (girls, once the lantern's hung). */
+  staffHireable(): StaffDef[] {
+    const stage = this.staffStage;
+    const have = new Set([...this.staff.map((m) => m.id), ...this.lantern.girls.map((g) => g.id)]);
+    const counted = this.staffCounted.map((m) => m.id);
+    const open = [...hireable(stage, counted, this.friendship), ...hireable(stage, [], this.friendship).filter((d) => d.job === "girl")];
+    return open.filter((d, i) => open.findIndex((o) => o.id === d.id) === i && !have.has(d.id) && (d.job !== "girl" || this.lantern.hung));
+  }
+
+  /** Roster people she's met at this stage and isn't yet friends with, with how far along she is. */
+  staffToBefriend(): { def: StaffDef; friendship: number; spentToday: boolean }[] {
+    const have = new Set([...this.staff.map((m) => m.id), ...this.lantern.girls.map((g) => g.id)]);
+    return metAt(this.staffStage)
+      .filter((d) => !have.has(d.id) && (this.friendship[d.id] ?? 0) < FRIEND_AT)
+      .map((d) => ({ def: d, friendship: this.friendship[d.id] ?? 0, spentToday: this.friendTimeToday.has(d.id) }));
+  }
+
+  /** A placeholder for their story and the regulars' visits: time spent with one of them, once a day each. */
+  spendTimeWith(id: string): boolean {
+    if (!this.staffToBefriend().some((f) => f.def.id === id && !f.spentToday)) return false;
+    this.friendTimeToday.add(id);
+    this.friendship[id] = (this.friendship[id] ?? 0) + FRIEND_TIME;
+    const name = metAt(this.staffStage).find((d) => d.id === id)!.name;
+    this.say(this.friendship[id] >= FRIEND_AT ? `You and ${name} are friends now. Ask, and they'll work for you.` : `You spend a while with ${name}. (Friendship ${this.friendship[id]}/${FRIEND_AT})`);
+    return true;
+  }
+
+  /** Hires a friend from the roster, if there's room (girls off the cap). Says whether she did. */
+  hireStaff(id: string): boolean {
+    if (!this.canManageStaff || !this.staffHireable().some((d) => d.id === id)) return false;
+    const member = hire(id);
+    this.staff.push(member);
+    this.say(`${member.name} starts work as your ${member.job}. Wage ${member.wage} gold a night.`);
+    this.refreshEffects();
+    return true;
+  }
+
+  /** Takes on one of the applicants, if there's room. */
+  hireApplicant(id: string): boolean {
+    const a = this.applicants.find((x) => x.id === id);
+    if (!this.canManageStaff || !a || !this.staffRoom) return false;
+    this.applicants = this.applicants.filter((x) => x.id !== id);
+    this.staff.push(a);
+    this.say(`${a.name} starts work as your ${a.job}. Wage ${a.wage} gold a night.`);
+    this.refreshEffects();
+    return true;
+  }
+
+  /** A fresh lot of applicants: free every few nights, or for the posting fee now. */
+  postForWork(paid = true): boolean {
+    if (this.staffStage === "early") return false;
+    if (paid) {
+      if (!this.canManageStaff || this.gold < POSTING_FEE) return false;
+      this.gold -= POSTING_FEE;
+    }
+    this.applicants = rollApplicants(this.staffStage, this.random, this.nextApplicant);
+    this.nextApplicant += this.applicants.length;
+    this.applicantsNight = this.nightIndex;
+    if (paid) this.say(`You post a notice for work (${POSTING_FEE} gold). ${this.applicants.length} answer it.`);
+    return true;
+  }
+
+  /** Lets one of them go. */
+  fireStaff(id: string): boolean {
+    const m = this.staff.find((x) => x.id === id);
+    if (!this.canManageStaff || !m) return false;
+    this.staff = this.staff.filter((x) => x.id !== id);
+    this.say(`You let ${m.name} go.`);
+    this.refreshEffects();
+    return true;
+  }
+
+  /** Sets what one of them is paid a night (0 to STAFF_WAGE_MAX). */
+  setWage(id: string, n: number): boolean {
+    const m = this.staff.find((x) => x.id === id);
+    if (!m) return false;
+    m.wage = Math.max(0, Math.min(STAFF_WAGE_MAX, Math.round(n)));
+    return true;
+  }
+
+  /** The beat of their story that's due, if one is. */
+  staffBeat(id: string): ArcBeat | null {
+    const m = this.staff.find((x) => x.id === id);
+    return m ? arcDue(m) : null;
+  }
+
+  /** Plays the beat that's due with one of its outcomes. */
+  playStaffBeat(id: string, outcomeId: string): boolean {
+    const at = this.staff.findIndex((x) => x.id === id);
+    if (at < 0) return false;
+    const beat = arcDue(this.staff[at]);
+    const next = playBeat(this.staff[at], outcomeId);
+    if (!beat || !next) return false;
+    this.staff[at] = next;
+    this.say(`${next.name}, "${beat.title}": ${beat.outcomes.find((o) => o.id === outcomeId)!.text}`);
+    return true;
+  }
+
+  /** One of them on tonight in this job (still here, with stamina to work). */
+  staffWorking(job: StaffJob): boolean {
+    return this.staff.some((m) => m.job === job && !m.quit && m.stamina.current > 0);
+  }
+
+  /**
+   * At the night's end, for each of them: their wage paid from the till (what she can), their night run (staff.ts
+   * nightFor), and their dawn line for the morning. Anyone who's quit is gone; their perks add house fame and fans.
+   */
+  private settleStaff(): void {
+    if (this.staff.length === 0) return;
+    const greedy = this.lantern.hung ? HOUSE_RULES.filter((r) => this.lantern.rules[r] === "greedy").length : 0;
+    const kept: StaffMember[] = [];
+    for (const m of this.staff) {
+      const worked = !m.quit && m.stamina.current > 0;
+      const paid = worked ? Math.min(m.wage, this.gold) : 0;
+      this.gold -= paid;
+      if (worked) {
+        const perks = perkNightly(m);
+        if (perks.fame) this.shift({ fame: perks.fame });
+        this.fansTonight += perks.fans;
+      }
+      const done = worked
+        ? {
+            served: m.job === "barmaid" ? Math.floor(this.served * BARMAID_SHARE) : 0,
+            throwOuts: m.job === "doorman" ? Math.min(DOORMAN_THROWS, this.fightsTonight) : 0,
+          }
+        : {};
+      const { member, dawn } = nightFor(m, { worked, wagePaid: paid, houseFame: this.persona.fame, madamCorruption: this.corruption, greedyRules: greedy, done });
+      this.morningAfter.push(paid < m.wage && worked ? `${dawn.line} You could only pay ${paid} of ${m.wage} gold.` : dawn.line);
+      if (dawn.beat) this.morningAfter.push(`${member.name}: "${dawn.beat.title}" is waiting (Settings, Staff).`);
+      if (member.quit) continue;
+      kept.push(member);
+    }
+    this.staff = kept;
+  }
+
+  // ---------- The Revel House (revel.ts, REVEL_HOUSE.md) ----------
+
+  /** The Revel Hall, built from the house plans; the night's settings; and whether tonight's a revel night. */
+  revelHall = false;
+  revelSettings: RevelSettings = { ...DEFAULT_REVEL };
+  revelTonight = false;
+  /** Tonight's revel has been held. */
+  private revelHeld = false;
+  /** The offer waiting at bedtime is the revel's, not a brawl winner's (no defeat is counted). */
+  private revelScene = false;
+
+  /** Whether she can build the Revel Hall now: by day, late game, with the gold. */
+  get canBuildRevelHall(): boolean {
+    return this.phase === "day" && !this.revelHall && this.staffStage === "late" && this.gold >= REVEL_HALL_COST;
+  }
+
+  buildRevelHall(): boolean {
+    if (!this.canBuildRevelHall) return false;
+    this.gold -= REVEL_HALL_COST;
+    this.revelHall = true;
+    this.say("Cushions, drapes and the big table: the taproom can be the Revel Hall on the nights you choose.");
+    return true;
+  }
+
+  private get revelFacts() {
+    return {
+      lewdness: this.lewdness,
+      corruption: this.corruption,
+      tableScenes: this.records.taproomScenes,
+      taproomPartners: this.records.taproomPartners,
+      builds: this.revelHall ? ["revelHall"] : [],
+    };
+  }
+
+  /** Whether a revel night is open to her: the late game, and revel.ts's own conditions. */
+  get revelOpen(): boolean {
+    return this.staffStage === "late" && revelUnlocked(this.revelFacts);
+  }
+
+  /** What's still missing before she can hold a revel night, in words (empty once it's open). */
+  revelMissing(): string[] {
+    const f = this.revelFacts;
+    const out: string[] = [];
+    if (this.staffStage !== "late") out.push("the late game (the chapter's end, or fame 60)");
+    if (f.lewdness < REVEL_UNLOCK.lewdness && f.corruption < REVEL_UNLOCK.corruption) out.push(`lewdness ${REVEL_UNLOCK.lewdness} or corruption ${REVEL_UNLOCK.corruption}`);
+    if (f.tableScenes < REVEL_UNLOCK.tableScenes && f.taproomPartners < REVEL_UNLOCK.partners) out.push(`${REVEL_UNLOCK.tableScenes} table scenes or ${REVEL_UNLOCK.partners} partners there (${f.tableScenes}, ${f.taproomPartners})`);
+    if (!this.revelHall) out.push(`the Revel Hall (house plans, ${REVEL_HALL_COST} gold)`);
+    return out;
+  }
+
+  /** Makes tonight a revel night, or not: by day, once it's open. */
+  setRevelTonight(on: boolean): boolean {
+    if (this.phase !== "day" || (on && !this.revelOpen)) return false;
+    this.revelTonight = on;
+    return true;
+  }
+
+  /** Steps one of the night's settings on to its next choice: by day. */
+  cycleRevel(which: "who" | "herPart" | "door"): boolean {
+    if (this.phase !== "day") return false;
+    const next = <T>(list: readonly T[], v: T) => list[(list.indexOf(v) + 1) % list.length];
+    const s = this.revelSettings;
+    if (which === "who") s.who = next<RevelWho>(["men", "mixed", "women"], s.who);
+    else if (which === "herPart") s.herPart = next<RevelPart>(["host", "join", "centrepiece"], s.herPart);
+    else s.door = next<RevelDoor>(["open", "invite", "paying"], s.door);
+    return true;
+  }
+
+  /**
+   * Tonight's revel, as the doors shut (a placeholder until the hall and the group poses are drawn): who came, the
+   * room's groups, and the night's worth at dawn. If she's joining in or the centrepiece, her scene uses the After
+   * Hours game with as many as the crowd rule says: with Consent on she's asked (the bedtime offer, hers to take or
+   * not); with Consent off, it follows the Consent-off rules. `withScene` false (put to bed without it) skips hers.
+   */
+  holdRevel(withScene = true): boolean {
+    if (!this.revelTonight || this.revelHeld) return false;
+    this.revelHeld = true;
+    const s = this.revelSettings;
+    const e = this.effects;
+    const r = this.records;
+    const mix = revelGuests(s, this.random);
+    for (let i = 0; i < e.revelGuests; i++) {
+      const female = s.who === "women" || this.random() < (s.who === "mixed" ? 0.5 : 0.1);
+      mix.guests.push({ kind: GUEST_KIND_LIST[Math.floor(this.random() * GUEST_KIND_LIST.length) % GUEST_KIND_LIST.length], female });
+    }
+    mix.women = mix.guests.filter((g) => g.female).length;
+    mix.men = mix.guests.length - mix.women;
+    mix.shareFemale = mix.guests.length ? mix.women / mix.guests.length : 0;
+    const night = revelNight(s, mix, this.random);
+    if (s.who !== "men" && e.revelWomen > 0) night.wantHer.women = Math.min(mix.women, night.wantHer.women + e.revelWomen);
+    this.say(REVEL_OPEN_LINES[s.who]);
+    for (const g of night.groups.slice(0, 3)) this.say(REVEL_GROUP_LINE.replace("{n}", String(g.members.length)));
+    if (night.stops > 0) this.say(REVEL_STOP_LINE);
+
+    let herPartners = 0;
+    if ((s.herPart === "join" || s.herPart === "centrepiece") && this.playerBody === "Female") {
+      const crowd = centrepieceCrowd({ taproomPartners: r.taproomPartners, fightsLost: r.fightsLost, defeats: r.defeats }, s, night.wantHer);
+      let { men, women } = crowd;
+      if (e.centrepieceExtra > 0 && crowd.total > 0 && crowd.total < CENTREPIECE_MAX) {
+        if (men < night.wantHer.men) men++;
+        else if (women < night.wantHer.women) women++;
+      }
+      const males = mix.guests.filter((g) => !g.female).slice(0, men);
+      const females = mix.guests.filter((g) => g.female).slice(0, women);
+      const partners = [...males, ...females].map((g) => ({ kind: g.kind, female: g.female, stats: statsOf(g.kind) }));
+      if (partners.length > 0 && !withScene) {
+        this.morningAfter.push(`${partners.length} of them wanted you at the revel, but you'd gone up to bed.`);
+      } else if (partners.length > 0 && this.consentOff) {
+        this.forceDuel(partners, "here", partners.length > 1 ? FORCED_HERE_CREW : FORCED_HERE_ONE);
+        herPartners = partners.length;
+        this.say(`The hall makes room in the middle, and you're at the heart of it: ${partners.length > 1 ? `${partners.length} of them` : "one of them"}.`);
+      } else if (partners.length > 0 && this.drunk >= SLOPPY_DRUNK) {
+        this.say("They want you in the middle of it, but you've had too much to drink. The room carries on without you.");
+      } else if (partners.length > 0) {
+        const [lead, ...rest] = partners;
+        this.brawlOffer = {
+          kind: lead.kind,
+          stats: lead.stats,
+          female: lead.female,
+          drunk: false,
+          crew: rest.map((p, i) => ({ id: REVEL_CREW_ID + i, kind: p.kind, female: p.female, stats: p.stats, label: p.stats.label ?? p.kind, ask: "\"Make room for me too?\"" })),
+        };
+        this.revelScene = true;
+        this.say(`${partners.length > 1 ? `${partners.length} of them want` : "One of them wants"} you in the middle of it. Yours to say yes or no to, at bedtime.`);
+      }
+    }
+    const dawn = revelDawn({ settings: s, mix, night, herPartners, records: { revelNights: r.revelNights, revelPartnersMost: r.revelPartnersMost, mixedNights: r.mixedNights } });
+    this.adjust(dawn.gold, 0, dawn.heat);
+    this.earned += dawn.gold;
+    this.shift({ fame: dawn.fame, respect: dawn.respect });
+    this.fansTonight += dawn.fans.count;
+    r.revelNights = dawn.records.revelNights;
+    r.revelPartnersMost = dawn.records.revelPartnersMost;
+    r.mixedNights = dawn.records.mixedNights;
+    this.morningAfter.push(`${dawn.line} (+${dawn.gold} gold, fame +${dawn.fame}, respect ${dawn.respect}${dawn.heat ? `, +${dawn.heat} heat` : ""}, ${dawn.fans.count} Revel fans)`);
+    return true;
+  }
+
+  /** Tonight's defeat, if she's had one (defeat.ts): which, for the picture and the morning. */
+  defeatTonight: DefeatId | null = null;
   /** An after-hours game in progress, or null; and how the last one ended, for the game to show once. */
   duel: Duel | null = null;
   lastDuel: { outcome: DuelOutcome; text: string; line: string; gold: number; test?: boolean; brawl?: boolean; taproom?: boolean } | null = null;
@@ -1861,6 +2333,12 @@ export class Tavern {
     this.tire(-FATIGUE_REST.sleep);
     this.drunk = 0;
     this.overLimit = 0;
+    // A revel night not yet held (the night closed early) is held now, without her scene; an offer she slept on lapses.
+    if (this.revelTonight && !this.revelHeld) this.holdRevel(false);
+    if (this.revelScene) {
+      this.brawlOffer = null;
+      this.revelScene = false;
+    }
     this.endOfNight();
     // The morning after tonight's invitations (invitetalk.ts).
     for (const line of this.morningAfter.splice(0)) this.say(line);
@@ -1872,7 +2350,18 @@ export class Tavern {
    */
   private endOfNight(): void {
     const r = this.records;
-    for (const m of METERS) if (this.peak[m] >= METER_MAX) r.maxed[m] = (r.maxed[m] ?? 0) + 1;
+    // Three brawls tonight, and tomorrow's a riot night (KP's riots); her hair grows a night (KP's RemtairyHair).
+    if (this.fightsTonight >= RIOT_AFTER && !this.riot) {
+      this.riot = true;
+      this.riotWins = 0;
+      this.morningAfter.push("Word's all over the pass: the tavern's where the fighting is. Tonight will be a riot.");
+    }
+    this.hairNights++;
+    this.showTonight = false;
+    this.roomsTonight = false;
+    // Maxed is as high as her cap let it go tonight (KP's max desire); the best a meter's ever reached lifts its cap.
+    for (const m of METERS) if (this.peak[m] >= this.desireCap(m)) r.maxed[m] = (r.maxed[m] ?? 0) + 1;
+    for (const m of METERS) r.best[m] = Math.max(r.best[m] ?? 0, Math.round(this.peak[m]));
     if (METERS.every((m) => this.peak[m] >= ALL_HIGH)) r.allHigh++;
     if (this.playerBody === "Female") {
       const ladder = stripLadder(this.playerBody, this.playerOutfit, this.playerLegwear, this.playerUnder).length;
@@ -1889,6 +2378,8 @@ export class Tavern {
     if (this.drinksTonight === 0 && this.served >= SOBER_NIGHT_SERVED) r.soberNights++;
     // Anyone still upstairs comes down and pays, and the night has its say on the girls (lantern.ts).
     this.lantern.endNight(this.lanternHost);
+    // Her staff: paid, their night, their dawn lines (staff.ts).
+    this.settleStaff();
     const nightly = this.effects.perNight;
     this.adjust(nightly.gold, nightly.trust, nightly.heat);
     if (nightly.respect) this.shift({ respect: nightly.respect });
@@ -2497,7 +2988,8 @@ export class Tavern {
         this.say("The stew is ready.");
         this.cue("stewReady");
       }
-    } else if (this.potState === "ready") {
+    } else if (this.potState === "ready" && !this.staffWorking("cook")) {
+      // A cook on tonight keeps the ready stew from burning (staff.ts).
       this.potTimer -= dt;
       if (this.potTimer <= 0) {
         this.potState = "burnt";
@@ -3162,11 +3654,14 @@ export class Tavern {
       workedUp: true,
       desire: { ...this.meters },
       sens: { ...this.effects.sens },
+      caps: desireCaps(this.effects),
       pleasure: 0,
       prefers: lead.stats.prefers,
       forceful: true,
       clothes: { pieces: ladder.map((g) => g.label), off: ladder.length },
       sexOk: true,
+      rimjob: this.touchSettings.rimjob,
+      footjob: this.touchSettings.footjob,
       tier: fightTier(this.slutLevel),
       experience: {
         hands: this.records.acts.hands ?? 0,
@@ -3198,11 +3693,19 @@ export class Tavern {
     return true;
   }
 
+  /**
+   * How high a desire can go tonight (Karryn's Prison's max desire): low at first, lifted by the passives for
+   * reaching it (passives.ts desireCap).
+   */
+  desireCap(meter: Meter): number {
+    return desireCap(this.effects, meter);
+  }
+
   /** Tonight's desire goes up on one meter, faster with passives that make it so. */
   private raise(meter: Meter, n: number): void {
     const gain = n > 0 ? n * (1 + this.effects.sens[meter]) : n;
     const prev = this.meters[meter];
-    this.meters[meter] = clamp(this.meters[meter] + gain, 0, METER_MAX);
+    this.meters[meter] = clamp(this.meters[meter] + gain, 0, this.desireCap(meter));
     this.peak[meter] = Math.max(this.peak[meter], this.meters[meter]);
     const delta = this.meters[meter] - prev;
     if (delta >= 1) {
@@ -3366,6 +3869,8 @@ export class Tavern {
   }
 
   private gainXp(id: StatId | SkillId, n: number): void {
+    // The difficulty: she grows faster on Easy, slower on Hard (KP's growth rates).
+    if (n > 0) n *= DIFFICULTIES[this.touchSettings.difficulty ?? "normal"].growth;
     if (n <= 0) return;
     const before = levelOf(this.xp[id] ?? 0);
     this.xp[id] = (this.xp[id] ?? 0) + n;
@@ -3394,6 +3899,19 @@ export class Tavern {
     for (const id of this.worn) TITLE_BY_ID.get(id)?.wear(e);
     for (const d of this.debuffs) DEBUFFS[d.id].effect(e, d.level);
     for (const id of this.rules) TAVERN_RULE_BY_ID.get(id)?.effect(e);
+    // A riot night (KP's riots): trouble starts twice as easily.
+    if (this.riot) e.trouble -= RIOT_TROUBLE;
+    // Her trinkets (KP's accessories), the ones she has.
+    const owned = new Set(trinketsOwned(this.level("charm"), this.records).map((t) => t.id));
+    for (const id of this.trinketsWorn) if (owned.has(id)) TRINKET_BY_ID.get(id)?.wear(e);
+    // Her staff on tonight (staff.ts): a barmaid keeps guests waiting happier, a doorman keeps trouble down, and
+    // each one's perks have their say.
+    if (this.staffWorking("barmaid")) e.patience += BARMAID_PATIENCE;
+    if (this.staffWorking("doorman")) e.trouble += DOORMAN_TROUBLE;
+    for (const m of this.staff) {
+      if (m.quit || m.stamina.current <= 0) continue;
+      for (const id of m.perks) STAFF_PERK_BY_ID[id]?.effect?.(e);
+    }
     this.effects = e;
   }
 
@@ -3528,6 +4046,7 @@ export class Tavern {
       ? {
           desire: { ...this.meters },
           sens: { ...this.effects.sens },
+          caps: desireCaps(this.effects),
           pleasure: this.pleasure,
           prefers: guest.stats.prefers,
           exposure: this.exposure,
@@ -3539,6 +4058,8 @@ export class Tavern {
             off: this.stripped,
           },
           sexOk: this.drunk < SLOPPY_DRUNK,
+          rimjob: this.touchSettings.rimjob,
+          footjob: this.touchSettings.footjob,
           tier: fightTier(this.slutLevel),
           // How used she is to each act (her records), for how she talks in a scene: her first time is her first time.
           experience: {
@@ -3593,6 +4114,12 @@ export class Tavern {
   private fighterStats(): FighterStats {
     const e = this.effects;
     return {
+      // KP's enemy prefixes (foeprefix.ts), and the difficulty.
+      prefixOf: foePrefixFor,
+      sceneEase: e.sceneEase,
+      // KP's Deny Ejaculation comes with her dom side: 10 slaps and stands, all told.
+      denyOk: this.records.slapped + this.records.domWins >= DENY_UNLOCK,
+      foeScale: DIFFICULTIES[this.touchSettings.difficulty ?? "normal"].foes,
       levels: this.statLevels(),
       damage: e.fightDamage,
       dodge: e.fightDodge,
@@ -3668,7 +4195,7 @@ export class Tavern {
   private settleDesire(fight: Fight): void {
     if (!fight.desire) return;
     for (const m of METERS) {
-      this.meters[m] = clamp(fight.desire[m], 0, METER_MAX);
+      this.meters[m] = clamp(fight.desire[m], 0, this.desireCap(m));
       this.peak[m] = Math.max(this.peak[m], this.meters[m]);
     }
     this.pleasure = fight.pleasure;
@@ -3719,6 +4246,8 @@ export class Tavern {
       text = "Spent. They stagger out grinning, and the room won't stop talking about it.";
     } else if (fight.outcome === "won") {
       r.fightsWon++;
+      this.riotWin();
+      r.toys += fight.toysIn;
       if (guest) this.sendOff(guest);
       this.shift({ respect: 2, fame: 3 });
       // Throwing out one of the baron's men gets back to him.
@@ -3743,7 +4272,7 @@ export class Tavern {
       this.addDebuff("bruised");
       // The one who won asks her, and their companions ask too. Hers to answer; the night ends either way (see BrawlOffer).
       if (guest && this.playerBody === "Female") {
-        this.brawlOffer = { kind: guest.kind, stats: guest.stats, female: guest.female, drunk: lead.drunk, crew: this.brawlCrew(guest) };
+        this.brawlOffer = { kind: guest.kind, stats: guest.stats, female: guest.female, drunk: lead.drunk, crew: this.defeatCrew(guest) };
         // Consent off (KP's defeat): no asking. The one who won and their company take her where she fell.
         if (this.consentOff && !lead.drunk) this.forceBrawlDuel();
       }
@@ -3776,7 +4305,10 @@ export class Tavern {
       this.addDebuff("bruised");
       text = "You're down on your own floor, and they're standing over you.";
       const partners = fight.foes.filter((f) => f.out !== "spent").map((f) => ({ kind: f.kind, female: false }));
-      if (partners.length > 0) this.forceDuel(partners, "upstairs", partners.length > 1 ? FORCED_ROOM_CREW : FORCED_ROOM_ONE);
+      if (partners.length > 0) {
+        this.forceDuel(partners, "upstairs", partners.length > 1 ? FORCED_ROOM_CREW : FORCED_ROOM_ONE);
+        this.beginDefeat("upstairs", partners[0].kind, partners.length, true);
+      }
     }
     this.lastFight = { outcome: fight.outcome!, text, invasion: true };
     this.say(text);
@@ -3801,6 +4333,53 @@ export class Tavern {
    * The brawl winner's companions: their party if they came in with one, or else whoever shares their table. Only
    * those sat in the room, sober enough to know what they're doing, and never the Baron. Each will ask; she picks.
    */
+  /**
+   * Who's in it after a lost brawl (defeat.ts, KP's defeat battles): the one who won's company, and then anyone in
+   * the room keen enough (strong lust, sober, never the Baron), up to how many her records say a defeat holds
+   * (KP's getDefeatedLv…Factor). Each still asks, with Consent on.
+   */
+  private defeatCrew(winner: Guest): BrawlCrewMate[] {
+    const crew = this.brawlCrew(winner);
+    const id = defeatFor({ place: "here", kind: winner.kind, heat: this.heat });
+    const room = crowdFactor(this.records, id) - 1 - crew.length;
+    if (room <= 0) return crew;
+    const inIt = new Set([winner.id, ...crew.map((c) => c.id)]);
+    const keen = this.guests
+      .filter((g) => !inIt.has(g.id) && (g.status === "waiting" || g.status === "eating"))
+      .filter((g) => !g.female && g.lust >= STRONG_LUST && g.mood !== "drunk" && !isBaron(this.roomGuest(g)))
+      .sort((a, b) => b.lust - a.lust)
+      .slice(0, room)
+      .map((g) => ({ id: g.id, kind: g.kind, female: g.female, stats: g.stats, label: g.stats.label ?? g.kind, ask: this.joinAsk(g.id) }));
+    return [...crew, ...keen];
+  }
+
+  /**
+   * A defeat starting (defeat.ts): which one it is, by where and who won; counted in her records; its opening in
+   * the game's log, and its morning after.
+   */
+  /** A brawl won on a riot night: two, and it's put down (KP's riots). */
+  private riotWin(): void {
+    if (!this.riot) return;
+    this.riotWins++;
+    if (this.riotWins < RIOT_PUT_DOWN) return;
+    this.riot = false;
+    this.records.riotsDown++;
+    this.shift({ fame: 2, respect: 2 });
+    this.refreshEffects();
+    this.say("That's the last of them. The riot's put down, and the room drinks to you.");
+  }
+
+  private beginDefeat(place: BrawlPlace, kind: GuestKind, n: number, invasion = false): void {
+    const id = defeatFor({ place, kind, heat: this.heat, invasion });
+    const r = this.records;
+    r.defeats[id] = (r.defeats[id] ?? 0) + 1;
+    r.defeatMost = Math.max(r.defeatMost, n);
+    this.defeatTonight = id;
+    const def = DEFEATS[id];
+    this.duel?.note(defeatLine(def.start, this.storyRoll(this.nightIndex, 13), n));
+    this.morningAfter.push(defeatLine(def.morning, this.storyRoll(this.nightIndex, 14), n));
+  }
+
   private brawlCrew(winner: Guest): BrawlCrewMate[] {
     const table = this.tableOf(winner.seat);
     return this.guests
@@ -4070,9 +4649,9 @@ export class Tavern {
   }
 
   /** Why tonight's offer is being made: "brawl" after a loss, "talked" by someone she talked down, else "admirer". */
-  get duelOfferFrom(): "brawl" | "talked" | "admirer" | null {
+  get duelOfferFrom(): "brawl" | "talked" | "admirer" | "revel" | null {
     if (!this.duelOffer()) return null;
-    if (this.brawlOffer) return "brawl";
+    if (this.brawlOffer) return this.revelScene ? "revel" : "brawl";
     return this.admirers.length === 0 && this.peacemade.length > 0 ? "talked" : "admirer";
   }
 
@@ -4090,6 +4669,7 @@ export class Tavern {
   declineBrawlOffer(): void {
     if (!this.brawlOffer) return;
     this.brawlOffer = null;
+    this.revelScene = false;
     this.say("You send them off. Nothing more comes of it.");
     this.closeEarly();
   }
@@ -4153,6 +4733,7 @@ export class Tavern {
     if (!this.rolePlays().some((p) => p.id === scene && p.ready)) return false;
     const offer = this.brawlOffer;
     const picked = new Set(crewIds);
+    const revel = this.revelScene;
     if (picked.size > 0 && (!offer || [...picked].some((id) => !offer.crew.some((c) => c.id === id)))) return false;
     this.duelTonight = true;
     const partners = offer
@@ -4160,12 +4741,16 @@ export class Tavern {
       : [{ kind, female: false, stats: this.duelPartner()?.stats }];
     this.brawlDuel = offer !== null;
     this.brawlOffer = null;
+    this.revelScene = false;
     this.duel = new Duel(kind, new Set(areas), stake, this.duelistStats(), this.random, partners, scene);
     if (offer) {
       this.brawlPlace = place;
       const many = partners.length > 1;
       const words = { here: many ? BRAWL_HERE_CREW : BRAWL_HERE_ONE, upstairs: many ? BRAWL_ROOM_CREW : BRAWL_ROOM_ONE, yard: many ? BRAWL_YARD_CREW : BRAWL_YARD_ONE }[place];
       this.duel.note(storyLine(words, this.storyRoll(this.nightIndex, 11)).replaceAll("{n}", String(partners.length)));
+      // The revel's scene is chosen, not lost: no defeat, but it counts toward her most at a revel.
+      if (revel) this.records.revelPartnersMost = Math.max(this.records.revelPartnersMost, partners.length);
+      else this.beginDefeat(place, kind, partners.length);
       const them = many ? `${partners.length} of them` : "them";
       this.say(
         place === "here"
@@ -4189,6 +4774,7 @@ export class Tavern {
     const partners = [{ kind: offer.kind, female: offer.female, stats: offer.stats }, ...offer.crew.map((c) => ({ kind: c.kind, female: c.female, stats: c.stats }))];
     this.brawlOffer = null;
     this.forceDuel(partners, "here", partners.length > 1 ? FORCED_HERE_CREW : FORCED_HERE_ONE);
+    this.beginDefeat("here", offer.kind, partners.length);
     this.say(`Right there on the taproom floor where you fell, ${partners.length > 1 ? `${partners.length} of them` : "they"} take you, and the room watches.`);
   }
 
@@ -5814,6 +6400,8 @@ export class Tavern {
     this.phase = "bedtime";
     this.eased = false;
     this.say("The tavern is shut for the night. Your bed is through the door in the east wall.");
+    // A revel night: the hall opens as the tavern shuts (revel.ts).
+    if (this.revelTonight) this.holdRevel(true);
   }
 
   /** Upgrades and wares are bought from the house plans, during the day while the tavern is shut. */
@@ -6171,6 +6759,9 @@ export class Tavern {
         xp: { ...this.xp } as Record<string, number>,
         titles: [...this.titles],
         worn: [...this.worn],
+        trinkets: [...this.trinketsWorn],
+        riot: this.riot,
+        hairNights: this.hairNights,
         rulesAdopted: [...this.rulesAdopted],
         rules: [...this.rules],
       },
@@ -6178,6 +6769,18 @@ export class Tavern {
       ...(this.layout ? { layout: cloneLayout(this.layout) } : {}),
       ...(this.lantern.hung ? { lantern: this.lantern.save() } : {}),
       ...(this.regulars.length > 0 ? { regulars: structuredClone(this.regulars) } : {}),
+      ...(this.staff.length > 0 || this.applicants.length > 0 || Object.keys(this.friendship).length > 0
+        ? {
+            staff: {
+              members: structuredClone(this.staff),
+              applicants: structuredClone(this.applicants),
+              applicantsNight: this.applicantsNight,
+              nextApplicant: this.nextApplicant,
+              friendship: { ...this.friendship },
+            },
+          }
+        : {}),
+      ...(this.revelHall || this.revelTonight ? { revel: { hall: this.revelHall, settings: { ...this.revelSettings }, tonight: this.revelTonight } } : {}),
     };
   }
 
@@ -6217,6 +6820,30 @@ export class Tavern {
     this.titles = new Set([START_TITLE, ...(progress.titles ?? []).filter((id) => TITLE_BY_ID.has(id))]);
     this.worn = (progress.worn ?? [START_TITLE]).filter((id, i, all) => this.titles.has(id) && all.indexOf(id) === i);
     this.regulars = readRegulars(save.regulars);
+    // Staff (staff.ts): older saves have none.
+    const staffSave = save.staff;
+    this.staff = (staffSave?.members ?? []).map(readStaffMember).filter((m): m is StaffMember => m !== null);
+    this.applicants = (staffSave?.applicants ?? []).map(readStaffMember).filter((m): m is StaffMember => m !== null);
+    this.applicantsNight = typeof staffSave?.applicantsNight === "number" ? staffSave.applicantsNight : -1;
+    this.nextApplicant = typeof staffSave?.nextApplicant === "number" ? staffSave.nextApplicant : 1;
+    this.friendship = {};
+    for (const [id, n] of Object.entries(staffSave?.friendship ?? {})) if (typeof n === "number") this.friendship[id] = n;
+    this.friendTimeToday.clear();
+    // The Revel House (revel.ts): older saves have no hall.
+    const revel = save.revel;
+    this.revelHall = revel?.hall === true;
+    const rs = revel?.settings;
+    this.revelSettings = {
+      who: rs && ["men", "mixed", "women"].includes(rs.who) ? rs.who : DEFAULT_REVEL.who,
+      herPart: rs && ["host", "join", "centrepiece"].includes(rs.herPart) ? rs.herPart : DEFAULT_REVEL.herPart,
+      door: rs && ["open", "invite", "paying"].includes(rs.door) ? rs.door : DEFAULT_REVEL.door,
+    };
+    this.revelTonight = revel?.tonight === true;
+    this.revelHeld = false;
+    this.revelScene = false;
+    this.riot = progress.riot === true;
+    this.hairNights = progress.hairNights ?? 0;
+    this.trinketsWorn = (progress.trinkets ?? []).filter((id, i, all) => TRINKET_BY_ID.has(id) && all.indexOf(id) === i).slice(0, TRINKET_SLOTS);
     // Tavern rules: only ones that exist, and on only if adopted.
     this.rulesAdopted.clear();
     this.rules.clear();
@@ -6353,8 +6980,9 @@ export class Tavern {
     Object.assign(this.touchesTonight, { reached: 0, allowed: 0, refused: 0, boldest: 0 });
     // Tonight's desire is gone by morning. It starts again where her passives put it.
     const start = this.eased ? this.effects.aloneStart : 0;
-    for (const m of METERS) this.meters[m] = this.peak[m] = Math.min(METER_MAX, this.effects.start[m] + start);
+    for (const m of METERS) this.meters[m] = this.peak[m] = Math.min(this.desireCap(m), this.effects.start[m] + start);
     this.pleasure = 0;
+    this.defeatTonight = null;
     // A new shift: the times she's come start again from nothing (the table, adultplay.ts).
     this.comesTonight = 0;
     // A night's sleep, and she has all her willpower back, and her energy.
@@ -6375,6 +7003,12 @@ export class Tavern {
     this.brawlOffer = null;
     this.brawlDuel = false;
     this.duelTonight = false;
+    this.revelHeld = false;
+    this.revelScene = false;
+    if (this.revelTonight && !this.revelOpen) this.revelTonight = false;
+    this.friendTimeToday.clear();
+    // A fresh lot of applicants every few nights, once staff come in (staff.ts).
+    if (this.staffStage !== "early" && (this.applicantsNight < 0 || this.nightIndex - this.applicantsNight >= APPLICANTS_EVERY)) this.postForWork(false);
     this.taproom = null;
     this.morningAfter = [];
     this.partyState.clear();
