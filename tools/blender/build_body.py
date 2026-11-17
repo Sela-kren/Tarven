@@ -110,6 +110,23 @@ def navel_patch(bm):
     return n, float(c[1] - mid.co.y)
 
 
+def add_nails(bm):
+    """Her fingernails (heroine/nails.py): a separate thin plate on each fingertip, its faces marked in the face
+    attribute 'nail' (the swap paints them T_nail). Returns the number of faces added."""
+    import nails
+    P, quads, _ = nails.nail_meshes(body_mesh.field, body_mesh.J)
+    layer = bm.faces.layers.int.get("nail") or bm.faces.layers.int.new("nail")
+    vs = [bm.verts.new(tuple(p)) for p in P]
+    faces = []
+    for q in quads:
+        f = bm.faces.new([vs[i] for i in q])
+        f[layer] = 1
+        f.smooth = True
+        faces.append(f)
+    bmesh.ops.recalc_face_normals(bm, faces=faces)
+    return len(faces)
+
+
 def make_game_mesh(cage, collection):
     """The game mesh, laid out like the references': the cage's own spacing (its corners at their smoothed
     places), a ringed patch at the navel, all triangles. The hands keep one level more (the references' hands
@@ -145,6 +162,7 @@ def make_game_mesh(cage, collection):
     for v, p in zip(hand, P):
         v.co = p
     n, depth = navel_patch(bm)
+    n_nail = add_nails(bm)
     bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method="BEAUTY", ngon_method="BEAUTY")
     me = bpy.data.meshes.new("Body_game")
     bm.to_mesh(me)
@@ -165,13 +183,17 @@ def make_game_mesh(cage, collection):
         me.normals_split_custom_set_from_vertices([tuple(n) for n in Nm])
         log(f"field normals on {len(k)} verts")
     log(f"game mesh: {len(me.vertices)} verts, {len(me.polygons)} triangles; navel patch {n} round, "
-        f"{depth * 1000:.1f} mm deep")
+        f"{depth * 1000:.1f} mm deep; nails {n_nail} faces (face attribute 'nail')")
     return ob
 
 
 if __name__ == "__main__":
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    body = make_body(bpy.context.scene.collection)
-    make_game_mesh(body, bpy.context.scene.collection)
+    # "real_heroin": the new SDF-sculpted heroine (this body + build_head.py's face), not the old "Female" rig.
+    # The objects keep their names (Body, Body_game): the compare/measure scripts load them by name.
+    col = bpy.data.collections.new("real_heroin")
+    bpy.context.scene.collection.children.link(col)
+    body = make_body(col)
+    make_game_mesh(body, col)
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, "body.blend"))
     log("saved")

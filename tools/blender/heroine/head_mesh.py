@@ -33,8 +33,10 @@ MOUTH_REGION = (0.0300, 0.0135)
 NECK_INFO = {}
 
 # ---- proportions: the median of the measured references (head_table.json), in head coordinates
-TABLE_PATH = os.environ.get("HEROINE_HEAD_TABLE", os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                                              "head_table.json"))
+# the face follows Luna alone (user, 2026-11-17: the refs' faces are too different to average); head_table.json is
+# the 7-ref median, kept for comparison (HEROINE_HEAD_TABLE=.../head_table.json)
+TABLE_PATH = os.environ.get("HEROINE_HEAD_TABLE") or os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                                  "head_table_luna.json")
 TABLE = head_form.load_table(TABLE_PATH)
 YS = 0.003                   # y of the midline front at the eye line
 LM = head_form.landmarks(TABLE, YS)
@@ -200,7 +202,7 @@ BOW = (0.0016, 0.0012, 0.0050)   # the cupid's bow: peaks' rise, the middle's di
 PHILTRUM_COLS = ((0.0026, 0.0040), (0.0020, 0.0022), 0.003)   # x at the top and at the bow; radii top, bottom; blend
 NOSE_LIFT = 0.0023                      # the nose's underside (columella, tip) raised: the refs' drops off ~3 mm higher
 WING_SHIFT = (0.0020, 0.0, 0.0022)      # the wings out and up (face-relative map: 1.3-2.9 mm short at x 10-14 mm)
-NASION_DIP = (0.0045, -0.005, (0.010, 0.0045, 0.009), 0.006)   # centre y, z from the nasion mark; radii; blend
+NASION_DIP = None   # Luna: no dip, the bridge runs straight from the brow; was (0.0045, -0.005, (0.010, 0.0045, 0.009), 0.006)   # centre y, z from the nasion mark; radii; blend
 NOSTRILS_ON = True      # off until the nose's underside is dense enough for a clean hole (faces there are ~5 mm)
 LID_UP, LID_DN = 0.0030, 0.0008    # lid thickness over the eyeball (upper, lower)   # blends of the brow ridge and the inner socket
 SCM = ((-0.046, 110.0), (-0.088, 66.0), 0.0100, 0.0060, 0.010)   # was None; tried ((-0.050, 115.0), (-0.118, 28.0), 0.0060, 0.0025, 0.010): no visible change, widened the neck's sides   # top (z, angle round the neck from the front), foot, radius, stand-out, blend
@@ -210,6 +212,16 @@ NECK_FRONT_TAPER = 0.0           # the front half's extra narrowing at the top (
 NECK_TAPER = 0.10              # the neck's width under the head, less than at the shoulders' ring
 NECK_FILLET = (0.005, 0.010)  # the neck's blend into the head: soft at the throat (under the chin), tight at the nape
 INNER_BROW = (0.012, -0.0025, 0.0090)   # centre (head-local) of the fill above the inner eye corner
+BRIDGE_UP = (0.0080, 0.0060)  # the bridge cone forward at its top and at the tip: Luna's dorsum runs straight from the brow (midline, 2026-11-17)
+# Luna's lower face (side half widths vs Luna, ref/_head_work sidegrid.py, 2026-11-17): (amount m, surface point (x, y, z)
+# head-local m, radii, blend). Her cheek is one smooth slope from the cheekbone to a soft jaw; ours had a hollow
+# mid-cheek and another above the jawline (the ridge between them read as a lump), and a jaw
+# underside 5-9 mm wider than hers
+FACE_SCULPT = [
+    (+0.0013, (0.0572, -0.0587, -0.0389), (0.010, 0.013, 0.011), 0.008),   # mid-cheek hollow
+    (+0.0012, (0.0389, -0.0537, -0.0719), (0.009, 0.014, 0.008), 0.008),   # above the jawline
+    (-0.0050, (0.0176, -0.0537, -0.0899), (0.012, 0.014, 0.008), 0.006),   # the jaw's underside
+]
 NOSE_RING_TOP = -0.012         # the nose loops stop below the inner eye corners (they tore the bridge)
 UNDER_EDGE = 0.004            # the jaw's lower edge at the angle sits this far under the gonion mark
 JAWLINE_ON = True
@@ -375,7 +387,7 @@ def base_field():
     head.cut(ellipsoid(V(ix - 0.001, iy + 0.0115, iz - 0.003), (0.0065, 0.005, 0.0055)), SOCKET_K)
     _, ty, tz = LM["nose_tip"]
     _, ny, nz = LM["nasion"]
-    head.add(cone(V(0, ny - 0.0140, nz - 0.014), V(0, ty - 0.0105, tz + 0.0010), 0.0062, 0.0057), 0.013)   # bridge: broad side planes into the cheeks
+    head.add(cone(V(0, ny - 0.0140 + BRIDGE_UP[0], nz - 0.014), V(0, ty - 0.0105 + BRIDGE_UP[1], tz + 0.0010), 0.0062, 0.0057), 0.013)   # bridge: broad side planes into the cheeks
     # the nose, sized to the refs' nose: a rounded tip, the wings (alae) out at the measured nose width, the
     # columella between the nostrils, and the nostrils carved in from below
     head.add(ellipsoid(V(0, ty - 0.0082, tz - 0.0022), NOSE_TIP), 0.006)
@@ -400,6 +412,10 @@ def base_field():
             head.add(cone(a_, b_, pr_[0], pr_[1]), pk_)
     else:
         head.add(ellipsoid(V(0, (sy_ + uy_) / 2 - 0.0035, (sz_ + uz_) / 2 + 0.001), (0.0055, 0.0035, 0.0055)), 0.006)
+    for amt, (xs, ys, zs), rr, kk in FACE_SCULPT:
+        # each moves the side surface at (xs, ys, zs) out (+) or in (-) by amt (the field is mirrored in x)
+        cx = xs - rr[0] + amt if amt > 0 else xs + rr[0] + amt
+        (head.add if amt > 0 else head.cut)(ellipsoid(V(cx, ys, zs), rr), kk)
     return head
 
 
@@ -477,6 +493,12 @@ def on_eyeball(u, z, rr, cw=1.0):
     return EYE[1] + np.sqrt(np.maximum(q, 0.0)) + cw * cornea_bump(u - EYE[0], z - EYE[2])
 
 
+#   x (mm from the eyeball's centre, + out), and the lift (mm) of the top and bottom arcs there
+EYE_FIX_X = [-9.7, -8.0, -6.0, -4.0, -2.0, 0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 20.3]
+EYE_TOP_FIX = [1.1, 3.0, -2.95, -0.45, 3.2, 2.1, 1.2, 0.65, -0.9, -0.3, -0.3, -0.55, 0.0, 0.2, 0.0]
+EYE_BOT_FIX = [1.1, 2.2, 2.6, 2.3, 2.0, 1.7, 1.2, 0.4, -0.3, -0.9, -1.4, -1.8, -2.1, -2.35, 0.0]
+
+
 def eye_arcs(grow_up, grow_down, grow_in, grow_out, depth, samples=200):
     """
     The eye opening grown outward: (top arc, bottom arc), each from the outer corner to the inner corner,
@@ -494,6 +516,13 @@ def eye_arcs(grow_up, grow_down, grow_in, grow_out, depth, samples=200):
     mid = outer[1] + (inner[1] - outer[1]) * s
     top = mid + (up + grow_up) * hump(s, s_top)
     bot = mid - (down + grow_down) * hump(s, s_bot)
+    # Luna's opening (ref/_head_work eyeoutline.py, TARGET=Luna): the upper lid stays high over the inner
+    # half and drops steeply at the tear duct; the lower lid sits higher. Full on the lid's loops, fading out
+    # towards the orbit
+    xr = (u - EYE[0]) * 1000
+    w = float(np.interp(grow_up, [0.0062, 0.0125], [1.0, 0.3]))
+    top = top + w * np.interp(xr, EYE_FIX_X, EYE_TOP_FIX) / 1000
+    bot = bot + w * np.interp(xr, EYE_FIX_X, EYE_BOT_FIX) / 1000
     arcs = []
     for k, z in enumerate((top, bot)):
         d = depth[k] if isinstance(depth, tuple) else depth

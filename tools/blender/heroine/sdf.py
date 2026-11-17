@@ -758,24 +758,28 @@ def add_foot(legs, J):
 #            s     front f-out outer b-out back  b-in  inner f-in
 UPPER_ARM = [(0.00, 44, 38, 34, 31, 34, 41, 43, 45),
              (0.20, 47, 38, 33, 29, 33, 41, 42, 47),
-             (0.30, 45, 35, 30, 28, 32, 43, 42, 46),
-             (0.40, 45, 33, 28, 27, 32, 43, 42, 45),
-             (0.50, 45, 33, 29, 29, 31, 42, 43, 47),
-             (0.60, 45, 35, 31, 30, 31, 39, 43, 46),
-             (0.70, 44, 34, 30, 29, 30, 37, 41, 45),
-             (0.80, 41, 34, 29, 27, 29, 36, 39, 42),
-             (0.90, 36, 34, 31, 29, 31, 36, 38, 36),
-             (1.00, 33, 36, 32, 27, 29, 35, 37, 35)]
-FOREARM = [(0.00, 32, 38, 33, 26, 29, 35, 37, 36),
-           (0.05, 33, 41, 34, 27, 29, 36, 39, 37),
-           (0.15, 39, 47, 43, 34, 36, 41, 45, 41),
-           (0.25, 39, 46, 44, 36, 37, 41, 43, 39),
-           (0.35, 36, 43, 42, 36, 35, 38, 38, 35),
-           (0.45, 31, 39, 41, 37, 32, 33, 32, 28),
-           (0.55, 29, 36, 37, 36, 30, 29, 26, 25),
-           (0.65, 27, 33, 35, 34, 28, 24, 21, 20),
-           (0.75, 26, 30, 31, 33, 28, 21, 16, 17),
-           (0.85, 27, 28, 26, 29, 27, 19, 15, 17),
+             (0.30, 47, 34, 30, 30, 34, 41, 41, 50),
+             (0.40, 47, 31, 29, 30, 34, 41, 43, 50),
+             (0.50, 48, 31, 29, 30, 33, 40, 42, 49),
+             (0.60, 49, 34, 30, 31, 34, 38, 42, 48),
+             (0.70, 48, 33, 29, 30, 32, 36, 39, 47),
+             (0.80, 45, 33, 27, 28, 32, 35, 37, 43),
+             (0.90, 38, 34, 29, 29, 32, 36, 36, 36),
+             (1.00, 32, 34, 28, 25, 28, 34, 32, 32)]
+# 2026-11-17 (ref/_sculpt_work/armchk): matched to the 6 skin-tight refs' median DIAMETERS (depth, width, diagonals;
+# their bones sit too differently inside the arm for per-angle radii to compare). The upper arm's lower half was
+# 3-6 mm shallow; the elbow rows are pulled in because the two pieces' smooth union there added 4-7 mm (a ring
+# across the back of the elbow); the mid-forearm was 5-6 mm too wide seen from the front.
+FOREARM = [(0.00, 32, 36, 29, 23, 29, 33, 32, 33),
+           (0.05, 35, 41, 33, 26, 30, 36, 38, 36),
+           (0.15, 39, 47, 42, 32, 36, 41, 44, 39),
+           (0.25, 39, 46, 43, 35, 37, 41, 42, 38),
+           (0.35, 37, 42, 40, 35, 36, 38, 37, 34),
+           (0.45, 33, 39, 38, 36, 34, 33, 29, 27),
+           (0.55, 29, 35, 34, 34, 31, 29, 24, 24),
+           (0.65, 27, 33, 32, 32, 28, 24, 19, 19),
+           (0.75, 27, 30, 30, 32, 29, 21, 15, 17),
+           (0.85, 27, 29, 27, 30, 27, 19, 16, 17),
            (0.95, 28, 26, 23, 26, 27, 20, 17, 20),
            (1.00, 28, 25, 22, 25, 27, 20, 17, 20)]
 
@@ -794,20 +798,26 @@ def add_arm(arms, J):
 # fingers (3 bones) index 113, middle 117, ring 113, little 94, thumb 109.
 HAND_BASE = 0.087                       # wrist to the middle knuckle, along u
 #          across, length of 3 bones,        base radius, knuckle set back
-FINGERS = [(0.032, (0.039, 0.030, 0.025), 0.0102, 0.003),
-           (0.011, (0.044, 0.032, 0.026), 0.0106, 0.000),
-           (-0.010, (0.041, 0.031, 0.025), 0.0102, 0.003),
-           (-0.030, (0.034, 0.021, 0.021), 0.0089, 0.008)]
+FINGERS = [(0.032, (0.039, 0.030, 0.023), 0.0102, 0.003),
+           (0.011, (0.044, 0.032, 0.0255), 0.0106, 0.000),
+           (-0.010, (0.041, 0.031, 0.024), 0.0102, 0.003),
+           (-0.030, (0.034, 0.021, 0.019), 0.0089, 0.008)]
+# The fingertips taper to a narrow point like the references' (radius ~4 mm at 90% of the last bone, 2026-11-17):
+# the tip's radius as a share of the finger's base radius, and the thumb's own tip radius.
+TIP = 0.44
+TIP_MID = 0.58                           # radius at 70% of the last bone
+THUMB_TIP = 0.0062
 # The relaxed pose, from the references' finger bones (median of 6, in each hand's own frame; 2026-11-17):
 #   arch: knuckle set toward the palm (the middle knuckle is the highest); bends: each bone's angle toward the
 #   palm from the hand's line (absolute, deg); splays: bone 1 and bones 2-3 toward the thumb side (deg, our frame,
 #   whose u runs ~7 deg to the little-finger side of the wrist-to-middle-knuckle line the refs were measured in).
-FINGER_POSE = [(0.004, (5, 26, 46), (11, 9)),
-               (0.000, (7, 29, 50), (1, 0)),
-               (0.001, (11, 32, 54), (-7, -7)),
-               (0.004, (15, 34, 56), (-10, -9))]
+#   The last bone bends only ~7 deg past the middle one (the refs' j2->tip line; their tip bones are rig leftovers).
+FINGER_POSE = [(0.004, (5, 26, 33), (11, 9)),
+               (0.000, (7, 29, 36), (1, 0)),
+               (0.001, (11, 32, 39), (-7, -7)),
+               (0.004, (15, 34, 41), (-10, -9))]
 # the thumb: base, and each bone's (length, bend toward the palm, splay toward the thumb side) in the same sense
-THUMB = ((0.018, 0.028, 0.013), [(0.037, 24, 42), (0.031, 27, 25), (0.028, 30, 15)])
+THUMB = ((0.018, 0.028, 0.013), [(0.037, 24, 42), (0.031, 27, 25), (0.0265, 30, 15)])
 # the knuckle line for the mesh: dorsal vertices across the hand (thumb side first), fingers on faces 0, 2, 4, 6
 KNUCKLE_B = [0.0400, 0.0240, 0.0190, 0.0030, -0.0020, -0.0180, -0.0225, -0.0375]
 PALM_HALF = 0.041                       # half width at the knuckles
@@ -856,8 +866,11 @@ def add_hand(arms, J):
     fingers = Node("fingers", 0.0)
     chains, thumb = finger_chains(J)
     for pts, (b, lens, r, back) in zip(chains, FINGERS):
-        fingers.adds(chain(pts, [r, r * 0.86, r * 0.74, r * 0.60]), 0.004)
-    fingers.adds(chain(thumb, [0.014, 0.0108, 0.0098, 0.0080]), 0.004)
+        # the last bone stays full to ~70% of its length, then narrows to the tip (the refs' nail point)
+        fingers.adds(chain(pts[:3] + [pts[2] + 0.7 * (pts[3] - pts[2]), pts[3]],
+                           [r, r * 0.86, r * 0.74, r * TIP_MID, r * TIP]), 0.004)
+    fingers.adds(chain(thumb[:3] + [thumb[2] + 0.7 * (thumb[3] - thumb[2]), thumb[3]],
+                       [0.014, 0.0108, 0.0098, 0.0080, THUMB_TIP]), 0.004)
     J["fingers"], J["thumb"] = chains, thumb
     hand.sub(fingers, 0.006)
     arms.sub(hand, 0.012)

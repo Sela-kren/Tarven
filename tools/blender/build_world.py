@@ -631,6 +631,8 @@ FEMALE = {
     "jiggle": True,  # spring bones for the bust, belly, glutes and skirt hem
     "heroic": True,  # the stylised-heroine proportions (HEROIC, see heroic_reshape), applied to the finished rig
     "study_fit": True,  # then fitted to the measured reference heroines (STUDY_FIT, see study_fit, MODEL_STUDY.md)
+    "sculpt_fit": False,  # (the old skin pulled onto the sculpt's forms, tools/blender/sculpt_fit.py; superseded)
+    "real_heroin": False,  # OFF 2026-11-17: the game keeps the old Female body; real_heroin is for later (panels etc.). Then real_heroin, the sculpted heroine, swapped in as her skin (real_heroin_swap.py)
     "subdivide": 1,  # her skin and clothes split this many times before the details go on (see subdivide_layers)
     "landmarks": True,  # her anatomy pressed into the skin and clothes (LANDMARKS, see sculpt_landmarks)
     "hand_detail": True,  # a palm, three-jointed fingers and a thumb with nails (detailed_hand)
@@ -5026,6 +5028,48 @@ def plunge_cloth(spec, m, skin):
     return faces
 
 
+# Her modern everyday set (WORLD.md): a fitted short-sleeved T-shirt over leggings. The tee ends at her waist, where
+# the leggings start (the legwear bands, as on the dresses), so taking either off leaves no hole in the other. Easy to
+# get into: the tee lifts up over her breasts, and the leggings come down.
+TEE_SLEEVE = 0.62  # how far down her upper arm the sleeve reaches, from the shoulder (0) to the elbow (1)
+TEE_NECK = (1.29, 1.335)  # the crew neck's bottom at the front and at the back
+TEE_NECK_SCOOP = 0.6  # how much higher the neck sits at the sides than at the middle, per metre out
+TEE_COLOURS = (("tee", (0.86, 0.85, 0.82)),)
+
+
+def tee_cloth(spec, m, skin):
+    """The worn skin's faces the T-shirt and leggings cover: short sleeves, the shirt down to her waist, and legwear."""
+    shoulder_z = spec["shoulder"][1]
+    sleeve_end = shoulder_z - TEE_SLEEVE * (shoulder_z - spec["elbow_z"])
+    faces = []
+    for f, mat in skin.faces:
+        if mat is m["stripe"] or len(f) > 4:
+            continue
+        bone, (cx, cy, cz) = face_bone(skin, f)
+        if bone.startswith("UpperArm"):
+            if cz > sleeve_end:
+                faces.append((f, m["tee"]))
+        elif bone not in ("Hips", "Torso"):
+            if is_legwear(bone, cz):
+                faces.append((f, legwear_band(m, bone, cz)))
+        elif face_leans(skin, f, "UpperArm"):
+            faces.append((f, m["tee"]))
+        elif is_legwear(bone, cz):
+            faces.append((f, legwear_band(m, bone, cz)))
+        elif cz < (TEE_NECK[0] if cy > 0 else TEE_NECK[1]) + TEE_NECK_SCOOP * abs(cx):
+            faces.append((f, m["tee"]))
+    return faces
+
+
+def tee_lift(bone, z):
+    """A fitted tee just off the skin, its sleeves a little looser; leggings on the skin."""
+    if bone.startswith("UpperArm"):
+        return 0.006
+    if bone in ("Hips", "Torso"):
+        return 0.004 if z >= BODICE[0] else 0.0
+    return 0.0
+
+
 def frill_tier(spec, zs, out, a):
     """Where a ruffle tier is at angle a on each of its rows: its outline plus a wave that deepens towards the hem."""
     top = zs[0]
@@ -6609,6 +6653,7 @@ def more_outfits(spec, m, skin, normals, fit):
                  build_gown_extra(spec, m)),
         "Frills": (*frills, build_frill_extra(spec, m, ClothSurface(skin, [(f, None) for f, _ in skin.faces], frills[1]))),
         "Plunge": (plunge_cloth(spec, m, skin), lifted(nightwear_lift), build_plunge_extra(spec, m)),
+        "Tee": (tee_cloth(spec, m, skin), lifted(tee_lift), Skin()),
         **guests,
     }
 
@@ -7372,6 +7417,9 @@ def skin_character(c, m, spec, root):
         layer.parent = rig
         layer.modifiers.new("Bones", "ARMATURE").object = rig
     if spec.get("heroic"):
+        # The look sliders (src/game/appearance.ts) were worked out on her as built, before the reshaping below:
+        # every point and joint keeps where it was then, so the game shapes her there and carries the change over.
+        keep_slider_rest(rig, [o for o in c.objects if o.type == "MESH"])
         heroic_reshape(HEROIC, rig, [o for o in c.objects if o.type == "MESH"])
         if spec.get("landmarks"):
             # Once more after the reshaping, which can bring them a hair closer; the stains on the clothes kept
@@ -7391,6 +7439,60 @@ def skin_character(c, m, spec, root):
             # Her proportions and masses brought to the reference study's, then the clothes kept off the fuller skin.
             study_fit(STUDY_FIT, rig, body_obj, [o for o in c.objects if o.type == "MESH"], HEROIC_LEGS["stature"])
             keep_clothes_clear(body_obj, (cloth_obj, *outfits))
+        if spec.get("sculpt_fit"):
+            # Her skin pulled onto the heroine sculpt's forms (tools/blender/sculpt_fit.py), the same corners as
+            # before; everything joined to it or worn over it rides on it, the bones stay. Then the clothes and the
+            # stains on them kept off the new skin.
+            import sys
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import sculpt_fit
+            sculpt_fit.fit_to_sculpt(rig, body_obj, [o for o in c.objects if o.type == "MESH"], name)
+            keep_clothes_clear(body_obj, (cloth_obj, *outfits))
+            stains = [o for o in c.objects if o.type == "MESH" and "_CumOn" in o.name]
+            keep_clothes_clear(body_obj, stains, dict(CLEAR, gap=CLEAR["gap"] + STAIN_LIFT))
+        if spec.get("real_heroin"):
+            # real_heroin, the sculpted heroine (build_body.py / build_head.py), becomes her skin in her own posture
+            # (tools/blender/real_heroin_swap.py). The old skin carries the clothes, hair and the game's patches and
+            # grids onto her surface first, and gives her its bone weights and painted parts; then it goes.
+            import sys
+            import tempfile
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import real_heroin_swap
+            real_heroin_swap.swap_in(rig, body_obj, [o for o in c.objects if o.type == "MESH"], m,
+                                     os.path.join(tempfile.gettempdir(), "tarven_real_heroin"), name)
+            keep_clothes_clear(body_obj, (cloth_obj, *outfits))
+            stains = [o for o in c.objects if o.type == "MESH" and "_CumOn" in o.name]
+            keep_clothes_clear(body_obj, stains, dict(CLEAR, gap=CLEAR["gap"] + STAIN_LIFT))
+        slider_joint_shifts(rig)
+
+
+# The sliders' shapes (BoneTerm in src/game/appearance.ts) are in metres from each bone's joint, measured on her as
+# built: the breasts' middles 6 cm out, the glute joint 3 cm inside the curve of the rear, fades by height above a
+# joint. HEROIC's reshaping moves the skin round the joints (the small of the back curves in above the glutes, the
+# upper chest leans back above the bust), so worked out on the reshaped body they grew her the wrong way: a shelf
+# over the rear, a tear down its cleft, the bust boxy. So each point keeps where it was before the reshaping, as the
+# "_SLIDER_REST" attribute (y up, as the glTF's positions), and each bone how far its joint has moved since, as its
+# "slider_shift" (y up): the game shapes her as built and adds the change to her as she is.
+def keep_slider_rest(rig, meshes):
+    for obj in meshes:
+        co = np.empty(len(obj.data.vertices) * 3, dtype=np.float32)
+        obj.data.vertices.foreach_get("co", co)
+        co = co.reshape(-1, 3)
+        yup = np.stack([co[:, 0], co[:, 2], -co[:, 1]], axis=1).ravel()
+        attr = obj.data.attributes.get("_SLIDER_REST") or obj.data.attributes.new("_SLIDER_REST", "FLOAT_VECTOR", "POINT")
+        attr.data.foreach_set("vector", yup)
+    for bone in rig.data.bones:
+        bone["slider_rest"] = list(bone.head_local)
+
+
+def slider_joint_shifts(rig):
+    for bone in rig.data.bones:
+        if "slider_rest" not in bone:
+            continue
+        rest = Vector(bone["slider_rest"])
+        del bone["slider_rest"]
+        d = rest - bone.head_local
+        bone["slider_shift"] = [round(d.x, 6), round(d.z, 6), round(-d.y, 6)]
 
 
 # Her anatomy, as bumps, dents and grooves pressed into the skin along its normals (see sculpt_landmarks). Placed
@@ -8392,6 +8494,24 @@ def study_fit(fit, rig, body, meshes, stature):
         lo, hi = rows.get(k, (p.y, p.y))
         rows[k] = (min(lo, p.y), max(hi, p.y))
     middle = sorted((k / 100, (lo + hi) / 2) for k, (lo, hi) in rows.items())
+    # How far her bare body reaches, back and front, at each height (arms left out): what hangs further out than
+    # that (a skirt, an apron) moves only as far as her body's surface there, instead of having its own distance
+    # from her middle scaled, which threw the skirt's back out ~19 cm past her rear in a spike.
+    reach_rows = {}
+    for v, arm in zip(body.data.vertices, shares[body.name]):
+        if arm > 0.3:
+            continue
+        p = world @ v.co
+        k = int(round(p.z / stature * 100))
+        lo, hi = reach_rows.get(k, (p.y, p.y))
+        reach_rows[k] = (min(lo, p.y), max(hi, p.y))
+
+    def body_reach(share):
+        k = int(round(share * 100))
+        near = [reach_rows[j] for j in (k - 1, k, k + 1) if j in reach_rows]
+        if not near:
+            return None
+        return min(r[0] for r in near), max(r[1] for r in near)
     for _ in range(3):
         middle = [(middle[i][0], sum(m[1] for m in middle[max(0, i - 2):i + 3]) / len(middle[max(0, i - 2):i + 3]))
                   for i in range(len(middle))]
@@ -8426,6 +8546,7 @@ def study_fit(fit, rig, body, meshes, stature):
         near_crotch = 1 - below
         w = near_crotch + (1 - near_crotch) * (1 - reach) * smooth(share, fit["skirt_fade"], crotch)
         my = _table(middle, share)
+        d, f = y - my, 1.0
         if w > 0:
             sx, sf, sb = _table(fit["trunk"], share)
             kx, ky = 1 + (sx - 1) * w, 1 + ((sf if y > my else sb) - 1) * w
@@ -8433,12 +8554,19 @@ def study_fit(fit, rig, body, meshes, stature):
             # leg's line, the outer hip grows out from it.
             hold = (1 - smooth(share - crotch, *fit["hip_pivot"])) * smooth(abs(p.x) / max(abs(lx), 1e-6), 0.3, 0.9)
             x = x * kx - lx * (kx - 1) * hold
-            y = my + (y - my) * ky
+            f *= ky
         # The glutes, behind only: a rounded swell about her middle line.
         gz, gh, ga, (g0, g1) = fit["glutes"]
-        if y < my and abs(share - gz) < gh:
+        if d < 0 and abs(share - gz) < gh:
             t = (share - gz) / gh
-            y = my + (y - my) * (1 + ga * (1 - t * t) ** 2 * (1 - smooth(abs(p.x) / stature, g0, g1)))
+            f *= 1 + ga * (1 - t * t) ** 2 * (1 - smooth(abs(p.x) / stature, g0, g1))
+        # Front to back, scaled about her middle up to her body's reach there; past it (loose cloth) only shifted.
+        bound = body_reach(share)
+        edge = None if bound is None else (bound[0] - my if d < 0 else bound[1] - my)
+        if edge is not None and edge * d > 0 and abs(d) > abs(edge):
+            y = my + edge * f + (d - edge)
+        else:
+            y = my + d * f
         return Vector((x, y, p.z))
 
     def arm_move(p):
@@ -8472,7 +8600,7 @@ def export_collection(coll, path):
         obj.select_set(True)
     bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True,
                               export_extras=True, export_yup=True, export_cameras=False,
-                              export_lights=False, export_apply=True)
+                              export_lights=False, export_apply=True, export_attributes=True)
     tris = sum(len(p.vertices) - 2 for o in coll.objects if o.type == "MESH" for p in o.data.polygons)
     print(f"{os.path.basename(path)}: {len(coll.objects)} objects, {tris} triangles, "
           f"{os.path.getsize(path) / 1024:.0f} KB")
@@ -8597,6 +8725,11 @@ def main():
     for key, colour in FRILL_COLOURS:
         mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
     rng.bit_generator.state = random_state
+    # Her T-shirt (the leggings are the legwear bands), the same way.
+    random_state = rng.bit_generator.state
+    for key, colour in TEE_COLOURS:
+        mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
+    rng.bit_generator.state = random_state
     # What men leave on her, likewise.
     random_state = rng.bit_generator.state
     mats["cum"] = material("T_cum", tex_flat("T_cum", (0.93, 0.92, 0.87)))
@@ -8626,6 +8759,10 @@ def main():
     mats["anus_skin"] = material("T_anus_skin", tex_flat("T_anus_skin", (0.86, 0.63, 0.5), variation=0.03))
     # The skin under her openings, hidden while they show and otherwise in her smallclothes, as around it.
     mats["hole"] = material("T_hole", tex_flat("T_hole", (0.74, 0.68, 0.58)))
+    rng.bit_generator.state = random_state
+    # Her fingernails (real_heroin's nail plates), likewise: her skin a touch pinker and lighter, toned with it.
+    random_state = rng.bit_generator.state
+    mats["nail"] = material("T_nail", tex_flat("T_nail", (0.92, 0.70, 0.64), variation=0.02))
     rng.bit_generator.state = random_state
     # His penis and scrotum, likewise: the shaft and sack his skin (skin) a little darker, which the game tones with
     # his skin, and the glans one flat pink it tints with his skin and flushes as he's aroused. Nearly flat, as their

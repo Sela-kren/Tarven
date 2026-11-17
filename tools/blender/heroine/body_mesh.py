@@ -946,8 +946,40 @@ def hand(mesh, wrist_slots):
             cc = p(a, b * 0.55, 0.0)
             ring.append(mesh.add(q, cc, "hand"))
         rings.append(ring)
+    # Past the knuckles the hand stays one piece up to the webs between the fingers (measured on the field: ~100 mm
+    # from the wrist, 15-20 mm past the knuckles), so the fingers split off there, not at the knuckle line. Each slot
+    # follows its own finger's line out; the slots beside a web stop just short of that web.
+    chains, thumb = sdf.finger_chains(J)
+    R = np.stack([u, w, pn], axis=1)
+    loc = lambda P: (np.asarray(P) - wr) @ R
+    web_u = [web_height(chains[i], chains[i + 1], R, wr) for i in range(3)]
+    a0 = stations[-1]
+    end_u = []
+    for s in range(8):
+        f = s // 2                                     # the finger this slot belongs to
+        nb = [web_u[f - 1]] if s % 2 == 0 and f > 0 else []
+        nb += [web_u[f]] if s % 2 == 1 and f < 3 else []
+        nb = nb or [web_u[f - 1] if f > 0 else web_u[0]]
+        end_u.append(min(nb) - 0.004)
+    def finger_at(f, a):
+        """The finger's line (b, n) at u = a: back along the palm before the knuckle, along bone 1 after it."""
+        k, j1 = loc(chains[f][0]), loc(chains[f][1])
+        t = (a - k[0]) / (j1[0] - k[0])
+        return (k[1] + max(t, 0.0) * (j1[1] - k[1]), k[2] + max(t, 0.0) * (j1[2] - k[2]))
+    for frac in (0.5, 1.0):
+        ring = []
+        for s, (b0, t0) in enumerate(rect_slots(KNUCKLE_B, 0.010)):
+            sl = s if s < 8 else 15 - s
+            f = sl // 2
+            a = a0 + frac * (end_u[sl] - a0)
+            fb, fn = finger_at(f, a)
+            kb = FINGERS[f][0]
+            q = p(a, fb + (b0 - kb), fn + t0)
+            ring.append(mesh.add(q, p(a, fb, fn), "hand"))
+        rings.append(ring)
     # faces between palm rings, leaving out two side faces (rings 1..3) for the thumb
-    thumb_faces = {(1, 15), (2, 15)}
+    TF = 14       # the thumb grows from this palm face: its base sits ~13 mm toward the palm, not on the side face
+    thumb_faces = {(1, TF), (2, TF)}
     for j in range(len(rings) - 1):
         a, b = rings[j], rings[j + 1]
         for k in range(16):
@@ -961,15 +993,29 @@ def hand(mesh, wrist_slots):
     Pp = kn[8:][::-1]                     # palmar, thumb side first
     for f in (1, 3, 5):
         mesh.face(D[f], D[f + 1], Pp[f + 1], Pp[f])
-    chains, thumb = sdf.finger_chains(J)
     for i, ((b, lens, r, back), pts) in enumerate(zip(FINGERS, chains)):
         f = 2 * i
         loop = [D[f], D[f + 1], Pp[f + 1], Pp[f]]
-        finger(mesh, loop, [pts[0] - u * 0.012] + pts, pn, r, r_tip=r * 0.60)
+        finger(mesh, loop, [pts[0] - u * 0.012] + pts, pn, r, r_tip=r * sdf.TIP)
     # thumb from the side hole
-    side = [rings[1][15], rings[1][0], rings[2][0], rings[3][0], rings[3][15], rings[2][15]]
+    k0, k1 = TF, (TF + 1) % 16
+    side = [rings[1][k0], rings[1][k1], rings[2][k1], rings[3][k1], rings[3][k0], rings[2][k0]]
     t0, t1, t2, t3 = thumb
-    finger(mesh, side, [t0 - unit(t1 - t0) * 0.01, t0, t1, t2, t3], pn, 0.014, thumb=True, r_tip=0.0080)
+    finger(mesh, side, [t0 - unit(t1 - t0) * 0.01, t0, t1, t2, t3], pn, 0.014, thumb=True, r_tip=sdf.THUMB_TIP)
+
+
+def web_height(ca, cb, R, wr):
+    """How far from the wrist (along u) the skin between two fingers reaches: walk out along the line midway
+    between their first bones until no point through the hand's thickness is inside the field."""
+    loc = lambda P: (np.asarray(P) - wr) @ R
+    a, b, a1, b1 = loc(ca[0]), loc(cb[0]), loc(ca[1]), loc(cb[1])
+    ns = np.linspace(-0.03, 0.03, 121)
+    T = np.linspace(0.0, 1.0, 101)
+    M = (1 - T)[:, None] * (a + b) / 2 + T[:, None] * (a1 + b1) / 2
+    Q = np.repeat(M, len(ns), 0)
+    Q[:, 2] += np.tile(ns, len(T))
+    inside = (field(wr + Q @ R.T) < 0).reshape(len(T), len(ns)).any(1)
+    return float(M[np.flatnonzero(inside).max(), 0])
 
 
 def finger(mesh, loop, pts, pn, r, thumb=False, r_tip=None):

@@ -361,6 +361,7 @@ MASSETER = {4: 0.06, 5: 0.08, 6: 0.07, 7: 0.03}
 COL_ADJ = {0.0: {0: -0.006, 1: -0.008, 2: -0.006},
            0.1: {0: -0.006, 1: -0.009, 2: -0.007, 5: -0.008, 6: -0.010, 7: -0.010, 8: -0.007},
            0.2: {8: -0.004, 9: -0.012}}     # under the outer eye (z ~1.59): 2-3 mm proud (t136)
+LOWER_CHEEK_TRIM = None  # was (0.0028, 60.0, 20.0, -0.068, 0.022) against the 7-ref median   # m, angle centre (deg from front), spread, head z centre, spread
 CHEEK_POW = 4.0     # the cheek fill's rise from x 0 to 0.3: it spilled forward onto the front of the cheek
 
 
@@ -372,8 +373,21 @@ def outline_loft(t, y_shift=0.003, column_passes=2, side_at=0.47, cheek_fill=CHE
     midline (they are built on top).
     """
     Hh, X, Y, Z = local(t, y_shift)
+    # the loft's hand-fitted settings (below) were fitted against the 7-ref median; a table for one ref (Luna) carries
+    # its own in "loft_tuning" (JSON: level keys as strings)
+    tun = t.get("loft_tuning") or {}
+    def _lv(d):
+        return {int(k): v for k, v in d.items()}
+    R15_ = _lv(tun["R15"]) if "R15" in tun else R15
+    R25_ = _lv(tun["R25"]) if "R25" in tun else R25
+    REAR_GAIN_ = {float(k): v for k, v in tun["REAR_GAIN"].items()} if "REAR_GAIN" in tun else REAR_GAIN
+    REAR_BACK_ = tun.get("REAR_BACK", REAR_BACK)
+    JAW_GAIN_ = {float(u): _lv(d) for u, d in tun["JAW_GAIN"].items()} if "JAW_GAIN" in tun else JAW_GAIN
+    MASSETER_ = _lv(tun["MASSETER"]) if "MASSETER" in tun else MASSETER
+    COL_ADJ_ = {float(x): _lv(d) for x, d in tun["COL_ADJ"].items()} if "COL_ADJ" in tun else COL_ADJ
+    cheek_fill = tun.get("CHEEK_FILL", cheek_fill)
     tab = t["median"]["tables"]
-    fp = {float(k): list(v) for k, v in tab["front_plane"].items()}
+    fp = {float(k): list(v) for k, v in tab["front_plane"].items() if k in ("0.0", "0.1", "0.2", "0.3", "0.4")}
     back, hw = np.array(tab["back"], float), np.array(tab["half_width_no_ears"], float)
     lm = t["median"]["landmarks"]
     L = len(back)
@@ -407,7 +421,7 @@ def outline_loft(t, y_shift=0.003, column_passes=2, side_at=0.47, cheek_fill=CHE
     # 2.5-3.5 mm (heatmap); the 0.25 column is interpolated from these, so it fills too
     for x in (0.2, 0.3):
         cols[x] = cols[x] + cheek_fill * (x / 0.3) ** CHEEK_POW * np.exp(-((zs - CHEEK_Z) / CHEEK_S) ** 2)
-    for x, adj in COL_ADJ.items():
+    for x, adj in COL_ADJ_.items():
         for i, v in adj.items():
             cols[x][i] += v
     # below the jaw's angle the measured width is the neck behind the jaw: the jaw itself narrows to the chin
@@ -438,16 +452,16 @@ def outline_loft(t, y_shift=0.003, column_passes=2, side_at=0.47, cheek_fill=CHE
         w = X(hw[i])
         f0, b = Y(cols[0.0][i]), Y(back[i])
         occ = math.exp(-((i - 9) / 3.0) ** 2)          # the occiput's level (z ~1.59 world)
-        b -= REAR_BACK * occ
+        b -= REAR_BACK_ * occ
         front = [(0.0, f0)]
         for x in (0.1, 0.15, 0.2, 0.25, 0.3):
             if x == 0.15:
-                if i in R15 and X(0.15) < w - 0.0035:
-                    front.append((X(x), Y(cols[0.1][i] + R15[i] * (cols[0.2][i] - cols[0.1][i]))))
+                if i in R15_ and X(0.15) < w - 0.0035:
+                    front.append((X(x), Y(cols[0.1][i] + R15_[i] * (cols[0.2][i] - cols[0.1][i]))))
                 continue
             if x == 0.25:
-                if i in R25 and X(0.3) < w - 0.0035:
-                    front.append((X(x), Y(cols[0.2][i] + R25[i] * (cols[0.3][i] - cols[0.2][i]))))
+                if i in R25_ and X(0.3) < w - 0.0035:
+                    front.append((X(x), Y(cols[0.2][i] + R25_[i] * (cols[0.3][i] - cols[0.2][i]))))
                 continue
             if X(x) < w - 0.0035:
                 front.append((X(x), Y(cols[x][i])))
@@ -467,13 +481,13 @@ def outline_loft(t, y_shift=0.003, column_passes=2, side_at=0.47, cheek_fill=CHE
                     continue
                 wv = sw[u][i]
                 y = b + u * (fr - b)
-                wv = wv * (1.0 + (REAR_GAIN.get(u, 0.0)) * occ + JAW_GAIN.get(u, {}).get(i, 0.0))
+                wv = wv * (1.0 + (REAR_GAIN_.get(u, 0.0)) * occ + JAW_GAIN_.get(u, {}).get(i, 0.0))
                 if np.isnan(wv) or y > front[-1][1] - 0.004 or (side and y > side[-1][1] - 0.003):
                     continue
                 side.append((X(wv), y))
-                if u == 0.40 and i in MASSETER and len(side) >= 2 and 0.55 in sw:
+                if u == 0.40 and i in MASSETER_ and len(side) >= 2 and 0.55 in sw:
                     (x1, y1), (x0, y0) = side[-2], side[-1]
-                    side.insert(-1, (0.5 * (x0 + x1) * (1 + MASSETER[i]), 0.5 * (y0 + y1)))
+                    side.insert(-1, (0.5 * (x0 + x1) * (1 + MASSETER_[i]), 0.5 * (y0 + y1)))
             right = front + side
             DEBUG_OUTLINES[i] = (w, [(round(p[0] * 1000, 1), round(p[1] * 1000, 1)) for p in right], round(Y(back[i]) * 1000, 1))
         left = [(-x, y) for x, y in right[1:]][::-1]
@@ -481,4 +495,12 @@ def outline_loft(t, y_shift=0.003, column_passes=2, side_at=0.47, cheek_fill=CHE
         curve = closed_spline(ring)
         cy = 0.5 * (f0 + b)
         levels.append((Z(zs[i]), cy, radii_round(curve, cy)))
+    if LOWER_CHEEK_TRIM:
+        # the lower cheek at ~60 deg round the face (beside the mouth, above the jawline): the refs taper to the
+        # chin in a V, ours stood 2-3.5 mm proud there (ref/_head_work sections, 2026-11-17)
+        amt, ac, asg, zc, zsg = LOWER_CHEEK_TRIM
+        A = np.arange(ANGLES) * 2 * np.pi / ANGLES
+        da = np.minimum(np.abs(A - math.radians(ac)), np.abs(A - (2 * np.pi - math.radians(ac))))
+        wa = np.exp(-(da / math.radians(asg)) ** 2)
+        levels = [(z_, cy_, R_ - amt * wa * math.exp(-((z_ - zc) / zsg) ** 2)) for z_, cy_, R_ in levels]
     return StarLoft(levels, smooth=False, up=LOFT_UP, raw_below=4)

@@ -133,6 +133,10 @@ def make_head(collection):
 
 if __name__ == "__main__":
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    make_head(bpy.context.scene.collection)
+    # "real_heroin": the new SDF-sculpted heroine (this face + build_body.py's body), not the old "Female" rig.
+    # The objects keep their names (Head, Head_game): the compare/measure scripts load them by name.
+    col = bpy.data.collections.new("real_heroin")
+    bpy.context.scene.collection.children.link(col)
+    make_head(col)
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, "head.blend"))
     print(f"saved in {time.time() - T0:.1f}s")

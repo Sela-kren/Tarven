@@ -1,4 +1,4 @@
-import { Color, Material, Matrix4, MeshLambertMaterial, Object3D, Quaternion, SkinnedMesh, Vector3 } from "three";
+import { Color, Material, Matrix4, MeshLambertMaterial, Object3D, Quaternion, SkinnedMesh, Texture, Vector3 } from "three";
 import {
   DISC_MATERIAL, NIPPLE_TYPES, nippleProfile, readDiscs, shapeDisc, skinUnder, tentHeight, type Disc, type NippleType,
 } from "./nipples";
@@ -865,7 +865,7 @@ const FEMALE_COLORS: ColorDef[] = [
   {
     id: "skin", label: "Skin tone", tab: "skin", mode: "tone", palette: SKIN_TONES,
     parts: [
-      ["Body", "T_skin_f"], ["Body", "T_navel"], ["Body", LABIA_MATERIAL], ["Body", ANUS_SKIN_MATERIAL], ["Body", "T_face_skin"], ["Body", "T_face_mid"], ["Body", "T_face_cool"],
+      ["Body", "T_skin_f"], ["Body", "T_navel"], ["Body", "T_nail"],["Body", LABIA_MATERIAL], ["Body", ANUS_SKIN_MATERIAL], ["Body", "T_face_skin"], ["Body", "T_face_mid"], ["Body", "T_face_cool"],
       ["Body", "T_face_lit"], ["Body", "T_face_white"], ["Body", "T_face_blush"], ["Body", "T_face_pink"],
     ],
   },
@@ -1300,6 +1300,38 @@ export function hexColor(hex: string): Color {
 
 const srgbToLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
 const averages = new WeakMap<Material, Color>();
+const textureAverages = new WeakMap<Texture, Color | null>();
+
+/** A texture's average colour (linear), read once per texture; null if it can't be read (no canvas, not loaded). */
+function textureAverage(map: Texture | null | undefined): Color | null {
+  if (!map) return null;
+  if (textureAverages.has(map)) return textureAverages.get(map) ?? null;
+  const image = map.image as (CanvasImageSource & { width: number; height: number }) | undefined;
+  if (!image || !(image.width > 0) || typeof document === "undefined") return null;
+  let average: Color | null = null;
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (ctx) {
+      ctx.drawImage(image, 0, 0);
+      const { data } = ctx.getImageData(0, 0, image.width, image.height);
+      let r = 0, g = 0, b = 0;
+      const count = data.length / 4;
+      for (let i = 0; i < data.length; i += 4) {
+        r += srgbToLinear(data[i] / 255);
+        g += srgbToLinear(data[i + 1] / 255);
+        b += srgbToLinear(data[i + 2] / 255);
+      }
+      average = new Color(r / count, g / count, b / count);
+    }
+  } catch {
+    // A texture the canvas can't read keeps the material's own colour.
+  }
+  textureAverages.set(map, average);
+  return average;
+}
 
 /** The colour a material shows on average: its texture, if it has one, times its colour. Linear. */
 export function averageColor(material: Material): Color {
@@ -1307,29 +1339,8 @@ export function averageColor(material: Material): Color {
   if (known) return known;
   const lambert = material as MeshLambertMaterial;
   const color = lambert.color ? lambert.color.clone() : new Color(1, 1, 1);
-  const image = lambert.map?.image as (CanvasImageSource & { width: number; height: number }) | undefined;
-  if (image && image.width > 0 && typeof document !== "undefined") {
-    try {
-      const canvas = document.createElement("canvas");
-      canvas.width = image.width;
-      canvas.height = image.height;
-      const ctx = canvas.getContext("2d", { willReadFrequently: true });
-      if (ctx) {
-        ctx.drawImage(image, 0, 0);
-        const { data } = ctx.getImageData(0, 0, image.width, image.height);
-        let r = 0, g = 0, b = 0;
-        const count = data.length / 4;
-        for (let i = 0; i < data.length; i += 4) {
-          r += srgbToLinear(data[i] / 255);
-          g += srgbToLinear(data[i + 1] / 255);
-          b += srgbToLinear(data[i + 2] / 255);
-        }
-        color.multiply(new Color(r / count, g / count, b / count));
-      }
-    } catch {
-      // A texture the canvas can't read keeps the material's own colour.
-    }
-  }
+  const texture = textureAverage(lambert.map);
+  if (texture) color.multiply(texture);
   averages.set(material, color);
   return color;
 }
@@ -1341,13 +1352,30 @@ export function displayHex(color: Color): string {
 
 const paints = new Map<string, MeshLambertMaterial>();
 
+/**
+ * Materials whose texture is painted (her body's skin: shading, warmth at her joints), not a flat colour. Recoloured,
+ * they keep their texture, tinted so its average lands on the new colour; the rest turn one flat colour.
+ */
+const PAINTED_MAPS = /^T_skin_f$/;
+
+/** A material that shows `color` on average (linear): flat, or `original`'s painted texture tinted to it. */
 function paint(original: Material, color: Color): MeshLambertMaterial {
-  const key = `${original.name}|${color.r.toFixed(4)},${color.g.toFixed(4)},${color.b.toFixed(4)}`;
+  const map = PAINTED_MAPS.test(original.name) ? ((original as MeshLambertMaterial).map ?? null) : null;
+  const texture = textureAverage(map);
+  const kept = map && texture ? map : null;
+  const key = `${original.name}|${kept ? kept.uuid : "flat"}|${color.r.toFixed(4)},${color.g.toFixed(4)},${color.b.toFixed(4)}`;
   let material = paints.get(key);
   if (!material) {
     // Keeps the original's name, so anything that finds materials by name still finds this one.
     material = solidRetroMaterial(original.name, 0xffffff);
-    material.color.setRGB(color.r, color.g, color.b);
+    if (kept && texture) {
+      material.map = kept;
+      // Texture times colour averages to `color`. Over 1 is fine: the shader multiplies, and the screen clamps.
+      const share = (want: number, has: number) => (has > 1e-4 ? want / has : want);
+      material.color.setRGB(share(color.r, texture.r), share(color.g, texture.g), share(color.b, texture.b));
+    } else {
+      material.color.setRGB(color.r, color.g, color.b);
+    }
     paints.set(key, material);
   }
   return material;
@@ -1884,6 +1912,11 @@ export function reshape(active: readonly ActiveTerm[], d: Vector3, out: Vector3,
       if (t > 0 && t < 1) {
         const g = gx * weight;
         out.x += term.midline * (1 - (1 - t) ** (1 + g)) - d.x * (1 + g);
+      } else if (t >= 1) {
+        // Past the middle, on the other side's skin this bone still holds a little of (down the cleft): it stays
+        // across where it is, as the middle itself does, instead of being pushed further over and pulling the two
+        // sides apart.
+        out.x -= d.x * gx * weight;
       }
     }
     // Inner fullness: between a breast's middle and the cleavage, points spread across along a curve that meets the
@@ -2014,6 +2047,12 @@ interface MeshSlot {
   bodyStart: number;
   /** Where the body's reshaping takes its points from, where that isn't `bind`: her nipple discs, from the skin. */
   shapeFrom?: Float32Array;
+  /**
+   * Where each point was before the build reshaped her (the model's "_SLIDER_REST", in bind space), and her nipple
+   * discs' skin there: the sliders were worked out on her as built, so they shape her there (see `apply`).
+   */
+  rest?: Float32Array;
+  restShapeFrom?: Float32Array;
 }
 
 interface BoneRest {
@@ -2024,6 +2063,8 @@ interface BoneRest {
   quaternion: Quaternion;
   /** Where the joint stood when the mesh was bound, in the model's space. */
   joint: Vector3;
+  /** Where it stood before the build reshaped her (its "slider_shift" on), for the meshes with a `rest`. */
+  restJoint: Vector3;
 }
 
 /** How many body points each clothing point follows. */
@@ -2331,6 +2372,8 @@ export class Dresser {
   private readonly bodyRoot: Object3D;
   /** How many body points there are, across the body's meshes. */
   private readonly bodyCount: number;
+  /** Whether the model keeps her shape from before the build reshaped her (see MeshSlot.rest): the joints move as worked out there. */
+  private readonly reshapedRest: boolean;
   /** True while the clothes are taken off to see the body; a preview, never part of the look. */
   private undressed = false;
   /** Down to her smallclothes, to see them while shaping her: everything else off, those left on. */
@@ -2434,6 +2477,15 @@ export class Dresser {
       for (let v = 0; v < position.count; v++) {
         point.fromBufferAttribute(position, v).applyMatrix4(mesh.bindMatrix).toArray(bind, v * 3);
       }
+      // Where the build kept each point as she was before it reshaped her (see keep_slider_rest in build_world.py).
+      const kept = mesh.geometry.getAttribute("_slider_rest");
+      let rest: Float32Array | undefined;
+      if (kept && kept.count === position.count) {
+        rest = new Float32Array(position.count * 3);
+        for (let v = 0; v < kept.count; v++) {
+          point.fromBufferAttribute(kept, v).applyMatrix4(mesh.bindMatrix).toArray(rest, v * 3);
+        }
+      }
       const part = partOf(mesh, body)!;
       if (part === "Cum") {
         mesh.material = stainMeshOf(mesh, body) ? stainRetroMaterial() : coatRetroMaterial();
@@ -2441,11 +2493,13 @@ export class Dresser {
         mesh.castShadow = false;
       }
       const material = mesh.material as Material;
-      this.slots.push({ mesh, part, original: material, worn: material, bind, follow: null, bodyStart: bodyCount });
+      this.slots.push({ mesh, part, original: material, worn: material, bind, follow: null, bodyStart: bodyCount, rest });
       if (part === "Body") bodyCount += position.count;
       mesh.skeleton.bones.forEach((bone, i) => {
         if (this.boneIndex.has(bone)) return;
         const joint = new Vector3().setFromMatrixPosition(inverse.copy(mesh.skeleton.boneInverses[i]).invert());
+        const shiftBy = bone.userData?.slider_shift as number[] | undefined;
+        const restJoint = Array.isArray(shiftBy) && shiftBy.length === 3 ? joint.clone().add(new Vector3(...shiftBy)) : joint.clone();
         const rest: BoneRest = {
           bone,
           label: bone.name.startsWith(`${body}_`) ? bone.name.slice(body.length + 1) : bone.name,
@@ -2453,6 +2507,7 @@ export class Dresser {
           position: bone.position.clone(),
           quaternion: bone.quaternion.clone(),
           joint,
+          restJoint,
         };
         this.boneIndex.set(bone, rest);
         this.bones.push(rest);
@@ -2460,6 +2515,7 @@ export class Dresser {
     }
     for (const rest of this.bones) rest.parent = rest.bone.parent ? (this.boneIndex.get(rest.bone.parent) ?? null) : null;
     this.bodyCount = bodyCount;
+    this.reshapedRest = this.slots.some((slot) => slot.rest !== undefined);
 
     const bodyPoints = new Float32Array(bodyCount * 3);
     for (const slot of this.slots) if (slot.part === "Body") bodyPoints.set(slot.bind, slot.bodyStart * 3);
@@ -2530,6 +2586,7 @@ export class Dresser {
         }
       }
       discSlot.shapeFrom = skinUnder(discs, discSlot.bind);
+      if (discSlot.rest) discSlot.restShapeFrom = skinUnder(discs, discSlot.rest);
       this.nipples = { slot: discSlot, discs, riders };
     }
 
@@ -2723,7 +2780,9 @@ export class Dresser {
         delta = shiftOf(rest.parent).clone();
         const parentTerms = active.get(rest.parent.label)?.filter((term) => !term.parts);
         if (parentTerms?.length) {
-          const from = new Vector3().subVectors(rest.joint, rest.parent.joint);
+          const from = this.reshapedRest
+            ? new Vector3().subVectors(rest.restJoint, rest.parent.restJoint)
+            : new Vector3().subVectors(rest.joint, rest.parent.joint);
           delta.add(reshape(parentTerms, from, new Vector3()).sub(from));
         }
       }
@@ -2751,7 +2810,10 @@ export class Dresser {
       }
       const sum = new Vector3();
       const joints = new Vector3();
-      const from = slot.shapeFrom ?? bind;
+      // The sliders shape her as she was built, before the build reshaped her, and the change carries over to her as
+      // she is (moves are offsets): where the model keeps that shape, the points and joints are taken from there.
+      const asBuilt = slot.rest !== undefined;
+      const from = asBuilt ? (slot.restShapeFrom ?? slot.rest!) : (slot.shapeFrom ?? bind);
       for (let v = 0; v < count; v++) {
         point.fromArray(from, v * 3);
         sum.set(0, 0, 0);
@@ -2764,7 +2826,7 @@ export class Dresser {
           joints.addScaledVector(shift.get(rest)!, weight);
           const boneTerms = reaching.get(rest.label);
           if (!boneTerms) continue;
-          offset.subVectors(point, rest.joint);
+          offset.subVectors(point, asBuilt ? rest.restJoint : rest.joint);
           sum.addScaledVector(reshape(boneTerms, offset, moved, weight).sub(offset), weight);
         }
         sum.add(joints).toArray(total, v * 3);
