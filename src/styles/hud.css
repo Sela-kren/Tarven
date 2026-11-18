@@ -25,6 +25,14 @@ body.staging #clock {
   display: none;
 }
 
+/* At her closet the clothes panel takes the screen: the controls, prompt, stats and her card make way. */
+body.dressing #hud,
+body.dressing #prompt,
+body.dressing #stats,
+body.dressing #status-card {
+  display: none;
+}
+
 /* ---------- Her status card, bottom-left, Karryn's Prison style (statuscard.ts) ----------
    A compact panel in the corner, so it never covers her in the middle of the room. Left to right: her face,
    desire as a row of hearts over the pleasure bar, then drink over willpower as slanted gauges with letter

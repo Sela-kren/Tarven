@@ -35,11 +35,15 @@ describe("the night's crowd", () => {
     expect(plain.tonight.map((a) => [a.at, a.kind])).toEqual(NIGHTS[0].guests.map((a) => [a.at, a.kind]));
   });
 
-  it("always keeps the night's parties and whoever brings the rumor", () => {
+  it("always keeps the night's parties and whoever brings the rumor, together, near their time", () => {
     for (const roll of [0, 0.5, 0.99]) {
       const t = tonight(() => roll, 1);
       for (const a of NIGHTS[1].guests.filter((g) => g.party !== undefined || g.rumor)) {
-        expect(t.tonight.some((g) => g.kind === a.kind && g.party === a.party && g.at === a.at && g.rumor === a.rumor)).toBe(true);
+        expect(t.tonight.some((g) => g.kind === a.kind && g.party === a.party && Math.abs(g.at - a.at) <= 10 && g.rumor === a.rumor)).toBe(true);
+      }
+      // A party's members still walk in at the same moment.
+      for (const party of new Set(t.tonight.filter((g) => g.party !== undefined).map((g) => g.party))) {
+        expect(new Set(t.tonight.filter((g) => g.party === party).map((g) => g.at)).size).toBe(1);
       }
     }
   });

@@ -63,6 +63,8 @@ export function colourOf(mesh: Object3D, name: string): [number, number, number]
     }
     // BARE leaves her clothes off, so the pose of her legs shows.
     if (process.env.BARE === "1" && o.name === `${name}_Cloth`) return null;
+    // OUTFIT draws one of her other outfits too (its mesh name after "Cloth": Tee, Plunge...), pale, over the skin.
+    if (process.env.OUTFIT && o.name === `${name}_Cloth${process.env.OUTFIT}`) return [0.92, 0.92, 0.9];
     for (const [part, colour] of Object.entries(SHOWN)) if (o.name === `${name}_${part}`) return colour;
   }
   return null;

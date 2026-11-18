@@ -97,6 +97,9 @@ export const LEWD_METER: Readonly<Record<LewdPart, Meter>> = { mouth: "mouth", b
 /** How much of her has to be off before a foe can stare at a part: her mouth is always on show. */
 export const SIGHT_EXPOSURE: Readonly<Record<LewdPart, number>> = { mouth: 0, breasts: 0.4, butt: 0.6, pussy: 0.7, cock: 0 };
 
+/** Of a foe's rolls on her mouth, from here (to 0.7) he stares at her face instead of talking. */
+const FACE_STARE_FROM = 0.62;
+
 /** What a foe does instead of fighting, when there's no scene to be had: a grope, lewd talk, or a stare. */
 export type LewdTurn = { kind: "grope" } | { kind: "talk"; part: LewdPart } | { kind: "sight"; part: LewdPart };
 
@@ -109,7 +112,9 @@ export function lewdTurn(prefers: DuelArea | undefined, exposure: number, canGro
   const preferred: LewdPart = prefers === "hands" || !prefers ? "cock" : prefers === "mouth" ? "mouth" : prefers;
   const parts: LewdPart[] = ["mouth", "breasts", "butt", "pussy", "cock"];
   const part = pick < 0.5 ? preferred : parts[Math.floor(((pick - 0.5) / 0.5) * parts.length) % parts.length];
-  // Staring takes something bare to stare at; talking doesn't.
-  if (part !== "cock" && part !== "mouth" && exposure >= SIGHT_EXPOSURE[part] && roll < 0.7) return { kind: "sight", part };
+  // Staring takes something bare to stare at; talking doesn't. Her face is always on show, but they'd mostly rather
+  // talk about her mouth than gaze at it (KP's Sight on her face).
+  if (part === "mouth") return roll >= FACE_STARE_FROM && roll < 0.7 ? { kind: "sight", part } : { kind: "talk", part };
+  if (part !== "cock" && exposure >= SIGHT_EXPOSURE[part] && roll < 0.7) return { kind: "sight", part };
   return { kind: "talk", part };
 }

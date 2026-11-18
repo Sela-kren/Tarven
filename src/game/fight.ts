@@ -54,7 +54,7 @@ import {
   STRIPPED_LINES,
   withPiece,
 } from "./brawlclothes";
-import { ANGER, erect, FOE_PLEASURE, FOE_PLEASURE_MAX, LEWD_METER, lewdTurn, wantsHer } from "./brawlai";
+import { ANGER, erect, FOE_PLEASURE, FOE_PLEASURE_MAX, LEWD_METER, lewdTurn, wantsHer, type LewdPart } from "./brawlai";
 import { AFTER_COME_RATE, FOE_PREFIXES, type FoePrefixId } from "./foeprefix";
 import { FOE_SCENES, joinSlots, kickCounterChance, pickFoeScene, startable, upgradeScene, type FoeSceneId, type HerReadiness } from "./brawlscenes";
 import type { JoinSlot } from "./sexpose";
@@ -95,6 +95,37 @@ import {
   type Skill,
 } from "./brawllines";
 import { VOICES } from "./brawlvoices";
+import {
+  COCK_STACK,
+  JERK_PLEASURE,
+  JERK_TALK_LINES,
+  LEWD_PARTS,
+  NAKED_AT,
+  NAKED_MEN_MAX,
+  NAKED_PLEASURE,
+  NO_EVIL_COST,
+  NO_EVIL_ROUNDS,
+  noEvilCut,
+  perTalker,
+  SIGHT_EVERY_PER,
+  SIGHT_GUARD_MAX,
+  SIGHT_RATE_PER,
+  SIGHT_SENSE_PER,
+  SIGHT_STACK,
+  sightGain,
+  speakNoEvilDown,
+  STARER_LEVEL,
+  REP_LINE_SHARE,
+  REP_TALK_LINES,
+  TALK_COME,
+  TALK_GROPE,
+  TALK_SIGHT,
+  TALK_STACK,
+  TALKER_LEVEL,
+  talkGain,
+  talkRep,
+  type TalkStats,
+} from "./lewdtalk";
 import { experienceTier, HER_CLIMAX_LINES, HER_COME_LINES, HER_LINES, herVoice, SCENE_MOMENTS, type HerMoment, type HerVoice } from "./brawlher";
 import type { FightTier } from "./fightface";
 
@@ -136,6 +167,10 @@ export type FightMove =
   | "eye"
   | "edge"
   | "resist"
+  /** KP's See, Hear and Speak No Evil (willpower skills her edicts teach her): shut out stares, talk, then the want itself. */
+  | "seeNoEvil"
+  | "hearNoEvil"
+  | "speakNoEvil"
   /** Gathering herself takes her turn: willpower back. Coming to after she's come, likewise. */
   | "restore"
   | "recover"
@@ -256,7 +291,19 @@ export const CLIMAX = { will: 5, stamina: 2 } as const;
  * takes her turn. Suppressing and releasing her desire; Eye of the Mind (her next blow can't miss, and hits harder);
  * Edging Control (for a few turns she won't come); Resist (her pleasure down). Dearer while she's horny.
  */
-const MIND_MOVES: ReadonlySet<FightMove> = new Set<FightMove>(["suppress", "suppressCock", "release", "releaseCock", "eye", "edge", "resist", "deny"]);
+const MIND_MOVES: ReadonlySet<FightMove> = new Set<FightMove>([
+  "suppress",
+  "suppressCock",
+  "release",
+  "releaseCock",
+  "eye",
+  "edge",
+  "resist",
+  "deny",
+  "seeNoEvil",
+  "hearNoEvil",
+  "speakNoEvil",
+]);
 export const MIND_COST = { release: 2, releaseCock: 3, eye: 5, edge: 5, resist: 6, deny: 4 } as const;
 
 /**
@@ -336,6 +383,10 @@ export interface FighterStats {
   footjob?: boolean;
   /** Her Slut Level's tier, for how she answers in the log (brawlher.ts). */
   tier?: FightTier;
+  /** Her fame: what the room has heard about her, for what a foe says when he talks lewd at her (lewdtalk.ts). */
+  fame?: number;
+  /** What lewd talk does to her, from her passives (lewdtalk.ts, KP's talk sensitivity and talk passives). */
+  lewdTalk?: TalkStats;
   /** How many times she's done each act before, for how she talks and goes about it in a scene (brawlher.ts). */
   experience?: Partial<Record<DuelArea, number>>;
   /** Who's watching, as the log names them ("The farmer at their table"): the room, egging him on. */
@@ -523,6 +574,26 @@ export class Fight {
   comes = 0;
   /** Times they stared at her bare, for the records. */
   sightings = 0;
+  /**
+   * Lewd talk this brawl (lewdtalk.ts), for the records: lines about each part, which of them talked, the pleasure it
+   * gave her, times it made her come, and times one stroked himself at her.
+   */
+  readonly talkedAt: Partial<Record<LewdPart, number>> = {};
+  readonly talkers = new Set<number>();
+  /** Which of them have talked about each part this brawl: KP counts each new one, not each line. */
+  private readonly talkersAbout: Partial<Record<LewdPart, Set<number>>> = {};
+  /** Stares this brawl (lewdtalk.ts), for the records: by part, who stared (at all, and at each part), the pleasure, and times it made her come. */
+  readonly seenAt: Partial<Record<LewdPart, number>> = {};
+  readonly starers = new Set<number>();
+  private readonly starersAbout: Partial<Record<LewdPart, Set<number>>> = {};
+  sightPleasure = 0;
+  sightClimaxes = 0;
+  /** KP's See and Hear No Evil: the last of her turns they hold through. */
+  private seeUntil = -1;
+  private hearUntil = -1;
+  talkPleasure = 0;
+  talkClimaxes = 0;
+  jerkedAt = 0;
   /** Lines of the log picked so far (picked apart from the fight's own dice), and whether the room's had its say this turn. */
   private texts = 0;
   private crowdSpoke = false;
@@ -807,12 +878,15 @@ export class Fight {
       dodge: 1,
       // With no willpower left she's rattled, and it shows in her voice; so does wanting it (Pussy desire).
       talk: clamp01(
-        0.15 + (levels.charm - 1) * 0.07 + talk - (this.drunk ? 0.1 : 0) - (this.kind === "soldier" ? 0.1 : 0) - (this.will <= 0 ? 0.1 : 0) - p.voice - tired,
+        0.15 + (levels.charm - 1) * 0.07 + talk - (this.drunk ? 0.1 : 0) - (this.kind === "soldier" ? 0.1 : 0) - (this.will <= 0 ? 0.1 : 0) - p.voice - tired - this.talkMind,
       ),
-      stare: clamp01(0.1 + (levels.mind - 1) * 0.06 + stare - p.voice - tired),
+      stare: clamp01(0.1 + (levels.mind - 1) * 0.06 + stare - p.voice - tired - this.talkMind),
       steel: 1,
       release: 1,
       releaseCock: 1,
+      seeNoEvil: 1,
+      hearNoEvil: 1,
+      speakNoEvil: 1,
       eye: 1,
       edge: 1,
       resist: 1,
@@ -920,6 +994,10 @@ export class Fight {
       ...free("edge", "Edging Control", this.mindCost("edge")!, this.pleasure >= 50 && this.edgeTurns === 0),
       ...free("resist", "Resist", this.mindCost("resist")!, this.pleasure >= 30),
       ...free("deny", "Deny them inside you", this.mindCost("deny")!, Boolean(this.stats.denyOk) && !this.denying),
+      // KP's See, Hear and Speak No Evil, once her edicts teach them; not with one of them in her (KP: not in a sex pose).
+      ...free("seeNoEvil", "See No Evil", NO_EVIL_COST.seeNoEvil, Boolean(this.stats.lewdTalk?.seeNoEvil) && !inScene && !this.seeing),
+      ...free("hearNoEvil", "Hear No Evil", NO_EVIL_COST.hearNoEvil, Boolean(this.stats.lewdTalk?.hearNoEvil) && !inScene && !this.hearing),
+      ...free("speakNoEvil", "Speak No Evil", NO_EVIL_COST.speakNoEvil, Boolean(this.stats.lewdTalk?.speakNoEvil) && !inScene && this.seeing && this.hearing),
     ];
   }
 
@@ -939,6 +1017,10 @@ export class Fight {
       case "edge":
       case "resist":
         return MIND_COST[move] + (horny ? HORNY_MIND : 0);
+      case "seeNoEvil":
+      case "hearNoEvil":
+      case "speakNoEvil":
+        return NO_EVIL_COST[move];
       default:
         return null;
     }
@@ -1111,7 +1193,7 @@ export class Fight {
     switch (move) {
       case "strike": {
         if (roll < c.strike) {
-          const damage = this.blow(3 + (levels.strength - 1) + this.stats.damage);
+          const damage = this.blow(3 + (levels.strength - 1) + this.damageBonus);
           this.foeStamina = Math.max(0, this.foeStamina - damage);
           this.sayRolled("strike", "hit", `You land a solid blow. (-${damage})`);
           this.crowdSays("hit");
@@ -1124,7 +1206,7 @@ export class Fight {
         // A bandit or adventurer, erect, may catch it and turn it into a scene (KP's kick counter), if she's ready.
         if (this.tryKickCounter()) break;
         if (roll < c.kick) {
-          const damage = this.blow(4 + (levels.strength - 1) + this.stats.damage);
+          const damage = this.blow(4 + (levels.strength - 1) + this.damageBonus);
           this.foeStamina = Math.max(0, this.foeStamina - damage);
           this.sayRolled("kick", "hit", `Your boot lands square. (-${damage})`);
           this.crowdSays("hit");
@@ -1158,7 +1240,7 @@ export class Fight {
       case "headlock": {
         this.holding = false;
         if (roll < c.headlock) {
-          const damage = this.blow(3 + (levels.strength - 1) + this.stats.damage);
+          const damage = this.blow(3 + (levels.strength - 1) + this.damageBonus);
           this.foeStamina = Math.max(0, this.foeStamina - damage);
           this.staggered = true;
           this.grapplesLanded++;
@@ -1179,7 +1261,7 @@ export class Fight {
       }
       case "tackle": {
         if (roll < c.tackle) {
-          const damage = this.blow(4 + (levels.strength - 1) + this.stats.damage);
+          const damage = this.blow(4 + (levels.strength - 1) + this.damageBonus);
           this.foeStamina = Math.max(0, this.foeStamina - damage);
           this.staggered = true;
           this.grapplesLanded++;
@@ -1390,6 +1472,8 @@ export class Fight {
     this.mindUsed = false;
     if (!this.foe.out && this.foeStamina <= 0) this.knockout();
     if (this.outcome) return;
+    this.everyRound();
+    if (this.outcome) return;
     this.theirTurns();
     if (this.edgeTurns > 0) this.edgeTurns--;
     this.stanceUsed = false;
@@ -1487,7 +1571,7 @@ export class Fight {
   /** Counter Stance: they missed, and she hits back for half a strike. */
   private counterBlow(): void {
     const { levels } = this.stats;
-    const damage = Math.max(1, Math.round(this.blow(3 + (levels.strength - 1) + this.stats.damage) * COUNTER_SHARE));
+    const damage = Math.max(1, Math.round(this.blow(3 + (levels.strength - 1) + this.damageBonus) * COUNTER_SHARE));
     this.foeStamina = Math.max(0, this.foeStamina - damage);
     this.say("counter", `You turn their swing and hit back. (-${damage})`);
     this.gain("agility", 1);
@@ -1536,6 +1620,20 @@ export class Fight {
         this.edgeTurns = EDGE.turns;
         this.say("edge", `You hold yourself right at the edge, and no further. (you won't come for ${EDGE.turns} turns)`);
         break;
+      case "seeNoEvil":
+        this.seeUntil = this.turns + NO_EVIL_ROUNDS;
+        this.say("seeNoEvil", `You fix your eyes on nothing and stop seeing them see you. (stares do ${Math.round(noEvilCut(levels.mind) * 100)}% less for 2 rounds)`);
+        break;
+      case "hearNoEvil":
+        this.hearUntil = this.turns + NO_EVIL_ROUNDS;
+        this.say("hearNoEvil", `You let their filth wash past you like rain. (lewd talk does ${Math.round(noEvilCut(levels.mind) * 100)}% less for 2 rounds)`);
+        break;
+      case "speakNoEvil": {
+        const down = speakNoEvilDown(levels.mind);
+        for (const m of LEWD_PARTS) desire[m] = Math.max(0, desire[m] - down);
+        this.say("speakNoEvil", `Eyes shut, ears shut, mouth shut. The want drains out of you. (every desire -${down})`);
+        break;
+      }
       case "resist": {
         const down = Math.min(this.pleasure, RESIST_AMOUNT + (levels.mind - 1) * 3);
         this.pleasure -= down;
@@ -1838,6 +1936,132 @@ export class Fight {
     return true;
   }
 
+  /** How many new ones have talked lewd at her about a part this brawl. */
+  private talkedAbout(part: LewdPart): number {
+    return this.talkersAbout[part]?.size ?? 0;
+  }
+
+  /** How many new ones have stared at a part of her this brawl. */
+  private staredAt(part: LewdPart): number {
+    return this.starersAbout[part]?.size ?? 0;
+  }
+
+  /** Whether See No Evil, or Hear No Evil, is holding (KP's willpower skills). */
+  get seeing(): boolean {
+    return this.turns <= this.seeUntil;
+  }
+  get hearing(): boolean {
+    return this.turns <= this.hearUntil;
+  }
+
+  /** What See or Hear No Evil leaves of a stare or a line: all of it, unless she's shutting it out. */
+  private noEvilLeft(on: boolean): number {
+    return on ? 1 - noEvilCut(this.stats.levels.mind) : 1;
+  }
+
+  /**
+   * What happens every round before they move, from her talk and sight passives (KP's "every turn"): the desire her
+   * sight passives raise, wetter for every one who's talked about her pussy, and pleasure while she's bare in front of
+   * them. Shut out by See No Evil, the looking parts are.
+   */
+  private everyRound(): void {
+    const t = this.stats.lewdTalk;
+    if (!t || !this.desire) return;
+    const see = this.noEvilLeft(this.seeing);
+    for (const part of LEWD_PARTS) {
+      const every = (t.sightEvery[part] ?? 0) + Math.min(SIGHT_EVERY_PER.max, this.staredAt(part) * (t.sightEveryPer[part] ?? 0));
+      if (every > 0) this.stir(part, every * see);
+    }
+    this.talkWet();
+    if (t.naked > 0 && this.exposure >= NAKED_AT) {
+      const men = Math.min(NAKED_MEN_MAX, this.standing.length);
+      const n = Math.round(men * t.naked * NAKED_PLEASURE * see);
+      if (n > 0) {
+        this.say("her:nakedLooks", `Bare in front of all of them, their eyes are all over you. (+${n} pleasure)`);
+        this.sightPleasure += n;
+        this.addPleasureCounting(n, "sight");
+      }
+    }
+  }
+
+  /** Works her up, and if that makes her come, counts it to talk or stares. */
+  private addPleasureCounting(n: number, from: "talk" | "sight"): void {
+    const before = this.climaxes;
+    this.addPleasure(n);
+    if (this.climaxes > before) {
+      if (from === "talk") this.talkClimaxes++;
+      else this.sightClimaxes++;
+    }
+  }
+
+  /**
+   * He stares at what's bare (KP's dmgFormula_basicSight): her desire for it, her pleasure once she likes being
+   * looked at (her sight sensitivity), and her sight passives on top.
+   */
+  private lewdSight(part: LewdPart): void {
+    const t = this.stats.lewdTalk;
+    const pre = this.foe.prefix ? FOE_PREFIXES[this.foe.prefix] : undefined;
+    const lvl = pre?.sight ? STARER_LEVEL : 0;
+    const staring = this.starers.size;
+    const sense =
+      (t?.sightSense ?? 0) +
+      perTalker(this.staredAt("breasts"), t?.sightSenseBreasts ?? 0, SIGHT_SENSE_PER.max) +
+      perTalker(staring, t?.sightSensePer ?? 0, SIGHT_SENSE_PER.max);
+    const gain = sightGain({ lvl, sense, rate: t?.sightRate ?? 0 });
+    // Talk about her breasts makes stares get to her more (Talk of My Chest); every new one staring, more again (Leering Pleasure).
+    const more = perTalker(this.talkedAbout("breasts"), t?.sight ?? 0, TALK_SIGHT.max) + perTalker(staring, t?.sightRatePer ?? 0, SIGHT_RATE_PER.max);
+    const stack = perTalker(this.staredAt(part), t?.sightStack[part] ?? 0, SIGHT_STACK.max);
+    const see = this.noEvilLeft(this.seeing);
+    const meter = LEWD_METER[part];
+    const n = this.stir(meter, gain.desire * (1 + more) * (1 + stack) * see);
+    let pleasure = gain.pleasure * (1 + more) * see;
+    if (t?.sightCrit && this.horny) pleasure *= 2;
+    pleasure = Math.round(pleasure);
+    this.sightings++;
+    this.seenAt[part] = (this.seenAt[part] ?? 0) + 1;
+    this.starers.add(this.actor);
+    (this.starersAbout[part] ??= new Set()).add(this.actor);
+    const seen = line(SIGHT_LINES[part], this.textRoll(), this.name);
+    const tags = [n > 0 ? `+${n} ${METER_NAMES[meter]} desire` : "", pleasure > 0 && this.desire ? `+${pleasure} pleasure` : ""].filter(Boolean);
+    this.say(`their:sight:${part}`, `${seen}${tags.length > 0 ? ` (${tags.join(", ")})` : ""}`);
+    this.herSays("sight");
+    this.crowdSays("lewd");
+    if (pleasure > 0 && this.desire) {
+      this.sightPleasure += pleasure;
+      const before = this.climaxes;
+      this.addPleasureCounting(pleasure, "sight");
+      if (this.climaxes > before) this.say("her:sightCome", "Nobody laid a hand on you. They only looked.");
+    }
+    this.raiseFoe(FOE_PLEASURE.sight);
+  }
+
+  /** Her damage: her own, and what her talk passives add or take off for every new one who's talked lewd at her. */
+  private get damageBonus(): number {
+    const per = this.stats.lewdTalk?.damage ?? 0;
+    return this.stats.damage + Math.round(perTalker(this.talkers.size, per, 3));
+  }
+
+  /** What every new one who's talked lewd at her takes off talking or staring them down (Hang on Every Word, KP's Mind down). */
+  private get talkMind(): number {
+    return perTalker(this.talkers.size, this.stats.lewdTalk?.mindDown ?? 0, 0.2);
+  }
+
+  /** Pussy's second talk passive: every turn, she's wetter for every new one who's talked about her pussy (KP). */
+  private talkWet(): void {
+    const per = this.stats.lewdTalk?.wet ?? 0;
+    if (per > 0) this.stir("pussy", this.talkedAbout("pussy") * per);
+  }
+
+  /** The thirds: when one comes in or on a part they've talked about, she feels it more (KP's swallow, bukkake, creampie sensitivity). */
+  private talkCome(area: DuelArea | "none"): void {
+    if (area === "none" || area === "hands" || !this.desire) return;
+    const per = this.stats.lewdTalk?.come[area] ?? 0;
+    const n = Math.round(Math.min(TALK_COME.max, this.talkedAbout(area) * per));
+    if (n <= 0) return;
+    this.say("her:talkComeFeel", `Every filthy word they said about it rings in your head. (+${n} pleasure)`);
+    this.addPleasure(n);
+  }
+
   /** Works the foe up; at the top he comes, and he's spent: the fight's won. Says whether he came. */
   private raiseFoe(n: number): boolean {
     if (n <= 0 || this.outcome) return false;
@@ -1849,6 +2073,7 @@ export class Fight {
     if (area !== at) this.say("their:denied", `The ${this.name} pulls out of you just in time, cursing.`);
     this.say("their:come", `${line(COME_LINES[area], this.textRoll(), this.name)} ${this.heSays(this.voice.come)}`);
     this.herSaysCome(area);
+    this.talkCome(area);
     this.crowdSays("come");
     this.mateSays("come");
     this.comes++;
@@ -1891,6 +2116,15 @@ export class Fight {
     const pre = this.foe.prefix ? FOE_PREFIXES[this.foe.prefix] : undefined;
     if (pre?.talk) roll = Math.min(0.99, roll + pre.talk);
     if (pre?.sight && roll >= 0.4) roll = 0.45;
+    // Her talk passives: talk about her rear (and, past Words Like Hands, any talk) has them reaching for her more.
+    const tk = this.stats.lewdTalk;
+    if (tk) {
+      const reach =
+        perTalker(this.talkers.size, tk.grope, 0.15) +
+        perTalker(this.talkedAbout("butt"), tk.gropeButt, TALK_GROPE.max) +
+        perTalker(this.staredAt("butt"), tk.sightGropeButt, TALK_GROPE.max);
+      roll = Math.max(0, roll - reach);
+    }
     const turn = lewdTurn(this.foe.prefers, exposure, canGrope && this.reaches < MAX_REACHES_WANTING, roll, this.random());
     if (turn.kind === "grope") {
       this.reaches++;
@@ -1898,24 +2132,73 @@ export class Fight {
       this.say("their:reach", `The ${this.name} stops swinging and reaches for you instead.`);
       return true;
     }
-    const meter = LEWD_METER[turn.part];
-    if (turn.kind === "talk") {
-      const n = this.stir(meter, 3 + Math.floor(this.random() * 4));
-      const said = this.heSays(this.voice.talk[turn.part]);
-      this.say(`their:talk:${turn.part}`, `The ${this.name} leers at you. ${said}${n > 0 ? ` (+${n} ${METER_NAMES[meter]} desire)` : ""}`);
-      this.herSays("talk");
-      this.crowdSays("lewd");
-      this.raiseFoe(FOE_PLEASURE.talk);
-      return true;
-    }
-    const n = this.stir(meter, 4);
-    this.sightings++;
-    const seen = line(SIGHT_LINES[turn.part], this.textRoll(), this.name);
-    this.say(`their:sight:${turn.part}`, `${seen}${n > 0 ? ` (+${n} ${METER_NAMES[meter]} desire)` : ""}`);
-    this.herSays("sight");
-    this.crowdSays("lewd");
-    this.raiseFoe(FOE_PLEASURE.sight);
+    if (turn.kind === "talk") this.lewdTalk(turn.part);
+    else this.lewdSight(turn.part);
     return true;
+  }
+
+  /**
+   * He talks lewd at her about a part of her (lewdtalk.ts, KP's dmgFormula_basicTalk): her desire for it, and her
+   * pleasure once she's learned to like hearing it. Erect and not angry, he strokes himself as he says it (KP's jerk-off
+   * talk). What he says goes by what the room knows about her.
+   */
+  private lewdTalk(at: LewdPart): void {
+    const t = this.stats.lewdTalk;
+    // Her weak spots posted (KP's Publish Sensitivities): half the time he goes for the part she's most sensitive in.
+    const part = t?.aim && this.textRoll() < 0.5 ? this.weakest() : at;
+    const meter = LEWD_METER[part];
+    const pre = this.foe.prefix ? FOE_PREFIXES[this.foe.prefix] : undefined;
+    const talkLvl = pre?.talk ? TALKER_LEVEL : 0;
+    // KP's canJerkOff: erect, not angry, and with something left in him.
+    const jerking = Boolean(this.desire) && !this.foeAngry && this.foe.stock > 0 && erect({ horny: this.foeHorny, pleasure: this.foePleasure });
+    const gain = talkGain({ talkLvl, sense: t?.sense ?? 0, rate: t?.rate ?? 0, jerk: jerking ? (t?.jerk ?? 0) : 0, spread: this.random() });
+    // Mouth's and Cock's second talk passives: every new one who talks about it this brawl stirs her more (KP).
+    const heard = this.talkedAt[part] ?? 0;
+    const stack = perTalker(this.talkedAbout(part), t?.stack[part] ?? 0, part === "cock" ? COCK_STACK.max : TALK_STACK.max);
+    // Hear No Evil: she shuts most of it out.
+    const hear = this.noEvilLeft(this.hearing);
+    const n = this.stir(meter, gain.desire * (1 + stack) * hear);
+    let pleasure = gain.pleasure * hear;
+    if (t?.crit && this.horny) pleasure *= 2;
+    pleasure = Math.round(pleasure);
+    const opener = jerking ? line(JERK_TALK_LINES, this.textRoll(), this.name) : `The ${this.name} leers at you.`;
+    const said = this.heSays(this.talkLines(part));
+    const tags = [n > 0 ? `+${n} ${METER_NAMES[meter]} desire` : "", pleasure > 0 && this.desire ? `+${pleasure} pleasure` : ""].filter(Boolean);
+    this.say(`their:talk:${part}`, `${opener} ${said}${tags.length > 0 ? ` (${tags.join(", ")})` : ""}`);
+    this.herSays("talk");
+    this.crowdSays("lewd");
+    this.talkedAt[part] = heard + 1;
+    this.talkers.add(this.actor);
+    (this.talkersAbout[part] ??= new Set()).add(this.actor);
+    if (jerking) this.jerkedAt++;
+    // Cock's third talk passive: hearing it tips her straight into horny (KP: 15%).
+    if (part === "cock" && this.desire && t && t.horny > 0 && this.random() < t.horny && !this.horny) {
+      this.desire.cock = Math.max(this.desire.cock, Math.min(this.capOf("cock"), HORNY_AT));
+      if (this.horny) this.say("her:hornyTalk", "Something in you gives at the word. You're burning for it now. (horny)");
+    }
+    if (pleasure > 0 && this.desire) {
+      this.talkPleasure += pleasure;
+      const before = this.climaxes;
+      this.addPleasureCounting(pleasure, "talk");
+      if (this.climaxes > before) this.say("her:talkCome", "He never laid a finger on you. His words did that.");
+    }
+    this.raiseFoe(FOE_PLEASURE.talk + (jerking ? JERK_PLEASURE : 0));
+  }
+
+  /** The part of her she's most sensitive in (her passives), the most worked up as the tie-break. */
+  private weakest(): LewdPart {
+    const score = (p: LewdPart) => (this.stats.sens?.[p] ?? 0) * 100 + (this.desire?.[p] ?? 0);
+    return LEWD_PARTS.reduce((a, b) => (score(b) > score(a) ? b : a));
+  }
+
+  /** What a foe says about a part of her: his own type's lines, or, more often than not, what the room knows of her. */
+  private talkLines(part: LewdPart): readonly string[] {
+    const own = this.voice.talk[part];
+    const area: DuelArea = part === "cock" ? "hands" : part;
+    const t = this.stats.lewdTalk;
+    const rep = talkRep(this.stats.tier, (this.stats.fame ?? 0) + (t?.known ?? 0), this.stats.experience?.[area] ?? 0, t?.firsts ?? false);
+    if (rep === "plain") return own;
+    return this.textRoll() < REP_LINE_SHARE ? REP_TALK_LINES[rep][part] : own;
   }
 
   /** His turn in a scene with her: it wears on her, works her up, and works him towards the top. */
@@ -2129,7 +2412,9 @@ export class Fight {
     // Defensive Stance: their blows take less out of her, body and will, and can't pin her.
     const defensive = this.stance === "defensive";
     const hurt = (damage: number, will: number, event: string, text: string) => {
-      const n = Math.max(1, damage - (defensive ? DEFENSIVE.damage : 0));
+      // Target of Vulgar Gazes: every new one staring steadies her (Undone by Their Eyes: undoes her).
+      const guard = Math.round(perTalker(this.starers.size, this.stats.lewdTalk?.guard ?? 0, SIGHT_GUARD_MAX));
+      const n = Math.max(1, damage - (defensive ? DEFENSIVE.damage : 0) - guard);
       this.stamina = Math.max(0, this.stamina - n);
       this.will = Math.max(0, this.will - (defensive ? Math.floor(will / 2) : will));
       this.say(event, `${tag}${text} (-${n})`);

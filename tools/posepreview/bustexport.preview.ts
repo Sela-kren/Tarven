@@ -34,43 +34,66 @@ test("export her body at each cup size", async () => {
     cupTerm.turn = Number(process.env.TURN);
   }
   const index: { cup: string; value: number; file: string }[] = [];
-  for (const letter of letters) {
+  /** Her skin's points as the game draws her at this cup, in the OBJ's order and axes; `bare` without the fixes. */
+  const shape = async (value: number, bare: boolean) => {
     // A fresh model each time, so one size's reshaping never carries into the next.
     const gltf = await new GLTFLoader().parseAsync(stripImages(file), "");
     const model = gltf.scene;
     const root = model.getObjectByName(NAME) ?? model;
-    const value = stopValue(CUPS, CUPS.labels.indexOf(letter));
+    if (bare) {
+      model.traverse((o) => {
+        if (!(o instanceof Mesh)) return;
+        for (const key of Object.keys(o.geometry.attributes)) if (key.startsWith("_bust_fix_")) o.geometry.deleteAttribute(key);
+      });
+    }
     const look = newLook();
     look.sliders.bust = value;
     new Dresser(root, NAME).apply(look);
     model.updateMatrixWorld(true);
-    const lines: string[] = [`# ${NAME} at cup ${letter} (slider ${value.toFixed(3)})`];
-    let base = 1;
+    const meshes: { name: string; co: number[]; faces: number[] }[] = [];
     const v = new Vector3();
     model.traverse((o) => {
       if (!(o instanceof Mesh) || !isSkin(o)) return;
       const position = o.geometry.getAttribute("position");
-      lines.push(`o ${o.name}`);
+      const co: number[] = [];
       for (let i = 0; i < position.count; i++) {
         v.fromBufferAttribute(position, i);
         if (o instanceof SkinnedMesh) o.applyBoneTransform(i, v);
         v.applyMatrix4(o.matrixWorld);
         // three.js is Y up and she faces -Z; in Blender, Z up, she faces -Y (the front view) with her left at +X.
-        lines.push(`v ${(-v.x).toFixed(6)} ${v.z.toFixed(6)} ${v.y.toFixed(6)}`);
+        co.push(-v.x, v.z, v.y);
       }
-      const faces = o.geometry.index;
-      const count = faces ? faces.count : position.count;
-      for (let i = 0; i < count; i += 3) {
-        const a = (faces ? faces.getX(i) : i) + base;
-        const b = (faces ? faces.getX(i + 1) : i + 1) + base;
-        const c = (faces ? faces.getX(i + 2) : i + 2) + base;
-        lines.push(`f ${a} ${b} ${c}`);
-      }
-      base += position.count;
+      const index = o.geometry.index;
+      const faces = index ? Array.from(index.array as ArrayLike<number>) : Array.from({ length: position.count }, (_, i) => i);
+      meshes.push({ name: o.name, co, faces });
     });
+    return meshes;
+  };
+  // How far the cup slider alone (none of the user's fixes) moves each point from the C cup, for bust_fixes.py to
+  // tell the breasts' edits from her body's: measured with the fixes on, a cup's own fix counted as its growth.
+  const bareC = (await shape(0, true)).flatMap((m) => m.co);
+  const growth: Record<string, number[]> = {};
+  for (const letter of letters) {
+    const value = stopValue(CUPS, CUPS.labels.indexOf(letter));
+    const meshes = await shape(value, false);
+    const lines: string[] = [`# ${NAME} at cup ${letter} (slider ${value.toFixed(3)})`];
+    let base = 1;
+    for (const m of meshes) {
+      lines.push(`o ${m.name}`);
+      for (let i = 0; i < m.co.length; i += 3) lines.push(`v ${m.co[i].toFixed(6)} ${m.co[i + 1].toFixed(6)} ${m.co[i + 2].toFixed(6)}`);
+      for (let i = 0; i < m.faces.length; i += 3) lines.push(`f ${m.faces[i] + base} ${m.faces[i + 1] + base} ${m.faces[i + 2] + base}`);
+      base += m.co.length / 3;
+    }
     const name = `bust_${letter}.obj`;
     writeFileSync(join(out, name), lines.join("\n"));
     index.push({ cup: letter, value, file: name });
+    const bare = (await shape(value, true)).flatMap((m) => m.co);
+    const grown: number[] = [];
+    for (let i = 0; i < bare.length; i += 3) {
+      grown.push(Math.round(Math.hypot(bare[i] - bareC[i], bare[i + 1] - bareC[i + 1], bare[i + 2] - bareC[i + 2]) * 1e6) / 1e6);
+    }
+    growth[letter] = grown;
   }
+  writeFileSync(join(out, "growth.json"), JSON.stringify(growth));
   writeFileSync(join(out, "index.json"), JSON.stringify(index, null, 1));
 });

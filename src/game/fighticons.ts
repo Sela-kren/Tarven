@@ -338,6 +338,10 @@ export const MOVE_ICONS: Readonly<Record<FightMove, string>> = {
   eye: svg(recolor(EYE, "BY", "bF")),
   edge: badge(HEART, BAR),
   resist: badge(HEART, MINUS),
+  // KP's See, Hear and Speak No Evil: an eye, a speech bubble, a heart, each struck down.
+  seeNoEvil: badge(EYE, MINUS),
+  hearNoEvil: badge(BUBBLE, MINUS),
+  speakNoEvil: badge(HEART, DOWN),
   hands: heart,
   mouth: heart,
   ride: heart,

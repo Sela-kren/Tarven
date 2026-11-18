@@ -3092,11 +3092,21 @@ UPPER_RIBS_REFINE = [
 # the cup slider comes to it (appearance.ts, cupFix); everything else is moved into her as built, at every size, with
 # whatever is worn or lies on her skin moving with it.
 SCULPT_FIXES = os.path.join(ROOT, "art", "sculpt_fixes")
-# A point counts as the breast's by its Bust weight over the most the bust's skin takes (BUST_WEIGHT's "most").
-SCULPT_BREAST_FULL = 0.58
-# Things worn over her take the skin's move in full this close to it, and none past `far`.
-SCULPT_NEAR = 0.012
-SCULPT_FAR = 0.05
+# Only sculpting on a small cup (SCULPT_BODY_CUPS) changes her body at every size: there, what the user moved counts
+# as the cup's wherever the cup slider moves her skin at any reviewed size (the fix file's "grown_<cup>", metres from
+# the C cup; none under the first, all past the second), and the rest is her body's, so an edit on her back, hips or
+# belly goes everywhere. Sculpting a bigger cup, everything moved is that cup's: their strokes graze her back and the skin under
+# the bust as they shape the breasts, and as her body's those leaked into every size (up to 2 cm at C, lumps on her
+# ribs), whichever way the split was drawn. Fix files without the growth use the newest one's.
+SCULPT_BODY_CUPS = ("A", "B", "C")
+SCULPT_GROWN = (0.0008, 0.005)
+# Things worn over her take the skin's move in full this close to it, and none past `far`: a top stands well off her
+# skin round the bust and under the arms, and taking only part of the move there, it fell behind where her skin came
+# out and the skin stood through it (74 points of the tee, against 10 before any sculpting).
+SCULPT_NEAR = 0.04
+SCULPT_FAR = 0.09
+# How far over her skin a top the fixes pushed into it is put back.
+SCULPT_CLEAR = 0.0015
 # Long hair blends from the head onto the back over this height below the neck.
 HAIR_ONTO_BACK = 0.08
 # Her hair's springs. What hangs from the head, from about the tops of her ears down to the ends of a bob or a
@@ -7702,57 +7712,142 @@ def keep_slider_rest(rig, meshes):
 def apply_sculpt_fixes(name, body_obj, meshes):
     """Moves her and everything on her by the user's sculpting (SCULPT_FIXES), and keeps the breasts' part of it for
     each cup as "_BUST_FIX_<cup>" on her skin (y up, as the glTF's positions). Each fix file holds the C cup's surface
-    it was measured on; every point finds itself there and takes the move of where it lands."""
+    it was measured on; every point finds itself there and takes the move of where it lands. What is the cup's and
+    what is her body's goes by how far the cup slider moves her there (SCULPT_GROWN). Worked on whole meshes at once
+    (numpy): point by point it took over 20 minutes across her 335 meshes."""
     import glob
-    from mathutils.bvhtree import BVHTree
-    from mathutils.interpolate import poly_3d_calc
     files = sorted(glob.glob(os.path.join(SCULPT_FIXES, f"{name.lower()}_*.npz")))
     if not files:
         return
+
+    class Surface:
+        """A fix file's C cup surface, to find points on and read its per-point values at."""
+        def __init__(self, data):
+            self.co = data["ref_co"].astype(np.float64)
+            self.tris = data["ref_tris"].astype(np.int64)
+            self.tree = BVHTree.FromPolygons([Vector(p) for p in self.co], [tuple(t) for t in self.tris])
+            lo, hi = self.co.min(0), self.co.max(0)
+            self.box = (lo - SCULPT_FAR, hi + SCULPT_FAR)
+
+        def find(self, pts):
+            """For each point: the triangle it lands on (-1 for none), its barycentric weights there, its distance."""
+            n = len(pts)
+            face = np.full(n, -1, dtype=np.int64)
+            found = np.zeros((n, 3))
+            dist = np.full(n, np.inf)
+            for i, p in enumerate(pts):
+                hit, _, f, d = self.tree.find_nearest(Vector(p))
+                if hit is not None:
+                    face[i], found[i], dist[i] = f, hit, d
+            ok = face >= 0
+            tri = self.tris[np.maximum(face, 0)]
+            a, b, c = self.co[tri[:, 0]], self.co[tri[:, 1]], self.co[tri[:, 2]]
+            v0, v1, v2 = b - a, c - a, found - a
+            d00 = (v0 * v0).sum(1); d01 = (v0 * v1).sum(1); d11 = (v1 * v1).sum(1)
+            d20 = (v2 * v0).sum(1); d21 = (v2 * v1).sum(1)
+            den = d00 * d11 - d01 * d01
+            den[den == 0] = 1
+            wv = (d11 * d20 - d01 * d21) / den
+            ww = (d00 * d21 - d01 * d20) / den
+            bary = np.stack([1 - wv - ww, wv, ww], axis=1)
+            return tri, bary, dist, ok
+
+    def at(arr, hit):
+        tri, bary, _, ok = hit
+        vals = arr[tri]  # (n, 3) or (n, 3, 3)
+        out = (vals * (bary[:, :, None] if vals.ndim == 3 else bary)).sum(1)
+        out[~ok] = 0
+        return out
+
+    layers = [np.load(path) for path in files]
+    growth = next((d for d in reversed(layers) if any(k.startswith("grown_") for k in d.files)), None)
+    growth_surface = Surface(growth) if growth is not None else None
     breast_fix = {}
-    for path in files:
-        data = np.load(path)
-        ref_co = data["ref_co"].astype(np.float64)
-        ref_tris = data["ref_tris"]
+    moved_by_fixes = {}
+    for path, data in zip(files, layers):
+        surface = Surface(data)
         cups = [key[len("delta_"):] for key in data.files if key.startswith("delta_")]
         deltas = {cup: data[f"delta_{cup}"].astype(np.float64) for cup in cups}
-        tree = BVHTree.FromPolygons([Vector(p) for p in ref_co], [tuple(t) for t in ref_tris])
+        own = any(k.startswith("grown_") for k in data.files)
+        grown_from, grown_surface = (data, surface) if own else (growth, growth_surface)
         for obj in meshes:
             skin = obj is body_obj
-            bust = obj.vertex_groups.get(f"{name}_Bust")
-            world = obj.matrix_world
-            to_local = world.inverted().to_3x3()
             count = len(obj.data.vertices)
-            fix = {cup: np.zeros((count, 3)) for cup in cups} if skin else None
-            for v in obj.data.vertices:
-                co = world @ v.co
-                found, _, face, dist = tree.find_nearest(co)
-                if found is None:
-                    continue
-                reach = 1.0 if skin else max(0.0, min(1.0, (SCULPT_FAR - dist) / (SCULPT_FAR - SCULPT_NEAR)))
-                if reach <= 0:
-                    continue
-                tri = ref_tris[face]
-                bary = poly_3d_calc([Vector(ref_co[k]) for k in tri], found)
-                weight = 0.0
-                if bust is not None:
-                    weight = next((g.weight for g in v.groups if g.group == bust.index), 0.0)
-                breast = min(1.0, weight / SCULPT_BREAST_FULL)
-                body_move = Vector()
-                for cup in cups:
-                    d = Vector(sum(b * deltas[cup][k] for b, k in zip(bary, tri))) * reach
-                    # What isn't the breast's goes into her at every size; with more than one cup sculpted there,
-                    # the biggest move wins.
-                    if (d * (1 - breast)).length > body_move.length:
-                        body_move = d * (1 - breast)
-                    if skin:
-                        fix[cup][v.index] = to_local @ (d * breast)
-                v.co += to_local @ body_move
+            if count == 0:
+                continue
+            local = np.empty(count * 3)
+            obj.data.vertices.foreach_get("co", local)
+            local = local.reshape(-1, 3)
+            world = np.array(obj.matrix_world)
+            pts = local @ world[:3, :3].T + world[:3, 3]
+            near = np.all((pts >= surface.box[0]) & (pts <= surface.box[1]), axis=1)
+            if not near.any():
+                continue
+            idx = np.nonzero(near)[0]
+            hit = surface.find(pts[idx])
+            dist = hit[2]
+            reach = np.ones(len(idx)) if skin else np.clip((SCULPT_FAR - dist) / (SCULPT_FAR - SCULPT_NEAR), 0, 1)
+            reach[~hit[3]] = 0
+            grown_hit = hit if own else (grown_surface.find(pts[idx]) if grown_surface else None)
+            body_move = np.zeros((len(idx), 3))
+            fix = {}
+            for cup in cups:
+                d = at(deltas[cup], hit) * reach[:, None]
+                # Only a small cup's sculpting reaches her body; from D up it is all that cup's.
+                breast = np.ones(len(idx))
+                if cup in SCULPT_BODY_CUPS and grown_hit is not None:
+                    # Her body is only where no cup ever grows her: the skin under an A cup's breast is the
+                    # underside of a C's, and an A's edit there stood out as a lump at every size from C up.
+                    g = np.zeros(len(idx))
+                    for key in grown_from.files:
+                        if key.startswith("grown_"):
+                            g = np.maximum(g, at(grown_from[key].astype(np.float64), grown_hit))
+                    t = np.clip((g - SCULPT_GROWN[0]) / (SCULPT_GROWN[1] - SCULPT_GROWN[0]), 0, 1)
+                    breast = t * t * (3 - 2 * t)
+                # What isn't the cup's goes into her at every size; with more than one cup sculpted there, the
+                # biggest move wins.
+                body = d * (1 - breast)[:, None]
+                bigger = np.linalg.norm(body, axis=1) > np.linalg.norm(body_move, axis=1)
+                body_move[bigger] = body[bigger]
+                if skin:
+                    fix[cup] = d * breast[:, None]
+            to_local = np.linalg.inv(world[:3, :3])
+            local[idx] += body_move @ to_local.T
+            if not skin:
+                was = moved_by_fixes.get(obj.name)
+                now = np.zeros(count, dtype=bool)
+                now[idx] = np.linalg.norm(body_move, axis=1) > 0.0002
+                moved_by_fixes[obj.name] = now if was is None else (was | now)
+            obj.data.vertices.foreach_set("co", local.ravel())
             obj.data.update()
             if skin:
                 for cup, moves in fix.items():
-                    breast_fix[cup] = breast_fix.get(cup, 0) + moves
+                    full = np.zeros((count, 3))
+                    full[idx] = moves @ to_local.T
+                    breast_fix[cup] = breast_fix.get(cup, 0) + full
         print(f"sculpt fixes: {os.path.basename(path)} ({', '.join(cups)})")
+    # Clothes the fixes moved that ended up inside her skin are put back over it (SCULPT_CLEAR): her sculpted skin
+    # is finer than most clothes, and a bump between two of a top's corners stood through it (under her arms and over
+    # her shoulder blades, after the A cup's work). Only those: easing every nearby corner out, as keep_clothes_clear
+    # does, laid the creases under her bust into her top.
+    skin_tree = BVHTree.FromPolygons([body_obj.matrix_world @ v.co for v in body_obj.data.vertices],
+                                     [p.vertices[:] for p in body_obj.data.polygons])
+    for obj in meshes:
+        moved = moved_by_fixes.get(obj.name)
+        if moved is None or "_Cloth" not in obj.name:
+            continue
+        to_world, to_local = obj.matrix_world, obj.matrix_world.inverted()
+        pushed = 0
+        for i in np.nonzero(moved)[0]:
+            v = obj.data.vertices[int(i)]
+            co = to_world @ v.co
+            loc, normal, _, dist = skin_tree.find_nearest(co)
+            if loc is None or dist > 0.03 or (co - loc).dot(normal) >= SCULPT_CLEAR:
+                continue
+            v.co = to_local @ (loc + normal * SCULPT_CLEAR)
+            pushed += 1
+        if pushed:
+            obj.data.update()
     for cup, moves in breast_fix.items():
         if not np.abs(moves).max() > 0:
             continue

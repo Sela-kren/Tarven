@@ -53,6 +53,10 @@ export const DESK_SPOT = new Vector3(10.15, 0, 1.82);
 /** Your journal, lying on the chest at the foot of the bed: read it to see how you stand. */
 export const JOURNAL_NAME = "Journal";
 export const JOURNAL_SPOT = new Vector3(10.08, 0, 0.08);
+/** Her closet, against the bedroom's west wall north of the door, kept whole so it can be outlined. */
+export const CLOSET_NAME = "Closet";
+/** The middle of the closet, which she stands in front of to change. */
+export const CLOSET_SPOT = new Vector3(7.68, 0, -1.35);
 /** Her bath, under the window of her own bathroom east of the bedroom, kept whole so it can be outlined. */
 export const BATH_NAME = "Bath";
 /** The middle of the bath, which she stands beside to wash. */
@@ -275,6 +279,19 @@ export function addBedroom(root: Object3D): void {
     .add(box([9.875, 0.53, -0.07], [9.895, 0.58, 0.21]), leather)
     .add(box([10.12, 0.47, 0.205], [10.15, 0.575, 0.215]), flat("T_ribbon", 0xd9a93a))
     .into(root);
+
+  // Her closet against the west wall, doors facing into the room: a plinth, a plank body, a cornice, the seam
+  // between its two doors, iron hinges and a pull on each door. Open it to change her clothes.
+  const closet = new Piece(CLOSET_NAME, true)
+    .add(box([7.42, 0, -1.92], [7.98, 0.1, -0.78]), m("T_wood"))
+    .add(box([7.42, 0.1, -1.9], [7.94, 1.82, -0.8], { tile: 0.9, swap: true }), m("T_crate"))
+    .add(box([7.4, 1.82, -1.95], [8.0, 1.93, -0.75]), m("T_wood"))
+    .add(box([7.94, 0.14, -1.365], [7.965, 1.78, -1.335]), m("T_wood"));
+  for (const z of [-1.86, -0.84]) {
+    for (const y of [0.4, 1.45]) closet.add(box([7.94, y, z - 0.03], [7.97, y + 0.08, z + 0.03]), m("T_iron"));
+  }
+  for (const z of [-1.43, -1.27]) closet.add(box([7.95, 0.92, z - 0.015], [7.99, 1.12, z + 0.015]), m("T_iron"));
+  closet.into(root);
 
   // The drafting desk in the south-east corner, with the plans for the house spread out on it.
   const plans = new MeshStandardMaterial({ name: "T_blueprint", map: blueprintTexture(), roughness: 0.95 });

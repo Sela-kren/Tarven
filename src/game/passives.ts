@@ -20,6 +20,34 @@ import type { GuestKind } from "./tavern";
 import type { TouchRegion } from "./touchtalk";
 import type { SkillId, StatId } from "./skills";
 import type { DuelMove } from "./duel";
+import type { LewdPart } from "./brawlai";
+import {
+  COCK_STACK,
+  DEFEAT_TALK,
+  JERK_DESIRE,
+  JERK_SEEN,
+  LEWD_PARTS,
+  noTalkStats,
+  TALK_CAP_PLUS,
+  TALK_COME,
+  TALK_GAIN_RATE,
+  TALK_GROPE,
+  TALK_HORNY,
+  TALK_SIGHT,
+  TALK_STACK,
+  TALK_TIERS,
+  TALK_WET,
+  SIGHT_EVERY,
+  SIGHT_EVERY_PER,
+  SIGHT_GUARD_MAX,
+  SIGHT_PARTS,
+  SIGHT_PEOPLE,
+  SIGHT_RATE_PER,
+  SIGHT_SENSE_PER,
+  SIGHT_STACK,
+  SIGHT_TIERS,
+  type TalkStats,
+} from "./lewdtalk";
 import { REVEL_HONOURS } from "./revel";
 import { WATCHED_PASSIVES } from "./feedstar";
 
@@ -43,12 +71,16 @@ export type Meters = Record<Meter, number>;
  */
 export const DESIRE_CAPS: readonly number[] = [60, 75, METER_MAX];
 export const DESIRE_CAP_UNLOCK: readonly number[] = [50, 70];
-/** How high a meter can go tonight, by how many times her passives have lifted its cap. */
-export function desireCap(e: { capUp: Meters }, meter: Meter): number {
-  return DESIRE_CAPS[Math.min(DESIRE_CAPS.length - 1, Math.max(0, e.capUp[meter] ?? 0))];
+/**
+ * How high a meter can go tonight, by how many times her passives have lifted its cap, and the points on top of that
+ * (her talk passives, KP's "max desire +5").
+ */
+export function desireCap(e: { capUp: Meters; capPlus?: Partial<Meters> }, meter: Meter): number {
+  const step = DESIRE_CAPS[Math.min(DESIRE_CAPS.length - 1, Math.max(0, e.capUp[meter] ?? 0))];
+  return Math.min(METER_MAX, step + (e.capPlus?.[meter] ?? 0));
 }
 /** Every meter's cap at once. */
-export function desireCaps(e: { capUp: Meters }): Meters {
+export function desireCaps(e: { capUp: Meters; capPlus?: Partial<Meters> }): Meters {
   const out = emptyMeters();
   for (const m of METERS) out[m] = desireCap(e, m);
   return out;
@@ -276,6 +308,20 @@ export interface Records {
   /** Her Legend (lewd.ts `legendStep`): times she rose to it, and times she came back to Known. */
   legendRises: number;
   legendFalls: number;
+  /**
+   * Lewd talk (lewdtalk.ts, KP's talk records): times she's been talked at about each part, the foes who've done it
+   * (one a brawl each), the pleasure it's given her, times it made her come, and times she's watched one stroke himself.
+   */
+  talkedAt: Partial<Record<LewdPart, number>>;
+  talkedBy: number;
+  talkPleasure: number;
+  talkClimaxes: number;
+  jerkedAt: number;
+  /** Stares (lewdtalk.ts, KP's sight records): times stared at, by part; the foes who did (one a brawl each); the pleasure; times it made her come. */
+  seenAt: Partial<Record<LewdPart, number>>;
+  seenBy: number;
+  sightPleasure: number;
+  sightClimaxes: number;
 }
 
 export function newRecords(): Records {
@@ -378,6 +424,15 @@ export function newRecords(): Records {
     captures: 0,
     legendRises: 0,
     legendFalls: 0,
+    talkedAt: {},
+    talkedBy: 0,
+    talkPleasure: 0,
+    talkClimaxes: 0,
+    jerkedAt: 0,
+    seenAt: {},
+    seenBy: 0,
+    sightPleasure: 0,
+    sightClimaxes: 0,
   };
 }
 
@@ -406,8 +461,11 @@ export const ROUGH_TOUCHES: ReadonlySet<string> = new Set([
 export interface Effects {
   /** Where each meter starts each night. */
   start: Meters;
-  /** How many times each meter's cap has been lifted (desireCap). */
+  /** How many times each meter's cap has been lifted (desireCap), and points on top of that (her talk passives). */
   capUp: Meters;
+  capPlus: Meters;
+  /** What lewd talk does to her (lewdtalk.ts, KP's talk sensitivity and talk passives). */
+  talk: TalkStats;
   /** How much less (negative: more) each desire a brawl scene needs of her (trinkets.ts, KP's accessories). */
   sceneEase: Partial<Record<Meter, number>>;
   /** How much less each kind of touch needs, in meter points (10 is one step of boldness). */
@@ -541,6 +599,8 @@ export function noEffects(): Effects {
   return {
     start: emptyMeters(),
     capUp: emptyMeters(),
+    capPlus: emptyMeters(),
+    talk: noTalkStats(),
     sceneEase: {},
     ease: {},
     sens: emptyMeters(),
@@ -806,6 +866,434 @@ const DEFEAT_WORDS: Record<DefeatId, { name: string; thought: string; meter: Met
   baron: { name: "The Captain's Due", thought: "(They'll be back. Part of me is counting the days.)", meter: "cock" },
   garrison: { name: "Drilled", thought: "(I know the squad's order by heart now. All of it.)", meter: "pussy" },
 };
+/**
+ * Lewd talk's passives (lewdtalk.ts), Karryn's Prison's Talk passives (RemtairyKarrynPassives.js), effect for effect:
+ * three for each part she's talked at about (KP's 12, 38 and 70 times); the ones for liking to hear it (KP's Talk
+ * Chatter, Talk Pleasure, Talk Orgasm); watching them stroke it (KP's See Jerk-off, 5, 25 and 70); and losing brawls
+ * (KP's Defeated Count, 1, 7 and 14), which is what opens her to it in the first place.
+ */
+const TALK_WORDS: Record<LewdPart, { names: [string, string, string]; thoughts: [string, string, string]; second: string; third: string }> = {
+  mouth: {
+    names: ["Lip Service", "Words in My Mouth", "Mouth Watering"],
+    thoughts: [
+      "(They keep telling me what my mouth is for. I keep listening.)",
+      "(They talk like I'd suck anyone off. My mouth waters anyway.)",
+      "(One dirty word about my mouth and I can taste it already.)",
+    ],
+    second: `in a brawl, Mouth desire fills ${Math.round(TALK_STACK.per * 100)}% faster for every new one who talks about your mouth (up to ${Math.round(TALK_STACK.max * 100)}%)`,
+    third: `when one comes in your mouth, +${TALK_COME.per} pleasure for every new one who talked about it that brawl (up to ${TALK_COME.max})`,
+  },
+  breasts: {
+    names: ["Eyes Up Here", "Talk of My Chest", "Proud Chest"],
+    thoughts: [
+      "(Every man in the room has something to say about my chest. No decorum at all.)",
+      "(They look so happy talking about my tits. My nipples get hard. Traitors.)",
+      "(Let them say it. I stand up straighter when they do.)",
+    ],
+    second: `in a brawl, stares stir you ${Math.round(TALK_SIGHT.per * 100)}% more for every new one who talks about your breasts (up to ${Math.round(TALK_SIGHT.max * 100)}%)`,
+    third: `when one comes on your breasts, +${TALK_COME.per} pleasure for every new one who talked about them that brawl (up to ${TALK_COME.max})`,
+  },
+  butt: {
+    names: ["Overheard Behind", "Talk Behind My Back", "Famous Behind"],
+    thoughts: [
+      "(I hear what they say about my backside when I walk off.)",
+      "(Dirty words for my rear, and I put a little more sway in it.)",
+      "(The whole valley talks about my backside. I've stopped minding.)",
+    ],
+    second: `in a brawl, they're ${Math.round(TALK_GROPE.per * 100)}% likelier to reach for you for every new one who talks about your rear (up to ${Math.round(TALK_GROPE.max * 100)}%)`,
+    third: `when one comes in your rear, +${TALK_COME.per} pleasure for every new one who talked about it that brawl (up to ${TALK_COME.max})`,
+  },
+  pussy: {
+    names: ["Dirty Whispers", "Wet Words", "Say It Again"],
+    thoughts: [
+      "(The filthy things they say about me down there... I can't stop hearing them.)",
+      "(They only have to mention it and I'm wet.)",
+      "(Say it again. Please. Say it slower.)",
+    ],
+    second: `in a brawl, Pussy desire rises ${TALK_WET} every turn for every new one who talks about your pussy`,
+    third: `when one comes in your pussy, +${TALK_COME.per} pleasure for every new one who talked about it that brawl (up to ${TALK_COME.max})`,
+  },
+  cock: {
+    names: ["Cock Talk", "Talk Me Into It", "Say the Word"],
+    thoughts: [
+      "(Nobody asked, but they tell me all about their cocks anyway.)",
+      "(They brag about it and I can't help but listen closely.)",
+      "(One of them says the word and I'm already on my knees in my head.)",
+    ],
+    second: `in a brawl, Cock desire fills ${Math.round(COCK_STACK.per * 100)}% faster for every new one who talks about his cock (up to ${Math.round(COCK_STACK.max * 100)}%)`,
+    third: `${Math.round(TALK_HORNY * 100)}% chance cock talk makes you horny`,
+  },
+};
+const talkedAt = (f: PassiveFacts, part: LewdPart) => f.records.talkedAt?.[part] ?? 0;
+const TALK_DEFEAT_WORDS = [
+  { name: "Taste of Defeat", thought: "(They talked filth at me while I was on the floor. And I listened.)" },
+  { name: "Defeat After Defeat", thought: "(Every time I'm down, their words get under my skin a little deeper.)" },
+  { name: "Heart Bends to It", thought: "(The morning after a beating, I wake up wanting. What is wrong with me?)" },
+];
+const JERK_WORDS = [
+  { name: "Front Row Seat", thought: "(I should look away when they do that. I never do.)" },
+  { name: "Stimulated Curiosity", thought: "(I watch his hand the whole time. I count the strokes.)" },
+  { name: "Feast for the Eyes", thought: "(A cock in a fist, pointed at me. I could watch that all night.)" },
+];
+const TALK_PASSIVES: PassiveDef[] = [
+  ...LEWD_PARTS.flatMap((part): PassiveDef[] => {
+    const w = TALK_WORDS[part];
+    const name = METER_NAMES[part];
+    const need = (i: number) => `Be talked at lewd about your ${name.toLowerCase()} ${TALK_TIERS[i]} times`;
+    return [
+      {
+        id: `talk1_${part}`,
+        name: w.names[0],
+        group: part,
+        need: need(0),
+        progress: (f) => count(talkedAt(f, part), TALK_TIERS[0]),
+        benefit: `${name} desire can go ${TALK_CAP_PLUS} higher; ${name} desire fills ${Math.round(TALK_GAIN_RATE * 100)}% faster`,
+        effect: (e) => {
+          e.capPlus[part] += TALK_CAP_PLUS;
+          e.sens[part] += TALK_GAIN_RATE;
+        },
+        lewd: 2,
+        thought: w.thoughts[0],
+      },
+      {
+        id: `talk2_${part}`,
+        name: w.names[1],
+        group: part,
+        need: need(1),
+        progress: (f) => count(talkedAt(f, part), TALK_TIERS[1]),
+        benefit: `${name} desire can go ${TALK_CAP_PLUS} higher; ${w.second}`,
+        effect: (e) => {
+          e.capPlus[part] += TALK_CAP_PLUS;
+          if (part === "mouth") e.talk.stack.mouth = (e.talk.stack.mouth ?? 0) + TALK_STACK.per;
+          else if (part === "cock") e.talk.stack.cock = (e.talk.stack.cock ?? 0) + COCK_STACK.per;
+          else if (part === "breasts") e.talk.sight += TALK_SIGHT.per;
+          else if (part === "butt") e.talk.gropeButt += TALK_GROPE.per;
+          else e.talk.wet += TALK_WET;
+        },
+        lewd: 3,
+        thought: w.thoughts[1],
+      },
+      {
+        id: `talk3_${part}`,
+        name: w.names[2],
+        group: part,
+        need: need(2),
+        progress: (f) => count(talkedAt(f, part), TALK_TIERS[2]),
+        benefit: `${name} desire can go ${TALK_CAP_PLUS} higher; ${w.third}`,
+        effect: (e) => {
+          e.capPlus[part] += TALK_CAP_PLUS;
+          if (part === "cock") e.talk.horny += TALK_HORNY;
+          else e.talk.come[part] = (e.talk.come[part] ?? 0) + TALK_COME.per;
+        },
+        lewd: 5,
+        thought: w.thoughts[2],
+      },
+    ];
+  }),
+  // KP's Defeated Count passives: losing is what opens her to their talk.
+  ...DEFEAT_TALK.map(
+    (need, i): PassiveDef => ({
+      id: `talkDefeat${i + 1}`,
+      name: TALK_DEFEAT_WORDS[i].name,
+      group: "masochism",
+      need: `Lose ${need} brawl${need === 1 ? "" : "s"}`,
+      progress: (f) => count(f.records.fightsLost, need),
+      benefit: [
+        `Cock desire can go ${TALK_CAP_PLUS} higher; lewd talk does 10% more to you, and gives you pleasure, not just desire (talk sensitivity +0.15)`,
+        `Cock desire can go ${TALK_CAP_PLUS} higher; talk sensitivity +0.15`,
+        "Cock desire starts each night at +5; lewd talk does 10% more to you",
+      ][i],
+      effect: (e) => {
+        if (i < 2) e.capPlus.cock += TALK_CAP_PLUS;
+        if (i !== 1) e.talk.rate += 0.1;
+        if (i < 2) e.talk.sense += 0.15;
+        if (i === 2) e.start.cock += 5;
+      },
+      lewd: 2 + i * 2,
+      thought: TALK_DEFEAT_WORDS[i].thought,
+    }),
+  ),
+  {
+    id: "prettyWords",
+    name: "Pretty Words",
+    group: "charm",
+    need: "Be talked at lewd by 10 people",
+    progress: (f) => count(f.records.talkedBy, 10),
+    benefit: `Cock desire can go ${TALK_CAP_PLUS} higher; in a brawl, +1 damage for every new one who talks lewd at you (up to +3): it makes you angry`,
+    effect: (e) => {
+      e.capPlus.cock += TALK_CAP_PLUS;
+      e.talk.damage += 1;
+    },
+    lewd: 2,
+    thought: "(Their mouths are like sewers! Does shame mean nothing to them?!)",
+  },
+  {
+    id: "wordsLikeHands",
+    name: "Words Like Hands",
+    group: "desire",
+    need: "Get 150 pleasure from lewd talk",
+    progress: (f) => count(Math.floor(f.records.talkPleasure), 150),
+    benefit: "Talk sensitivity +0.25",
+    cost: `In a brawl, they're 3% likelier to reach for you for every new one who talks lewd (up to 15%)`,
+    effect: (e) => {
+      e.talk.sense += 0.25;
+      e.talk.grope += 0.03;
+    },
+    lewd: 4,
+    thought: "(I-I'm getting so hot... don't say any more dirty words to me...!)",
+  },
+  {
+    id: "hangOnEveryWord",
+    name: "Hang on Every Word",
+    group: "desire",
+    need: "Get 600 pleasure from lewd talk",
+    progress: (f) => count(Math.floor(f.records.talkPleasure), 600),
+    benefit: "Talk sensitivity +0.15",
+    cost: "In a brawl, -4% to talk or stare them down for every new one who talks lewd at you (up to -20%)",
+    effect: (e) => {
+      e.talk.sense += 0.15;
+      e.talk.mindDown += 0.04;
+    },
+    lewd: 5,
+    thought: "(Pillow talk with strangers, in the middle of a fight. And I stop to listen.)",
+  },
+  {
+    id: "talkedOverTheEdge",
+    name: "Talked Over the Edge",
+    group: "desire",
+    need: "Come from lewd talk in a brawl",
+    progress: (f) => count(f.records.talkClimaxes, 1),
+    benefit: "Lewd talk does 15% more to you",
+    effect: (e) => (e.talk.rate += 0.15),
+    lewd: 6,
+    thought: "(He just talked. That's all he did. And I came.)",
+  },
+  {
+    id: "justKeepTalking",
+    name: "Just Keep Talking",
+    group: "desire",
+    need: "Come from lewd talk 10 times",
+    progress: (f) => count(f.records.talkClimaxes, 10),
+    benefit: "While you're horny, lewd talk gives you twice the pleasure",
+    cost: "In a brawl, -1 damage for every new one who talks lewd at you (up to -3)",
+    effect: (e) => {
+      e.talk.crit = true;
+      e.talk.damage -= 1;
+    },
+    lewd: 8,
+    thought: "(Call me a slut. Go on. I'd rather you did.)",
+  },
+  // KP's See Jerk-off passives.
+  ...JERK_SEEN.map(
+    (need, i): PassiveDef => ({
+      id: `jerkSeen${i + 1}`,
+      name: JERK_WORDS[i].name,
+      group: "cock",
+      need: `Watch a foe stroke himself at you ${need} times`,
+      progress: (f) => count(f.records.jerkedAt, need),
+      benefit:
+        i === 0
+          ? `Cock desire can go ${TALK_CAP_PLUS} higher; +1 Mind level`
+          : `Cock desire can go ${TALK_CAP_PLUS} higher; lewd talk from one stroking himself stirs ${Math.round(JERK_DESIRE[i] * 100)}% more desire`,
+      effect: (e) => {
+        e.capPlus.cock += TALK_CAP_PLUS;
+        if (i === 0) add(e.skill, ["mind"], 1);
+        else e.talk.jerk = Math.max(e.talk.jerk, JERK_DESIRE[i]);
+      },
+      lewd: 2 + i * 2,
+      thought: JERK_WORDS[i].thought,
+    }),
+  ),
+];
+
+/**
+ * Stares' passives (lewdtalk.ts), Karryn's Prison's Sight passives, effect for effect: three for each part she's
+ * stared at (KP's 15, 54 and 73 times), and the ones for liking being looked at (KP's Sight People, Sight Pleasure,
+ * Sight Orgasm). Her sight sensitivity starts at nothing, like talk's: coming with them watching opens her to it.
+ */
+const SIGHT_WORDS: Record<LewdPart, { names: [string, string, string]; thoughts: [string, string, string] }> = {
+  mouth: {
+    names: ["Pretty Face", "A Face Just for Them", "Face Made to Be Leered At"],
+    thoughts: [
+      "(They stare at my face like it's the only thing in the room.)",
+      "(The faces I make in a brawl... I only make them here. They know it.)",
+      "(I make the face on purpose now. The one they like.)",
+    ],
+  },
+  breasts: {
+    names: ["Made for Showing Off", "Grown to Be Seen", "Hard from Their Looks"],
+    thoughts: [
+      "(Big ones are made for showing off. That's what I tell myself.)",
+      "(I swear they've grown since I started letting them look.)",
+      "(One look and my nipples are hard. Every time.)",
+    ],
+  },
+  butt: {
+    names: ["A Sight from Behind", "Rear Exhibition", "Shaking It for the Room"],
+    thoughts: [
+      "(A healthy rear for healthy eyes. That's all it is.)",
+      "(I bend over the table slower than I need to.)",
+      "(I shake it for the whole room now and I don't even pretend not to.)",
+    ],
+  },
+  pussy: {
+    names: ["On Display", "Twitching Under Their Eyes", "Begging to Be Seen"],
+    thoughts: [
+      "(My most private part, on show for anyone in the taproom.)",
+      "(I can feel it twitch when they stare. They can see it too.)",
+      "(It wants to be looked at. I want it looked at.)",
+    ],
+  },
+  cock: { names: ["", "", ""], thoughts: ["", "", ""] },
+};
+const seenAt = (f: PassiveFacts, part: LewdPart) => f.records.seenAt?.[part] ?? 0;
+const SIGHT_PASSIVES: PassiveDef[] = [
+  ...SIGHT_PARTS.flatMap((part): PassiveDef[] => {
+    const w = SIGHT_WORDS[part];
+    const name = METER_NAMES[part];
+    const where = part === "mouth" ? "your face" : part === "breasts" ? "your chest" : part === "butt" ? "your rear" : "your pussy";
+    const need = (i: number) => `Be stared at, ${where}, ${SIGHT_TIERS[i]} times`;
+    const second =
+      part === "breasts"
+        ? `in a brawl, stares give you more pleasure for every new one staring at your chest (sight sensitivity +${SIGHT_SENSE_PER.per} each, up to +${SIGHT_SENSE_PER.max})`
+        : part === "butt"
+          ? `in a brawl, they're ${Math.round(TALK_GROPE.per * 100)}% likelier to reach for you for every new one staring at your rear (up to ${Math.round(TALK_GROPE.max * 100)}%)`
+          : `in a brawl, ${name} desire rises ${SIGHT_EVERY_PER.per} more every round for every new one staring at ${where} (up to ${SIGHT_EVERY_PER.max})`;
+    return [
+      {
+        id: `sight1_${part}`,
+        name: w.names[0],
+        group: part,
+        need: need(0),
+        progress: (f) => count(seenAt(f, part), SIGHT_TIERS[0]),
+        benefit: `${name} desire can go ${TALK_CAP_PLUS} higher; in a brawl, ${name} desire rises ${SIGHT_EVERY} every round`,
+        effect: (e) => {
+          e.capPlus[part] += TALK_CAP_PLUS;
+          e.talk.sightEvery[part] = (e.talk.sightEvery[part] ?? 0) + SIGHT_EVERY;
+        },
+        lewd: 2,
+        thought: w.thoughts[0],
+      },
+      {
+        id: `sight2_${part}`,
+        name: w.names[1],
+        group: part,
+        need: need(1),
+        progress: (f) => count(seenAt(f, part), SIGHT_TIERS[1]),
+        benefit: `${name} desire can go ${TALK_CAP_PLUS} higher; ${second}`,
+        effect: (e) => {
+          e.capPlus[part] += TALK_CAP_PLUS;
+          if (part === "breasts") e.talk.sightSenseBreasts += SIGHT_SENSE_PER.per;
+          else if (part === "butt") e.talk.sightGropeButt += TALK_GROPE.per;
+          else e.talk.sightEveryPer[part] = (e.talk.sightEveryPer[part] ?? 0) + SIGHT_EVERY_PER.per;
+        },
+        lewd: 3,
+        thought: w.thoughts[1],
+      },
+      {
+        id: `sight3_${part}`,
+        name: w.names[2],
+        group: part,
+        need: need(2),
+        progress: (f) => count(seenAt(f, part), SIGHT_TIERS[2]),
+        benefit: `${name} desire can go ${TALK_CAP_PLUS} higher; in a brawl, ${name} desire fills ${Math.round(SIGHT_STACK.per * 100)}% faster for every new one staring at ${where} (up to ${Math.round(SIGHT_STACK.max * 100)}%)`,
+        effect: (e) => {
+          e.capPlus[part] += TALK_CAP_PLUS;
+          e.talk.sightStack[part] = (e.talk.sightStack[part] ?? 0) + SIGHT_STACK.per;
+        },
+        lewd: 5,
+        thought: w.thoughts[2],
+      },
+    ];
+  }),
+  {
+    id: "audience",
+    name: "One-Woman Show",
+    group: "exhibition",
+    need: "Come 3 times",
+    progress: (f) => count(f.records.climaxes, 3),
+    benefit: "Stares give you pleasure, not just desire (sight sensitivity +0.15)",
+    effect: (e) => (e.talk.sightSense += 0.15),
+    lewd: 3,
+    thought: "(They watched me come. And part of me wanted them to.)",
+  },
+  {
+    id: "vulgarGazes",
+    name: "Target of Vulgar Gazes",
+    group: "exhibition",
+    need: `Be stared at by ${SIGHT_PEOPLE} people`,
+    progress: (f) => count(f.records.seenBy, SIGHT_PEOPLE),
+    benefit: `+1 Charm level; in a brawl, their blows take 1 less off you for every new one staring (up to ${SIGHT_GUARD_MAX})`,
+    effect: (e) => {
+      add(e.skill, ["charm"], 1);
+      e.talk.guard += 1;
+    },
+    lewd: 2,
+    thought: "(Let them gawk. Every eye on me makes me stand firmer.)",
+  },
+  {
+    id: "leeringPleasure",
+    name: "Leering Pleasure",
+    group: "exhibition",
+    need: "Get 150 pleasure from stares",
+    progress: (f) => count(Math.floor(f.records.sightPleasure), 150),
+    benefit: "Sight sensitivity +0.25",
+    cost: `Bare in a brawl, pleasure every round for each of them looking; stares do ${Math.round(SIGHT_RATE_PER.per * 100)}% more for every new one staring (up to ${Math.round(SIGHT_RATE_PER.max * 100)}%)`,
+    effect: (e) => {
+      e.talk.sightSense += 0.25;
+      e.talk.naked += 1;
+      e.talk.sightRatePer += SIGHT_RATE_PER.per;
+    },
+    lewd: 4,
+    thought: "(Their eyes on my skin feel like hands.)",
+  },
+  {
+    id: "willingEyeCandy",
+    name: "Willing Eye Candy",
+    group: "exhibition",
+    need: "Get 600 pleasure from stares",
+    progress: (f) => count(Math.floor(f.records.sightPleasure), 600),
+    benefit: `In a brawl, sight sensitivity +${SIGHT_SENSE_PER.per} for every new one staring (up to +${SIGHT_SENSE_PER.max})`,
+    cost: "Bare in a brawl, more pleasure every round for each of them looking",
+    effect: (e) => {
+      e.talk.sightSensePer += SIGHT_SENSE_PER.per;
+      e.talk.naked += 1;
+    },
+    lewd: 5,
+    thought: "(I'm not hiding it any more. Look all you like.)",
+  },
+  {
+    id: "ogledOrgasm",
+    name: "Ogled Orgasm",
+    group: "exhibition",
+    need: "Come from a stare in a brawl",
+    progress: (f) => count(f.records.sightClimaxes, 1),
+    benefit: "Stares do 15% more to you",
+    cost: "Bare in a brawl, more pleasure every round for each of them looking",
+    effect: (e) => {
+      e.talk.sightRate += 0.15;
+      e.talk.naked += 1;
+    },
+    lewd: 6,
+    thought: "(Nobody touched me. They just looked. And I came.)",
+  },
+  {
+    id: "undoneByEyes",
+    name: "Undone by Their Eyes",
+    group: "exhibition",
+    need: "Come from stares 10 times",
+    progress: (f) => count(f.records.sightClimaxes, 10),
+    benefit: "While you're horny, stares give you twice the pleasure",
+    cost: `In a brawl, their blows take 1 more off you for every new one staring (up to ${SIGHT_GUARD_MAX})`,
+    effect: (e) => {
+      e.talk.sightCrit = true;
+      e.talk.guard -= 1;
+    },
+    lewd: 8,
+    thought: "(One horny look and my knees go. Instant knockout.)",
+  },
+];
+
 const KP_EXTRA_PASSIVES: PassiveDef[] = [
   ...DEFEAT_IDS.map((id): PassiveDef => ({
     id: `defeat_${id}`,
@@ -814,11 +1302,12 @@ const KP_EXTRA_PASSIVES: PassiveDef[] = [
     need: `Be beaten there 3 times (${id})`,
     progress: (f) => count(f.records.defeats[id] ?? 0, 3),
     benefit: `${METER_NAMES[DEFEAT_WORDS[id].meter]} desire starts each night at +5; +1 willpower at the top`,
-    cost: "Guests reach for you a little more",
+    cost: "Guests reach for you a little more; lewd talk does 5% more to you",
     effect: (e) => {
       e.start[DEFEAT_WORDS[id].meter] += 5;
       e.willMax += 1;
       e.reach += 0.05;
+      e.talk.rate += 0.05;
     },
     lewd: 6,
     thought: DEFEAT_WORDS[id].thought,
@@ -1682,6 +2171,8 @@ export const PASSIVES: readonly PassiveDef[] = [
   // ---- Desire ----
   ...CAP_PASSIVES,
   ...KP_EXTRA_PASSIVES,
+  ...TALK_PASSIVES,
+  ...SIGHT_PASSIVES,
   ...REVEL_PASSIVES,
   ...FEED_PASSIVES,
   {
@@ -2967,6 +3458,8 @@ export interface ProgressSave {
   /** Tavern rules she's adopted, and the ones on (tavernrules.ts). */
   rulesAdopted?: string[];
   rules?: string[];
+  /** Edict points not yet spent (tavernrules.ts). Older saves have none and start with the opening few. */
+  edictPoints?: number;
   /** Trinkets worn (trinkets.ts). */
   trinkets?: string[];
   /** A riot night on (sidejobs.ts), and nights since her hair was trimmed. */
@@ -2996,6 +3489,7 @@ export function readProgress(raw: unknown): ProgressSave {
   out.hairNights = Math.floor(num(fields.hairNights, 1000));
   out.rulesAdopted = ids(fields.rulesAdopted);
   out.rules = ids(fields.rules);
+  if (typeof fields.edictPoints === "number") out.edictPoints = Math.floor(num(fields.edictPoints, 1000));
   if (Array.isArray(fields.passives)) out.passives = [...new Set(fields.passives.filter((id): id is string => typeof id === "string" && PASSIVE_BY_ID.has(id)))];
   const r = fields.records;
   if (r && typeof r === "object") {
@@ -3092,6 +3586,13 @@ export function readProgress(raw: unknown): ProgressSave {
       "captures",
       "legendRises",
       "legendFalls",
+      "talkedBy",
+      "talkPleasure",
+      "talkClimaxes",
+      "jerkedAt",
+      "seenBy",
+      "sightPleasure",
+      "sightClimaxes",
     ] as const) {
       rec[key] = Math.floor(num(src[key]));
     }
@@ -3131,6 +3632,18 @@ export function readProgress(raw: unknown): ProgressSave {
       for (const spot of CUM_SPOTS) {
         const n = Math.floor(num((src.cum as Record<string, unknown>)[spot]));
         if (n > 0) rec.cum[spot] = n;
+      }
+    }
+    if (src.seenAt && typeof src.seenAt === "object") {
+      for (const part of SIGHT_PARTS) {
+        const n = Math.floor(num((src.seenAt as Record<string, unknown>)[part]));
+        if (n > 0) rec.seenAt[part] = n;
+      }
+    }
+    if (src.talkedAt && typeof src.talkedAt === "object") {
+      for (const part of LEWD_PARTS) {
+        const n = Math.floor(num((src.talkedAt as Record<string, unknown>)[part]));
+        if (n > 0) rec.talkedAt[part] = n;
       }
     }
     if (src.acts && typeof src.acts === "object") {

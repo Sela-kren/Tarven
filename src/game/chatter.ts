@@ -287,6 +287,8 @@ export class Chatter {
   private readonly guests = new Map<number, GuestState>();
   private readonly tables = new Map<number, TableState>();
   private roomTalks: RoomTalk[] = [];
+  /** Guests who leered at her to her face, waiting for the tavern to feel it (takeLeers). */
+  private readonly leered: number[] = [];
   /** Counts down to the next pair of solo guests striking up. */
   private roomWait = ROOM_GAP;
   /** Conversations already had, kept from night to night, so none comes round again until the rest are used. */
@@ -323,6 +325,7 @@ export class Chatter {
     this.tables.clear();
     this.roomTalks = [];
     this.roomWait = ROOM_GAP;
+    this.leered.length = 0;
   }
 
   private pick<T>(items: readonly T[]): T {
@@ -376,7 +379,15 @@ export class Chatter {
   /** Whether this guest, who has heard what's said about you, is going to be crude about it. */
   private leers(guest: Guest): boolean {
     const facts = this.facts?.(guest.kind);
-    return Boolean(facts && facts.persona.respect <= LOW_RESPECT && guest.mood !== "angry" && this.random() < LEER_CHANCE);
+    const leering = Boolean(facts && facts.persona.respect <= LOW_RESPECT && guest.mood !== "angry" && this.random() < LEER_CHANCE);
+    // Said to her face as she takes or brings his order: it gets to her (lewdtalk.ts, KP's waitress talk).
+    if (leering) this.leered.push(guest.id);
+    return leering;
+  }
+
+  /** The guests who've leered at her since this was last asked (Tavern.heardLeer), once each time. */
+  takeLeers(): number[] {
+    return this.leered.splice(0);
   }
 
   /** One of `options` that fits in `seconds`, and that hasn't been had yet if there is one. */

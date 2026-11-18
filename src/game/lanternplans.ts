@@ -57,6 +57,7 @@ export function lanternSupplies(tavern: Tavern): Supply[] {
         name: `${text.name}: ${text[choice]}`,
         icon: "rule",
         group: "House rules",
+        tab: "edicts",
         detail: `${text.detail} Click to change it.`,
         owned: false,
         canBuy: day,
@@ -69,6 +70,7 @@ export function lanternSupplies(tavern: Tavern): Supply[] {
         name: girl.quit ? `${girl.name} (gone)` : `${girl.name}, ${girl.age}`,
         icon: "heart",
         group: "Girls",
+        tab: "staff",
         detail: girl.quit
           ? `${girl.name} left the house.`
           : `${girl.about} Appeal ${girl.appeal}, charm ${girl.charm}, stamina ${girl.stamina - Math.min(girl.stamina, girl.fatigue)}/${girl.stamina}, loyalty ${Math.round(girl.loyalty)}, resolve ${girl.resolve}. Best with ${girl.knack}s. ${tierOf(girl.corruption)}, lewdness ${girlLewdness(girl)} (${lantern.stageOf(girl)}).${girl.ill > 0 ? " Ill: resting." : ""} She can turn down any guest.`,

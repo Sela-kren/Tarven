@@ -1,5 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { cupFixAmount, REVIEWED_CUPS } from "../src/game/appearance";
+import { cupFixAmount, guestHairstyle, REVIEWED_CUPS } from "../src/game/appearance";
+
+describe("guest hairstyles", () => {
+  it("spreads guests over every style, each look always the same one", () => {
+    for (const body of ["Female", "Male"] as const) {
+      const seen = new Map<string, number>();
+      for (let i = 0; i < 3000; i++) {
+        const look = 1 + Math.floor(Math.random() * (1 << 30));
+        const style = guestHairstyle(body, look)!;
+        expect(guestHairstyle(body, look)).toBe(style);
+        seen.set(style, (seen.get(style) ?? 0) + 1);
+      }
+      const styles = LOOK_OPTIONS[body].hairstyles;
+      expect(seen.size).toBe(styles.length);
+      for (const count of seen.values()) expect(count).toBeGreaterThan(3000 / styles.length / 2);
+    }
+  });
+  it("keeps the plain look's own hair", () => {
+    expect(guestHairstyle("Female", 0)).toBeUndefined();
+  });
+});
 
 describe("sculpted cup fixes", () => {
   const [a, c, f] = REVIEWED_CUPS;

@@ -1,6 +1,7 @@
 /**
- * The house plans: buy and sell floor, draw walls, and place, move and store furniture. Time stops and the
- * camera is free while it's open. The rules are in `HousePlan`; this is the mouse, the keys and the toolbar.
+ * The house plans: buy and sell floor, draw walls, and place, move and store furniture (the Build tab), and buy
+ * upgrades, set rules and look in on her people (the other tabs, see `PLAN_TABS`). Time stops and the camera is
+ * free while it's open. The rules are in `HousePlan`; this is the mouse, the keys and the toolbar.
  */
 import {
   BufferAttribute,
@@ -41,8 +42,52 @@ import {
 } from "./house";
 import type { HouseView } from "./houseview";
 import type { Input } from "./input";
+import type { StaffJob } from "./staff";
+import type { EdictBranch, EdictState } from "./tavernrules";
 
 type Tool = "hand" | "floor" | "sell" | "wall" | "unwall";
+
+/**
+ * The plans' tabs, as Karryn's Prison splits building from its edicts: Build lays out the room (floor, walls,
+ * furniture, storage); Upgrades improves what's there (upgrades, stock, drinks, the Lantern, the Revel Hall); Edicts
+ * is the edict tree (tavernrules.ts) and the Lantern's house rules; Staff puts her people on posts. A new tab is one
+ * more row here; a tab with nothing on it stays hidden.
+ */
+export type PlanTab = "build" | "upgrades" | "edicts" | "staff";
+
+const PLAN_TABS: { id: PlanTab; label: string; icon: BuildIcon; hint: string }[] = [
+  { id: "build", label: "Build", icon: "wallDraw", hint: "Lay out the room: floor, walls and furniture." },
+  { id: "upgrades", label: "Upgrades", icon: "done", hint: "Improve the tavern: upgrades, stock and drinks." },
+  { id: "edicts", label: "Edicts", icon: "rule", hint: "Enact edicts with edict points and gold. Each needs one above it; some lock another out. Enacted is for good." },
+  { id: "staff", label: "Staff", icon: "heart", hint: "Click someone, then click a post (or Resting) to put them there for tonight." },
+];
+
+/** Each branch's picture on the edict tree. */
+const BRANCH_ICONS: Record<EdictBranch, BuildIcon> = { service: "cup", staff: "heart", conduct: "rule", order: "rule", house: "lantern" };
+
+/** One edict as the tree shows it. */
+export interface EdictView {
+  id: string;
+  name: string;
+  branch: EdictBranch;
+  tier: number;
+  state: EdictState;
+  points: number;
+  gold: number;
+  /** What it does and costs, and what it needs or locks out, for the note line. */
+  detail: string;
+  canEnact: boolean;
+  enact(): void;
+}
+
+/** The Staff tab: the posts, and who's where. */
+export interface StaffBoard {
+  posts: { job: StaffJob; name: string; slots: number }[];
+  /** `post` is null while they rest. */
+  people: { id: string; name: string; job: StaffJob; post: StaffJob | null; detail: string }[];
+  /** Posts can only change while the tavern's shut. */
+  canChange: boolean;
+}
 
 const TOOLS: { id: Tool; label: string; icon: BuildIcon; hint: string }[] = [
   { id: "hand", label: "Move", icon: "move", hint: "Click furniture to pick it up. R turns it, X or Delete sends it to storage." },
@@ -81,6 +126,8 @@ export interface Supply {
   max?: number;
   /** The heading it's shown under; "Upgrades" if not given. */
   group?: string;
+  /** The tab it's on; "upgrades" if not given. */
+  tab?: PlanTab;
   canBuy: boolean;
   buy(): void;
 }
@@ -99,6 +146,12 @@ export interface BuildHost {
   blockers(): readonly Rect[];
   /** What the plan as it stands cuts off, in words, or null. */
   routeProblem(): string | null;
+  /** The edict tree: her unspent edict points, how many she earns a morning, the branches and their edicts. */
+  edicts(): { points: number; perDay: number; branches: readonly { id: EdictBranch; name: string }[]; list: EdictView[] };
+  /** Her staff and the posts they can work. */
+  staffBoard(): StaffBoard;
+  /** Puts one of them on a post, or to rest; false if the post is full or it can't change now. */
+  setPost(id: string, post: StaffJob | "rest"): boolean;
   leave(): void;
 }
 
@@ -117,6 +170,9 @@ export class BuildMode {
 
   private active = false;
   private tool: Tool = "hand";
+  private tab: PlanTab = "build";
+  /** The staff member taken up on the Staff tab, to put on a post with the next click. */
+  private pickedStaff: string | null = null;
   private held: Held | null = null;
   private message = "";
   private dragging = false;
@@ -134,6 +190,7 @@ export class BuildMode {
   private readonly cursorMaterial = new MeshBasicMaterial({ color: GOOD, transparent: true, opacity: 0.5, depthWrite: false });
   private readonly cursor = new Mesh(new PlaneGeometry(1, 1).rotateX(-Math.PI / 2), this.cursorMaterial);
 
+  private readonly tabsEl = document.createElement("div");
   private readonly barEl = document.createElement("div");
   private readonly noteEl = document.createElement("div");
 
@@ -144,9 +201,10 @@ export class BuildMode {
     private readonly input: Input,
     private readonly host: BuildHost,
   ) {
+    this.tabsEl.className = "tabs";
     this.barEl.className = "bar";
     this.noteEl.className = "note";
-    root.append(this.barEl, this.noteEl);
+    root.append(this.tabsEl, this.barEl, this.noteEl);
 
     this.grid = this.makeGrid();
     this.buyable.position.y = OVERLAY_HEIGHT;
@@ -224,6 +282,17 @@ export class BuildMode {
     this.render();
   }
 
+  /** Opens a tab of the plans. Leaving Build puts down nothing: what's held goes back, and the floor tools stop. */
+  private setTab(tab: PlanTab): void {
+    if (tab === this.tab) return;
+    if (tab !== "build") this.cancelHeld();
+    this.tab = tab;
+    this.tool = "hand";
+    this.message = "";
+    this.refreshBuyable();
+    this.render();
+  }
+
   private redraw(): void {
     this.view.rebuild(this.plan);
     this.refreshBuyable();
@@ -275,12 +344,31 @@ export class BuildMode {
       on?: boolean;
       off?: boolean;
       owned?: boolean;
+      /** Edict points it costs, in a badge in the top corner. */
+      points?: number;
+      /** A name written under the picture, where a row of the same picture needs telling apart. */
+      caption?: string;
+      /** Extra classes: "locked" or "excluded" on the edict tree, "slot" for an empty post. */
+      classes?: string[];
       onPick: () => void;
     },
-  ): void {
+  ): HTMLElement {
     const el = document.createElement("button");
     el.type = "button";
     el.className = "tile";
+    for (const name of options.classes ?? []) el.classList.add(name);
+    if (options.points !== undefined && !options.owned) {
+      const points = document.createElement("span");
+      points.className = "points";
+      points.textContent = `${options.points} EP`;
+      el.append(points);
+    }
+    if (options.caption) {
+      const caption = document.createElement("span");
+      caption.className = "caption";
+      caption.textContent = options.caption;
+      el.append(caption);
+    }
     const art = document.createElement("span");
     art.className = "art";
     if (options.image) {
@@ -325,13 +413,67 @@ export class BuildMode {
     });
     el.addEventListener("pointerleave", () => this.render());
     parent.append(el);
+    return el;
   }
 
   private render(): void {
     if (!this.active) return;
-    const gold = this.host.gold();
     this.barEl.replaceChildren();
+    const supplies = this.host.supplies();
+    const tabOf = (supply: Supply): PlanTab => supply.tab ?? "upgrades";
+    const edicts = this.host.edicts();
+    const board = this.host.staffBoard();
+    const used = supplies.map(tabOf);
+    if (edicts.list.length > 0) used.push("edicts");
+    if (board.people.length > 0) used.push("staff");
+    this.renderTabs(used);
+    const onTab = supplies.filter((supply) => tabOf(supply) === this.tab);
+    if (this.tab === "build") this.renderBuild();
+    else if (this.tab === "edicts") this.renderEdicts(edicts);
+    else if (this.tab === "staff") this.renderStaff(board);
+    if (this.tab !== "build") this.renderSupplies(onTab);
 
+    const spacer = document.createElement("span");
+    spacer.className = "spacer";
+    this.barEl.append(spacer);
+    const done = document.createElement("button");
+    done.type = "button";
+    done.className = "done";
+    done.innerHTML = BUILD_ICONS.done;
+    done.append("Done");
+    done.addEventListener("click", () => this.tryLeave());
+    this.barEl.append(done);
+
+    const seats = seatSpecs(this.plan.layout.furniture).length;
+    const hint = this.held
+      ? "Click to put it down. R turns it. X sends it to storage. Right-click or Esc cancels."
+      : this.tab === "build"
+        ? TOOLS.find(({ id }) => id === this.tool)?.hint
+        : PLAN_TABS.find(({ id }) => id === this.tab)?.hint;
+    this.noteEl.textContent = `${seats} seats · ${this.message || hint}`;
+  }
+
+  /** The tab strip: Build always, the others while they have something on them. */
+  private renderTabs(used: PlanTab[]): void {
+    this.tabsEl.replaceChildren();
+    for (const { id, label, icon } of PLAN_TABS) {
+      if (id !== "build" && !used.includes(id)) continue;
+      const el = document.createElement("button");
+      el.type = "button";
+      el.className = "tab";
+      el.innerHTML = BUILD_ICONS[icon];
+      el.append(label);
+      el.classList.toggle("on", this.tab === id);
+      el.addEventListener("click", () => this.setTab(id));
+      this.tabsEl.append(el);
+    }
+    // A tab that's emptied (the last girl gone, say) gives way to Build.
+    if (this.tab !== "build" && !used.includes(this.tab)) this.tab = "build";
+  }
+
+  /** The Build tab: the tools, furniture to buy, and what's in storage. */
+  private renderBuild(): void {
+    const gold = this.host.gold();
     const tools = this.group("Build");
     for (const { id, label, icon, hint } of TOOLS) {
       this.tile(tools, { icon, name: label, hint, on: this.tool === id && !this.held, onPick: () => this.setTool(id) });
@@ -377,9 +519,122 @@ export class BuildMode {
         stack.append(sell);
       }
     }
+  }
 
+  /**
+   * The edict tree, Karryn's Prison style: a column per branch, its edicts in rows by tier, each needing one in the
+   * row above. Enacted ones carry a tick; ones still to grow into are dimmed; ones an either/or locked out are struck.
+   */
+  private renderEdicts(edicts: ReturnType<BuildHost["edicts"]>): void {
+    const tree = document.createElement("div");
+    tree.className = "tree";
+    const purse = document.createElement("div");
+    purse.className = "purse";
+    purse.textContent = `${edicts.points} EP`;
+    purse.title = `Edict points: ${edicts.points}. You earn ${edicts.perDay} each morning.`;
+    tree.append(purse);
+    for (const branch of edicts.branches) {
+      const list = edicts.list.filter((edict) => edict.branch === branch.id);
+      if (list.length === 0) continue;
+      const column = document.createElement("div");
+      column.className = "branch";
+      const heading = document.createElement("div");
+      heading.className = "title";
+      heading.textContent = branch.name;
+      column.append(heading);
+      const tiers = [...new Set(list.map((edict) => edict.tier))].sort((a, b) => a - b);
+      for (const tier of tiers) {
+        const row = document.createElement("div");
+        row.className = "tiles";
+        column.append(row);
+        for (const edict of list.filter((e) => e.tier === tier)) {
+          this.tile(row, {
+            icon: BRANCH_ICONS[edict.branch],
+            name: edict.name,
+            caption: edict.name,
+            hint: edict.detail,
+            price: edict.gold,
+            points: edict.points,
+            owned: edict.state === "enacted",
+            off: !edict.canEnact,
+            classes: edict.state === "needs" ? ["locked"] : edict.state === "excluded" ? ["excluded"] : [],
+            onPick: () => {
+              edict.enact();
+              this.render();
+            },
+          });
+        }
+      }
+      tree.append(column);
+    }
+    this.barEl.append(tree);
+  }
+
+  /**
+   * The Staff tab: a group per post, with who's on it and its empty places, and one for whoever's resting. Click
+   * someone to take them up, then click a place on a post (or Resting) to put them there.
+   */
+  private renderStaff(board: StaffBoard): void {
+    const picked = board.people.find((person) => person.id === this.pickedStaff) ?? null;
+    if (!picked) this.pickedStaff = null;
+    const person = (parent: HTMLElement, p: StaffBoard["people"][number]) =>
+      this.tile(parent, {
+        icon: "heart",
+        name: p.name,
+        caption: p.name.split(" ")[0],
+        hint: p.detail,
+        on: p.id === this.pickedStaff,
+        off: !board.canChange,
+        onPick: () => {
+          this.pickedStaff = this.pickedStaff === p.id ? null : p.id;
+          this.message = "";
+          this.render();
+        },
+      });
+    const place = (to: StaffJob | "rest", label: string) => () => {
+      if (!picked) {
+        this.say("Click someone first, then the place to put them.");
+        return;
+      }
+      if (!this.host.setPost(picked.id, to)) {
+        this.say(`There's no room for ${picked.name.split(" ")[0]} on ${label}.`);
+        return;
+      }
+      this.pickedStaff = null;
+      this.message = "";
+      this.render();
+    };
+    for (const post of board.posts) {
+      const on = board.people.filter((p) => p.post === post.job);
+      const tiles = this.group(`${post.name} ${on.length}/${post.slots}`);
+      for (const p of on) person(tiles, p);
+      for (let i = on.length; i < post.slots; i++) {
+        this.tile(tiles, {
+          name: `Empty place: ${post.name}`,
+          hint: picked ? `Put ${picked.name} here tonight.` : "Click someone first, then this place.",
+          caption: "Empty",
+          classes: ["slot"],
+          off: !board.canChange,
+          onPick: place(post.job, post.name),
+        });
+      }
+    }
+    const resting = this.group("Resting");
+    for (const p of board.people.filter((x) => x.post === null)) person(resting, p);
+    this.tile(resting, {
+      icon: "bed",
+      name: "Rest tonight",
+      hint: picked ? `${picked.name} takes the night off: no wage, and their stamina comes back.` : "Click someone first, then this to give them the night off.",
+      classes: ["slot"],
+      off: !board.canChange,
+      onPick: place("rest", "the rest list"),
+    });
+  }
+
+  /** Any other tab: its supplies, under their headings. */
+  private renderSupplies(supplies: Supply[]): void {
     const groups = new Map<string, HTMLElement>();
-    for (const supply of this.host.supplies()) {
+    for (const supply of supplies) {
       const title = supply.group ?? "Upgrades";
       let tiles = groups.get(title);
       if (!tiles) {
@@ -401,23 +656,6 @@ export class BuildMode {
         },
       });
     }
-
-    const spacer = document.createElement("span");
-    spacer.className = "spacer";
-    this.barEl.append(spacer);
-    const done = document.createElement("button");
-    done.type = "button";
-    done.className = "done";
-    done.innerHTML = BUILD_ICONS.done;
-    done.append("Done");
-    done.addEventListener("click", () => this.tryLeave());
-    this.barEl.append(done);
-
-    const seats = seatSpecs(this.plan.layout.furniture).length;
-    const hint = this.held
-      ? "Click to put it down. R turns it. X sends it to storage. Right-click or Esc cancels."
-      : TOOLS.find(({ id }) => id === this.tool)?.hint;
-    this.noteEl.textContent = `${seats} seats · ${this.message || hint}`;
   }
 
   private buy(kind: FurnitureKind): void {
@@ -573,7 +811,7 @@ export class BuildMode {
   }
 
   private onPointerDown(event: PointerEvent): void {
-    if (!this.active || event.button !== 0 || !(event.target instanceof HTMLCanvasElement)) return;
+    if (!this.active || this.tab !== "build" || event.button !== 0 || !(event.target instanceof HTMLCanvasElement)) return;
     this.onPointerMove(event);
     if (this.held) {
       this.dropHeld();
@@ -718,6 +956,10 @@ export class BuildMode {
     const { minX, maxX, minZ, maxZ } = LOT_BOUNDS;
     this.focus.x = Math.min(maxX, Math.max(minX, this.focus.x + (Number(input.right) - Number(input.left)) * step));
     this.focus.z = Math.min(maxZ, Math.max(minZ, this.focus.z + (Number(input.down) - Number(input.up)) * step));
+    if (this.tab !== "build") {
+      this.showCursor(null, GOOD);
+      return;
+    }
     if (input.pressed("KeyR")) this.rotate();
     if (input.pressed("KeyX") || input.pressed("Delete")) this.store();
     this.updateCursor();

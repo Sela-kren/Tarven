@@ -65,13 +65,17 @@ export class Customizer {
   private opening = { vulva: 0, anus: 0 };
   /** How hard the preview has his penis. */
   private erection = 0;
+  /** Opened from her closet in the tavern: only her clothes can change, never her body, face, hair or skin. */
+  private closet = false;
+  private readonly randomEl = make("button", "random", "Random");
+  private readonly resetAllEl = make("button", "", "Reset all");
 
   constructor(private readonly el: HTMLElement, private readonly hooks: CustomizerHooks) {
     const box = make("div", "box");
     this.tabsEl.setAttribute("role", "tablist");
     const actions = make("div", "actions");
     const resetTab = make("button", "", "Reset tab");
-    const resetAll = make("button", "", "Reset all");
+    const resetAll = this.resetAllEl;
     const done = make("button", "done", "Done");
     for (const button of [resetTab, resetAll, done]) button.type = "button";
     resetTab.addEventListener("click", () => this.reset(this.current));
@@ -81,7 +85,7 @@ export class Customizer {
     const hint = make("p", "hint", "Drag the character to turn them round. Double-click a slider to set it back.");
 
     const view = make("div", "view");
-    const random = make("button", "random", "Random");
+    const random = this.randomEl;
     random.type = "button";
     random.title = "Roll a whole new look. Reset all brings back the look as built.";
     random.addEventListener("click", () => {
@@ -112,17 +116,24 @@ export class Customizer {
     return this.el.classList.contains("open");
   }
 
-  open(body: BodyName, look: Look, label: string): void {
+  /**
+   * Opens on a character's look. From her `closet` in the tavern only the Clothes tab shows, with no Random or
+   * Reset all, so a change of clothes never touches who she is.
+   */
+  open(body: BodyName, look: Look, label: string, closet = false): void {
     this.body = body;
     this.look = copyLook(look);
-    this.titleEl.textContent = `Customize: ${label}`;
+    this.closet = closet;
+    this.titleEl.textContent = closet ? `Closet: ${label}` : `Customize: ${label}`;
+    this.randomEl.hidden = closet;
+    this.resetAllEl.hidden = closet;
     this.markDressing("dressed");
     this.opening = { vulva: 0, anus: 0 };
     this.hooks.open(0, 0);
     this.erection = 0;
     this.hooks.erect(0);
     this.el.classList.add("open");
-    this.show("body");
+    this.show(closet ? "clothes" : "body");
   }
 
   private dress(dressing: Dressing): void {
@@ -179,7 +190,7 @@ export class Customizer {
   private show(tab: LookTab): void {
     this.current = tab;
     this.tabsEl.replaceChildren(
-      ...TABS.map(({ id, label }) => {
+      ...TABS.filter(({ id }) => !this.closet || id === "clothes").map(({ id, label }) => {
         const button = make("button", id === tab ? "on" : "", label);
         button.type = "button";
         button.setAttribute("role", "tab");

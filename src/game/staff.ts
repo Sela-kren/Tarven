@@ -116,6 +116,11 @@ export interface StaffMember {
   stageSeen: number;
   /** Their Legend, the comic stage past Known (`staffStage`): older saves and new hires have never been one. */
   legend?: LegendState;
+  /**
+   * The post she's put them on (the plans' Staff tab): another job's, or "rest" to keep them off tonight. Missing
+   * means their own job's.
+   */
+  post?: StaffJob | "rest";
 }
 
 /** One of the people who can be hired (STAFF.md §5): who they are, when they turn up, and how they start. */
@@ -2019,5 +2024,7 @@ export function readStaffMember(raw: unknown): StaffMember | null {
     stageSeen: seen(m.stageSeen, mindStage(lewdness), 3),
     // An older save (or one never a Legend) has none.
     ...(m.legend ? { legend: readLegend(m.legend) } : {}),
+    // Their post, if she's put them anywhere but their own job; older saves have them all on their own.
+    ...(m.post === "rest" || (STAFF_JOBS.includes(m.post as StaffJob) && m.post !== m.job) ? { post: m.post } : {}),
   };
 }

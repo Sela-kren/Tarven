@@ -1,4 +1,6 @@
 import { fightTier } from "./fightface";
+import type { LewdPart } from "./brawlai";
+import { LEER_SHARE, talkGain } from "./lewdtalk";
 /** Her dom side that unlocks KP's Deny Ejaculation in a brawl. */
 const DENY_UNLOCK = 10;
 import { growthOf, rentRooms, RIOT_AFTER, RIOT_PUT_DOWN, RIOT_TROUBLE, runShow, type Growth } from "./sidejobs";
@@ -219,7 +221,16 @@ import {
   type GrabAnswerLines,
 } from "./grab";
 import { START_TITLE, TITLE_BY_ID, TITLES, titleEarned, TWO_SLOTS_FAME } from "./titles";
-import { TAVERN_RULE_BY_ID, type TavernRuleId } from "./tavernrules";
+import {
+  EDICT_FAME_BONUS_AT,
+  EDICT_POINTS_PER_DAY,
+  EDICT_START_POINTS,
+  edictPosts,
+  edictStaff,
+  edictState,
+  TAVERN_RULE_BY_ID,
+  type TavernRuleId,
+} from "./tavernrules";
 import {
   earnsRegular,
   newMarks,
@@ -470,6 +481,8 @@ export type Target =
   | { kind: "desk" }
   | { kind: "book" }
   | { kind: "bath" }
+  /** Her closet in the bedroom, to change her clothes. */
+  | { kind: "closet" }
   /** Out through the front door by day ("out"), or a place on the high street (street.ts), which says its own label. */
   | { kind: "street"; place: string; label: string };
 /** A sound the rules ask for. What each one actually sounds like is up to the audio layer. */
@@ -549,6 +562,10 @@ const BARMAID_SHARE = 0.3;
 /** A doorman on: trouble starts this much less often; and at most this many thrown out a night. */
 export const DOORMAN_TROUBLE = 0.25;
 const DOORMAN_THROWS = 2;
+/** A second (or third) on the same post adds this share of the first one's help. */
+export const SECOND_POST_SHARE = 0.5;
+/** Loyalty a night lost working another job's post, unless cross-trained (tavernrules.ts). */
+export const OFF_POST_LOYALTY = 1;
 /** The Revel Hall's price on the house plans; and the ids given the revel's partners asking at bedtime. */
 export const REVEL_HALL_COST = 200;
 const REVEL_CREW_ID = 900000;
@@ -642,6 +659,10 @@ const STAY_HOME_CHANCE = 0.15;
 const SWAP_KIND_CHANCE = 0.3;
 /** Someone walking in alone comes up to this many seconds after their time. */
 const ARRIVAL_DRIFT = 8;
+/** A party, or whoever carries the night's rumor, comes up to this many seconds before or after their time. */
+const PARTY_DRIFT = 10;
+/** The chance someone walking in alone orders something else off the night's menu than the written order. */
+const REORDER_CHANCE = 0.5;
 /** The guests on top come in between this many seconds in and this long after the night's last. */
 const EXTRA_FIRST = 10;
 const EXTRA_TAIL = 15;
@@ -1829,11 +1850,12 @@ export class Tavern {
   newPassives: PassiveDef[] = [];
   /** Titles she's earned, and the ones she's wearing (titles.ts): one slot, two once she's famous enough. */
   titles = new Set<string>([START_TITLE]);
-  /** Tavern rules (tavernrules.ts): the ones she's paid to adopt, and the ones on right now. */
-  readonly rulesAdopted = new Set<TavernRuleId>();
+  /** Edict points to spend on the edict tree (tavernrules.ts): a few to start, more each morning. */
+  edictPoints = EDICT_START_POINTS;
   /** Named regulars (regulars.ts), and what's happened with each guest tonight, settled at the end of the night. */
   regulars: Regular[] = [];
   private readonly nightMarks = new Map<number, { guest: Pick<Guest, "kind" | "role" | "female" | "look" | "stats" | "regular">; marks: NightMarks }>();
+  /** The edicts she's enacted (tavernrules.ts), for good. */
   readonly rules = new Set<TavernRuleId>();
   worn: string[] = [START_TITLE];
   /** She eased the ache herself before sleeping last night. */
@@ -2099,9 +2121,41 @@ export class Tavern {
     return true;
   }
 
-  /** One of them on tonight in this job (still here, with stamina to work). */
+  /** One of them on tonight at this job's post (still here, with stamina to work). */
   staffWorking(job: StaffJob): boolean {
-    return this.staff.some((m) => m.job === job && !m.quit && m.stamina.current > 0);
+    return this.staffOnPost(job) > 0;
+  }
+
+  /** How many of them work this job's post tonight (still here, with stamina to work). */
+  staffOnPost(job: StaffJob): number {
+    return this.staff.filter((m) => !m.quit && m.stamina.current > 0 && this.postOf(m) === job).length;
+  }
+
+  /** The post one of them works: their own job's unless she's put them elsewhere; null while they rest. */
+  postOf(m: StaffMember): StaffJob | null {
+    return m.post === "rest" ? null : (m.post ?? m.job);
+  }
+
+  /** How many of them a job's post takes: one, and more from her edicts (the Staff & Posts branch). */
+  postSlots(job: StaffJob): number {
+    return 1 + (edictPosts(this.rules)[job] ?? 0);
+  }
+
+  /**
+   * Puts one of them on a post, or to rest, while the tavern's shut. A post that's full takes no one more. Working
+   * another job's post costs them a little loyalty each night, unless they're cross-trained (tavernrules.ts).
+   */
+  setPost(id: string, post: StaffJob | "rest"): boolean {
+    const m = this.staff.find((x) => x.id === id);
+    if (!this.canManageStaff || !m || m.quit || m.job === "girl" || post === "girl") return false;
+    if (post !== "rest" && this.postOf(m) !== post) {
+      const taken = this.staff.filter((x) => !x.quit && x.job !== "girl" && this.postOf(x) === post).length;
+      if (taken >= this.postSlots(post)) return false;
+    }
+    if (post === m.job) delete m.post;
+    else m.post = post;
+    this.refreshEffects();
+    return true;
   }
 
   /**
@@ -2112,8 +2166,12 @@ export class Tavern {
     if (this.staff.length === 0) return;
     const greedy = this.lantern.hung ? HOUSE_RULES.filter((r) => this.lantern.rules[r] === "greedy").length : 0;
     const kept: StaffMember[] = [];
+    const edicts = edictStaff(this.rules);
     for (const m of this.staff) {
-      const worked = !m.quit && m.stamina.current > 0;
+      // Off their post (resting), they don't work or get paid tonight, and get their stamina back.
+      const post = this.postOf(m);
+      const worked = !m.quit && m.stamina.current > 0 && post !== null;
+      const job = post ?? m.job;
       const paid = worked ? Math.min(m.wage, this.gold) : 0;
       this.gold -= paid;
       if (worked) {
@@ -2125,12 +2183,17 @@ export class Tavern {
       // her, and the whole hall on a revel night.
       const done = worked
         ? {
-            served: m.job === "barmaid" ? Math.floor(this.served * BARMAID_SHARE) : 0,
-            throwOuts: m.job === "doorman" ? Math.min(DOORMAN_THROWS, this.fightsTonight) : 0,
-            ...lewdWork(m.job, { reached: this.touchesTonight.reached, revel: this.revelHeld }),
+            served: job === "barmaid" ? Math.floor(this.served * BARMAID_SHARE) : 0,
+            throwOuts: job === "doorman" ? Math.min(DOORMAN_THROWS, this.fightsTonight) : 0,
+            ...lewdWork(job, { reached: this.touchesTonight.reached, revel: this.revelHeld }),
           }
         : {};
       const { member, dawn } = nightFor(m, { worked, wagePaid: paid, houseFame: this.persona.fame, madamCorruption: this.corruption, greedyRules: greedy, done });
+      // Her edicts on how staff are kept (meals, the tip jar), and a grudge for working someone else's job.
+      if (worked && !member.quit) {
+        const grudge = job !== m.job && !edicts.crossTrained ? OFF_POST_LOYALTY : 0;
+        member.loyalty = Math.max(0, Math.min(100, member.loyalty + edicts.loyalty - grudge));
+      }
       this.morningAfter.push(paid < m.wage && worked ? `${dawn.line} You could only pay ${paid} of ${m.wage} gold.` : dawn.line);
       for (const card of dawn.cards) this.morningAfter.push(...cardLines(card));
       if (dawn.beat) this.morningAfter.push(`${member.name}: "${dawn.beat.title}" is waiting (Settings, Staff).`);
@@ -3192,6 +3255,18 @@ export class Tavern {
   private readonly saidLines = new Set<string>();
   /** How far down the wardrobe's strip ladder guests have got you tonight: 0 is fully dressed. Back on by morning. */
   stripped = 0;
+
+  /**
+   * Her closet: she changes into the outfit, legwear and underwear picked there, and has all of it on, whatever
+   * was off before. Guests go for the new clothes' pieces from then on.
+   */
+  changeClothes(outfit: string | undefined, legwear: string | undefined, under: { bra?: string; briefs?: string }): void {
+    this.playerOutfit = outfit;
+    this.playerLegwear = legwear;
+    this.playerUnder = { ...under };
+    this.stripped = 0;
+    this.dressLeft = 0;
+  }
   /** What men have left on her tonight, in ml by spot. She washes before the next night. */
   private coated: Partial<Record<CumSpot, number>> = {};
   /** How far she undressed herself in tonight's duel, kept until morning: 0, down to her shift, or bare. */
@@ -3916,16 +3991,33 @@ export class Tavern {
     const kinds = script.map((a) => a.kind);
     const orders = script.map((a) => a.order);
     const arrivals: Arrival[] = [];
+    // Those walking in alone trade their times about, so the written order of who comes when isn't the same twice.
+    const alone = script.filter((a) => a.party === undefined && !a.rumor);
+    const slots = alone.map((a) => a.at);
+    for (let i = slots.length - 1; i > 0; i--) {
+      const j = Math.floor(dice() * (i + 1)) % (i + 1);
+      [slots[i], slots[j]] = [slots[j], slots[i]];
+    }
+    // The story's own (each party, and whoever carries the rumor) still come, together, but a little early or late.
+    const shift = new Map<number | "rumor", number>();
+    const shiftOf = (key: number | "rumor") => {
+      if (!shift.has(key)) shift.set(key, (dice() * 2 - 1) * PARTY_DRIFT);
+      return shift.get(key)!;
+    };
+    let slot = 0;
     for (const a of script) {
       if (a.party !== undefined || a.rumor) {
-        arrivals.push({ ...a });
+        arrivals.push({ ...a, at: Math.max(1, a.at + shiftOf(a.party ?? "rumor")) });
         continue;
       }
+      const written = slots[slot++];
       const roll = dice();
       if (this.nightIndex > 0 && roll >= 1 - STAY_HOME_CHANCE) continue;
-      const at = a.at + dice() * ARRIVAL_DRIFT;
+      const at = written + dice() * ARRIVAL_DRIFT;
       const swap = roll >= 1 - STAY_HOME_CHANCE - SWAP_KIND_CHANCE;
-      arrivals.push(swap ? { ...a, at, kind: pick(kinds), role: undefined } : { ...a, at });
+      // Half of them fancy something else off tonight's menu.
+      const order = dice() < REORDER_CHANCE ? pick(orders) : a.order;
+      arrivals.push(swap ? { ...a, at, order, kind: pick(kinds), role: undefined } : { ...a, at, order });
     }
     const { least, most } = this.extraGuests;
     const extra = least + Math.floor(dice() * (most - least + 1));
@@ -4786,6 +4878,8 @@ export class Tavern {
       rimjob: this.touchSettings.rimjob,
       footjob: this.touchSettings.footjob,
       tier: fightTier(this.slutLevel),
+      fame: this.persona.fame,
+      lewdTalk: this.effects.talk,
       experience: {
         hands: this.records.acts.hands ?? 0,
         mouth: this.records.acts.mouth ?? 0,
@@ -4822,6 +4916,29 @@ export class Tavern {
    */
   desireCap(meter: Meter): number {
     return desireCap(this.effects, meter);
+  }
+
+  /**
+   * A leering guest's remark as she takes his order or brings it (chatter.ts), KP's waitress talk: lewd talk about the
+   * part of her he goes for, half a brawl line's worth. It stirs her, gives her pleasure once she likes hearing it, and
+   * counts toward her talk passives (lewdtalk.ts). Never enough on its own to make her come at the bar.
+   */
+  heardLeer(guestId: number): void {
+    // Only while the bar is open and she's on the floor.
+    if (this.playerBody !== "Female" || !(this.phase === "dusk" || this.phase === "service" || this.phase === "lastcall")) return;
+    const guest = this.guests.find((g) => g.id === guestId);
+    if (!guest) return;
+    const prefers = guest.stats.prefers;
+    const part: LewdPart = !prefers || prefers === "hands" ? "cock" : prefers;
+    const t = this.effects.talk;
+    const gain = talkGain({ talkLvl: 0, sense: t.sense, rate: t.rate, jerk: 0, spread: this.random() });
+    this.raise(part, gain.desire * LEER_SHARE);
+    const pleasure = gain.pleasure * LEER_SHARE;
+    if (pleasure > 0) {
+      this.pleasure = Math.min(PLEASURE_MAX - 1, this.pleasure + pleasure);
+      this.records.talkPleasure += pleasure;
+    }
+    this.records.talkedAt[part] = (this.records.talkedAt[part] ?? 0) + 1;
   }
 
   /** Tonight's desire goes up on one meter, faster with passives that make it so. */
@@ -5023,7 +5140,7 @@ export class Tavern {
     const e = effectsOf(this.passives);
     for (const id of this.worn) TITLE_BY_ID.get(id)?.wear(e);
     for (const d of this.debuffs) DEBUFFS[d.id].effect(e, d.level);
-    for (const id of this.rules) TAVERN_RULE_BY_ID.get(id)?.effect(e);
+    for (const id of this.rules) TAVERN_RULE_BY_ID.get(id)?.effect?.(e);
     // A riot night (KP's riots): trouble starts twice as easily.
     if (this.riot) e.trouble -= RIOT_TROUBLE;
     // Her trinkets (KP's accessories), the ones she has.
@@ -5031,10 +5148,15 @@ export class Tavern {
     for (const id of this.trinketsWorn) if (owned.has(id)) TRINKET_BY_ID.get(id)?.wear(e);
     // Her staff on tonight (staff.ts): a barmaid keeps guests waiting happier, a doorman keeps trouble down, and
     // each one's perks have their say.
-    if (this.staffWorking("barmaid")) e.patience += BARMAID_PATIENCE;
-    if (this.staffWorking("doorman")) e.trouble += DOORMAN_TROUBLE;
+    // A second on the same post (from an edict) adds half as much again.
+    const posted = (job: StaffJob) => {
+      const n = this.staffOnPost(job);
+      return n > 0 ? 1 + SECOND_POST_SHARE * (n - 1) : 0;
+    };
+    e.patience += BARMAID_PATIENCE * posted("barmaid");
+    e.trouble += DOORMAN_TROUBLE * posted("doorman");
     for (const m of this.staff) {
-      if (m.quit || m.stamina.current <= 0) continue;
+      if (m.quit || m.stamina.current <= 0 || this.postOf(m) === null) continue;
       for (const id of m.perks) STAFF_PERK_BY_ID[id]?.effect?.(e);
     }
     // Checking her phone mid-shift (feedstar.ts): guests wait a little less.
@@ -5194,6 +5316,9 @@ export class Tavern {
           rimjob: this.touchSettings.rimjob,
           footjob: this.touchSettings.footjob,
           tier: fightTier(this.slutLevel),
+          // What the room's heard of her, and what lewd talk does to her (lewdtalk.ts, KP's talk).
+          fame: this.persona.fame,
+          lewdTalk: this.effects.talk,
           // How used she is to each act (her records), for how she talks in a scene: her first time is her first time.
           experience: {
             hands: this.records.acts.hands ?? 0,
@@ -5351,6 +5476,17 @@ export class Tavern {
     for (const [stat, n] of Object.entries(fight.xp)) this.gainXp(stat as StatId, n ?? 0);
     this.gainXp("endurance", 3);
     const r = this.records;
+    // Lewd talk counts toward her talk passives (lewdtalk.ts, KP's talk records), whatever kind of brawl it was.
+    for (const [part, n] of Object.entries(fight.talkedAt) as [LewdPart, number][]) r.talkedAt[part] = (r.talkedAt[part] ?? 0) + n;
+    r.talkedBy += fight.talkers.size;
+    r.talkPleasure += fight.talkPleasure;
+    r.talkClimaxes += fight.talkClimaxes;
+    r.jerkedAt += fight.jerkedAt;
+    // So do stares, toward her sight passives (KP's sight records).
+    for (const [part, n] of Object.entries(fight.seenAt) as [LewdPart, number][]) r.seenAt[part] = (r.seenAt[part] ?? 0) + n;
+    r.seenBy += fight.starers.size;
+    r.sightPleasure += fight.sightPleasure;
+    r.sightClimaxes += fight.sightClimaxes;
     // A tourney, a patrol or the old commander (knight.ts): not a tavern brawl.
     if (this.sideFight) {
       this.finishSideFight(fight, this.sideFight);
@@ -7167,6 +7303,12 @@ export class Tavern {
       return this.phase === "dusk" ? { label: "No time to go out now" } : null;
     }
     if (target.kind === "book") return { label: "Read your journal", run: () => undefined };
+    if (target.kind === "closet") {
+      if (this.duel) return null;
+      // Not while the tavern's open: she has guests waiting.
+      if (this.phase === "service" || this.phase === "lastcall") return { label: "No time to change now" };
+      return this.phase === "ended" ? null : { label: "Change your clothes", run: () => undefined };
+    }
     if (target.kind === "bath") {
       if (this.duel) return null;
       return this.messy ? { label: "Bathe and wash yourself clean", run: () => this.bathe() } : { label: "You're clean" };
@@ -7569,26 +7711,34 @@ export class Tavern {
     this.cue("buy");
   }
 
-  /** Whether she can switch a tavern rule now: by day, and if it's new, with the gold to adopt it. */
-  canSetRule(id: TavernRuleId): boolean {
+  /**
+   * Whether she can enact an edict now: by day, not yet enacted, grown from one she has, not locked out by its
+   * either/or, and with the edict points and gold for it.
+   */
+  canEnact(id: TavernRuleId): boolean {
     const def = TAVERN_RULE_BY_ID.get(id);
-    return this.phase === "day" && def !== undefined && (this.rulesAdopted.has(id) || this.gold >= def.cost);
+    return (
+      this.phase === "day" && def !== undefined && edictState(def, this.rules) === "open" &&
+      this.edictPoints >= def.points && this.gold >= def.cost
+    );
   }
 
-  /** Switches a tavern rule on or off; the first time, she pays to adopt it (and any corruption that comes with it). */
-  setRule(id: TavernRuleId, on: boolean): void {
+  /** Enacts an edict for good: its points, gold and any corruption are paid once. */
+  enact(id: TavernRuleId): void {
     const def = TAVERN_RULE_BY_ID.get(id);
-    if (!def || !this.canSetRule(id) || this.rules.has(id) === on) return;
-    if (on && !this.rulesAdopted.has(id)) {
-      this.gold -= def.cost;
-      this.corruption = Math.min(1000, this.corruption + (def.corruption ?? 0));
-      this.rulesAdopted.add(id);
-      this.cue("buy");
-    }
-    if (on) this.rules.add(id);
-    else this.rules.delete(id);
+    if (!def || !this.canEnact(id)) return;
+    this.edictPoints -= def.points;
+    this.gold -= def.cost;
+    this.corruption = Math.min(1000, this.corruption + (def.corruption ?? 0));
+    this.rules.add(id);
+    this.cue("buy");
     this.refreshEffects();
-    this.say(on ? `New rule in the tavern: ${def.name}.` : `${def.name}: not any more.`);
+    this.say(`New edict in the tavern: ${def.name}.`);
+  }
+
+  /** Edict points she earns this morning: one, and one more once the tavern's famous. */
+  private get edictPointsToday(): number {
+    return EDICT_POINTS_PER_DAY + (this.persona.fame >= EDICT_FAME_BONUS_AT ? 1 : 0);
   }
 
   /** Cups and dishes can be bought again and again, until the shelves are full. */
@@ -7857,6 +8007,7 @@ export class Tavern {
     const messes = this.leftovers();
     const posted = this.postedToday;
     this.nightIndex++;
+    this.edictPoints += this.edictPointsToday;
     this.openDay(messes);
     // A day passes on the feed, in the garrison and for her injuries (feedstar.ts, knight.ts, guild.ts).
     this.feedDayPassed(posted);
@@ -8040,8 +8191,10 @@ export class Tavern {
         trinkets: [...this.trinketsWorn],
         riot: this.riot,
         hairNights: this.hairNights,
-        rulesAdopted: [...this.rulesAdopted],
+        // Older builds read edicts as "adopted" rules switched "on": both lists hold the enacted ones.
+        rulesAdopted: [...this.rules],
         rules: [...this.rules],
+        edictPoints: this.edictPoints,
       },
       favors: { asked: [...this.askedFavors], due: this.favorsDue.map((d) => ({ ...d })) },
       ...(this.layout ? { layout: cloneLayout(this.layout) } : {}),
@@ -8165,11 +8318,10 @@ export class Tavern {
     this.riot = progress.riot === true;
     this.hairNights = progress.hairNights ?? 0;
     this.trinketsWorn = (progress.trinkets ?? []).filter((id, i, all) => TRINKET_BY_ID.has(id) && all.indexOf(id) === i).slice(0, TRINKET_SLOTS);
-    // Tavern rules: only ones that exist, and on only if adopted.
-    this.rulesAdopted.clear();
+    // Edicts: only ones that exist. A save from when rules switched on and off keeps the ones that were on.
     this.rules.clear();
-    for (const id of progress.rulesAdopted ?? []) if (TAVERN_RULE_BY_ID.has(id)) this.rulesAdopted.add(id as TavernRuleId);
-    for (const id of progress.rules ?? []) if (this.rulesAdopted.has(id as TavernRuleId)) this.rules.add(id as TavernRuleId);
+    for (const id of progress.rules ?? []) if (TAVERN_RULE_BY_ID.has(id)) this.rules.add(id as TavernRuleId);
+    this.edictPoints = progress.edictPoints ?? EDICT_START_POINTS;
     // The brothel isn't saved: it opens again from what she's become.
     this.houseMode = { current: "tavern", unlocked: new Set(["tavern"]), brothel: 0 };
     this.unlockBrothel(true);

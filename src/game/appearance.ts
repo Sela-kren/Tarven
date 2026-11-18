@@ -1852,6 +1852,20 @@ const GUEST_VARIANTS: Record<GuestOutfit, Record<BodyName, Record<string, string
  * A guest's own skin, hair and eyes, from the look they rolled walking in (Guest.look), so no two farmers are the
  * same man. Each takes its own share of the number, so they don't move together.
  */
+/**
+ * A guest's hairstyle, from the look they rolled walking in (Guest.look): any of their body's styles, the same look
+ * always the same one (a regular keeps theirs). 0, their kind's plain look, keeps the first. The look is mixed first,
+ * so the style doesn't follow the skin and hair colours picked from it.
+ */
+export function guestHairstyle(body: BodyName, look: number): string | undefined {
+  if (look <= 0) return undefined;
+  const styles = LOOK_OPTIONS[body].hairstyles;
+  let h = Math.imul(look ^ (look >>> 15), 0x2c1b3c6d);
+  h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+  h ^= h >>> 15;
+  return styles[(h >>> 0) % styles.length].id;
+}
+
 export function guestPersonColors(look: number): Record<string, string> {
   const at = (palette: readonly string[], step: number) => palette[Math.floor(look / step) % palette.length];
   return {
@@ -1885,8 +1899,10 @@ export function dressColors(
   colors: Record<string, string>,
   outfit?: string,
   legwear?: string,
+  hairstyle?: string,
 ): void {
   const worn = outfitOf(body, { outfit }).mesh;
+  const hair = hairMeshFor(body, { hairstyle });
   const legs = legwearOf(body, { outfit, legwear });
   const slots: { mesh: SkinnedMesh; part: MeshPart; original: Material }[] = [];
   model.traverse((object) => {
@@ -1909,7 +1925,7 @@ export function dressColors(
     if (slot.part === "Body" && PRIVATE_MATERIALS.includes(slot.original.name)) slot.mesh.visible = false;
     // They wear the band and braies painted on their bodies; the patch for other styles stays empty.
     if (slot.part === "Body" && slot.original.name === LINGERIE_MATERIAL) slot.mesh.visible = false;
-    if (slot.part === "Hair") slot.mesh.visible = hairMeshOf(slot.mesh, body) === "";
+    if (slot.part === "Hair") slot.mesh.visible = hair !== null && hairMeshOf(slot.mesh, body) === hair;
     // Their own shoes too: guests aren't lifted onto heels, which would sink into the floor.
     if (slot.part === "Shoes") slot.mesh.visible = shoeMeshOf(slot.mesh, body) === "";
     // Only the outfit they wear shows; the others' meshes stay hidden.
@@ -2326,6 +2342,118 @@ export function spanCleavage(
 }
 
 /**
+ * Her tops never end up inside her: a bust grown past what a top was built over swallowed the cloth that followed
+ * the ribs under it (a full breast hangs down over where the top lay). Any point of a top inside her skin, as both
+ * are shaped now, goes out to the skin nearest it and CLEAR_GAP beyond, so the top wraps the breast, as a tight top
+ * does. Model space, as built: x across, y up, z backwards. Only this part of her, and only tops and dresses (clothes
+ * reaching CLEAR_GARMENT_TOP), take part. Twice over, for points in a crease, put out of one side into the other.
+ */
+const CLEAR_HALF_WIDTH = 0.3;
+const CLEAR_HEIGHT: readonly [number, number] = [0.7, 1.5];
+const CLEAR_GARMENT_TOP = 1.15;
+const CLEAR_GAP = 0.002;
+/** Further inside than this, the nearest skin no longer tells which way is out: such points are left. */
+const CLEAR_DEPTH = 0.06;
+/** The skin is searched in cells this big, the cell a point is in and those round it. */
+const CLEAR_CELL = 0.02;
+
+function inClearRegion(points: Float32Array, v: number): boolean {
+  const x = points[v * 3], y = points[v * 3 + 1], z = points[v * 3 + 2];
+  return Math.abs(x) < CLEAR_HALF_WIDTH && y > CLEAR_HEIGHT[0] && y < CLEAR_HEIGHT[1] && Number.isFinite(z);
+}
+
+/** A piece of her skin's points that tops are kept out of, and its triangles for which way is out. */
+interface ClearSkin {
+  slot: number;
+  verts: Int32Array;
+  tris: ArrayLike<number>;
+}
+
+/** Each point's outward direction (not normalised) from the triangles round it. */
+function pointNormals(points: Float32Array, tris: ArrayLike<number>): Float32Array {
+  const n = new Float32Array(points.length);
+  for (let t = 0; t < tris.length; t += 3) {
+    const a = tris[t] * 3, b = tris[t + 1] * 3, c = tris[t + 2] * 3;
+    const ux = points[b] - points[a], uy = points[b + 1] - points[a + 1], uz = points[b + 2] - points[a + 2];
+    const vx = points[c] - points[a], vy = points[c + 1] - points[a + 1], vz = points[c + 2] - points[a + 2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    for (const k of [a, b, c]) {
+      n[k] += nx;
+      n[k + 1] += ny;
+      n[k + 2] += nz;
+    }
+  }
+  return n;
+}
+
+const clearKey = (gx: number, gy: number, gz: number) => (gx + 512) * 1048576 + (gy + 512) * 1024 + (gz + 512);
+
+/** Her skin as shaped now, for keeping her tops out of: its points, which way is out at each, and cells of them. */
+interface ClearGrid {
+  at: number[];
+  out: number[];
+  cells: Map<number, number[]>;
+}
+
+/** The skin (`skin`, by her points as shaped now in `shaped`) for clearOfSkin to search. */
+export function clearGrid(skin: ClearSkin[], shaped: Float32Array[]): ClearGrid {
+  const at: number[] = [], out: number[] = [];
+  const grid = new Map<number, number[]>();
+  for (const piece of skin) {
+    const points = shaped[piece.slot];
+    const normals = pointNormals(points, piece.tris);
+    for (const v of piece.verts) {
+      const len = Math.hypot(normals[v * 3], normals[v * 3 + 1], normals[v * 3 + 2]);
+      if (!(len > 0)) continue;
+      const i = at.length / 3;
+      const x = points[v * 3], y = points[v * 3 + 1], z = points[v * 3 + 2];
+      at.push(x, y, z);
+      out.push(normals[v * 3] / len, normals[v * 3 + 1] / len, normals[v * 3 + 2] / len);
+      const k = clearKey(Math.floor(x / CLEAR_CELL), Math.floor(y / CLEAR_CELL), Math.floor(z / CLEAR_CELL));
+      const list = grid.get(k);
+      if (list) list.push(i);
+      else grid.set(k, [i]);
+    }
+  }
+  return { at, out, cells: grid };
+}
+
+/**
+ * Puts the points of a top (`clothVerts`, `bind` + `moves`, `moves` changed in place) inside her skin out over it.
+ * Returns the points it moved.
+ */
+export function clearOfSkin(skin: ClearGrid, clothVerts: Int32Array, bind: Float32Array, moves: Float32Array): Int32Array {
+  const { at, out, cells: grid } = skin;
+  const moved: number[] = [];
+  for (const c of clothVerts) {
+    const v = c * 3;
+    const x = bind[v] + moves[v], y = bind[v + 1] + moves[v + 1], z = bind[v + 2] + moves[v + 2];
+    let best = -1, bestD = CLEAR_DEPTH * CLEAR_DEPTH;
+    const gx = Math.floor(x / CLEAR_CELL), gy = Math.floor(y / CLEAR_CELL), gz = Math.floor(z / CLEAR_CELL);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+      const list = grid.get(clearKey(gx + dx, gy + dy, gz + dz));
+      if (!list) continue;
+      for (const i of list) {
+        const d = (at[i * 3] - x) ** 2 + (at[i * 3 + 1] - y) ** 2 + (at[i * 3 + 2] - z) ** 2;
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
+      }
+    }
+    if (best < 0) continue;
+    const nx = out[best * 3], ny = out[best * 3 + 1], nz = out[best * 3 + 2];
+    const over = (x - at[best * 3]) * nx + (y - at[best * 3 + 1]) * ny + (z - at[best * 3 + 2]) * nz;
+    if (over >= CLEAR_GAP) continue;
+    moves[v] += nx * (CLEAR_GAP - over);
+    moves[v + 1] += ny * (CLEAR_GAP - over);
+    moves[v + 2] += nz * (CLEAR_GAP - over);
+    moved.push(c);
+  }
+  return Int32Array.from(moved);
+}
+
+/**
  * Pulling her tops off her breasts (Dresser.setPull), in the model's space (y up, forwards -z, metres as built).
  * Only cloth this high takes part, from under her breasts up past her collarbone, and only this far either side.
  */
@@ -2507,6 +2635,8 @@ export class Dresser {
   private coat: Record<string, number> = {};
   /** How aroused she shows, from 0 to 1; a state of the night, never part of the look. */
   private arousal = 0;
+  /** Whether her nipples were last shaped held flat under a bra, rather than standing bare. */
+  private nipplesHeld = false;
   /**
    * Her nipple discs, for a body built with them, and for each clothing mesh the points close over a nipple: which
    * disc and how far from its tip. They tent out as it stands, and are all that change when only her arousal does.
@@ -2514,6 +2644,8 @@ export class Dresser {
   private readonly nipples: { slot: MeshSlot; discs: Disc[]; riders: Map<MeshSlot, Riders> } | null = null;
   /** The body points holding the clothes out over her cleavage, and each clothing mesh's points stretched across. */
   private readonly cleavage: { hold: CleavageHold; spans: Map<MeshSlot, ClothSpan> } | null = null;
+  /** Her skin round her chest and the points of her tops kept out of it (see clearOfSkin). */
+  private readonly clear: { skin: ClearSkin[]; cloths: Map<MeshSlot, Int32Array> } | null = null;
   /** How aroused her vulva shows, from 0 to 1; a state of the night, never part of the look. */
   private vulvaArousal = 0;
   /**
@@ -2697,6 +2829,42 @@ export class Dresser {
         if (span) spans.set(slot, span);
       }
       if (spans.size) this.cleavage = { hold, spans };
+    }
+    // Her tops are kept out of her skin, where a bust grown past them would swallow them.
+    const clearSkin: ClearSkin[] = [];
+    this.slots.forEach((slot, s) => {
+      const index = slot.mesh.geometry.index;
+      if (slot.part !== "Body" || !index) return;
+      const verts: number[] = [];
+      for (let v = 0; v < slot.bind.length / 3; v++) if (inClearRegion(slot.bind, v)) verts.push(v);
+      if (!verts.length) return;
+      // Only the triangles round those points, for which way is out at each.
+      const inside = new Set(verts);
+      const tris: number[] = [];
+      for (let t = 0; t < index.count; t += 3) {
+        const a = index.getX(t), b = index.getX(t + 1), c = index.getX(t + 2);
+        if (inside.has(a) || inside.has(b) || inside.has(c)) tris.push(a, b, c);
+      }
+      clearSkin.push({ slot: s, verts: Int32Array.from(verts), tris: Int32Array.from(tris) });
+    });
+    if (clearSkin.length) {
+      // A garment's pieces (its materials) go by the whole garment's reach: a top's hem band is low on its own.
+      const garmentTop = new Map<Object3D, number>();
+      for (const slot of this.slots) {
+        const garment = slot.mesh.parent ?? slot.mesh;
+        let top = garmentTop.get(garment) ?? -Infinity;
+        for (let v = 1; v < slot.bind.length; v += 3) top = Math.max(top, slot.bind[v]);
+        garmentTop.set(garment, top);
+      }
+      const cloths = new Map<MeshSlot, Int32Array>();
+      for (const slot of this.slots) {
+        if (!slot.follow || !(slot.part === "Cloth" || (slot.part === "Cum" && stainMeshOf(slot.mesh, body)))) continue;
+        if ((garmentTop.get(slot.mesh.parent ?? slot.mesh) ?? -Infinity) < CLEAR_GARMENT_TOP) continue;
+        const verts: number[] = [];
+        for (let v = 0; v < slot.bind.length / 3; v++) if (inClearRegion(slot.bind, v)) verts.push(v);
+        if (verts.length) cloths.set(slot, Int32Array.from(verts));
+      }
+      if (cloths.size) this.clear = { skin: clearSkin, cloths };
     }
 
     const discs = discSlot ? readDiscs(discSlot.mesh.geometry, discSlot.bind) : [];
@@ -2988,6 +3156,24 @@ export class Dresser {
     if (this.cleavage && active.size > 0) {
       for (const [slot, span] of this.cleavage.spans) {
         spanCleavage(this.cleavage.hold, span, slot.bind, moves[this.slots.indexOf(slot)].total, bodyMoves);
+      }
+    }
+    if (false && this.clear && active.size > 0) {
+      const shaped = this.slots.map((slot) => slot.bind);
+      for (const { slot } of this.clear.skin) {
+        const { bind } = this.slots[slot];
+        const { total } = moves[slot];
+        const now = new Float32Array(bind.length);
+        for (let i = 0; i < now.length; i++) now[i] = bind[i] + total[i];
+        shaped[slot] = now;
+      }
+      const skin = clearGrid(this.clear.skin, shaped);
+      // Only the outfit she has on: there are hundreds of pieces in her wardrobe, and each was a few milliseconds.
+      const outfit = outfitOf(this.body, look).mesh;
+      for (const [slot, verts] of this.clear.cloths) {
+        if (slot.part === "Cloth" && outfitMeshOf(slot.mesh, this.body) !== outfit) continue;
+        const { total } = moves[this.slots.indexOf(slot)];
+        clearOfSkin(skin, clearOfSkin(skin, verts, slot.bind, total), slot.bind, total);
       }
     }
 
@@ -3500,18 +3686,22 @@ export class Dresser {
       return;
     }
     this.arousal = a;
-    const { shaped } = this;
-    if (shaped) {
-      this.shapeNipples(shaped.onSkin, shaped.totals, shaped.flat);
-      const at = this.slots.indexOf(nipples.slot);
-      this.writePositions(nipples.slot, shaped.totals[at], shaped.settled[at]);
-      nipples.slot.mesh.geometry.computeVertexNormals();
-      for (const [slot, riders] of nipples.riders) {
-        const i = this.slots.indexOf(slot);
-        this.writePositions(slot, shaped.totals[i], shaped.settled[i], riders.verts);
-      }
-    }
+    this.reshapeNipples();
     this.showPieces();
+  }
+
+  /** Shapes her nipple discs and the clothes tenting over them again from what the last look left. */
+  private reshapeNipples(): void {
+    const { nipples, shaped } = this;
+    if (!nipples || !shaped) return;
+    this.shapeNipples(shaped.onSkin, shaped.totals, shaped.flat);
+    const at = this.slots.indexOf(nipples.slot);
+    this.writePositions(nipples.slot, shaped.totals[at], shaped.settled[at]);
+    nipples.slot.mesh.geometry.computeVertexNormals();
+    for (const [slot, riders] of nipples.riders) {
+      const i = this.slots.indexOf(slot);
+      this.writePositions(slot, shaped.totals[i], shaped.settled[i], riders.verts);
+    }
   }
 
   /** Her vulva's shape from her look and how aroused she is; null for a body without one. */
@@ -3704,7 +3894,10 @@ export class Dresser {
     const type = types.find((t) => t.id === this.look.nipples) ?? types[0];
     if (!nipples || !type) return;
     const { sliders } = this.look;
-    const profile = nippleProfile(type, clampSlider(sliders.nippleSize), clampSlider(sliders.areolaSize), this.arousal, clampSlider(sliders.bust, CUP_TOP));
+    const standing = nippleProfile(type, clampSlider(sliders.nippleSize), clampSlider(sliders.areolaSize), this.arousal, clampSlider(sliders.bust, CUP_TOP));
+    // A bra over them holds them flat, so nothing pokes through it or the clothes over it; bare, they stand.
+    this.nipplesHeld = this.underwearOn().nipplesCovered;
+    const profile = this.nipplesHeld ? standing.map((ring) => ({ ...ring, h: 0 })) : standing;
     const { bind } = nipples.slot;
     const total = totals[this.slots.indexOf(nipples.slot)];
     const shaped = onSkin.slice();
@@ -3893,7 +4086,7 @@ export class Dresser {
   }
 
   /**
-   * What her nipple discs wear: her breast band while she has it on, so only their shape shows through, and
+   * What her nipple discs wear: her breast band while she has it on, held flat under it so they don't show, and
    * otherwise their own colour, flushed darker as she's aroused.
    */
   private discMaterial(slot: MeshSlot): Material {
@@ -3950,6 +4143,8 @@ export class Dresser {
         : -1;
     const shoes = shoeMeshFor(this.body, this.look);
     const under = this.underwearOn();
+    // Putting on or taking off her bra holds her nipples flat or lets them stand.
+    if (under.nipplesCovered !== this.nipplesHeld) this.reshapeNipples();
     // Her vulva shows once nothing covers it; it rises from the skin as it shows and lies flat again as it's covered.
     // Her anus likewise.
     const vulvaShown = (this.vulva !== null || this.anus !== null || this.penis !== null) && !under.bottomOn;

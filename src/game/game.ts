@@ -26,6 +26,7 @@ import {
   newLook,
   startLooks,
   GUEST_PERSON_LOOKS,
+  guestHairstyle,
   guestOutfitColors,
   guestPersonColors,
   OUTFIT_COLORS,
@@ -46,6 +47,8 @@ import {
   BED_SPOT,
   BEDROOM_DOOR_NAME,
   BEDROOM_DOOR_OPEN,
+  CLOSET_NAME,
+  CLOSET_SPOT,
   BEDROOM_DOOR_OPEN_ANGLE,
   BEDROOM_DOOR_SHUT,
   BEDROOM_DOOR_SPOT,
@@ -64,7 +67,7 @@ import {
   WASH_TUB_NAME,
   WASH_TUB_SPOT,
 } from "./furnishings";
-import { BuildMode, type Supply } from "./buildmode";
+import { BuildMode, type BuildHost, type EdictView, type StaffBoard, type Supply } from "./buildmode";
 import { lanternSupplies, revelSupplies } from "./lanternplans";
 import { GuestActor, Walker } from "./guests";
 import { softHeft } from "./heft";
@@ -150,7 +153,8 @@ import { DuelStage } from "./duelstage";
 import type { CastMember } from "./battleview";
 import type { HerMove } from "./duelmoves";
 import { SMACK_TOUCHES, type TouchRegion } from "./touchtalk";
-import { TAVERN_RULES } from "./tavernrules";
+import { EDICT_BRANCHES, EDICT_POINTS_PER_DAY, edictState, TAVERN_RULE_BY_ID, TAVERN_RULES } from "./tavernrules";
+import { JOB_UNLOCK, STAFF_JOBS, type StaffJob } from "./staff";
 import { horny } from "./desire";
 import { FAINT_HOLD, FAINT_SECONDS } from "./barwork";
 import type { TouchShow } from "./touchcomic";
@@ -345,9 +349,16 @@ export const WHOLE_PIECES = [
   FRONT_DOOR_NAME,
   WASH_TUB_NAME,
   BATH_NAME,
+  CLOSET_NAME,
 ];
 /** How close you need to be to the middle of the bath to climb in. */
 const BATH_RANGE = 1.3;
+/** What each staff post is called on the plans' Staff tab. */
+const POST_NAMES: Readonly<Record<StaffJob, string>> = {
+  barmaid: "Bar", cook: "Kitchen", doorman: "Door", girl: "Upstairs", dancer: "Stage", devotee: "Chapel corner", clerk: "Front desk",
+};
+/** How close you need to be to the middle of the closet to open it. */
+const CLOSET_RANGE = 1.1;
 /** How close you need to be to the bedroom door, and how fast it swings (per second, eased). */
 const BEDROOM_DOOR_RANGE = 1.3;
 const BEDROOM_DOOR_SWING_RATE = 7;
@@ -851,6 +862,8 @@ export class Game {
   private readonly customizer: Customizer;
   /** The camera's customise shot, easing towards the one the open tab wants. */
   private readonly customShot = { eye: new Vector3(), target: new Vector3() };
+  /** The customise panel is open at her closet in the tavern (Clothes only), not on the select screen. */
+  private closetOpen = false;
   private readonly customGoal = { eye: new Vector3(), target: new Vector3() };
   /** The pointer's last X while dragging the character round, or null when not dragging. */
   private dragX: number | null = null;
@@ -1083,6 +1096,7 @@ export class Game {
     this.targetOutlines.set(targetKey({ kind: "desk" }), outline([piece(DESK_NAME)]));
     this.targetOutlines.set(targetKey({ kind: "book" }), outline([piece(JOURNAL_NAME)]));
     this.targetOutlines.set(targetKey({ kind: "bath" }), outline([piece(BATH_NAME)]));
+    this.targetOutlines.set(targetKey({ kind: "closet" }), outline([piece(CLOSET_NAME)]));
     this.updateBedroomDoor(Infinity);
     this.frontDoorHinge.position.copy(FRONT_DOOR_HINGE);
     world.root.add(this.frontDoorHinge);
@@ -1168,6 +1182,9 @@ export class Game {
       addGold: (amount) => (this.tavern.gold += amount),
       blockers: () => this.staticColliders,
       routeProblem: () => this.routeProblem(),
+      edicts: () => this.edictViews(),
+      staffBoard: () => this.staffBoard(),
+      setPost: (id, post) => this.tavern.setPost(id, post),
       leave: () => this.closeBuild(),
     });
 
@@ -1186,6 +1203,8 @@ export class Game {
 
   /** A fixed camera shot to hold instead of following the active sibling, or null during play. */
   get closeup(): { eye: Vector3; target: Vector3 } | null {
+    // At her closet the camera comes round in front of her, as on the customise screen.
+    if (this.closetOpen) return this.customShot;
     if (!this.staging) return null;
     if (this.screen === "story") {
       // A slow drift across the empty room.
@@ -1340,12 +1359,14 @@ export class Game {
     const own = kind === "visitor" ? null : statsOf(kind, role).outfit;
     // Their own skin, hair and eyes, when they rolled a look; their kind's hair when they didn't.
     const person = look > 0 ? guestPersonColors(look) : { [slots.hair]: hex(outfit.hair) };
+    // Their own hairstyle too, from the same look.
+    const hairstyle = guestHairstyle(body, look);
     if (own) {
-      dressColors(model, body, { ...guestOutfitColors(body, own, look), ...person }, own);
+      dressColors(model, body, { ...guestOutfitColors(body, own, look), ...person }, own, undefined, hairstyle);
     } else {
       const plain = PLAIN_CLOTHES[kind] ?? [];
       const clothes = look > 0 && plain.length > 0 ? plain[Math.floor(look / PLAIN_STEP) % plain.length] : outfit;
-      dressColors(model, body, { [slots.top]: hex(clothes.top), [slots.legs]: hex(clothes.legs), ...person });
+      dressColors(model, body, { [slots.top]: hex(clothes.top), [slots.legs]: hex(clothes.legs), ...person }, undefined, undefined, hairstyle);
     }
     return new Body(model, body);
   }
@@ -1388,6 +1409,39 @@ export class Game {
     this.aimCustomize("body", true);
   }
 
+  /**
+   * Her closet in the bedroom: the customise panel on its Clothes tab only, framed on her where she stands. Time
+   * stops while she changes, as it does over the house plans.
+   */
+  private openCloset(): void {
+    if (this.screen !== "play") return;
+    this.audio.play("click");
+    this.setPrompt("");
+    this.targetArrow.show(null);
+    this.highlight(null);
+    this.closetOpen = true;
+    this.chosen = this.active;
+    this.screen = "customize";
+    document.body.classList.add("dressing");
+    this.siblings[this.active].face(Math.PI);
+    const body = BODY_NAMES[this.active];
+    this.customizer.open(body, this.looks[body], PLAYER_LABELS[this.active], true);
+    this.aimCustomize("clothes", true);
+  }
+
+  /** Out of the closet in what she picked: the tavern takes on her new clothes, fully on, and the game is saved. */
+  private closeCloset(): void {
+    this.closetOpen = false;
+    document.body.classList.remove("dressing");
+    const look = this.looks[BODY_NAMES[this.active]];
+    this.tavern.changeClothes(look.outfit, look.legwear, { bra: look.bra, briefs: look.briefs });
+    this.strippedShown = "";
+    this.syncStripped();
+    this.screen = "play";
+    this.checkpoint = this.tavern.snapshot();
+    writeSave("auto", this.active, this.checkpoint, this.looks, this.captureMoment());
+  }
+
   private closeCustomizer(): void {
     if (this.screen !== "customize") return;
     this.audio.play("click");
@@ -1396,6 +1450,10 @@ export class Game {
     // Undressing is only for looking: everyone is dressed again on the way out.
     this.dressers.forEach((dresser) => dresser.setUndressed(false));
     this.dragX = null;
+    if (this.closetOpen) {
+      this.closeCloset();
+      return;
+    }
     this.siblings.forEach((sibling, index) => {
       sibling.root.visible = isPlayable(index);
       sibling.face(Math.PI);
@@ -1407,8 +1465,9 @@ export class Game {
   /** Points the customise camera at what a tab edits; `cut` jumps there instead of easing. */
   private aimCustomize(tab: LookTab, cut: boolean): void {
     if (this.chosen === null) return;
-    const at = this.spawnPoints[this.chosen].clone();
-    at.z += SELECT_STEP;
+    // At her closet, framed where she stands; on the customise screen, where she steps forward to.
+    const at = this.closetOpen ? this.siblings[this.chosen].position.clone() : this.spawnPoints[this.chosen].clone();
+    if (!this.closetOpen) at.z += SELECT_STEP;
     const { eye, target } = this.customGoal;
     if (tab === "face" || tab === "hair") {
       // The head's height changes with the sliders, so it is measured each time.
@@ -1442,9 +1501,14 @@ export class Game {
 
   private updateCustomize(dt: number): void {
     if (this.chosen === null) return;
-    const spot = this.spawnPoints[this.chosen].clone();
-    spot.z += SELECT_STEP;
-    this.siblings[this.chosen].stepTo(spot, dt);
+    if (this.closetOpen) {
+      // She stays where she stands at her closet.
+      this.siblings[this.chosen].rest(dt);
+    } else {
+      const spot = this.spawnPoints[this.chosen].clone();
+      spot.z += SELECT_STEP;
+      this.siblings[this.chosen].stepTo(spot, dt);
+    }
     const ease = 1 - Math.exp(-CUSTOMIZE_CAMERA_RATE * dt);
     this.customShot.eye.lerp(this.customGoal.eye, ease);
     this.customShot.target.lerp(this.customGoal.target, ease);
@@ -1605,6 +1669,7 @@ export class Game {
     consider({ kind: "desk" }, DESK_SPOT, STATION_ARROW_HEIGHT, DESK_RANGE);
     consider({ kind: "book" }, JOURNAL_SPOT, JOURNAL_ARROW_HEIGHT, JOURNAL_RANGE);
     consider({ kind: "bath" }, BATH_SPOT, STATION_ARROW_HEIGHT, BATH_RANGE);
+    consider({ kind: "closet" }, CLOSET_SPOT, STATION_ARROW_HEIGHT, CLOSET_RANGE);
     consider({ kind: "street", place: "out", label: "" }, FRONT_DOOR_SPOT, STATION_ARROW_HEIGHT, FRONT_DOOR_RANGE);
     return best;
   }
@@ -3142,23 +3207,64 @@ export class Game {
         buy: () => tavern.buyBottle(bottle),
       }),
     );
-    // Tavern rules, Karryn's edicts (tavernrules.ts): paid for once, then switched on or off any day.
-    const rules = TAVERN_RULES.map((rule): Supply => {
-      const on = tavern.rules.has(rule.id);
-      const adopted = tavern.rulesAdopted.has(rule.id);
+    // The Lantern's builds, switches and girls, once the brothel is open to her (lanternplans.ts). The edicts have
+    // their own tree on the Edicts tab (edictViews).
+    return [...upgrades, ...wares, ...repairs, ...drinks, ...lanternSupplies(tavern), ...revelSupplies(tavern)];
+  }
+
+  /** The edict tree for the plans' Edicts tab (tavernrules.ts). */
+  private edictViews(): ReturnType<BuildHost["edicts"]> {
+    const { tavern } = this;
+    const name = (id: string) => TAVERN_RULE_BY_ID.get(id)?.name ?? id;
+    const list = TAVERN_RULES.map((def): EdictView => {
+      const state = edictState(def, tavern.rules);
+      const needs = def.requires ? ` Needs ${def.requires.map(name).join(" or ")}.` : "";
+      const either = def.excludes ? ` Either/or with ${def.excludes.map(name).join(", ")}.` : "";
+      const where =
+        state === "enacted" ? " Enacted." :
+        state === "excluded" ? " Locked out by the one you chose." :
+        tavern.phase !== "day" ? " Edicts are enacted by day." : "";
       return {
-        name: `${rule.name}${adopted ? (on ? ": on" : ": off") : ""}`,
-        icon: "rule",
-        group: "Tavern rules",
-        ...(adopted ? {} : { price: rule.cost }),
-        detail: `${rule.does}.${rule.costs ? ` Costs: ${rule.costs}.` : ""} ${adopted ? `Click to switch it ${on ? "off" : "on"}.` : "Adopt it once, then switch it on or off any day."}`,
-        owned: on,
-        canBuy: tavern.canSetRule(rule.id),
-        buy: () => tavern.setRule(rule.id, !on),
+        id: def.id,
+        name: def.name,
+        branch: def.branch,
+        tier: def.tier,
+        state,
+        points: def.points,
+        gold: def.cost,
+        detail: `${def.does}.${def.costs ? ` Costs: ${def.costs}.` : ""}${needs}${either}${where}`,
+        canEnact: tavern.canEnact(def.id),
+        enact: () => tavern.enact(def.id),
       };
     });
-    // The Lantern's builds, switches and girls, once the brothel is open to her (lanternplans.ts).
-    return [...upgrades, ...wares, ...repairs, ...drinks, ...rules, ...lanternSupplies(tavern), ...revelSupplies(tavern)];
+    return { points: tavern.edictPoints, perDay: EDICT_POINTS_PER_DAY, branches: EDICT_BRANCHES, list };
+  }
+
+  /**
+   * The Staff tab: a post for each job opened by now (or opened by an edict, or with someone on it), and her staff
+   * (not the Lantern's girls, who keep the room upstairs).
+   */
+  private staffBoard(): StaffBoard {
+    const { tavern } = this;
+    const stages = ["early", "mid", "late"];
+    const reached = stages.indexOf(tavern.staffStage);
+    const people = tavern.staff
+      .filter((m) => !m.quit && m.job !== "girl")
+      .map((m) => {
+        const post = tavern.postOf(m);
+        const away = post !== null && post !== m.job ? ` Working the ${POST_NAMES[post].toLowerCase()} (not their own job).` : "";
+        return {
+          id: m.id,
+          name: m.name,
+          job: m.job,
+          post,
+          detail: `${m.name}, ${m.age}, ${m.job}. Skill ${m.skill}, loyalty ${Math.round(m.loyalty)}, stamina ${m.stamina.current}/${m.stamina.max}, wage ${m.wage} gold.${away}`,
+        };
+      });
+    const posts = STAFF_JOBS.filter((job) => job !== "girl")
+      .filter((job) => stages.indexOf(JOB_UNLOCK[job]) <= reached || tavern.postSlots(job) > 1 || people.some((p) => p.post === job))
+      .map((job) => ({ job, name: POST_NAMES[job], slots: tavern.postSlots(job) }));
+    return { posts, people, canChange: tavern.canManageStaff };
   }
 
   /** The night's report. Spending happens at the house plans, during the day. */
@@ -3450,6 +3556,10 @@ export class Game {
       }
       if (found.target.kind === "book") {
         showJournal(this);
+        return;
+      }
+      if (found.target.kind === "closet") {
+        this.openCloset();
         return;
       }
       if (found.target.kind === "bed" && tavern.phase === "dawn") {
@@ -3932,7 +4042,7 @@ export class Game {
 
     this.time += dt;
     // Time stands still while you're looking at the plans.
-    if (this.screen !== "build") this.clock.update(dt);
+    if (this.screen !== "build" && !this.closetOpen) this.clock.update(dt);
     this.syncStripped();
     this.syncShowPose();
     this.syncCoat();
@@ -3974,6 +4084,8 @@ export class Game {
         (seat) => tavern.tableOf(seat),
         (kind) => tavern.banterContext(kind),
       );
+      // A leer to her face gets to her (lewdtalk.ts, KP's waitress talk).
+      for (const id of this.chatter.takeLeers()) tavern.heardLeer(id);
     } else if (this.screen === "visitor") {
       this.updateVisitor(dt);
     }

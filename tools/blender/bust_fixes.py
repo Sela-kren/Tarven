@@ -55,14 +55,27 @@ def mesh_co(mesh):
 
 def main():
     index = json.load(open(os.path.join(REVIEW, "index.json")))
+    only = sys.argv[sys.argv.index("--") + 1].split(",") if "--" in sys.argv else None
     ref_co, ref_tris = read_obj(os.path.join(REVIEW, "bust_C.obj"))
     source = hashlib.sha1(open(os.path.join(REVIEW, "bust_C.obj"), "rb").read()).hexdigest()
     out = {"ref_co": to_build(ref_co).astype(np.float32), "ref_tris": ref_tris, "source": np.array(source)}
     report = {}
+    # How far the cup slider itself moves each point at every reviewed cup, from the C cup: the build counts what the
+    # user moved where the slider moves her as that cup's (the breast's), and the rest as her body's, at every size.
+    # The slider's own growth, without the fixes already in (growth.json, from the export); measured from the OBJs
+    # instead, a cup's own fix counted as its growth, and each re-reading moved the line between breast and body.
+    growth_path = os.path.join(REVIEW, "growth.json")
+    growth = json.load(open(growth_path)) if os.path.exists(growth_path) else {}
+    for entry in index:
+        if entry["cup"] in growth:
+            out[f"grown_{entry['cup']}"] = np.array(growth[entry["cup"]], dtype=np.float32)
+        else:
+            grown_co, _ = read_obj(os.path.join(REVIEW, entry["file"]))
+            out[f"grown_{entry['cup']}"] = np.linalg.norm(grown_co - ref_co, axis=1).astype(np.float32)
     for entry in index:
         cup = entry["cup"]
         sculpt = bpy.data.objects.get(f"Bust_{cup}")
-        if sculpt is None:
+        if sculpt is None or (only and cup not in only):
             continue
         ref = bust_review.load_size(os.path.join(REVIEW, entry["file"]), f"Ref_{cup}")
         if len(ref.data.vertices) != len(sculpt.data.vertices):
