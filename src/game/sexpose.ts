@@ -195,7 +195,7 @@ export const SCENE_POSES: Readonly<Record<ScenePoseName, ScenePose>> = {
   // Side by side, her hand on him, the other on his chest.
   stroke: {
     her: { body: b(STAND, { arch: 0.2, torso: [-0.1, 0.2, 0], head: [-0.2, 0.2, 0], armL: arm(0.75, -0.25, 0.35), armR: arm(1.1, -0.2, 1.4) }), place: at(-0.18, 0, 0.08, FACE_X + 0.6) },
-    them: { body: b(STAND, { head: [-0.15, -0.3, 0], armR: arm(0.5, 0.2, 0.6), legL: leg(0.01, 0.03, 0.04), legR: leg(0.01, 0.03, 0.04) }), place: at(0.12, 0, -0.029, FACE_US) },
+    them: { body: b(STAND, { head: [-0.15, -0.3, 0], armR: arm(0.5, 0.2, 0.6) }), place: at(0.12, 0, -0.029, FACE_US) },
     view: { yaw: 0.15, pitch: 0.05 },
   },
   // On her knees in front of him, her mouth at him, hands on his thighs.
@@ -327,7 +327,7 @@ export const SCENE_POSES: Readonly<Record<ScenePoseName, ScenePose>> = {
   // her, with a wide lens from inside him (his body's back faces aren't drawn), so only his cock shows, between her feet.
   footjob: {
     her: { body: b(STAND, { drop: 0.91, arch: 0.1, torso: [0.75, 0, 0], head: [-0.35, 0, 0], armL: arm(-0.3, 0.3, 0), armR: arm(-0.3, 0.3, 0), legL: leg(3.0, 0.55, 1.9, -0.5), legR: leg(3.0, 0.55, 1.9, -0.5) }), place: at(0, 0, 0.15, FACE_US) },
-    them: { body: b(STAND, { drop: 0.92, torso: [-0.1, 0, 0], head: [-0.4, 0, 0], armL: arm(-1.5, -0.1, 1.6), armR: arm(-1.5, -0.1, 1.6), legL: leg(1.25, 0.45, 0.5), legR: leg(1.25, 0.45, 0.5) }), place: at(0, 0.032, 0.664, 0, 0.7) },
+    them: { body: b(STAND, { drop: 0.92, torso: [-0.1, 0, 0], head: [-0.4, 0, 0], armL: arm(-1.5, -0.1, 1.6), armR: arm(-1.5, -0.1, 1.6), legL: leg(1.3, 0.36, 0.45), legR: leg(1.3, 0.36, 0.45) }), place: at(0, 0.032, 0.664, 0, 0.7) },
     view: { yaw: 0, pitch: -0.1, focus: [0, 0.38, 0.2], fov: 55, distance: 0.8 },
   },
   // KP's rimming, side on: him bent over a table on his hands, looking back; her bent at the waist behind him, face to
@@ -379,7 +379,7 @@ export const SCENE_POSES: Readonly<Record<ScenePoseName, ScenePose>> = {
   againstWall: {
     her: { body: b(STAND, { arch: 0.55, torso: [0.05, 0, 0], head: [0, 0.9, 0], armL: arm(2.8, 0.5, 0.1), armR: arm(2.8, 0.5, 0.1), legL: leg(-0.05, 0.18, 0.05), legR: leg(-0.05, 0.18, 0.05) }), place: at(-0.35, 0.08, 0, FACE_MINUS_X) },
     them: { body: b(STAND, { drop: 0.288, torso: [-0.1, 0, 0], head: [-0.3, 0, 0], armL: arm(-0.83, -0.31, 1.82, 0.34, 0, 0.4), armR: arm(-0.83, -0.31, 1.82, 0.34, 0, 0.4), legL: leg(0.95, 0.73, 1.73), legR: leg(0.94, 0.73, 1.72) }), place: at(-0.094, 0, 0, FACE_MINUS_X) },
-    view: { yaw: 0.12, pitch: 0.05, focus: [-0.22, 1.09, 0], distance: 3.0 },
+    view: { yaw: 0.12, pitch: 0.05, focus: [-0.22, 1.18, 0], distance: 3.0 },
     props: [{ kind: "wall", x: -0.6, z: 0, length: 0.12, width: 2.4, height: 2.4 }],
   },
   // Him sat on a bench; her kneeling astride his lap on it, facing him, her shins along the seat by his thighs, hands
@@ -418,7 +418,7 @@ export const SCENE_JOINS: Partial<Readonly<Record<ScenePoseName, readonly JoinSp
   ],
   bentover: [
     { slot: "mouth", body: b(STANDING_AT_HEAD, { drop: 0.096, legL: leg(0.76, 0.02, 1.3), legR: leg(0.67, -0.04, 0.64) }), place: at(-0.958, 0, 0, FACE_X) },
-    { slot: "right", body: b(WAITING, { armR: arm(0.7, -0.25, 0.06, -0.01) }), place: at(-0.3, 0, -0.5, FACE_US) },
+    { slot: "right", body: WAITING, place: at(-0.3, 0, -0.5, FACE_US) },
   ],
   missionary: [
     { slot: "mouth", body: b(AT_HEAD, { drop: 0.522, legL: leg(0.06, 0.09, 1.61), legR: leg(0.06, 0.09, 1.61) }), place: at(-1.02, 0, 0, FACE_X) },
@@ -437,12 +437,12 @@ export const SCENE_JOINS: Partial<Readonly<Record<ScenePoseName, readonly JoinSp
     { slot: "right", body: WAITING, place: at(-0.45, 0, -0.05, FACE_X), reach: { armR: arm(0.9, 0.55, 0.3) } },
   ],
   reverse: [
-    { slot: "left", body: b(WAITING, { legL: leg(0.01, 0.03, 0.04), legR: leg(0, 0.03, 0.03), armR: arm(0.73, -0.26, 0.04, -0.01) }), place: at(0.467, 0, -0.058, FACE_MINUS_X), reach: { armL: arm(0.9, 0.55, 0.3) } },
-    { slot: "right", body: b(WAITING, { legL: leg(0.01, 0.03, 0.04), legR: leg(0.01, 0.03, 0.04) }), place: at(-0.469, 0, -0.051, FACE_X), reach: { armR: arm(0.9, 0.55, 0.3) } },
+    { slot: "left", body: WAITING, place: at(0.467, 0, -0.058, FACE_MINUS_X), reach: { armL: arm(0.9, 0.55, 0.3) } },
+    { slot: "right", body: WAITING, place: at(-0.469, 0, -0.051, FACE_X), reach: { armR: arm(0.9, 0.55, 0.3) } },
   ],
-  kneel: [{ slot: "left", body: b(WAITING, { armR: arm(0.7, -0.25, 0.06, -0.01) }), place: at(-0.55, 0, -0.35, -2.14), reach: { armL: arm(0.4, 0.7, 0.3) } }],
-  throat: [{ slot: "left", body: b(WAITING, { armR: arm(0.7, -0.25, 0.06, -0.01) }), place: at(-0.55, 0, -0.35, -2.14), reach: { armL: arm(0.4, 0.7, 0.3) } }],
-  paizuri: [{ slot: "left", body: b(WAITING, { armR: arm(0.7, -0.25, 0.06, -0.01) }), place: at(-0.55, 0, -0.35, -2.14) }],
+  kneel: [{ slot: "left", body: WAITING, place: at(-0.55, 0, -0.35, -2.14), reach: { armL: arm(0.4, 0.7, 0.3) } }],
+  throat: [{ slot: "left", body: WAITING, place: at(-0.55, 0, -0.35, -2.14), reach: { armL: arm(0.4, 0.7, 0.3) } }],
+  paizuri: [{ slot: "left", body: WAITING, place: at(-0.55, 0, -0.35, -2.14) }],
   gangbang: [
     { slot: "left", body: WAITING, place: at(0.45, 0, -0.05, FACE_MINUS_X), reach: { armL: arm(0.9, 0.6, 0.3) } },
     { slot: "right", body: WAITING, place: at(0.05, 0, -0.5, FACE_US) },
@@ -458,7 +458,7 @@ export const SCENE_JOINS: Partial<Readonly<Record<ScenePoseName, readonly JoinSp
   // The table (KP's waitress_table joins): one at her head across the table's end, one at her hand, one at the other.
   tableBack: [
     { slot: "mouth", body: b(STANDING_AT_HEAD, { drop: 0.096, legL: leg(0.76, 0.02, 1.3), legR: leg(0.67, -0.04, 0.64) }), place: at(-1.408, 0, 0, FACE_X) },
-    { slot: "left", body: b(WAITING, { drop: 0.005, torso: [0.05, 0, 0], legL: leg(0.02, 0.05, 0.04), legR: leg(0.01, 0.01, 0.02), armL: arm(0.26, 0, 0.01, 0.03) }), place: at(-0.833, 0, -0.682, FACE_US + 0.3), reach: { armL: arm(2.2, 1.2, 0.3) } },
+    { slot: "left", body: b(WAITING, { torso: [0.05, 0, 0], armL: arm(0.26, 0, 0.01, 0.03) }), place: at(-0.833, 0, -0.682, FACE_US + 0.3), reach: { armL: arm(2.2, 1.2, 0.3) } },
     { slot: "right", body: WAITING, place: at(-0.45, 0, -0.65, FACE_US), reach: { armR: arm(2.2, 1.2, 0.3) } },
   ],
   tableBent: [
@@ -480,7 +480,7 @@ export const SCENE_JOINS: Partial<Readonly<Record<ScenePoseName, readonly JoinSp
   ],
   piledriver: [{ slot: "mouth", body: b(LYING_AT_MOUTH, { drop: 0.086, torso: [-0.04, 0, -0.2], legL: leg(-0.42, 0.01, 1.4), legR: leg(-0.49, -0.12, 1.2) }), place: at(0.277, 0.172, 0.702, FACE_MINUS_X, 0, -Math.PI / 2), reach: { head: [-2.2, -0.9, 0] } }],
   // Up on the bench behind them, so he's at her mouth while she's held on one leg, his hands either side of her head.
-  kickCounter: [{ slot: "mouth", body: b(STANDING_AT_HEAD, { armL: arm(0.02, -0.3, 0.76, 0.29), armR: arm(0.02, -0.3, 0.76, 0.29), drop: 0, legL: leg(-0.02, 0.01, 0.05), legR: leg(-0.02, 0.01, 0.05) }), place: at(0.1, 0.32, -0.295, FACE_US), reach: { head: [-0.15, -1.3, 0] } }],
+  kickCounter: [{ slot: "mouth", body: b(STANDING_AT_HEAD, { armL: arm(0.02, -0.3, 0.76, 0.29), armR: arm(0.02, -0.3, 0.76, 0.29) }), place: at(0.1, 0.32, -0.295, FACE_US), reach: { head: [-0.15, -1.3, 0] } }],
   // On her far side, so he doesn't stand between her and the camera; his hips tipped up to her mouth, hands on her head.
   standPaizuri: [{ slot: "mouth", body: b(STANDING_AT_HEAD, { arch: -1.3, armL: arm(-0.2, -0.3, 1.5, 0.3), armR: arm(-0.3, -0.32, 1.57, 0.61), drop: 0.1, legL: leg(0.68, -0.03, 0.65), legR: leg(0.77, 0.01, 1.31) }), place: at(-0.211, 0, -0.28, FACE_US), reach: { head: [0, 0.9, -0.3] } }],
   // The squad round her: one kneeling up at her side where she looks back, in her mouth from the right as KP draws it;

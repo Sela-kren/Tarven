@@ -146,6 +146,81 @@ def tex_flat(name, c, variation=0.12, freq=24, size=32, colors=12):
     return save_tex(name, retro_crush(rgb, size, colors))
 
 
+def tex_genital(name, c, kind, size=128, colors=48):
+    """His penis's, glans' or scrotum's skin (`kind`), painted on their UVs: u runs along the rings (penis.ts) and v
+    round the spokes, his top (dorsal) at v 0.25 and his underside at v 0.75. The shaft: a raphe line down its
+    underside, its dorsal vein faintly blue along the top as the game raises it, a few fainter ones round its sides,
+    and fine creases where the foreskin gathers at its lip. The glans: the inner foreskin paler, a dark line in the
+    sulcus, the corona's rim lighter, the frenulum's line underneath and the meatus a deep red. The sack: its raphe
+    front and back and the wrinkles (rugae) across it, darker towards its bottom."""
+    n = HI
+    yy, xx = np.mgrid[0:n, 0:n] / (n - 1)
+    u, v = xx, 1 - yy
+    tone = np.ones((n, n))
+    tint = np.zeros((n, n, 3))
+    mottle = noise(n, 20, 20)
+
+    def round_band(centre, width):
+        d = np.abs((v - centre + 0.5) % 1.0 - 0.5)
+        return np.exp(-((d / width) ** 2))
+
+    def along_band(centre, width):
+        return np.exp(-(((u - centre) / width) ** 2))
+
+    blue = np.array((-0.1, -0.05, 0.08))
+    if kind == "penis":
+        shaft_end = PENIS_SHAFT / PENIS_TIP
+        lip = PENIS_LIP / PENIS_TIP
+        t = np.clip(u / shaft_end, 0, 1) * 0.7
+        fade = np.clip(t / 0.1, 0, 1) * np.clip((0.62 - t) / 0.15, 0, 1)
+        # Darker along his top, paler underneath.
+        tone *= 1 - 0.05 * np.cos(2 * np.pi * (v - 0.25))
+        tone *= 1 - 0.16 * round_band(0.75, 0.007) * (u < lip)
+        dorsal = round_band(0.25 + 0.22 / (2 * np.pi) * np.sin(t * 9 + 0.6), 0.014) * fade
+        sides = (round_band(0.25 - 1.05 / (2 * np.pi) + 0.35 / (2 * np.pi) * np.sin(t * 16), 0.011) * np.clip(np.sin(t * 13 + 1), 0, 1)
+                 + round_band(0.25 + 1.1 / (2 * np.pi) + 0.35 / (2 * np.pi) * np.sin(t * 14 + 2), 0.011) * np.clip(np.sin(t * 11 + 3), 0, 1)
+                 + 0.7 * round_band(0.2 / (2 * np.pi) + 0.4 / (2 * np.pi) * np.sin(t * 12), 0.01) * np.clip(np.sin(t * 9 + 5), 0, 1)) * fade
+        # Fine branching veins under the skin all over the shaft: thin ridges of a stretched noise.
+        fine = np.clip(1 - np.abs(noise(n, 5, 12) - 0.5) * 22, 0, 1) * np.clip(t / 0.08, 0, 1) * (u < lip - 0.04)
+        veins = np.clip(dorsal * 0.75 + sides * 0.85 + fine * 0.35, 0, 1)
+        tint += veins[..., None] * blue * 1.6
+        tone *= 1 - 0.2 * veins
+        # The skin's grain: fine creases running round him, stronger soft than the game shows hard, faint here.
+        grain = noise(n, 60, 8)
+        tone *= 1 - 0.05 * np.clip((grain - 0.5) * 4, 0, 1)
+        # The foreskin darkening towards its lip, finely creased where it gathers.
+        near_lip = np.clip((u - (lip - 0.08)) / 0.08, 0, 1) * (u <= lip)
+        tone *= 1 - near_lip * (0.06 + 0.07 * (0.5 + 0.5 * np.cos(2 * np.pi * 7 * v + 0.4)))
+    elif kind == "glans":
+        lip = PENIS_LIP / PENIS_TIP
+        sulcus = PENIS_SULCUS / PENIS_TIP
+        meatus = (PENIS_TIP - 1) / PENIS_TIP
+        inner = (u > lip) & (u < sulcus - 0.005)
+        tone *= 1 + 0.1 * inner
+        tint[inner] += (0.03, -0.02, -0.01)
+        tone *= 1 - 0.3 * along_band(sulcus, 0.009)
+        tone *= 1 + 0.08 * along_band(sulcus + 2.5 / PENIS_TIP, 0.012)
+        glans = u > sulcus
+        tone *= 1 - 0.14 * round_band(0.75, 0.01) * glans * (u < meatus)
+        tint += (np.clip((u - meatus + 0.01) / 0.02, 0, 1))[..., None] * np.array((-0.05, -0.14, -0.1))
+        tone *= 1 - 0.25 * np.clip((u - meatus) / 0.015, 0, 1)
+        mottle = mottle * 0.6 + 0.2
+    else:
+        # Rugae: wavy creases running round the sack, deeper below its neck.
+        # Irregular: warped hard, their spacing wandering, and fading in and out in patches.
+        warp = 1.6 * noise(n, 5, 7) + 0.4 * np.sin(2 * np.pi * v * 3) + 0.25 * noise(n, 14, 14)
+        wrinkle = 0.5 + 0.5 * np.cos(2 * np.pi * (u * (11 + 6 * noise(n, 3, 3)) + warp))
+        patches = np.clip((noise(n, 6, 6) - 0.3) * 2.5, 0, 1)
+        depth = np.clip((u - 0.1) / 0.25, 0, 1)
+        tone *= 1 - 0.13 * depth * patches * wrinkle ** 4
+        tone *= 1 - 0.15 * (round_band(0.25, 0.008) + round_band(0.75, 0.008)) * np.clip(u / 0.1, 0, 1)
+        tone *= 1 - 0.1 * np.clip((u - 0.5) / 0.5, 0, 1)
+    pores = noise(n, 90, 90, 2)
+    rgb = np.array(c, float) * (tone * (1 + 0.06 * (mottle - 0.5) * 2) * (1 + 0.03 * (pores - 0.5) * 2))[..., None] \
+        + tint * np.array(c, float).mean()
+    return save_tex(name, retro_crush(np.clip(rgb, 0, 1), size, colors))
+
+
 def tex_barrel(name, size=64):
     n = HI
     grain, staves = noise(n, 48, 3), 12
@@ -3003,6 +3078,25 @@ REFINE_SMOOTH = 0.6
 SHOULDER_REFINE = [([(-0.125, -0.015, 1.255), (0.125, -0.015, 1.255)], (0.075, 0.1, 0.085), 0)]
 # The bust and glute regions are split on faces the arm holds up to this share of.
 REFINE_ARM_SHARE = 0.5
+# The upper rib cage, split flat (its shape kept) so it can be sculpted: the user found it too coarse to shape. The
+# back between the shoulder blades had faces about 2 cm across (the bust's are about 5 mm); split once they are
+# about 1 cm (twice made her file 34 MB against 22, this way 26.6). The upper chest, above the bust's own region and
+# below the neck, too. Positive y is her front here.
+UPPER_RIBS_REFINE = [
+    ([(0.0, -0.07, 1.2)], (0.14, 0.11, 0.15), -1),
+    ([(0.0, 0.07, 1.285)], (0.13, 0.1, 0.055), 1),
+]
+
+# The user's own sculpting on her, read back from the bust review file (tools/blender/bust_fixes.py), applied in
+# order. What they moved on the breasts is kept for that cup only, as a "_BUST_FIX_<cup>" attribute the game adds as
+# the cup slider comes to it (appearance.ts, cupFix); everything else is moved into her as built, at every size, with
+# whatever is worn or lies on her skin moving with it.
+SCULPT_FIXES = os.path.join(ROOT, "art", "sculpt_fixes")
+# A point counts as the breast's by its Bust weight over the most the bust's skin takes (BUST_WEIGHT's "most").
+SCULPT_BREAST_FULL = 0.58
+# Things worn over her take the skin's move in full this close to it, and none past `far`.
+SCULPT_NEAR = 0.012
+SCULPT_FAR = 0.05
 # Long hair blends from the head onto the back over this height below the neck.
 HAIR_ONTO_BACK = 0.08
 # Her hair's springs. What hangs from the head, from about the tops of her ears down to the ends of a bob or a
@@ -3819,14 +3913,15 @@ def add_anus(m, name, body_obj):
 # corner at its bottom. Each corner's ring rides in u and its spoke in v. Up to the lip the tube wears T_penis and
 # from it on T_glans; the sack wears T_scrotum. The game sets every corner itself, so as built they only need to lie
 # where it finds them: the root's ring and the sack's mouth on his skin, the tube standing straight out of him.
-PENIS_SPOKES = 12
-PENIS_SHAFT = 8
+PENIS_SPOKES = 24
+PENIS_SHAFT = 14
 PENIS_OUTER = 3
 PENIS_INNER = 2
-PENIS_GLANS = 4
+PENIS_GLANS = 8
 PENIS_LIP = PENIS_SHAFT + PENIS_OUTER
-PENIS_TIP = PENIS_LIP + PENIS_INNER + 1 + PENIS_GLANS + 1
-SCROTUM_RINGS = 8  # from the mouth, besides the corner at the bottom
+PENIS_SULCUS = PENIS_LIP + PENIS_INNER + 1
+PENIS_TIP = PENIS_SULCUS + PENIS_GLANS + 1
+SCROTUM_RINGS = 14  # from the mouth, besides the corner at the bottom
 PENIS_LENGTH = 0.14  # as built, standing straight out
 PENIS_RADIUS = 0.016
 # Where it leaves him: at this height, found by a ray from inside him forwards, just off his middle so it never
@@ -7454,6 +7549,7 @@ def skin_character(c, m, spec, root):
                 # broad faces into flat facets whatever their weights.
                 refine_soft_parts(layer, name, SHOULDER_REFINE, smooth=0.0, arm_share=1.01)
             refine_soft_parts(layer, name, REFINE_AGAIN, smooth=flat, arm_share=REFINE_ARM_SHARE)
+            refine_soft_parts(layer, name, UPPER_RIBS_REFINE, smooth=0.0, arm_share=REFINE_ARM_SHARE)
             if spec.get("navel"):
                 for reach in NAVEL_REFINE:
                     refine_soft_parts(layer, name, navel_regions(spec, reach))
@@ -7502,6 +7598,9 @@ def skin_character(c, m, spec, root):
         surface = CoatSurface(body_obj)
         jewels.append(build_necklace(c, m, name, body_obj, surface))
         jewels += build_piercings(c, m, name, spec, body_obj, surface)
+    if spec.get("jiggle"):
+        # The user's sculpting, last of all on the finished skin and everything on it (see SCULPT_FIXES).
+        apply_sculpt_fixes(name, body_obj, [o for o in c.objects if o.type == "MESH"])
 
     armature = bpy.data.armatures.new(f"{name}_Bones")
     rig = bpy.data.objects.new(f"{name}_Armature", armature)
@@ -7598,6 +7697,68 @@ def keep_slider_rest(rig, meshes):
         attr.data.foreach_set("vector", yup)
     for bone in rig.data.bones:
         bone["slider_rest"] = list(bone.head_local)
+
+
+def apply_sculpt_fixes(name, body_obj, meshes):
+    """Moves her and everything on her by the user's sculpting (SCULPT_FIXES), and keeps the breasts' part of it for
+    each cup as "_BUST_FIX_<cup>" on her skin (y up, as the glTF's positions). Each fix file holds the C cup's surface
+    it was measured on; every point finds itself there and takes the move of where it lands."""
+    import glob
+    from mathutils.bvhtree import BVHTree
+    from mathutils.interpolate import poly_3d_calc
+    files = sorted(glob.glob(os.path.join(SCULPT_FIXES, f"{name.lower()}_*.npz")))
+    if not files:
+        return
+    breast_fix = {}
+    for path in files:
+        data = np.load(path)
+        ref_co = data["ref_co"].astype(np.float64)
+        ref_tris = data["ref_tris"]
+        cups = [key[len("delta_"):] for key in data.files if key.startswith("delta_")]
+        deltas = {cup: data[f"delta_{cup}"].astype(np.float64) for cup in cups}
+        tree = BVHTree.FromPolygons([Vector(p) for p in ref_co], [tuple(t) for t in ref_tris])
+        for obj in meshes:
+            skin = obj is body_obj
+            bust = obj.vertex_groups.get(f"{name}_Bust")
+            world = obj.matrix_world
+            to_local = world.inverted().to_3x3()
+            count = len(obj.data.vertices)
+            fix = {cup: np.zeros((count, 3)) for cup in cups} if skin else None
+            for v in obj.data.vertices:
+                co = world @ v.co
+                found, _, face, dist = tree.find_nearest(co)
+                if found is None:
+                    continue
+                reach = 1.0 if skin else max(0.0, min(1.0, (SCULPT_FAR - dist) / (SCULPT_FAR - SCULPT_NEAR)))
+                if reach <= 0:
+                    continue
+                tri = ref_tris[face]
+                bary = poly_3d_calc([Vector(ref_co[k]) for k in tri], found)
+                weight = 0.0
+                if bust is not None:
+                    weight = next((g.weight for g in v.groups if g.group == bust.index), 0.0)
+                breast = min(1.0, weight / SCULPT_BREAST_FULL)
+                body_move = Vector()
+                for cup in cups:
+                    d = Vector(sum(b * deltas[cup][k] for b, k in zip(bary, tri))) * reach
+                    # What isn't the breast's goes into her at every size; with more than one cup sculpted there,
+                    # the biggest move wins.
+                    if (d * (1 - breast)).length > body_move.length:
+                        body_move = d * (1 - breast)
+                    if skin:
+                        fix[cup][v.index] = to_local @ (d * breast)
+                v.co += to_local @ body_move
+            obj.data.update()
+            if skin:
+                for cup, moves in fix.items():
+                    breast_fix[cup] = breast_fix.get(cup, 0) + moves
+        print(f"sculpt fixes: {os.path.basename(path)} ({', '.join(cups)})")
+    for cup, moves in breast_fix.items():
+        if not np.abs(moves).max() > 0:
+            continue
+        yup = np.stack([moves[:, 0], moves[:, 2], -moves[:, 1]], axis=1).astype(np.float32).ravel()
+        attr = body_obj.data.attributes.new(f"_BUST_FIX_{cup}", "FLOAT_VECTOR", "POINT")
+        attr.data.foreach_set("vector", yup)
 
 
 def slider_joint_shifts(rig):
@@ -8940,12 +9101,12 @@ def main():
     mats["nail"] = material("T_nail", tex_flat("T_nail", (0.92, 0.70, 0.64), variation=0.02))
     rng.bit_generator.state = random_state
     # His penis and scrotum, likewise: the shaft and sack his skin (skin) a little darker, which the game tones with
-    # his skin, and the glans one flat pink it tints with his skin and flushes as he's aroused. Nearly flat, as their
-    # UVs carry their rings and spokes.
+    # his skin, and the glans one pink it tints with his skin and flushes as he's aroused. Painted on the rings and
+    # spokes their UVs carry (tex_genital), and the game keeps the painting when it recolours them.
     random_state = rng.bit_generator.state
-    mats["penis"] = material("T_penis", tex_flat("T_penis", (0.68, 0.46, 0.36), variation=0.03))
-    mats["glans"] = material("T_glans", tex_flat("T_glans", (0.72, 0.42, 0.4), variation=0.02))
-    mats["scrotum"] = material("T_scrotum", tex_flat("T_scrotum", (0.62, 0.41, 0.33), variation=0.03))
+    mats["penis"] = material("T_penis", tex_genital("T_penis", (0.68, 0.46, 0.36), "penis"))
+    mats["glans"] = material("T_glans", tex_genital("T_glans", (0.72, 0.42, 0.4), "glans"))
+    mats["scrotum"] = material("T_scrotum", tex_genital("T_scrotum", (0.62, 0.41, 0.33), "scrotum"))
     rng.bit_generator.state = random_state
     # Her underwear styles' patch, likewise: plain white, which the game draws each style on in its own colours.
     random_state = rng.bit_generator.state

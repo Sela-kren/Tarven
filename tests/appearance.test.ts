@@ -1,4 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { cupFixAmount, REVIEWED_CUPS } from "../src/game/appearance";
+
+describe("sculpted cup fixes", () => {
+  const [a, c, f] = REVIEWED_CUPS;
+  it("is whole at its own cup and fades out by the reviewed cups either side", () => {
+    expect(cupFixAmount(a, a)).toBe(1);
+    expect(cupFixAmount(a, c)).toBe(0);
+    expect(cupFixAmount(a, (a + c) / 2)).toBeCloseTo(0.5);
+    expect(cupFixAmount(c, f)).toBe(0);
+    expect(cupFixAmount(c, (c + f) / 2)).toBeCloseTo(0.5);
+  });
+  it("holds past the ends of the reviewed sizes", () => {
+    expect(cupFixAmount(a, a - 0.2)).toBe(1);
+  });
+});
 import {
   Bone,
   BufferGeometry,
@@ -313,10 +328,24 @@ describe("keeping looks", () => {
     // Saved with no outfit, she comes back in the one she starts in, in its colours and its own underwear.
     expect(read).toEqual({
       sliders: { height: 1, bust: -0.5 }, colors: { skin: "#abcdef", ...outfitOf("Female", { outfit: "tee" }).preset }, hidden: ["apron"],
-      outfit: "tee", bra: "demi", briefs: "brazilian",
+      outfit: "tee", bra: "fullcup", briefs: "hipster",
     });
     // He has no other to start in: nothing stored for his.
     expect(readLook({ sliders: {}, colors: {}, hidden: [] }, "Male")).toEqual(newLook());
+  });
+
+  it("moves an old save's sexy everyday set over to the plain one, but keeps a set she picked herself", () => {
+    const tee = outfitOf("Female", { outfit: "tee" }).preset;
+    const old = { sliders: {}, colors: { ...tee, bra: "#b0213a", smalls: "#b0213a" }, hidden: [], outfit: "tee", bra: "demi", briefs: "brazilian" };
+    expect(readLook(old, "Female")).toMatchObject({ bra: "fullcup", briefs: "hipster", colors: { bra: tee.bra, smalls: tee.smalls } });
+    // Dyed another colour: the plain set, in her colour.
+    const dyed = readLook({ ...old, colors: { ...old.colors, bra: "#123456" } }, "Female");
+    expect(dyed).toMatchObject({ bra: "fullcup", colors: { bra: "#123456", smalls: tee.smalls } });
+    // A set she chose in the customiser stays.
+    expect(readLook({ ...old, bra: "plunge" }, "Female")).toMatchObject({ bra: "plunge", briefs: "brazilian" });
+    // The tavern dress's old wine-red set too.
+    const tavern = readLook({ sliders: {}, colors: { bra: "#7a1e2a", smalls: "#7a1e2a" }, hidden: [], outfit: "tavern", bra: "balconette", briefs: "tanga" }, "Female");
+    expect(tavern).toMatchObject({ bra: "fullcup", briefs: "hipster", colors: { bra: "#e8e0d2", smalls: "#e8e0d2" } });
   });
 
   it("reads both siblings, with a missing one as built", () => {
@@ -820,7 +849,9 @@ describe("outfits", () => {
     expect(bunny).toMatchObject({ outfit: "bunny", bra: "hearts", briefs: "heart" });
     expect(underOf("Female", bunny)).toMatchObject({ top: { id: "hearts" }, bottom: { id: "heart" } });
     // Every outfit she can pick comes with its own underwear, never the old band and braies.
-    expect(wearOutfit("Female", bunny, "dirndl")).toMatchObject({ bra: "balconette", briefs: "tanga" });
+    // Her everyday clothes come with plain underwear, not a sexy set.
+    expect(wearOutfit("Female", bunny, "dirndl")).toMatchObject({ bra: "fullcup", briefs: "hipster" });
+    expect(startLook("Female")).toMatchObject({ outfit: "tee", bra: "fullcup", briefs: "hipster" });
     for (const outfit of playerOutfits("Female")) {
       expect(outfit.under?.bra, outfit.id).toBeTruthy();
       expect(outfit.under?.briefs, outfit.id).toBeTruthy();

@@ -1,0 +1,42 @@
+[
+ {
+  "cup": "A",
+  "value": -1,
+  "file": "bust_A.obj"
+ },
+ {
+  "cup": "C",
+  "value": 0,
+  "file": "bust_C.obj"
+ },
+ {
+  "cup": "F",
+  "value": 0.21428571428571427,
+  "file": "bust_F.obj"
+ },
+ {
+  "cup": "J",
+  "value": 0.5,
+  "file": "bust_J.obj"
+ },
+ {
+  "cup": "M",
+  "value": 0.7142857142857143,
+  "file": "bust_M.obj"
+ },
+ {
+  "cup": "Q",
+  "value": 1,
+  "file": "bust_Q.obj"
+ },
+ {
+  "cup": "U",
+  "value": 1.2857142857142858,
+  "file": "bust_U.obj"
+ },
+ {
+  "cup": "Z",
+  "value": 1.6428571428571428,
+  "file": "bust_Z.obj"
+ }
+]

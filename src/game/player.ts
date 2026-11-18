@@ -104,10 +104,21 @@ interface Stride {
   /** Stride phase gained per metre travelled. */
   rate: number;
   thighSwing: number;
+  /** The thighs swing about a point this far forwards: a run drives the knee up more than it reaches back. */
+  thighBias: number;
   /** Knee bend while the leg travels forwards. */
   kneeBend: number;
-  /** Extra knee bend while the leg is behind the body, kicking the heel up. */
+  /** Knee bend just after the foot leaves the floor, kicking the heel up behind (its peak). */
   heelKick: number;
+  /** Knee bend kept as the leg comes out in front, so the foot lands under the knee instead of reaching out. */
+  frontKnee: number;
+  /** Knee give on the standing leg at mid-stance, taking the weight. */
+  stanceKnee: number;
+  /**
+   * 0 walks: the hips ride highest as the feet pass. 1 runs: lowest at mid-stance with the standing foot on the
+   * floor, and `bounce` above rest in the air while the legs are spread.
+   */
+  flight: number;
   armSwing: number;
   /** Shifts the arm swing backwards (negative) or forwards. */
   armBias: number;
@@ -186,10 +197,14 @@ interface Gait {
 }
 
 const PLAIN_WALK: Stride = {
-  rate: 2.6, thighSwing: 0.62, kneeBend: 0.95, heelKick: 0, armSwing: 0.5, armBias: 0, elbow: 0.35, elbowFlick: 0,
-  bounce: 0.03, lean: 0, hipRoll: 0, hipShift: 0, hipTwist: 0, shoulderTwist: 0, shoulderRoll: 0, crossover: 0,
-  plant: 0, hipLead: 0, armDangle: 0, pace: 1,
+  rate: 2.6, thighSwing: 0.62, thighBias: 0, kneeBend: 0.95, heelKick: 0, frontKnee: 0, stanceKnee: 0, flight: 0,
+  armSwing: 0.5, armBias: 0, elbow: 0.35, elbowFlick: 0, bounce: 0.03, lean: 0, hipRoll: 0, hipShift: 0, hipTwist: 0,
+  shoulderTwist: 0, shoulderRoll: 0, crossover: 0, plant: 0, hipLead: 0, armDangle: 0, pace: 1,
 };
+/** The heel kick's shape at its highest, so `heelKick` is the peak bend. */
+const KICK_PEAK = 0.517;
+/** How far each arm swings in across the body as it comes up in front, running, in radians. */
+const RUN_ARM_ACROSS = 0.18;
 /** The original walk at both speeds. */
 const PLAIN: Gait = { walk: PLAIN_WALK, run: PLAIN_WALK };
 
@@ -202,41 +217,32 @@ export const FEMALE_WALK_STYLE = 4;
 export const WALK_STYLE_NAMES = ["plain", "light sway", "confident", "runway", "strut"] as const;
 
 /**
- * The anchor levels; 3 and 4 are blended between 2 and 5. Level 5 follows the female and runway walk in
+ * The anchor levels; 4 is blended between 3 and 5. Level 5 follows the female and runway walk in
  * animation reference: the walk is led from the hips, which roll and turn a beat ahead of the legs; the
  * thighs angle in so the feet land on one line; the legs stay long and glide, with little knee bend or
  * heel kick; the standing foot stays planted so the body sinks between steps instead of floating; the
  * shoulders turn and tilt against the hips while the head stays level; the arms hang loose and swing
  * little; and the steps are slower, so she moves more slowly. An everyday walk rolls and turns the pelvis
  * about 5 degrees; level 5 rolls it about 11 and turns it about 16.
+ *
+ * The walks take short steps (the thighs swing about 20% less than they did, the steps come quicker, and she
+ * goes a little slower), and the front knee keeps a little bend so the foot doesn't reach out. The runs follow
+ * a real run (measured on the D:\planet run cycle): the knee drives up and the heel kicks high behind, the foot
+ * lands under the knee rather than out in front, the standing knee gives, the hips are lowest at mid-stance and
+ * highest in the air, the whole body leans forwards (about 11 degrees), the chest turns hard against the hips,
+ * and the arms pump with the elbows bent, most as each hand comes up in front.
  */
-const STYLE_ANCHORS: Record<1 | 2 | 5, { walk: Stride; run: Stride }> = {
-  1: { walk: PLAIN_WALK, run: PLAIN_WALK },
-  2: {
-    walk: {
-      rate: 2.4, thighSwing: 0.6, kneeBend: 0.9, heelKick: 0.12, armSwing: 0.36, armBias: -0.07, elbow: 0.28,
-      elbowFlick: 0.22, bounce: 0.018, lean: 0, hipRoll: 0.1, hipShift: 0.035, hipTwist: 0.16, shoulderTwist: 0.12,
-      shoulderRoll: 0.045, crossover: 0.065, plant: 1, hipLead: 0.15, armDangle: 0.5, pace: 1,
-    },
-    run: {
-      // A run in an ankle-length skirt: a shorter stride and a low heel, so the feet stay under the hem.
-      rate: 2.05, thighSwing: 0.85, kneeBend: 1, heelKick: 0.3, armSwing: 0.8, armBias: -0.05, elbow: 1.35,
-      elbowFlick: 0.15, bounce: 0.06, lean: 0.17, hipRoll: 0.05, hipShift: 0.02, hipTwist: 0.12, shoulderTwist: 0.14,
-      shoulderRoll: 0.02, crossover: 0.03, plant: 0, hipLead: 0.1, armDangle: 0.3, pace: 1,
-    },
-  },
-  5: {
-    walk: {
-      rate: 3.4, thighSwing: 0.48, kneeBend: 0.6, heelKick: 0.06, armSwing: 0.24, armBias: -0.04, elbow: 0.22,
-      elbowFlick: 0.3, bounce: 0, lean: -0.02, hipRoll: 0.2, hipShift: 0.075, hipTwist: 0.28, shoulderTwist: 0.18,
-      shoulderRoll: 0.09, crossover: 0.1, plant: 1, hipLead: 0.4, armDangle: 0.85, pace: 0.75,
-    },
-    run: {
-      rate: 2.0, thighSwing: 0.8, kneeBend: 0.9, heelKick: 0.25, armSwing: 0.72, armBias: -0.08, elbow: 1.3,
-      elbowFlick: 0.22, bounce: 0.055, lean: 0.13, hipRoll: 0.1, hipShift: 0.036, hipTwist: 0.19, shoulderTwist: 0.19,
-      shoulderRoll: 0.045, crossover: 0.055, plant: 0, hipLead: 0.2, armDangle: 0.4, pace: 1,
-    },
-  },
+const RUN_2: Stride = {
+  rate: 2.25, thighSwing: 0.72, thighBias: 0.28, kneeBend: 1.65, heelKick: 0.65, frontKnee: 0.8, stanceKnee: 0.45,
+  flight: 1, armSwing: 0.7, armBias: 0, elbow: 1.05, elbowFlick: 0.65, bounce: 0.02, lean: 0.22, hipRoll: 0.09,
+  hipShift: 0.03, hipTwist: 0.14, shoulderTwist: 0.24, shoulderRoll: 0.04, crossover: 0.03, plant: 0, hipLead: 0.1,
+  armDangle: 0.3, pace: 1,
+};
+const RUN_5: Stride = {
+  rate: 2.2, thighSwing: 0.7, thighBias: 0.26, kneeBend: 1.55, heelKick: 0.6, frontKnee: 0.75, stanceKnee: 0.42,
+  flight: 1, armSwing: 0.65, armBias: -0.02, elbow: 1.0, elbowFlick: 0.7, bounce: 0.02, lean: 0.19, hipRoll: 0.12,
+  hipShift: 0.04, hipTwist: 0.18, shoulderTwist: 0.26, shoulderRoll: 0.05, crossover: 0.055, plant: 0,
+  hipLead: 0.2, armDangle: 0.4, pace: 1,
 };
 
 function blendStride(a: Stride, b: Stride, t: number): Stride {
@@ -245,12 +251,48 @@ function blendStride(a: Stride, b: Stride, t: number): Stride {
   return out;
 }
 
+const STYLE_ANCHORS: Record<1 | 2 | 3 | 5, { walk: Stride; run: Stride }> = {
+  1: { walk: PLAIN_WALK, run: PLAIN_WALK },
+  2: {
+    walk: {
+      rate: 2.95, thighSwing: 0.48, thighBias: 0.03, kneeBend: 0.9, heelKick: 0.12, frontKnee: 0.06, stanceKnee: 0.06,
+      flight: 0, armSwing: 0.34, armBias: -0.07, elbow: 0.28, elbowFlick: 0.22, bounce: 0.018, lean: 0, hipRoll: 0.1,
+      hipShift: 0.035, hipTwist: 0.16, shoulderTwist: 0.12, shoulderRoll: 0.045, crossover: 0.065, plant: 1,
+      hipLead: 0.15, armDangle: 0.5, pace: 0.9,
+    },
+    run: RUN_2,
+  },
+  3: {
+    // Confident: chest up and shoulders back (the upper body leans back a touch), a firm, even step, the hips
+    // swaying from side to side but the feet on two close lines rather than crossing, and the arms swinging freely,
+    // nearly straight, from relaxed shoulders, the hand just coming up as it swings forwards.
+    walk: {
+      rate: 3.05, thighSwing: 0.47, thighBias: 0.03, kneeBend: 0.8, heelKick: 0.1, frontKnee: 0.05, stanceKnee: 0.05,
+      flight: 0, armSwing: 0.4, armBias: -0.04, elbow: 0.12, elbowFlick: 0.22, bounce: 0.012, lean: -0.05,
+      hipRoll: 0.13, hipShift: 0.045, hipTwist: 0.2, shoulderTwist: 0.15, shoulderRoll: 0.05, crossover: 0.05,
+      plant: 1, hipLead: 0.25, armDangle: 0.7, pace: 0.88,
+    },
+    run: blendStride(RUN_2, RUN_5, 1 / 3),
+  },
+  5: {
+    walk: {
+      rate: 4.05, thighSwing: 0.4, thighBias: 0.03, kneeBend: 0.6, heelKick: 0.06, frontKnee: 0.05, stanceKnee: 0.05,
+      flight: 0, armSwing: 0.22, armBias: -0.04, elbow: 0.22, elbowFlick: 0.3, bounce: 0, lean: 0.02, hipRoll: 0.2,
+      hipShift: 0.075, hipTwist: 0.28, shoulderTwist: 0.18, shoulderRoll: 0.09, crossover: 0.1, plant: 1,
+      hipLead: 0.4, armDangle: 0.85, pace: 0.7,
+    },
+    run: RUN_5,
+  },
+};
+
 /** The walk and run for a style level from 1 to 5; fractions blend between levels. */
 export function styledStrides(level: number): { walk: Stride; run: Stride } {
   const l = MathUtils.clamp(level, 1, 5);
   const [from, to, t] = l <= 2
     ? [STYLE_ANCHORS[1], STYLE_ANCHORS[2], l - 1]
-    : [STYLE_ANCHORS[2], STYLE_ANCHORS[5], (l - 2) / 3];
+    : l <= 3
+      ? [STYLE_ANCHORS[2], STYLE_ANCHORS[3], l - 2]
+      : [STYLE_ANCHORS[3], STYLE_ANCHORS[5], (l - 3) / 2];
   return { walk: blendStride(from.walk, to.walk, t), run: blendStride(from.run, to.run, t) };
 }
 
@@ -814,7 +856,13 @@ export class Body {
     const lead = g("hipLead");
     const hipRoll = Math.cos(stride + lead) * g("hipRoll") * moving + s.hipRoll * shifting;
     this.hips.rotation.z = hipRoll;
-    this.hips.rotation.x = -arch;
+    // A run leans the whole body from the feet, not just the chest: half the lean tips the pelvis (the thighs
+    // take it back, so the legs keep their swing) and half the chest. It leans most as the body comes down onto
+    // the standing leg (the feet passing) and straightens a little in the air.
+    const flight = g("flight") * moving;
+    const lean = g("lean") * moving * (1 + 0.3 * flight * (Math.abs(lift) - 0.5));
+    const pelvisLean = lean * 0.5 * flight;
+    this.hips.rotation.x = -arch - pelvisLean;
     // Tipping the pelvis carries the waist forwards; the hips move back by as much, so her upper body stays over
     // her feet where it stood, and only her rear and the small of her back change.
     this.hips.position.z = this.hipsBaseZ + Math.sin(arch) * this.torso.position.y;
@@ -824,7 +872,7 @@ export class Body {
     this.torso.rotation.z = -hipRoll - lift * g("shoulderRoll") * moving - s.shoulderRoll * shifting;
     this.torso.rotation.y =
       -this.hips.rotation.y + phase * g("shoulderTwist") * moving + s.shoulderTwist * still;
-    this.torso.rotation.x = g("lean") * moving + breath + arch * ARCH_CHEST + chestLean;
+    this.torso.rotation.x = -(lean - pelvisLean) + breath + arch * ARCH_CHEST + chestLean;
     this.head.rotation.z = -(this.hips.rotation.z + this.torso.rotation.z) * HEAD_STEADY + s.headTilt * still;
     this.head.rotation.y = -(this.hips.rotation.y + this.torso.rotation.y) * HEAD_STEADY;
     this.head.rotation.x = -(this.hips.rotation.x + this.torso.rotation.x) * HEAD_STEADY;
@@ -835,8 +883,9 @@ export class Body {
     }
 
     const thighSwing = g("thighSwing") * swing;
-    this.thighL.rotation.x = lerp(phase * thighSwing + s.freeThigh * still, SIT_THIGH, sit) + arch;
-    this.thighR.rotation.x = lerp(-phase * thighSwing, SIT_THIGH, sit) + arch;
+    const thighBias = g("thighBias") * swing + pelvisLean;
+    this.thighL.rotation.x = lerp(phase * thighSwing + thighBias + s.freeThigh * still, SIT_THIGH, sit) + arch;
+    this.thighR.rotation.x = lerp(-phase * thighSwing + thighBias, SIT_THIGH, sit) + arch;
     this.thighL.rotation.y = s.freeTurn * still;
     // The legs stay upright under the rolling hips, lean back against the hip slide so the feet stay
     // where they are, then step in towards the centre line, most of all as each foot reaches forwards,
@@ -845,9 +894,17 @@ export class Body {
     const underHips = -hipRoll - this.hips.position.x / this.legLength;
     this.thighL.rotation.z = crossover * (0.55 + 0.45 * phase) + underHips + s.freeIn * still;
     this.thighR.rotation.z = -crossover * (0.55 - 0.45 * phase) + underHips - s.standIn * still;
-    // A knee bends while its leg travels forwards, and the heel kicks up while the leg is behind.
-    const knee = (forwards: number, ahead: number) =>
-      -(Math.max(0, forwards) * g("kneeBend") + Math.max(0, -ahead) * g("heelKick")) * swing;
+    // A knee bends while its leg travels forwards; the heel kicks up just after the foot leaves the floor behind;
+    // the knee stays bent as the leg comes out in front, and gives under the weight at mid-stance.
+    const knee = (forwards: number, ahead: number) => {
+      const kick = (Math.max(0, -ahead) * ((1 + forwards) / 2) ** 2) / KICK_PEAK;
+      return -(
+        Math.max(0, forwards) * g("kneeBend") +
+        kick * g("heelKick") +
+        Math.max(0, ahead) * g("frontKnee") +
+        Math.max(0, -forwards) * g("stanceKnee")
+      ) * swing;
+    };
     this.shinL.rotation.x = lerp(knee(lift, phase) - s.freeKnee * still, -this.sitKnee, sit);
     this.shinR.rotation.x = lerp(knee(-lift, -phase), -this.sitKnee, sit);
 
@@ -857,7 +914,10 @@ export class Body {
     const lowestFoot = Math.min(this.footHeight(this.thighL, this.shinL, hipRoll), this.footHeight(this.thighR, this.shinR, hipRoll));
     const planted = this.hipsBaseY - lowestFoot;
     // Standing still always plants the feet, whatever the pose.
-    this.hips.position.y = lerp(floating, planted, Math.max(g("plant") * moving, still));
+    const walking = lerp(floating, planted, Math.max(g("plant") * moving, still));
+    // A run: down on the standing foot as the feet pass, up in the air as the legs spread.
+    const airborne = lerp(planted, this.hipsBaseY + g("bounce"), phase * phase);
+    this.hips.position.y = lerp(walking, airborne, flight);
 
     const raised = (angle: number) => lerp(lerp(angle, CARRY_UPPER_ARM, carrying), SIT_UPPER_ARM, sit);
     const armSwing = g("armSwing") * swing;
@@ -866,9 +926,11 @@ export class Body {
     this.upperArmR.rotation.x = raised(phase * armSwing + armBias + s.standArm * still - chestLean);
     // Loose arms hang straight down while the body above the hips tilts.
     const dangle = -(this.hips.rotation.z + this.torso.rotation.z) * g("armDangle") * moving;
-    // Positive Z swings the left arm in and the right arm out.
-    this.upperArmL.rotation.z = dangle - this.armSpread;
-    this.upperArmR.rotation.z = dangle + this.armSpread;
+    // Positive Z swings the left arm in and the right arm out. Running, each hand swings in across the body as it
+    // comes up in front, with the chest turning the same way.
+    const across = RUN_ARM_ACROSS * flight;
+    this.upperArmL.rotation.z = dangle - this.armSpread + Math.max(0, -phase) * across;
+    this.upperArmR.rotation.z = dangle + this.armSpread - Math.max(0, phase) * across;
     const elbow = (ahead: number, resting: number) => {
       const swinging = ELBOW_REST + (g("elbow") + Math.max(0, ahead) * g("elbowFlick")) * swing + resting * still;
       return lerp(lerp(swinging, CARRY_ELBOW, carrying), SIT_ELBOW, sit);

@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import {
+  PENIS_LIP,
+  PENIS_SHAFT,
   PENIS_SPOKES,
   PENIS_TIP,
   PENIS_TYPES,
@@ -7,6 +9,7 @@ import {
   glansRadius,
   penisAngle,
   penisRings,
+  penisSection,
   penisShape,
   readPenis,
   sackProfile,
@@ -18,7 +21,7 @@ const shape = (id: string, arousal = 0, sliders: Partial<Record<"length" | "girt
   penisShape(type(id), sliders.length ?? 0, sliders.girth ?? 0, sliders.head ?? 0, sliders.skin ?? 0, sliders.balls ?? 0, sliders.hang ?? 0, arousal);
 
 /** The lip is the ring after the shaft and outer foreskin. */
-const LIP = 8 + 3;
+const LIP = PENIS_LIP;
 
 /**
  * A tube and sack as the model builds them: the tube standing straight out of him (-z in the model's space) from a
@@ -68,7 +71,8 @@ function shaped(id: string, arousal: number, packed = 0) {
 describe("penis types", () => {
   it("has uncircumcised first, then circumcised, virgin and the rest", () => {
     expect(PENIS_TYPES.map((t) => t.id)).toEqual([
-      "uncut", "cut", "virgin", "hooded", "grower", "shower", "thick", "mushroom", "tapered", "curved", "downward", "small", "large",
+      "uncut", "cut", "virgin", "hooded", "grower", "shower", "thick", "mushroom", "tapered", "curved", "downward", "small", "large", "half",
+      "orc", "goblin", "wolf", "elf", "dwarf",
     ]);
     expect(new Set(PENIS_TYPES.map((t) => t.label)).size).toBe(PENIS_TYPES.length);
   });
@@ -151,7 +155,7 @@ describe("penis rings", () => {
       for (const a of [0, 0.3, 0.5, 0.7, 1]) {
         const s = shape(t.id, a);
         const rings = penisRings(s);
-        for (let i = 8; i <= LIP; i++) expect(rings[i].r).toBeGreaterThanOrEqual(glansRadius(s, rings[i].s));
+        for (let i = PENIS_SHAFT; i <= LIP; i++) expect(rings[i].r).toBeGreaterThanOrEqual(glansRadius(s, rings[i].s));
       }
     }
   });
@@ -160,6 +164,57 @@ describe("penis rings", () => {
     const rings = penisRings(shape("uncut", 0.5));
     expect(rings).toHaveLength(PENIS_TIP + 1);
     expect(rings[PENIS_TIP].r).toBe(0);
+  });
+
+  it("keeps the covering foreskin outside the glans between its rings too", () => {
+    for (const t of PENIS_TYPES) {
+      if (t.cut) continue;
+      const s = shape(t.id, 0);
+      const rings = penisRings(s);
+      for (let i = PENIS_SHAFT; i < LIP - 1; i++) {
+        for (let k = 1; k < 10; k++) {
+          const at = rings[i].s + ((rings[i + 1].s - rings[i].s) * k) / 10;
+          const chord = rings[i].r + ((rings[i + 1].r - rings[i].r) * k) / 10;
+          expect(chord).toBeGreaterThanOrEqual(glansRadius(s, at));
+        }
+      }
+    }
+  });
+
+  it("bunches drawn-back skin into folds behind the glans", () => {
+    const rings = penisRings(shape("goblin", 1));
+    const outer = rings.slice(PENIS_SHAFT, PENIS_SHAFT + 4).map((r) => r.r);
+    // A ridge, a crease, a ridge.
+    expect(outer[1]).toBeGreaterThan(outer[2] * 1.08);
+    expect(outer[3]).toBeGreaterThan(outer[2] * 1.08);
+  });
+
+  it("swells the wolf's knot as he hardens, and runs its glans to a point with no crown", () => {
+    const widest = (id: string, a: number) => Math.max(...penisRings(shape(id, a)).slice(1, PENIS_SHAFT).map((r) => r.r));
+    expect(widest("wolf", 1)).toBeGreaterThan(shape("wolf", 1).radius * 1.4);
+    expect(widest("wolf", 0)).toBeLessThan(shape("wolf", 0).radius * 1.1);
+    const wolf = shape("wolf", 1);
+    const crown = glansRadius(wolf, wolf.length - wolf.glans * 0.88);
+    expect(crown).toBeLessThan(wolf.radius);
+    expect(glansRadius(wolf, wolf.length - wolf.glans * 0.2)).toBeLessThan(crown * 0.4);
+  });
+
+  it("raises a ridge along his underside and veins over his top, the orc's most", () => {
+    const top = (id: string) => {
+      const s = shape(id, 1);
+      return penisSection(s, 6, s.length * 0.35, Math.PI / 2 + 0.22 * Math.sin(0.35 * 9 + 0.6)).r;
+    };
+    expect(top("orc")).toBeGreaterThan(top("elf") + 0.1);
+    const s = shape("uncut", 1);
+    expect(penisSection(s, 6, s.length * 0.35, 1.5 * Math.PI).r).toBeGreaterThan(1.08);
+  });
+
+  it("opens the meatus as a slit up and down at the tip", () => {
+    const s = shape("cut", 1);
+    const lips = penisSection(s, PENIS_TIP - 1, s.length, 0);
+    expect(lips.across).toBeLessThan(0.5);
+    const rings = penisRings(s);
+    expect(rings[PENIS_TIP].s).toBeLessThan(rings[PENIS_TIP - 1].s);
   });
 
   it("rounds the sack off to nothing at its bottom", () => {

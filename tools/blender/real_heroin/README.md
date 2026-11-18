@@ -15,7 +15,7 @@ paints her skin, or cleans up her hand sculpt. Nothing else in `tools/blender/` 
 | `real_heroin_swap.py` | Puts her into the game: her meshes become the Female rig's skin. Called by `build_world.py` when `"real_heroin": True` (currently off). |
 | `sculpt_fit.py` | Superseded: pulls the old skin onto her forms. Called by `build_world.py` when `"sculpt_fit": True` (off). `real_heroin_swap.py` also uses it. |
 | `skin_paint.py` | Her painted skin atlas, sampled from her SDF. It can also paint the old Female body. |
-| `sculpt/` | Cleanup scripts for the hand sculpt in `art/real_heroin_sculpt.blend` (vulva remesh, mask lift, mask subdivide, anus fix) and render helpers to check them. |
+| `sculpt/` | Cleanup scripts for the hand sculpt in `art/real_heroin_sculpt.blend` (vulva remesh, mask lift, mask subdivide, anus fix) and render helpers to check them. The 2026-11-18 scripts work on her **posed** shape (frame 180) and carry each change back to rest exactly (`vulva_frame.py` holds the helpers). They cover: the anus moved closer (`anus_move_posed.py`); the inner vulva, i.e. vestibule, canal and urethra dimple (`vulva_inner.py`); the urethral opening (`urethra.py`); the clit under the hood (`glans_hood.py`, which replaces `glans.py`); clean-ups (`improve.py`, by stages); inside-out faces (`fix_winding.py`); stale custom normals (`reset_normals.py`); even mesh density on the perineum (`densify.py`); a vulva slide/shorten preview (`shorten.py`). The review renders are `posed_shot.py`. |
 
 ## Running
 

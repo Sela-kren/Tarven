@@ -160,6 +160,11 @@ interface BoneTerm {
   /** How far each side turns outwards, in metres at the front of the breast at a value of 1: nipples that point out. */
   turn?: number;
   /**
+   * The turn grows as the value to this power, growing only, instead of evenly: under 1 it comes on early, so the
+   * smaller cups already point out without the biggest going too far.
+   */
+  turnEase?: number;
+  /**
    * How far the front of the breast sinks, in metres at its front at a value of 1, more than its root does: a heavy
    * breast hangs, so the nipple sits low on it and looks a little down instead of straight out. Growing only.
    */
@@ -619,10 +624,14 @@ const FEMALE_SLIDERS: SliderDef[] = [
     // As it grows the front sinks more than the root (droop), as real_heroin's does: the nipple low on the breast and
     // looking a little down, the upper slope longer, the lower curve full; without it a big bust pointed straight out.
     // More than this pushed a point out under the nipple.
+    // Grown wide about each breast's middle, the nipples came to look in towards each other from about F up (the user
+    // asked for them to point out instead): the front turns outwards as it grows, coming on early (turnEase) so F
+    // already points out, about 2.5 cm at its front, and Q about 6.
     id: "bust", label: "Cup size", tab: "body", group: "Bust", stops: CUPS, roll: 0.45,
     terms: terms(["Bust"], [4.0, 2.07, 2.6], {
       shrink: [0.2, 0.25, 0.7], shift: [0, -0.075, -0.012], shrinkShift: [0, 0, 0],
       lobes: [0.06, -0.005, 0.025], fade: [0.04, 0.12], apart: 0.03, shrinkApart: 0, droop: 0.09,
+      turn: 0.04, turnEase: 0.5,
     }),
   },
   // Where the breasts sit on the chest, root and all: the move reaches past where their weight thins out towards
@@ -975,14 +984,28 @@ const FEMALE_COLORS: ColorDef[] = [
   ...factionColors(),
 ];
 
+/**
+ * What she wears under her everyday clothes (the tee she starts in, the tavern dress, the dirndl): a plain full-cup bra
+ * and plain hipster briefs. The sexy sets come with the lewd outfits (the bunny set, the babydoll, the corset gown,
+ * the frilled set, the plunge dress, the priestess's); early on she dresses like anyone else.
+ */
+const EVERYDAY_UNDER = { bra: "fullcup", briefs: "hipster" } as const;
+
+/** The sexy sets her everyday clothes came with before EVERYDAY_UNDER, and their colour, so old saves move over. */
+const OLD_EVERYDAY_UNDER: Readonly<Record<string, { bra: string; briefs: string; color: string }>> = {
+  tee: { bra: "demi", briefs: "brazilian", color: "#b0213a" },
+  tavern: { bra: "balconette", briefs: "tanga", color: "#7a1e2a" },
+  dirndl: { bra: "balconette", briefs: "tanga", color: "#f1ece0" },
+};
+
 const FEMALE_OUTFITS: OutfitDef[] = [
   {
     id: "tavern", label: "Tavern dress", mesh: "",
     colors: ["blouse", "bodice", "skirt", "apron", "belt", "stockings", "shoes", "soles", "bra", "smalls"],
-    // Under it, a wine-red balconette and tanga.
-    preset: { bra: "#7a1e2a", smalls: "#7a1e2a" },
+    // Under it, plain everyday underwear (EVERYDAY_UNDER), cream.
+    preset: { bra: "#e8e0d2", smalls: "#e8e0d2" },
     legwear: "tights",
-    under: { bra: "balconette", briefs: "tanga" },
+    under: EVERYDAY_UNDER,
   },
   {
     // What she starts in (defaultOutfit): a fitted white T-shirt, cropped above her navel with a low scoop neck,
@@ -990,11 +1013,11 @@ const FEMALE_OUTFITS: OutfitDef[] = [
     // down to her knees, bunched there.
     id: "tee", label: "T-shirt and leggings", mesh: "Tee",
     colors: ["tee", "stockings", "shoes", "soles", "bra", "smalls"],
-    // Under them, a red demi bra and brazilian briefs.
-    preset: { tee: "#f1efea", stockings: "#1c1a1e", shoes: "#f1ece0", soles: "#c9c2b6", bra: "#b0213a", smalls: "#b0213a" },
+    // Under them, plain everyday underwear (EVERYDAY_UNDER), white.
+    preset: { tee: "#f1efea", stockings: "#1c1a1e", shoes: "#f1ece0", soles: "#c9c2b6", bra: "#ece7df", smalls: "#ece7df" },
     legwear: "leggings",
     legsDown: "T_hose_knee",
-    under: { bra: "demi", briefs: "brazilian" },
+    under: EVERYDAY_UNDER,
   },
   {
     // Olive-gold bodice and skirt, a white chemise, a green apron and ribbons, and white socks.
@@ -1005,8 +1028,8 @@ const FEMALE_OUTFITS: OutfitDef[] = [
       gems: "#3f9a5a", stockings: "#f1ece0", shoes: "#3d2314", bra: "#f1ece0", smalls: "#f1ece0",
     },
     legwear: "noshow",
-    // A white balconette pushing her up under the chemise, and a tanga.
-    under: { bra: "balconette", briefs: "tanga" },
+    // Plain white everyday underwear under the chemise (EVERYDAY_UNDER).
+    under: EVERYDAY_UNDER,
   },
   {
     // Gold and cream: a gold top and girdle, pale sleeves and drapes, gold jewellery with blue gems.
@@ -1422,10 +1445,11 @@ export function displayHex(color: Color): string {
 const paints = new Map<string, MeshLambertMaterial>();
 
 /**
- * Materials whose texture is painted (her body's skin: shading, warmth at her joints), not a flat colour. Recoloured,
+ * Materials whose texture is painted (her body's skin: shading, warmth at her joints; his penis's veins, raphe and
+ * wrinkles), not a flat colour. Recoloured,
  * they keep their texture, tinted so its average lands on the new colour; the rest turn one flat colour.
  */
-const PAINTED_MAPS = /^T_skin_f$/;
+const PAINTED_MAPS = /^(T_skin_f|T_penis|T_glans|T_scrotum)$/;
 
 /** A material that shows `color` on average (linear): flat, or `original`'s painted texture tinted to it. */
 function paint(original: Material, color: Color): MeshLambertMaterial {
@@ -2051,7 +2075,8 @@ export function activeTerms(
       midline: term.midline,
       reach: term.reach,
       apart: term.apart === undefined ? undefined : (value < 0 && term.shrinkApart !== undefined ? -term.shrinkApart : term.apart) * value,
-      turn: term.turn === undefined ? undefined : term.turn * value,
+      turn: term.turn === undefined ? undefined
+        : term.turnEase === undefined ? term.turn * value : term.turn * Math.max(0, value) ** term.turnEase,
       droop: term.droop === undefined ? undefined : term.droop * Math.max(0, value),
       parts: term.parts,
     });
@@ -2128,6 +2153,25 @@ interface MeshSlot {
    */
   rest?: Float32Array;
   restShapeFrom?: Float32Array;
+  /** The user's sculpted fixes to the breasts at single cup sizes (the model's "_BUST_FIX_<cup>"), in bind space. */
+  cupFixes?: { cup: number; delta: Float32Array }[];
+}
+
+/**
+ * The cup sizes the bust review lays out to sculpt on (tools/posepreview/bustexport.preview.ts): a fix sculpted at one
+ * of them is whole there and fades out to nothing at the reviewed sizes either side.
+ */
+export const REVIEWED_CUPS = ["A", "C", "F", "J", "M", "Q", "U", "Z"].map((letter) => stopValue(CUPS, CUPS.labels.indexOf(letter)));
+
+/** How much of a fix sculpted at cup slider value `at` the bust wears at slider value `cup`, 0 to 1. */
+export function cupFixAmount(at: number, cup: number): number {
+  const stops = [...new Set([...REVIEWED_CUPS, at])].sort((a, b) => a - b);
+  const i = stops.indexOf(at);
+  const below = stops[i - 1];
+  const above = stops[i + 1];
+  if (cup === at) return 1;
+  if (cup < at) return below === undefined ? 1 : Math.max(0, (cup - below) / (at - below));
+  return above === undefined ? 1 : Math.max(0, (above - cup) / (above - at));
 }
 
 interface BoneRest {
@@ -2567,13 +2611,26 @@ export class Dresser {
         }
       }
       const part = partOf(mesh, body)!;
+      // The user's sculpted breast fixes, one per cup they sculpted at (see apply_sculpt_fixes in build_world.py).
+      const cupFixes: { cup: number; delta: Float32Array }[] = [];
+      const toBind = new Matrix3().setFromMatrix4(mesh.bindMatrix);
+      for (const [attrName, attr] of Object.entries(mesh.geometry.attributes)) {
+        const letter = /^_bust_fix_([a-z])$/.exec(attrName)?.[1]?.toUpperCase();
+        if (!letter || attr.count !== position.count) continue;
+        const delta = new Float32Array(attr.count * 3);
+        for (let v = 0; v < attr.count; v++) point.fromBufferAttribute(attr, v).applyMatrix3(toBind).toArray(delta, v * 3);
+        cupFixes.push({ cup: stopValue(CUPS, CUPS.labels.indexOf(letter)), delta });
+      }
       if (part === "Cum") {
         mesh.material = stainMeshOf(mesh, body) ? stainRetroMaterial() : coatRetroMaterial();
         // Too close to the skin to shadow it cleanly.
         mesh.castShadow = false;
       }
       const material = mesh.material as Material;
-      this.slots.push({ mesh, part, original: material, worn: material, bind, follow: null, bodyStart: bodyCount, rest });
+      this.slots.push({
+        mesh, part, original: material, worn: material, bind, follow: null, bodyStart: bodyCount, rest,
+        cupFixes: cupFixes.length ? cupFixes : undefined,
+      });
       if (part === "Body") bodyCount += position.count;
       mesh.skeleton.bones.forEach((bone, i) => {
         if (this.boneIndex.has(bone)) return;
@@ -2911,6 +2968,11 @@ export class Dresser {
         }
         sum.add(joints).toArray(total, v * 3);
         joints.toArray(settled, v * 3);
+      }
+      // The user's sculpted fixes for the cup she's at, or the reviewed sizes either side of it.
+      for (const fix of slot.cupFixes ?? []) {
+        const amount = cupFixAmount(fix.cup, look.sliders.bust ?? 0);
+        if (amount > 0) for (let k = 0; k < total.length; k++) total[k] += fix.delta[k] * amount;
       }
       return { total, settled };
     });
@@ -4284,7 +4346,8 @@ export function randomLook(body: BodyName, random: () => number = Math.random): 
     if (type !== options.anus[0]) look.anus = type.id;
   }
   if (options.penis.length) {
-    const type = pick(options.penis);
+    // A people's own type only for them, once they're in the game.
+    const type = pick(options.penis.filter((t) => !t.people));
     if (type !== options.penis[0]) look.penis = type.id;
   }
   if (options.shoes.length) {
@@ -4351,6 +4414,17 @@ export function readLook(raw: unknown, body: BodyName): Look | null {
   // A save from before she started in the tee, still in her old band and braies, gets the tee's own underwear too.
   if (startUnder?.bra && !look.bra) look.bra = startUnder.bra;
   if (startUnder?.briefs && !look.briefs) look.briefs = startUnder.briefs;
+  // A save from when her everyday clothes came with a sexy set, still wearing exactly that set, gets the plain one
+  // they come with now (EVERYDAY_UNDER), and its colour too while it's still the old set's.
+  const old = look.outfit ? OLD_EVERYDAY_UNDER[look.outfit] : undefined;
+  if (old && look.bra === old.bra && look.briefs === old.briefs) {
+    const now = outfitOf(body, look);
+    look.bra = EVERYDAY_UNDER.bra;
+    look.briefs = EVERYDAY_UNDER.briefs;
+    for (const id of ["bra", "smalls"] as const) {
+      if (look.colors[id] === old.color && now.preset[id]) look.colors[id] = now.preset[id];
+    }
+  }
   if (Array.isArray(data.jewellery) && options.jewellery.length) {
     look.jewellery = options.jewellery.map((def) => def.id).filter((id) => (data.jewellery as unknown[]).includes(id));
   }

@@ -2,12 +2,15 @@
 
 > **Rating: Adults only (18+).** Every character is an adult. The heroine follows the consent rule in `GAME_PATH.MD`.
 > **Status: world-building source of truth, 2026-11-17. Sections 1 to 6, 7 (peoples), 7c (heroes), 7d (comedy), 8 (the King and Queen) and 9 (titles) decided by the user; the rest is a draft. Names marked *(working name)* can be changed.** When another doc describes the setting differently, this one wins.
+> **2026-11-18: the world leans more modern** (section 2b). People live modern lives; power, war, gods and monsters stay medieval. The six decisions in section 6 still stand.
 
 ---
 
 ## 1. The one-line world
 
-**An adult comedy** (section 7d) **in a medieval fantasy world of many kingdoms and peoples (humans, elves, dwarves, orcs, beastfolk, goblins) that has modern things.** Castles, barons, knights in armour, adventurers' guilds, gods and monsters, the way an isekai world works. But people carry **phones**, wear **modern clothes**, take photos and send messages. A knight in plate checks his phone at the bar, next to an orc mercenary and a goblin selling phone charms. A farmer's daughter in a crop top and jeans sells turnips under the keep's walls.
+**An adult comedy** (section 7d) **in a medieval fantasy world of many kingdoms and peoples (humans, elves, dwarves, orcs, beastfolk, goblins) where everyday life is modern.** Castles, barons, knights in armour, adventurers' guilds, gods and monsters, the way an isekai world works. But people carry **phones**, wear **modern clothes**, take selfies, leave reviews, order takeaway and swipe on dating apps. A knight in plate checks his phone at the bar, next to an orc mercenary and a goblin selling phone charms. A farmer's daughter in a crop top and jeans sells turnips under the keep's walls, and posts the price on the feed.
+
+**The short version:** *life is modern, power is medieval.* What people wear, buy, eat, say and do for fun is modern. Who rules, who fights, who you pray to and what lives in the ruins is medieval.
 
 The game never explains it as strange. To the people of Tarven it's just how the world is.
 
@@ -17,15 +20,56 @@ The game never explains it as strange. To the people of Tarven it's just how the
 
 | Medieval (stays) | Modern (exists, and is normal) |
 |---|---|
-| The Baron, his keep, tolls, taxes paid in coin | Phones: calls, messages, photos, a town feed |
-| Knights in armour, swords, spears, horses | Modern clothes: jeans, hoodies, crop tops, mini skirts, sneakers, modern lingerie |
-| The adventurers' guild, quests, ruins and monsters | Cameras, music players, lights in the street at night |
-| Chapels, the gods (`GODS_LORE.md`), the Church of Veyra | A mana cold box for the ale (the kitchen stays hearth and stew pot) |
-| The tavern's timber, stone, hearth and casks | Posters, printed flyers, signs |
-| Coin: gold, silver, copper (the only money) | |
-| Carts, horses, walking the pass (no cars) | |
+| The Baron, his keep, tolls, taxes paid in coin | Phones: calls, messages, photos, video, apps, a town feed |
+| Knights in armour, swords, spears, horses | Modern clothes for almost everyone: jeans, hoodies, crop tops, mini skirts, sneakers, sportswear, modern lingerie |
+| The adventurers' guild, quests, ruins and monsters | Cameras, speakers, earbuds, lights in the street at night |
+| Chapels, the gods (`GODS_LORE.md`), the Church of Veyra | Running water, hot showers, flush toilets, fridges (all mana-stone) |
+| The tavern's timber, stone, hearth and casks | Modern shops: a phone shop, a café, a clothes boutique, a tattoo and piercing parlour, a gym, a laundromat |
+| Coin: gold, silver, copper (the only money) | Apps: the feed, reviews with stars, a dating app, takeaway orders, maps |
+| Carts, horses, walking the pass (no cars) | Posters, printed flyers, magazines, glowing shop signs, a vending machine or two |
+| Kingdoms, barons, oaths, the war in the east | Modern jobs: influencers, phone repair, delivery runners, personal trainers |
 
-**The feel:** the modern things sit *on top* of the medieval world. They don't replace it. The keep is still stone, the road is still mud, the knight still fights with a sword.
+**The feel:** the medieval world is the frame; modern life fills it. The keep is still stone, the road is still mud, the knight still fights with a sword. But inside the town walls it feels like a small modern town that happens to have a castle on the hill.
+
+---
+
+## 2b. Modern daily life (the modern lean, 2026-11-18, draft)
+
+**People in Tarven live like people in a small modern town.** They just live under a baron, next to a keep and a mountain full of monsters.
+
+**In town:**
+- **Shops** sit in the old timber and stone buildings, with glass shopfronts and glowing mana signs set into medieval walls. Goblin's Phone & Repair, a café that does iced coffee, a boutique, a tattoo and piercing parlour, a gym where the garrison lifts, a laundromat.
+- **Takeaway:** goblin delivery runners carry hot food up the pass road on foot, phone in one hand.
+- **The feed** is everything: news, gossip, ads, selfies, arguments, the Baron's "public notices".
+- **Reviews:** every shop, tavern and blacksmith has a star rating on the feed. One bad review from Zane (section 7c) and the whole town knows.
+- **A dating app** *(working name: Spark)*. Elves hate it, orcs love it, goblins run fake profiles, and Kevin has 400 matches and has never left the bar.
+- **Fitness and looks:** gym selfies, skincare, hair dye, piercings, tattoos, nails. Adventurers post "monster hunt day" workout videos.
+- **Slang:** people talk modern. "Lol", "that's so cringe", "she's viral", "left on read". Nobles still talk old and grand, which is the joke.
+
+**In her tavern:**
+- Still timber, hearth, casks and stew pot (section 6), but run like a modern bar: a **drinks menu board**, **cocktails** next to the ale, **happy hour**, **karaoke night**, a **DJ night** with the mana speaker, **string lights** and a **glowing sign** over the door.
+- Guests **film** each other, **tag** the tavern in posts, and leave **star reviews** after they go home.
+- She can **post** specials and events on the tavern's page to bring people in (section 4).
+
+**One-piece dresses: the manhwa mature-lady look** (user refs, 2026-11-18, saved in `ref/outfits/`):
+Grown women with money or rank wear long, fitted one-piece dresses, like the elegant older women in manhwa: tight through the body, long to the floor, cut high up the leg, with heels. It's the fancy end of modern fashion, and a big help for the variety rule.
+
+| Ref | The dress | Who wears it |
+|---|---|---|
+| `dress_white_gown.png` | **The white gown:** long, fitted white dress, a high slit up one thigh, a short white shoulder cape over black open sleeves, gold trim and badges, long white gloves | Noble ladies, Baroness Isolde Varn, a chapel priestess (Oden's side), the Queen on a formal day |
+| `dress_black_slit.png` | **The black slit dress:** black halter with a high collar and a crescent-moon charm, a plunging V to the navel with cross straps, bare sides, slits up both thighs, a jagged hem, black heels | Rich widows and merchant wives on a night out, the Queen in "disguise" (far too fancy for a merchant's wife, which gives her away), Veyra's priestesses in a red version, the heroine for events and late-game nights |
+
+- **A "mature lady" guest type** (30s to 40s, curvy, confident, always in a dress) joins the guest list. It's the manhwa milf: the rich widow who flirts with the bouncer, the merchant's wife who tips in silver, the noble lady slumming it at the bar. Own stats like every guest type.
+- **The heroine can wear both** (both bodies), as event and evening outfits next to the default tee and leggings.
+- **In scenes,** the slits and straps are what move: the skirt panel is pushed aside or hiked up, a strap slips off the shoulder. The dress is acted on, it doesn't vanish (the animate-don't-vanish rule).
+
+**What stays medieval no matter what:**
+- **Power:** the Crown, barons, tolls, oaths, the garrison.
+- **Fighting:** swords, armour, fists, magic. No guns (section 6).
+- **Faith:** the gods, the chapel, the Church of Veyra.
+- **Danger:** the ruins, the pass in winter, the monsters.
+- **Travel:** horses, carts, feet. No cars (section 6).
+- **Money:** coin only (section 6). Phones can't pay; you count out silver.
 
 ---
 
@@ -57,14 +101,18 @@ The mana-stones turn the modern things into story:
 | **Father** | "His letters stopped" becomes "his messages stopped". Out east there's no relay, so his last word came on paper |
 | **The Church of Veyra** | Devotees post photos in their outfits. Recruitment spreads by the feed too |
 | **Late game: Reeve of Tarven** | She can take the relay stone from the Baron. Owning it means owning every secret in town (the Network ending, `GAME_CONCEPT.md` §11) |
+| **Reviews** (new) | After a night, guests leave star ratings on the feed. Good service, a clean taproom and a good show raise them; walkouts and brawls lower them. The rating pulls in more (and better-paying) guests |
+| **Events** (new) | Happy hour, karaoke night, DJ night, a drinking-contest stream. She posts one on the feed by day; it changes who comes that night |
+| **Selfies** (new) | Guests ask for a selfie with her. Small Fame each time; with a lewd title (section 9) they ask for more than a selfie |
+| **The dating app** (new) | A comedy side system: guests' matches show up at the bar, bad dates end in drama, and her own profile can bring in admirers |
 
 ---
 
 ## 5. Look
 
 - **Characters:** the hero-shooter painted toon look (`MODEL_STUDY.md`), which already suits a mix of modern clothes and armour.
-- **The town:** medieval buildings with modern touches: mana-lamps on the high street, posters on the timber walls, a relay stone glowing on the keep's tower.
-- **Guests:** never one body recoloured (the character-variety rule). The modern clothes help a lot here: the nerd in a hoodie with a cracked phone, the old man in a medieval smock who refuses to own a phone, the noble in a tailored modern coat, the knight in plate.
+- **The town:** medieval buildings, modern street life. Timber and stone with glass shopfronts, glowing shop signs, mana-lamps along the high street, posters and stickers on the walls, a vending machine by the well, a relay stone glowing on the keep's tower.
+- **Guests:** never one body recoloured (the character-variety rule). **Most guests wear modern clothes now**; armour and old robes are the exception that tells you who someone is. The nerd in a hoodie with a cracked phone, the gym-bro adventurer in a tank top, the girl in a mini skirt and sneakers, the old man in a medieval smock who refuses to own a phone, the noble in a tailored modern coat, the knight in plate.
 
 ---
 
@@ -274,13 +322,17 @@ Monsters are rare in town. A monster at the gate is a **story event**, not a dai
   - **Veyra's Night** (midwinter, the longest night): the Warm House opens its doors to everyone.
   - **Oath Day** (autumn): the Stone-Hearted's day. Vows are renewed at the chapel, and tolls paid at the keep.
 - **The town feed** *(working name: the Board)*: everyone's posts, photos and rumours in one place, all through the Baron's relay. It's where gossip lives by day.
-- **Fashion by class:**
-  - farmers mix old smocks with cheap modern clothes
-  - soldiers wear armour on duty and hoodies off it
+- **Fashion by class** (modern for nearly everyone):
+  - farmers wear cheap jeans, flannel and boots; the old ones keep their smocks
+  - soldiers wear armour on duty and hoodies, tank tops and joggers off it
+  - adventurers mix armour pieces with sportswear
   - smugglers dress dark and modern
-  - nobles wear tailored modern coats in their old house colours
+  - young townsfolk follow the feed: crop tops, mini skirts, sneakers, piercings
+  - nobles wear tailored modern coats and dresses in their old house colours
+  - grown women with money wear long one-piece dresses with high slits (the manhwa mature-lady look, section 2b)
   - Veyra's devotees wear red
-- **Music:** a bard with a lute, and a mana-stone speaker playing lowland songs, often in the same tavern.
+- **Music:** a mana-stone speaker playing lowland pop most nights; the bard with a lute is now the retro choice (and does covers of pop songs).
+- **Free time:** the gym, the café, scrolling the feed, karaoke, dating-app dates at her bar.
 
 ---
 
@@ -292,6 +344,11 @@ Monsters are rare in town. A monster at the gate is a **story event**, not a dai
 4. ~~Status plates?~~ **Decided 2026-11-17:** no plates; some titles work in public instead (section 9).
 5. ~~The dark parts of the story?~~ **Decided 2026-11-17:** lighter. Nobody is murdered; the story is a comedy (STORY.md, "Comedy pass").
 6. ~~King or queen?~~ **Decided 2026-11-17:** both. King Edmund (cuckold fetish) and Queen Seraphine (frustrated, masochist), section 8. Names are working names.
+7. **How far does the modern lean go?** (new, 2026-11-18) Section 2b keeps the section 6 rules. If you want more, each of these would change one:
+   - **Transport:** mana-bikes or a mana-tram in the lowlands? (The pass would still be horses and feet.)
+   - **Money:** pay by phone? (It would go through the Baron's relay, so he'd see every payment.)
+   - **Screens:** TVs or streaming in homes, or only phones?
+   - **Buildings:** modern buildings (glass, concrete) in the lowland towns, or modern inside old walls everywhere?
 
 ---
 
@@ -299,7 +356,14 @@ Monsters are rare in town. A monster at the gate is a **story event**, not a dai
 
 | Where | What |
 |---|---|
-| `wardrobe.ts` / `lingerie.ts` + Blender kits | Modern outfit pieces for both bodies (biggest art job) |
-| `story.ts` intro | One line that shows the world: her phone with no signal on the pass road, a letter waiting on the bar |
-| `chatter.ts` / `gossip.ts` / `moodtalk.ts` | Some lines mention phones, photos and the feed. Old lines can stay; a medieval world with phones talks both ways |
-| The journal | A phone skin and a Messages tab (later) |
+| `wardrobe.ts` / `lingerie.ts` + Blender kits | Modern outfit pieces for both bodies (biggest art job). **Modern lean:** modern is now the default for most guests and for her; medieval pieces become the extras |
+| One-piece dresses (`ref/outfits/`) | Two long dresses for both bodies: the white gown and the black slit dress (section 2b). The skirt needs to be split into panels at the slits so the legs move and scenes can push it aside. Plus a red Veyra version of the black one. **Started 2026-11-18** in the cloth toolkit (`tools/blender/cloth_kit.py`, draft in `art/cloth_kit_draft.blend`): all three built in detail and rigged; into the game (`build_world.py` + the wardrobe) once the user approves the look |
+| The mature-lady guest type | A new guest type (30s to 40s, in a dress) with its own stats, look and lines. Fits the character-variety rule |
+| Guest outfit roles (factions) | Each role gets a modern off-duty look: soldiers in hoodies and joggers, adventurers in armour plus sportswear, nobles in tailored coats, townsfolk in crop tops, mini skirts, sneakers |
+| `story.ts` intro | One line that shows the world: her phone with no signal on the pass road, a letter waiting on the bar, a one-star review of the tavern from before she took over |
+| `chatter.ts` / `gossip.ts` / `moodtalk.ts` | **More lines lean modern:** phones, selfies, the feed, reviews, the dating app, modern slang. Old lines can stay for nobles, priests and old folk |
+| The journal | A phone skin with tabs: Messages, the Feed, the tavern's Reviews and Events (later) |
+| New systems (modern lean) | Reviews (star rating), Events (happy hour, karaoke, DJ night), Selfies, the dating app (section 4). Each needs its own design doc before code |
+| The tavern set (`build_world.py`) | Modern touches inside the timber bar: menu board, string lights, glowing sign over the door, the mana speaker, the cold box, posters |
+| The town (`build-place`, D:\planet kits) | Glass shopfronts and glowing signs in the timber buildings; the phone shop, café, boutique, tattoo parlour, gym, laundromat; mana-lamps, a vending machine |
+| Other docs | `TOWN_DAY.md` (the new shops and day jobs), `STORY.md` (modern details in scenes), `GAME_CONCEPT.md` (the one-line pitch), `FEED_STAR.md` (reviews and events tie into the feed), `REVEL_HOUSE.md` / `CHURCH_CONCEPT.md` (modern touches where they fit) |

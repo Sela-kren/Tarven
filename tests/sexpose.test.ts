@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Box3, Object3D, Vector3 } from "three";
 import { poseBones } from "../src/game/battlepose";
 import { DUEL_AREAS } from "../src/game/duel";
-import { blendScene, HOLDING_SCENES, placeBody, SCENE_JOINS, SCENE_POSE_LIST, SCENE_POSES, sceneForEntry, sceneFraming, type Posed } from "../src/game/sexpose";
+import { blendScene, HOLDING_SCENES, placeBody, SCENE_JOINS, SCENE_MAN_SCALE, SCENE_POSE_LIST, SCENE_POSES, sceneForEntry, sceneFraming, sizeForScene, type Posed } from "../src/game/sexpose";
 import { FOE_SCENE_LIST } from "../src/game/brawlscenes";
 
 const them = (part: "kiss" | (typeof DUEL_AREAS)[number]["id"], stage = 0) => ({ side: "partner" as const, part, stage });
@@ -85,6 +85,29 @@ function body(): Posed {
   hips.add(head);
   return { model, bones: poseBones(model, "Male"), female: false, hipsBaseY: 0.95, hipsBaseZ: 0, legLength: 0.9, scale: 2 };
 }
+
+describe("the men in the scene pictures", () => {
+  it("are drawn SCENE_MAN_SCALE (1.1x) big, towering over her as KP's do; a woman partner as she is", () => {
+    expect(SCENE_MAN_SCALE).toBeCloseTo(1.1);
+    const man = new Object3D();
+    man.scale.setScalar(2);
+    sizeForScene(man, "Male");
+    expect(man.scale.toArray()).toEqual([2 * SCENE_MAN_SCALE, 2 * SCENE_MAN_SCALE, 2 * SCENE_MAN_SCALE]);
+    const woman = new Object3D();
+    sizeForScene(woman, "Female");
+    expect(woman.scale.toArray()).toEqual([1, 1, 1]);
+  });
+
+  it("still stand where the scene says: the size doesn't move where he's set down", () => {
+    const posed = body();
+    sizeForScene(posed.model, "Male");
+    placeBody(posed, SCENE_POSES.kiss.them!.body, { x: 0.2, y: 0, z: -0.1, yaw: 0, pitch: 0, roll: 0 });
+    expect(posed.model.position.toArray()).toEqual([0.4, 0, -0.2]);
+    posed.model.updateMatrixWorld(true);
+    // His hips stand SCENE_MAN_SCALE higher than an unscaled man's.
+    expect(posed.model.getObjectByName("Male_Hips")!.getWorldPosition(new Vector3()).y).toBeCloseTo(0.95 * SCENE_MAN_SCALE);
+  });
+});
 
 describe("setting a body down on the stage", () => {
   it("puts it where the scene says, at the size it's drawn", () => {

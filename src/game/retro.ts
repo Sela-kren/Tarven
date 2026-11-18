@@ -20,12 +20,16 @@ import {
 } from "three";
 import { addSkinDetail } from "./skindetail";
 
-/** Target lines on screen: the PS1's high-resolution mode, so faces stay readable. */
-const RETRO_HEIGHT = 480;
-/** Lines of the grid that vertices snap to: coarser than the image, so models still wobble. */
-const SNAP_HEIGHT = 240;
-/** Brightness steps per colour channel on screen (5-bit colour). */
-const COLOR_LEVELS = 31;
+/** Target lines on screen. Toned down from the PS1's 480: on a ~1080p window this is full resolution. */
+const RETRO_HEIGHT = 720;
+/** Lines of the grid that vertices snap to: a little coarser than the image, so models wobble only slightly. */
+const SNAP_HEIGHT = 540;
+/** Brightness steps per colour channel on screen (6-bit colour: the dither is faint). */
+const COLOR_LEVELS = 63;
+/** The PS1's warping textures. Off: textures are drawn perspective-correct. */
+const AFFINE_TEXTURES = false;
+/** The screen height the drunk-vision amounts were tuned at, so they stay the same size on screen. */
+const DRUNK_REFERENCE_HEIGHT = 480;
 
 /** Shared with every retro material so vertices snap to the same grid. */
 const snapResolution = { value: new Vector2(320, SNAP_HEIGHT) };
@@ -179,7 +183,9 @@ function withPs1Rasterizer<T extends MeshLambertMaterial | MeshPhongMaterial>(ma
         vAffineEmissiveUv = vec3(vEmissiveMapUv * gl_Position.w, gl_Position.w);
       #endif`,
     );
-    shader.fragmentShader = `${AFFINE_VARYINGS}${shader.fragmentShader}`
+    shader.fragmentShader = `${AFFINE_VARYINGS}${shader.fragmentShader}`;
+    if (!AFFINE_TEXTURES) return;
+    shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <map_fragment>",
         `#ifdef USE_MAP
@@ -279,9 +285,11 @@ export class RetroPipeline {
           if (uDrunk > 0.0) {
             // Drunk: the rows ripple sideways, and a second, faded copy of the room drifts around the first.
             ivec2 last = textureSize(tScene, 0) - 1;
-            float wave = sin(float(pixel.y) * 0.06 + uTime * 2.0) * uDrunk * DRUNK_WAVE;
+            // The amounts were tuned at 480 lines; keep them the same size on screen at any resolution.
+            float px = float(textureSize(tScene, 0).y) / ${DRUNK_REFERENCE_HEIGHT.toFixed(1)};
+            float wave = sin(float(pixel.y) * 0.06 / px + uTime * 2.0) * uDrunk * DRUNK_WAVE * px;
             ivec2 wavy = clamp(pixel + ivec2(int(round(wave)), 0), ivec2(0), last);
-            vec2 drift = vec2(sin(uTime * 0.8), cos(uTime * 0.6)) * uDrunk * DRUNK_DOUBLE;
+            vec2 drift = vec2(sin(uTime * 0.8), cos(uTime * 0.6)) * uDrunk * DRUNK_DOUBLE * px;
             ivec2 ghost = clamp(wavy + ivec2(round(drift)), ivec2(0), last);
             scene = mix(texelFetch(tScene, wavy, 0).rgb, texelFetch(tScene, ghost, 0).rgb, DRUNK_GHOST * uDrunk);
           }
