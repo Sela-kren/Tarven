@@ -37,9 +37,9 @@ They're the same stats as the Lantern's girls, so one system covers everyone:
 | **Charm** | 0–10 | How happy guests leave: tips, fans |
 | **Stamina** | 0–10 | How many nights in a row before they need one off |
 | **Loyalty** | 0–100 | Whether they stay, stand with her, or walk to the Velvet House |
-| **Corruption** | 0–100 | Drifts toward hers (the Lantern rule): honest, shady, crooked, rotten |
+| **Corruption** | 0–100 | Drifts toward hers (the Lantern rule): honest, shady, crooked (80), rotten (95, `STAFF_ROTTEN`: only under a madam past 95, or greedy rules). Each step up gets one story card (CORRUPTION_TROPES.md) |
 | **Resolve** | 0–10 | How slowly their corruption drifts |
-| **Lewdness** | 0+ | Their own slut level, from their own nights, on the heroine's stages (sheltered, curious, willing, known) |
+| **Lewdness** | 0+ | Their own slut level, from their own nights, on the heroine's stages (sheltered, curious, willing, known). It rises with their job's work (`lewdWork`): bookings, dances, the gropes a job brings (a barmaid's most nights, a cook's hardly ever) and revel nights. Rates in CORRUPTION_TROPES.md |
 | **Fame** | 0–100 | **Their own fame** (new): how well known they are on the pass. Rises with good nights, a dance, a famous booking, a fight won at the door. Famous staff draw their own fans. |
 | **Wage** | gold a night | What they're paid. Pay less and loyalty drops. |
 

@@ -34,6 +34,9 @@ export type Layer = (typeof LAYERS)[number];
 export const REGIONS = ["waist", "top", "bottom", "legs", "feet"] as const;
 export type Region = (typeof REGIONS)[number];
 
+/** Legwear's top band, over her hips and groin, that tights and leggings have. */
+const HOSE_TOP = "T_hose";
+
 export interface Garment {
   /** The same id as its colour in `appearance`. */
   id: string;
@@ -45,6 +48,8 @@ export interface Garment {
   keep?: string;
   /** Set when it goes by the name of the style she chose (a thong, pasties), so the lines written for it don't fit. */
   styled?: boolean;
+  /** The lines guests say about it (banter's DARES), when they aren't its id's: leggings that only come down. */
+  lines?: string;
 }
 
 /**
@@ -105,6 +110,8 @@ export const WARDROBE: Record<WardrobeBody, readonly Garment[]> = {
     // The frilled set's bow, and the plunge dress.
     { id: "bow", label: "bow", layer: "accessory", region: "waist" },
     { id: "dress", label: "dress", layer: "outer", region: "top" },
+    // Her T-shirt. Its leggings are the stockings, which come down to her knees rather than off (stripLadder).
+    { id: "tee", label: "T-shirt", layer: "outer", region: "top" },
     // The pirate's rig, which only guests wear for now. Her corset is the bodice and her shirt the chemise.
     ...PIRATE_GARMENTS,
     { id: "feather", label: "feather", layer: "accessory", region: "top", keep: "it's pinned in her hat, or on her arrows" },
@@ -143,9 +150,11 @@ export const WARDROBE: Record<WardrobeBody, readonly Garment[]> = {
  * How each top comes off her breasts when she shows them (GAME_PATH.MD 7e), pulled on her model rather than taken
  * off: a chemise and a bodice are dragged down under them, and the laces up the bodice's front with them (the belt's
  * leather, the dirndl's ribbons; only what's over her breasts moves, so a belt round her waist stays put, and arm
- * ribbons on her arms); the priestess's short gold top is lifted up over them.
+ * ribbons on her arms); the priestess's short gold top and her T-shirt are lifted up over them.
  */
-export const TOP_PULL: Readonly<Record<string, "down" | "up">> = { blouse: "down", bodice: "down", belt: "down", ribbons: "down", top: "up" };
+export const TOP_PULL: Readonly<Record<string, "down" | "up">> = {
+  blouse: "down", bodice: "down", belt: "down", ribbons: "down", top: "up", tee: "up",
+};
 
 /** Tops that sit under her breasts in an outfit, leaving them bare: the bunny set's, corset gown's and frilled set's. */
 const UNDER_BUST: Readonly<Record<string, readonly string[]>> = { bunny: ["bodice"], gown: ["bodice"], frills: ["bodice"] };
@@ -190,7 +199,7 @@ export function cutInPieces(body: WardrobeBody, outfit: string | undefined, legw
 
 /** Whether her legwear reaches up over her groin (tights, leggings): its top band, from her waist down her thighs. */
 export function legwearOverGroin(body: WardrobeBody, outfit?: string, legwear?: string): boolean {
-  return legwearOf(body, { outfit, legwear })?.bands.includes("T_hose") ?? false;
+  return legwearOf(body, { outfit, legwear })?.bands.includes(HOSE_TOP) ?? false;
 }
 
 /**
@@ -205,11 +214,14 @@ export function stripLadder(body: WardrobeBody, outfit?: string, legwear?: strin
     (id) => (id !== "stockings" || !legs || legs.bands.length > 0) && (id !== "smalls" || !styles || styles.bottom !== null),
   );
   const rank = (g: Garment) => LAYERS.indexOf(g.layer) * 100 + REGIONS.indexOf(g.region) * 10;
+  // Leggings that come down to her knees rather than off (OutfitDef.legsDown) go by their style's name and lines.
+  const { legsDown } = outfitOf(body, { outfit });
+  const down = legsDown && legs && legs.bands.includes(HOSE_TOP) && legs.bands.includes(legsDown) ? legs : null;
   return WARDROBE[body]
     .filter((g) => !g.keep && worn.includes(g.id))
     .map((g, index) => ({ g, index }))
     .sort((a, b) => rank(a.g) - rank(b.g) || a.index - b.index)
-    .map(({ g }) => styled(g, styles));
+    .map(({ g }) => (down && g.id === "stockings" ? { ...g, label: down.label.toLowerCase(), lines: "leggings" } : styled(g, styles)));
 }
 
 /** Her bra and briefs go by their styles' names, unless they're the band and braies painted on her. */

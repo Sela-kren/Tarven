@@ -3,7 +3,7 @@
  * legs, built from boxes, the same in the game's picture and the pose preview.
  */
 import { BoxGeometry, Group, Mesh, MeshStandardMaterial } from "three";
-import type { SceneTable } from "./sexpose";
+import type { SceneProp, SceneTable } from "./sexpose";
 
 const TOP_THICK = 0.05;
 const LEG = 0.07;
@@ -27,4 +27,29 @@ export function makeTable(table: SceneTable, scale = 1): Group {
   group.position.set(table.x * scale, 0, table.z * scale);
   group.scale.setScalar(scale);
   return group;
+}
+
+const PLASTER = new MeshStandardMaterial({ color: 0xb9a68a, roughness: 0.95 });
+
+/**
+ * A scene's other props (sexpose.ts `props`): a post, a wall, a bench, the bar counter. Each is its box, standing on
+ * the floor at the scene's place; a bench and the bar are a plank top on legs, like the table. Named for the preview.
+ */
+export function makeProps(props: readonly SceneProp[], scale = 1): Group[] {
+  return props.map((prop) => {
+    if (prop.kind === "bench" || prop.kind === "bar") {
+      const group = makeTable({ x: prop.x, z: prop.z, length: prop.length, width: prop.width, height: prop.height }, scale);
+      group.rotation.y = prop.turn ?? 0;
+      return group;
+    }
+    const group = new Group();
+    group.name = "Table_Wood";
+    const box = new Mesh(new BoxGeometry(prop.length, prop.height, prop.width), prop.kind === "wall" ? PLASTER : WOOD);
+    box.position.set(0, prop.height / 2, 0);
+    group.add(box);
+    group.position.set(prop.x * scale, 0, prop.z * scale);
+    group.rotation.y = prop.turn ?? 0;
+    group.scale.setScalar(scale);
+    return group;
+  });
 }

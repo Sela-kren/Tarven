@@ -560,6 +560,19 @@ export const DARES: Record<string, Omit<StripPiece, "id">> = {
     say: "\"One each. Don't fight over them.\"",
     result: "You roll them down and toss them over. Two of them nearly come to blows.",
   },
+  // Her T-shirt and leggings. The leggings only come down, to her knees (wardrobe.ts stripLadder).
+  tee: {
+    dare: "\"Lose the shirt, innkeeper! It's been begging to come up all night.\" Someone tugs at the hem.",
+    accept: "Pull your T-shirt over your head",
+    say: "\"It's city cotton. Spill on it and you're buying me another.\"",
+    result: "You peel the shirt off over your head and fling it at the table. It gets passed round like a holy relic.",
+  },
+  leggings: {
+    dare: "\"Now the leggings! We've all seen the shape of it anyway, innkeeper. Down they come!\"",
+    accept: "Peel your leggings down",
+    say: "\"To the knees. That's all you're getting.\"",
+    result: "You hook your thumbs in the waistband and peel them down to your knees. Someone falls off a bench.",
+  },
   blouse: {
     dare: "\"The chemise too, innkeeper! You've come this far.\" The whole table is chanting.",
     accept: "Pull the chemise over your head",
@@ -674,9 +687,9 @@ export const DARES: Record<string, Omit<StripPiece, "id">> = {
 };
 
 /** The lines for a garment: its own if it has them, otherwise ones made from what it's called. */
-export function stripPiece(garment: { id: string; label: string; styled?: boolean }): StripPiece {
+export function stripPiece(garment: { id: string; label: string; styled?: boolean; lines?: string }): StripPiece {
   // Her band's and braies' own lines don't fit a thong or a bodysuit worn in their place.
-  const written = garment.styled ? undefined : DARES[garment.id];
+  const written = garment.styled ? undefined : DARES[garment.lines ?? garment.id];
   if (written) return { id: garment.id, ...written };
   const { label } = garment;
   return {

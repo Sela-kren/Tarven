@@ -5062,17 +5062,37 @@ def plunge_cloth(spec, m, skin):
     return faces
 
 
-# Her modern everyday set (WORLD.md): a fitted short-sleeved T-shirt over leggings. The tee ends at her waist, where
-# the leggings start (the legwear bands, as on the dresses), so taking either off leaves no hole in the other. Easy to
-# get into: the tee lifts up over her breasts, and the leggings come down.
-TEE_SLEEVE = 0.62  # how far down her upper arm the sleeve reaches, from the shoulder (0) to the elbow (1)
-TEE_NECK = (1.29, 1.335)  # the crew neck's bottom at the front and at the back
-TEE_NECK_SCOOP = 0.6  # how much higher the neck sits at the sides than at the middle, per metre out
-TEE_COLOURS = (("tee", (0.86, 0.85, 0.82)),)
+# Her modern everyday set (WORLD.md), and what she starts in: a fitted, cropped short-sleeved T-shirt with a low
+# scoop neck, over skin-tight leggings that sit low on her hips. A strip of her belly shows between the two, her navel
+# in it. Each is its own faces of her skin (the leggings are the legwear bands, as on the dresses), so taking either
+# off leaves no hole in the other, only her skin. Easy to get into: the tee lifts up over her breasts, and the
+# leggings come down to her knees, bunched in a roll there (TEE_ROLL).
+TEE_SLEEVE = 0.5  # how far down her upper arm the sleeve reaches, from the shoulder (0) to the elbow (1)
+TEE_NECK = (1.17, 1.335)  # the neck's bottom at the front (the middle of the scoop, down into her cleavage) and at the back
+TEE_SCOOP = (0.085, 0.11)  # the scoop: how far out from the middle it reaches, and how much it rises by there
+TEE_NECK_SCOOP = 0.6  # how much higher the back of the neck sits at the sides than at the middle, per metre out
+TEE_HEM = 1.012  # the cropped hem, a few fingers above her navel (the faces whose middles are above it)
+TEE_LEGGINGS_TOP = 0.96  # the leggings' waistband on her hips (the faces whose middles are below it)
+TEE_LEGGINGS_DIP = (0.05, 0.935)  # the waistband dips in a V under her navel at the front, this far either side
+# The leggings pulled down: rolled up in a band round each leg just above the knee, standing off her skin most in
+# the middle of the roll. The game shows it, and the leggings from the knee down, while they're down.
+TEE_ROLL = (0.47, 0.535)  # the roll's bottom and top
+TEE_ROLL_LIFT = (0.003, 0.009)  # how far off the leggings its edges and its middle stand
+TEE_COLOURS = (("tee", (0.86, 0.85, 0.82)), ("legroll", (0.2, 0.15, 0.13)))
+
+
+def tee_neck(cx, cy):
+    """How high the tee's neck comes at this point across her: a deep U at the front, a plain neck at the back."""
+    if cy > 0:
+        return TEE_NECK[0] + TEE_SCOOP[1] * (abs(cx) / TEE_SCOOP[0]) ** 2
+    return TEE_NECK[1] + TEE_NECK_SCOOP * abs(cx)
 
 
 def tee_cloth(spec, m, skin):
-    """The worn skin's faces the T-shirt and leggings cover: short sleeves, the shirt down to her waist, and legwear."""
+    """
+    The worn skin's faces the T-shirt and leggings cover: short sleeves, the shirt from its scoop neck down to its
+    cropped hem, and the leggings from her hips down. Her belly between the two stays bare.
+    """
     shoulder_z = spec["shoulder"][1]
     sleeve_end = shoulder_z - TEE_SLEEVE * (shoulder_z - spec["elbow_z"])
     faces = []
@@ -5088,9 +5108,9 @@ def tee_cloth(spec, m, skin):
                 faces.append((f, legwear_band(m, bone, cz)))
         elif face_leans(skin, f, "UpperArm"):
             faces.append((f, m["tee"]))
-        elif is_legwear(bone, cz):
+        elif cz < (TEE_LEGGINGS_DIP[1] if cy > 0 and abs(cx) < TEE_LEGGINGS_DIP[0] else TEE_LEGGINGS_TOP):
             faces.append((f, legwear_band(m, bone, cz)))
-        elif cz < (TEE_NECK[0] if cy > 0 else TEE_NECK[1]) + TEE_NECK_SCOOP * abs(cx):
+        elif TEE_HEM < cz < tee_neck(cx, cy):
             faces.append((f, m["tee"]))
     return faces
 
@@ -5098,10 +5118,63 @@ def tee_cloth(spec, m, skin):
 def tee_lift(bone, z):
     """A fitted tee just off the skin, its sleeves a little looser; leggings on the skin."""
     if bone.startswith("UpperArm"):
-        return 0.006
+        return 0.005
     if bone in ("Hips", "Torso"):
-        return 0.004 if z >= BODICE[0] else 0.0
+        return 0.003 if z >= (TEE_LEGGINGS_TOP + TEE_HEM) / 2 else 0.0
     return 0.0
+
+
+def build_tee_extra(spec, m, skin, normals):
+    """
+    The leggings' roll round each leg above the knee, for when they're pulled down (TEE_ROLL): the leg's faces there
+    cut into rows, each row standing off the skin by how far into the roll it is, so the roll bulges in the middle.
+    """
+    extra = Skin()
+    low, high = TEE_ROLL
+    rows = 6
+    heights = [low + (high - low) * k / rows for k in range(rows + 1)]
+
+    def lerp(a, b, u):
+        return tuple(x + (y - x) * u for x, y in zip(a, b))
+
+    def point(i, j, u, h):
+        """The point a share u of the way up the edge from corner i to corner j, at height h, stood off the skin."""
+        key = f"roll{i}" if u <= 0 else f"roll{j}" if u >= 1 else f"roll{min(i, j)}_{max(i, j)}_{round(h * 1e4)}"
+        if not extra.has(key, 0):
+            normal = lerp(normals.get(i) or (0.0, 0.0, 0.0), normals.get(j) or (0.0, 0.0, 0.0), u)
+            length = math.sqrt(sum(c * c for c in normal)) or 1.0
+            t = min(1.0, max(0.0, (h - low) / (high - low)))
+            lift = CLOTH_GAP + TEE_ROLL_LIFT[0] + (TEE_ROLL_LIFT[1] - TEE_ROLL_LIFT[0]) * math.sin(math.pi * t)
+            co = tuple(p + n / length * lift for p, n in zip(lerp(skin.points[i], skin.points[j], u), normal))
+            weights = {}
+            for index, share in ((i, 1 - u), (j, u)):
+                for bone, w in skin.weights[index].items():
+                    weights[bone] = weights.get(bone, 0.0) + w * share
+            extra.add(key, 0, co, weights)
+        return key
+
+    for f, _ in skin.faces:
+        if len(f) != 4:
+            continue
+        bone, _ = face_bone(skin, f)
+        if not bone.startswith(("Thigh", "Shin")):
+            continue
+        # Turned so its first two corners are its bottom edge, the last two above them.
+        turn = min(range(4), key=lambda k: skin.points[f[k]][2] + skin.points[f[(k + 1) % 4]][2])
+        c0, c1, c2, c3 = (f[(turn + k) % 4] for k in range(4))
+        bottom = (skin.points[c0][2] + skin.points[c1][2]) / 2
+        top = (skin.points[c2][2] + skin.points[c3][2]) / 2
+        if top <= low or bottom >= high or top - bottom < 1e-4:
+            continue
+        cuts = sorted({max(low, bottom), min(high, top), *(h for h in heights if bottom < h < top)})
+        line = []
+        for h in cuts:
+            u = (h - bottom) / (top - bottom)
+            u = 0.0 if u < 1e-4 else 1.0 if u > 1 - 1e-4 else u
+            line.append((point(c0, c3, u, h), point(c1, c2, u, h)))
+        for (l0, r0), (l1, r1) in zip(line, line[1:]):
+            extra.face((l0, r0, r1, l1), 0, m["legroll"])
+    return extra
 
 
 def frill_tier(spec, zs, out, a):
@@ -6687,7 +6760,7 @@ def more_outfits(spec, m, skin, normals, fit):
                  build_gown_extra(spec, m)),
         "Frills": (*frills, build_frill_extra(spec, m, ClothSurface(skin, [(f, None) for f, _ in skin.faces], frills[1]))),
         "Plunge": (plunge_cloth(spec, m, skin), lifted(nightwear_lift), build_plunge_extra(spec, m)),
-        "Tee": (tee_cloth(spec, m, skin), lifted(tee_lift), Skin()),
+        "Tee": (tee_cloth(spec, m, skin), lifted(tee_lift), build_tee_extra(spec, m, skin, normals)),
         **guests,
     }
 

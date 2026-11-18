@@ -344,7 +344,11 @@ export interface TownLine extends Gate {
 }
 
 const ARC_ORDER: readonly ArcStage[] = ["sheltered", "curious", "willing", "known"];
-const stageIndex = (stage: ArcStage) => ARC_ORDER.indexOf(stage);
+/** Her stage as the four-stage pools read it: a Legend is Known underneath, with her own lines on top where written. */
+const talkStage = (stage: ArcStage): ArcStage => (stage === "legend" ? "known" : stage);
+const stageIndex = (stage: ArcStage) => ARC_ORDER.indexOf(talkStage(stage));
+/** Whether she's at one of these stages; Known takes in Legend too. */
+const atStage = (stages: readonly ArcStage[], arc: ArcStage) => stages.includes(arc) || stages.includes(talkStage(arc));
 const and = (a?: When, b?: When): When | undefined => (a && b ? (f) => a(f) && b(f) : (a ?? b));
 
 function group(prefix: string, category: TownCategory, when: When | undefined, mood: Mood, entries: readonly Entry[], replyKey = prefix): TownLine[] {
@@ -356,7 +360,9 @@ function group(prefix: string, category: TownCategory, when: When | undefined, m
 }
 
 // Conditions on her.
-const stage = (...stages: ArcStage[]): When => (f) => stages.includes(f.arc);
+const stage = (...stages: ArcStage[]): When => (f) => atStage(stages, f.arc);
+/** Exactly this stage, for the stage's own line group (Legend has its own). */
+const only = (s: ArcStage): When => (f) => f.arc === s;
 const late: When = (f) => stageIndex(f.arc) >= 2;
 const has = (...ids: string[]): When => (f) => ids.some((id) => f.passives.has(id));
 const wearing = (id: string): When => (f) => PUBLIC_TITLES.has(id) && f.titles.includes(id);
@@ -420,7 +426,7 @@ const BASE_PASSING: readonly TownLine[] = [
     ["Whatever you're doing, keeper, teach me. My husband's never looked at me like that.", { sex: "f", m: "happy" }],
     ["The party's back from the ruins tonight. We've coin, and we've heard things.", { k: ["adventurer"] }],
   ]),
-  ...group("arc.known", "arc", stage("known"), "lust", [
+  ...group("arc.known", "arc", only("known"), "lust", [
     "There {she} goes, the best ride on the pass!",
     "Oi, keeper! Same as last night? I've been saving up all day.",
     "Travellers ask the way to your tavern by the bed, not the beer.",
@@ -437,6 +443,20 @@ const BASE_PASSING: readonly TownLine[] = [
     ["I told the whole Deephold about you. They're coming up in shifts.", { r: ["dwarf"] }],
     ["Darling, the whole court whispers your name. Usually mid-swoon.", { k: ["noble"], sex: "f" }],
     ["My husband says your name in his sleep. I've started saying it too.", { sex: "f" }],
+  ]),
+  ...group("arc.legend", "arc", only("legend"), "idolize", [
+    "Keeper! We chant your name at breakfast now. The kids started it.",
+    "Keeper! Sing the second verse with us tonight? You're in it.",
+    "My kids know your song. I don't know how. I'm moving.",
+    "There {she} is! Somebody fetch the drum!",
+    "They've named a cheese after you, keeper. It's very soft and very popular.",
+    "Seen the inn sign? Somebody painted you on the back. All of you.",
+    "Is it true you bowed to the Baron's tax man? Bare? He resigned.",
+    "Travellers come up the pass just to shout your name at the door.",
+    ["Keeper! The lads made you a banner. It's mostly tits.", { k: ["soldier"], b: F }],
+    ["Keeper! The lads made you a banner. It's mostly cock.", { k: ["soldier"], b: M }],
+    ["The Deephold's got your song in three keys now, keeper. All filthy.", { r: ["dwarf"] }],
+    ["Darling, the court's begging for the dance. The one with the knees.", { k: ["noble"], sex: "f" }],
   ]),
   ...group("arc.rotten", "arc", and(late, shady), "scheming", [
     "That'll cost you, isn't a joke at your place any more, they tell me.",
@@ -1016,6 +1036,14 @@ const BASE_REPLIES: Readonly<Record<string, ReplyPool>> = {
       "Doors at five. Queue starts at four.",
     ],
   },
+  "arc.legend": {
+    any: [
+      "Five o'clock, darlings. Bring the drum.",
+      "(They know all the words. So do I. I'm word perfect.)",
+      "Louder! I can't hear my name!",
+      "(Shame used to live here. I think she moved to the Copper Bell.)",
+    ],
+  },
   "arc.rotten": { any: ["Everything costs. You'd know.", "(They're right. I'd sell the sheets too.)", "Price went up when you asked."] },
   "respect.hi": {
     early: ["Oh! Thank you. Truly.", "(They mean it. They actually mean it.)", "Wren's chin, Wren's manners. I hope."],
@@ -1131,7 +1159,7 @@ function replyPool(key: string, stage: ArcStage): readonly string[] | null {
   let at: string | null = key;
   while (at) {
     const pool = REPLIES[at];
-    const lines = pool && (pool[stage] ?? pool[stageIndex(stage) <= 1 ? "early" : "late"] ?? pool.any);
+    const lines = pool && (pool[stage] ?? pool[talkStage(stage)] ?? pool[stageIndex(stage) <= 1 ? "early" : "late"] ?? pool.any);
     if (lines && lines.length > 0) return lines;
     const cut = at.lastIndexOf(".");
     at = cut > 0 ? at.slice(0, cut) : null;
@@ -1452,6 +1480,11 @@ const BASE_CHATS: readonly TownChat[] = [
     [["There {she} goes. Best ride on the pass.", "Shh! {She}'ll hear.", "{She} likes hearing it. Look, {she}'s smiling."], { loud: true }],
     ["Saw the keeper on the feed last night. Every bit of {her}.", "Every bit?", "Zane got the angles. Zane always gets the angles."],
   ]),
+  ...chats("legend", "arc", only("legend"), true, [
+    ["Were you at the keeper's last night?", "Was I? Listen. I've no voice left.", "From the chanting?", "Mostly."],
+    ["They've a drum at the keeper's now.", "What for?", "For the chant. Then for the other thing. Keeps time."],
+    [["There {she} is! Three cheers for the keeper!", "Hip hip—", "{She} bowed! Did you see {her} bow?"], { loud: true }],
+  ]),
   ...chats("rotten", "arc", and(late, shady), true, [
     ["The keeper'd sell {hers} own bed and charge for the sheets.", "And the pillows?", "Pillows are extra."],
   ]),
@@ -1680,7 +1713,7 @@ interface RepDef {
 }
 
 const best = (...scores: number[]) => Math.max(0, ...scores);
-const known = (f: TownFacts) => f.arc === "known";
+const known = (f: TownFacts) => f.arc === "known" || f.arc === "legend";
 const onArc = (f: TownFacts) => f.arc !== "sheltered";
 
 /** Every public name, and what earns it (WORLD.md 9: titles that spread by gossip and the feed). */
@@ -2487,7 +2520,7 @@ function heatPieces(prefix: string, entries: readonly HeatEntry[]): HeatPiece[] 
 }
 
 const EARLY: readonly ArcStage[] = ["sheltered", "curious"];
-const LATE: readonly ArcStage[] = ["willing", "known"];
+const LATE: readonly ArcStage[] = ["willing", "known", "legend"];
 
 /** The beats a heat moment is built from (each pool written for both bodies, gated by stage). */
 export const HEAT: {
@@ -2620,7 +2653,7 @@ export function heatReactionWeights(who: Townsperson, f: TownFacts): Record<Excl
 }
 
 function pickPiece(pool: readonly HeatPiece[], f: TownFacts, who: Townsperson, recent: RecentLines, random: () => number): HeatPiece | null {
-  const fitting = pool.filter((p) => (!p.b || p.b === f.body) && (!p.stages || p.stages.includes(f.arc)));
+  const fitting = pool.filter((p) => (!p.b || p.b === f.body) && (!p.stages || atStage(p.stages, f.arc)));
   const voiced = fitting.filter((p) => p.k?.includes(who.kind));
   const open = fitting.filter((p) => !p.k);
   const usable = [...voiced, ...open];
@@ -2719,7 +2752,7 @@ export function pickHeatMoment(
     const made = her(HEAT.offers);
     them(HEAT.taken[reaction]);
     offer = reaction === "flees" || reaction === "declines" ? null : (made?.offer ?? null);
-    effects.respect = f.arc === "known" ? -1 : -2;
+    effects.respect = known(f) ? -1 : -2;
     effects.fame = reaction === "callsFriends" ? 2 : 1;
     effects.lust = 1;
     effects.desire = 10;

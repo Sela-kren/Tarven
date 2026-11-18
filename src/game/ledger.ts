@@ -183,8 +183,7 @@ export const PELL_EARS =
 export const EAR_COLLECTION = 50;
 /** Each name she gives him: informing, and it costs her. */
 export const NAME_CORRUPTION = 3;
-export const WREN_FIRST_LETTER =
-  "Later, in the hollow leg of the stool Grandma always sat on, you find a letter in her hand: \"If Pell is asking you about my book, then I'm already dead, and it wasn't my heart. Don't drink anything he pours.\"";
+// Wren's first letter, found after Pell's dawn, lives with the rest of her letters (letters.ts, "pell").
 
 // ---- The house above fights back ----
 
@@ -271,9 +270,12 @@ export const SIDE_RUMORS: readonly LastCall[] = [
   },
 ];
 
-/** The card at 501 fans: the end of Chapter 1, and what comes next. */
+/**
+ * The card at 501 fans: the end of Chapter 1. Her Chapter 1 ending's card follows it, and ends on the teaser
+ * (chapter1.ts).
+ */
 export const FIRST_IN_TARVEN = [
   "Every table in Tarven is talking about your house tonight. Not the Copper Bell. Yours.",
   "First in Tarven. Grandma Wren would have poured herself something strong and said nothing at all.",
-  "At the door, riders in the Gilded Stag's colours are handing out cards. The pass has noticed you. (To be continued: the pass.)",
+  "At the door, riders in the Gilded Stag's colours are handing out cards. The pass has noticed you.",
 ];

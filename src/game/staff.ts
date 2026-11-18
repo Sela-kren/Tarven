@@ -25,6 +25,8 @@
  *   and who each bring a perk of their own (`FRIEND_PERK`).
  */
 import type { Effects } from "./passives";
+import { ARC_STAGES, ARC_TROPE, arcStageName, legendStep, mindStage, newLegend, readLegend, type ArcStage, type LegendState } from "./lewd";
+import { fillCard, type Pusher, type StageCard, type StaffTierStep, type TropeId, type FallBeat } from "./tropes";
 
 export type StaffJob = "barmaid" | "cook" | "doorman" | "girl" | "dancer" | "devotee" | "clerk";
 export const STAFF_JOBS: readonly StaffJob[] = ["barmaid", "cook", "doorman", "girl", "dancer", "devotee", "clerk"];
@@ -61,6 +63,13 @@ export interface StaffRecords {
   dances: number;
   /** Tips, in gold. */
   tips: number;
+  /**
+   * Hands on them at work (`lewdWork`): a barmaid's bum pinched over the soldiers' table, coin in a dancer's garter,
+   * a kiss for the doorman on the step, the cook pinched by the ovens. Older saves have none, so 0.
+   */
+  gropes: number;
+  /** Revel nights worked in the Revel Hall (revel.ts): a whole night of it, whatever the job. Older saves: 0. */
+  revels: number;
 }
 
 export interface StaffMember {
@@ -79,7 +88,7 @@ export interface StaffMember {
   stamina: { current: number; max: number };
   /** Whether they stay, 0–100. At 0 they walk. */
   loyalty: number;
-  /** How crooked they've become, 0–100: honest under 40, shady, crooked at 80. */
+  /** How crooked they've become, 0–100: honest under 40, shady, crooked at 80, rotten at 95 (`STAFF_ROTTEN`). */
   corruption: number;
   /** How slowly their corruption drifts, 0–10. */
   resolve: number;
@@ -99,6 +108,14 @@ export interface StaffMember {
   /** How rare a find they are (Common to Legendary), and their perks (STAFF_PERKS ids). */
   rarity: Rarity;
   perks: string[];
+  /**
+   * The furthest corruption tier (0 honest, 1 shady, 2 crooked, 3 rotten) and lewdness stage (0 sheltered to 3 known)
+   * the dawn has told a story card for (CORRUPTION_TROPES.md): each step up gets one card, once.
+   */
+  tierSeen: number;
+  stageSeen: number;
+  /** Their Legend, the comic stage past Known (`staffStage`): older saves and new hires have never been one. */
+  legend?: LegendState;
 }
 
 /** One of the people who can be hired (STAFF.md §5): who they are, when they turn up, and how they start. */
@@ -441,11 +458,13 @@ export function hire(id: string): StaffMember {
     fame: 0,
     wage: d.wage,
     arcBeat: 0,
-    records: { nights: 0, served: 0, bookings: 0, throwOuts: 0, dances: 0, tips: 0 },
+    records: { nights: 0, served: 0, bookings: 0, throwOuts: 0, dances: 0, tips: 0, gropes: 0, revels: 0 },
     passives: [],
     quit: false,
     rarity: FRIEND_RARITY[d.id] ?? "epic",
     perks: FRIEND_PERK[d.id] ? [FRIEND_PERK[d.id]] : [],
+    tierSeen: STAFF_TIERS.indexOf(staffTier(d.corruption)),
+    stageSeen: 0,
   };
 }
 
@@ -506,6 +525,8 @@ export interface StaffDawn {
   passives: string[];
   beat: ArcBeat | null;
   line: string;
+  /** The story cards of a step up tonight (a corruption tier, a lewdness stage), their lines filled in for them. */
+  cards: StageCard[];
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -517,16 +538,511 @@ export function staffDrift(own: number, madam: number, resolve: number): number 
   return Math.max(0, own + step);
 }
 
-/** Their tier, on the madam's scale. */
-export function staffTier(corruption: number): "honest" | "shady" | "crooked" {
+/**
+ * Rotten, for staff: 95 and up. Their corruption stops at 100 and closes on the madam's a tenth of the gap a night,
+ * so they only get this far under a madam past 95 (well into her crooked, 80 to 149, or rotten herself), or with
+ * greedy house rules pushing 3 a night each on top. Under a madam of 120 a crooked barmaid of resolve 5 gets there
+ * in about a week; under a madam of 80 with no greedy rules, never.
+ */
+export const STAFF_ROTTEN = 95;
+
+/** Their tier, on the madam's scale (rotten comes sooner on theirs: see `STAFF_ROTTEN`). */
+export function staffTier(corruption: number): "honest" | "shady" | "crooked" | "rotten" {
+  if (corruption >= STAFF_ROTTEN) return "rotten";
   if (corruption >= 80) return "crooked";
   if (corruption >= 40) return "shady";
   return "honest";
 }
 
-/** Their lewdness, from their own records: 1 for every 3 bookings, 1 for every 5 dances (as the Lantern counts). */
+/** Gropes that make a point of lewdness (as 3 bookings do), and what one revel night worked is worth. */
+export const GROPES_PER_LEWD = 3;
+export const REVEL_LEWD = 1;
+
+/**
+ * Their lewdness, from their own records: 1 for every 3 bookings and 1 for every 5 dances (as the Lantern counts),
+ * 1 for every 3 times a guest got hands on them at work, and 1 for every revel night they worked.
+ */
 export function staffLewdness(records: StaffRecords): number {
-  return Math.floor(records.bookings / 3) + Math.floor(records.dances / 5);
+  return (
+    Math.floor(records.bookings / 3) +
+    Math.floor(records.dances / 5) +
+    Math.floor((records.gropes ?? 0) / GROPES_PER_LEWD) +
+    REVEL_LEWD * (records.revels ?? 0)
+  );
+}
+
+/** What the tavern saw of the night, for what each job's work did to them (`lewdWork`). */
+export interface LewdNightFacts {
+  /** Hands that reached for the keeper tonight (tavern.ts `touchesTonight`): how handsy the room was. */
+  reached: number;
+  /** Tonight was a revel night, and the revel was held. */
+  revel: boolean;
+}
+
+/**
+ * Each job's lewd work a night, so each of them falls at their own pace: the gropes every night on, one more for
+ * every `perReach` hands that reached for the keeper (a handsy room is handsy with everyone; 0, none), and dances.
+ * In a handsy room (4 hands for her) that's about a point of lewdness a night for a barmaid, a bit more for a
+ * dancer, most for a girl working the floor, a point every three nights for the doorman and the devotee, and next
+ * to nothing for the cook and the clerk, who are only pinched when the room's wild (6 hands or more). A Lantern
+ * girl on 2 bookings a night makes about two thirds of a point, more when she enjoys them (STORY.md §12).
+ */
+export const JOB_LEWD_WORK: Readonly<Record<StaffJob, { gropes: number; perReach: number; dances: number }>> = {
+  barmaid: { gropes: 1, perReach: 2, dances: 0 },
+  girl: { gropes: 3, perReach: 2, dances: 0 },
+  dancer: { gropes: 1, perReach: 4, dances: 3 },
+  doorman: { gropes: 0, perReach: 3, dances: 0 },
+  devotee: { gropes: 1, perReach: 0, dances: 0 },
+  cook: { gropes: 0, perReach: 6, dances: 0 },
+  clerk: { gropes: 0, perReach: 6, dances: 0 },
+};
+
+/** A revel night: the dancer dances this many more, and everyone on works the hall (a revel to their records). */
+export const REVEL_DANCES = 2;
+
+/**
+ * What one night's work did to one of them, for their records (the tavern adds it to `StaffNight.done` for anyone
+ * who worked). It's only what the job brought: a girl's bookings are the Lantern's to count, and nobody's made to.
+ */
+export function lewdWork(job: StaffJob, facts: LewdNightFacts): Pick<StaffRecords, "gropes" | "dances" | "revels"> {
+  const w = JOB_LEWD_WORK[job];
+  const reached = Math.max(0, Math.floor(facts.reached));
+  return {
+    gropes: w.gropes + (w.perReach > 0 ? Math.floor(reached / w.perReach) : 0),
+    dances: w.dances + (facts.revel && job === "dancer" ? REVEL_DANCES : 0),
+    revels: facts.revel ? 1 : 0,
+  };
+}
+
+// ---------- Their stages and story cards (CORRUPTION_TROPES.md) ----------
+
+/** Their tiers, in order (they top out at rotten, 95 to 100: their corruption is 0 to 100). */
+export const STAFF_TIERS = ["honest", "shady", "crooked", "rotten"] as const;
+
+/**
+ * Their lewdness on the heroine's four stages, by her thresholds (lewd.ts `MIND_AT`), as the Lantern reads its
+ * girls' (lantern.ts `stageOf`): sheltered, curious, willing, known. Known needs only the filthy mind stage here.
+ * Past Known is Legend, while they hold it (`legendStep` in `nightFor`).
+ */
+export function staffStage(member: Pick<StaffMember, "lewdness" | "legend">): ArcStage {
+  const mind = mindStage(member.lewdness);
+  return mind === 3 && member.legend?.on ? "legend" : ARC_STAGES[mind];
+}
+
+/**
+ * Their Legend (the heroine's, lewd.ts `legendStep`, on their own numbers): lewdness STAFF_LEGEND_AT and Known,
+ * then STAFF_LEGEND_RISE nights worked in a row; STAFF_LEGEND_FALL nights off in a row bring them back to Known.
+ */
+export const STAFF_LEGEND_AT = 140;
+export const STAFF_LEGEND_RISE = 4;
+export const STAFF_LEGEND_FALL = 2;
+
+/** One night of their Legend: worked is the wild side, a night off the quiet one. */
+export function staffLegendStep(legend: LegendState | undefined, lewdness: number, worked: boolean): { state: LegendState; change: "rise" | "fall" | null } {
+  const eligible = mindStage(lewdness) === 3 && lewdness >= STAFF_LEGEND_AT;
+  return legendStep(legend ?? newLegend(), { eligible, wild: worked, quiet: !worked }, STAFF_LEGEND_RISE, STAFF_LEGEND_FALL);
+}
+
+/**
+ * Who's pushing their corruption (CORRUPTION_TROPES.md, "Staff"): Tamsin still owes Sabine, Corvin owes the
+ * smugglers, and the church has Brother Wynn and every devotee. Everyone else, it's the madam: her.
+ */
+export const STAFF_PUSHER: Readonly<Record<string, Pusher>> = { tamsin: "sabine", corvin: "smugglers", wynn: "church" };
+
+export function pusherOf(member: Pick<StaffMember, "id" | "job">): Pusher {
+  return STAFF_PUSHER[member.id] ?? (member.job === "devotee" ? "church" : "madam");
+}
+
+/**
+ * The trope of each tier step, by who's pushing: the madam conditions, then isolates; Sabine love-bombs, then goes
+ * cold (devaluation); the church rationalises, then brainwashes; the smugglers blackmail all the way down. Shady
+ * is where they start to own it (internalisation), crooked is the break, and rotten is the aftermath, on the
+ * heroine's own Rotten tropes (gaslighting, trauma bond, brainwashing): they've learned the house's tricks, and now
+ * they play them on her.
+ */
+export const STAFF_TIER_TROPE: Readonly<Record<Pusher, Readonly<Record<StaffTierStep, { trope: TropeId; also?: TropeId; beat: FallBeat }>>>> = {
+  madam: {
+    shady: { trope: "conditioning", beat: "internalisation" },
+    crooked: { trope: "isolation", also: "conditioning", beat: "break" },
+    rotten: { trope: "traumaBond", also: "gaslighting", beat: "aftermath" },
+  },
+  sabine: {
+    shady: { trope: "loveBombing", beat: "internalisation" },
+    crooked: { trope: "loveBombing", also: "isolation", beat: "break" },
+    rotten: { trope: "traumaBond", also: "gaslighting", beat: "aftermath" },
+  },
+  church: {
+    shady: { trope: "rationalisation", beat: "internalisation" },
+    crooked: { trope: "brainwashing", also: "rationalisation", beat: "break" },
+    rotten: { trope: "brainwashing", also: "gaslighting", beat: "aftermath" },
+  },
+  smugglers: {
+    shady: { trope: "blackmail", beat: "internalisation" },
+    crooked: { trope: "blackmail", also: "rationalisation", beat: "break" },
+    rotten: { trope: "gaslighting", also: "traumaBond", beat: "aftermath" },
+  },
+};
+
+const PUSHER_WHO: Readonly<Record<Pusher, string>> = { madam: "the madam", sabine: "Sabine", church: "the church", smugglers: "the smugglers" };
+
+/**
+ * The tier cards' lines ({name}, {they} and the rest filled in by `fillCard`). The last line is always theirs:
+ * staff choose their work whatever the switch (GAME_PATH.MD), and they can say no and walk.
+ */
+export const STAFF_TIER_LINES: Readonly<Record<Pusher, Readonly<Record<StaffTierStep, { title: string; lines: readonly string[] }>>>> = {
+  madam: {
+    shady: {
+      title: "A bit more",
+      lines: [
+        "Every time {name} did \"a bit more\" with the soldiers' table, you slid an extra copper across the bar. Last night {name} did a bit more before you'd even reached for the copper.",
+        "(You've trained dogs slower. Better-behaved dogs, mind.)",
+        "Nobody made {them}. {They} could have kept it honest and kept the wage. {They} pocketed the copper.",
+      ],
+    },
+    crooked: {
+      title: "This house is my family",
+      lines: [
+        "A letter came for {name} from home. {name} burned it at the hearth without opening it, said \"this house is my family now\", and lifted a drunk drover's purse on the way back to the bar.",
+        "(Nobody else will have {them} now. That's not my fault. It's a little bit my fault.)",
+        "{name} chose it. {They} could walk out the door tonight, and won't.",
+      ],
+    },
+    rotten: {
+      title: "You said I could",
+      lines: [
+        "The good candlesticks have been going home with {name}, one a night. When you asked, {name} looked wounded: \"You said I could. Tuesday. You were wiping the bar.\" Then {they} sold your stew recipe to the Copper Bell for a silver, and cried on your shoulder about it until you said sorry. You said sorry.",
+        "(I taught {them} every trick {they} knows, and {they} learned them all. I'm the trouble and the hanky, and {they}'d never leave either. I'm almost proud. I'm counting the spoons.)",
+        "{name} chose this house, and could walk out of it any night. {They} won't. {They}'d miss you. And the candlesticks.",
+      ],
+    },
+  },
+  sabine: {
+    shady: {
+      title: "Flowers from the Velvet House",
+      lines: [
+        "Sabine sent {name} roses, a bottle of the Velvet House red and a note: \"Wasted on a tavern, darling. You're art.\" {name} has read it nine times, and now sells the house red like a courtesan sells a night.",
+        "(Sabine's charming {them} one compliment at a time. I know that trick. I use that trick.)",
+        "{name} could bin the roses. {They} put them on the bar instead.",
+      ],
+    },
+    crooked: {
+      title: "The note that didn't come",
+      lines: [
+        "Sabine's stopped writing. {name} checks for a message from her between every order, and meanwhile has started skimming the till \"to show her what I'm worth\".",
+        "(First the flowers, then nothing. Sabine does it to all of them, and it works on all of them. It's working on {them} now.)",
+        "It's {their} choice, and {name} can still tell Sabine no. {They} just keep checking for that message.",
+      ],
+    },
+    rotten: {
+      title: "Sabine's little bird",
+      lines: [
+        "Sabine finally wrote back, one line: \"I knew you'd come home to me.\" {name} has sung ever since, at the till, in the cellar, and at the Velvet House's back door, where {they} sold Sabine your guest list, your prices and the name of the soldier who cries after.",
+        "(\"She's horrible to me,\" {name} sighed, happily. I mentioned the guest list. \"What list? You never kept a list, darling. You're tired.\" That's Sabine's line. {They} even did her voice.)",
+        "{name} can tell Sabine no and mean it, any night {they} likes. {name} hasn't liked it yet.",
+      ],
+    },
+  },
+  church: {
+    shady: {
+      title: "What you need",
+      lines: [
+        "{name} came back from the midnight service glowing. \"Veyra only asks what you need,\" {name} told the kitchen, and charged a pilgrim double for the stew. \"He needed the lesson.\"",
+        "(Veyra's very good at telling people what they need. Mostly it's to give Veyra money.)",
+        "Nobody's making {them}. {name} can stop going to the services any night.",
+      ],
+    },
+    crooked: {
+      title: "The candle before the shift",
+      lines: [
+        "{name} lights Veyra's candle before every shift now, and sells the deacons the names of whoever confesses into their ale at the bar. \"It's for their own good,\" says {name}, smiling like a painted saint.",
+        "(That smile hasn't moved in three days. I'm not sure it's {name}'s any more.)",
+        "{name} chose the church, and the chapel's door is still open any time.",
+      ],
+    },
+    rotten: {
+      title: "Veyra's bookkeeping",
+      lines: [
+        "{name} tithes the till now. Not the profit: the till. \"Veyra asked,\" {name} says serenely, and the deacons' new roof is lovely. When you count the takings, {name} counts them again, slower, until you agree there was less than you thought. {They} also put a laxative in the Copper Bell keeper's ale \"to purge the unbeliever\". He was purged. In the street. Twice.",
+        "(The church took {name} apart and put {them} back together facing the chapel. The new one hums hymns while robbing me, and I've started humming along.)",
+        "{name} chose Veyra, and the chapel's door out is still open. {They} could walk through it any night, humming.",
+      ],
+    },
+  },
+  smugglers: {
+    shady: {
+      title: "A cask that fell off a cart",
+      lines: [
+        "The smugglers came round for {name}'s dice money again and took a favour instead: a cask that \"fell off\" the cart, into your cellar, no questions. {name} looked sick about it for an hour, then asked them for a cut.",
+        "(They've got {them} by the dice, and now by the cask. Next it'll be by the balls.)",
+        "{name} could have told them no and taken the beating. {They} took the cut.",
+      ],
+    },
+    crooked: {
+      title: "Working for them",
+      lines: [
+        "{name} doesn't owe the smugglers any more. {name} works for them: their casks, their prices, their whispers at your back door after close. \"They own a bit of me. The best bit, says the money.\"",
+        "(I could have helped pay that debt off a month ago. I didn't. Now they've got someone in my kitchen, and so have I.)",
+        "{name} chose it, and could still walk away from them. {They} haven't.",
+      ],
+    },
+    rotten: {
+      title: "There were always fifteen",
+      lines: [
+        "The smugglers broke {name}'s little finger over a short count, then bought {them} a pie, and {name} calls them family now. Family runs its casks through your cellar on your nights off. You counted twelve barrels. \"There were always fifteen,\" says {name}. \"You're thinking of last month.\"",
+        "(I've counted three times. It's twelve. I think it's twelve. {name}'s very convincing for someone holding a pie.)",
+        "{name} could walk away from them any night, with all ten fingers. {They} went back for another pie.",
+      ],
+    },
+  },
+};
+
+/** A corruption tier card for one of them, filled in: tagged with the trope of who's pushing. */
+export function staffTierCard(member: Pick<StaffMember, "id" | "job" | "name" | "female">, step: StaffTierStep): StageCard {
+  const pusher = pusherOf(member);
+  const t = STAFF_TIER_TROPE[pusher][step];
+  const text = STAFF_TIER_LINES[pusher][step];
+  return {
+    id: `staff_${pusher}_${step}`,
+    ...t,
+    who: PUSHER_WHO[pusher],
+    title: text.title,
+    lines: text.lines.map((l) => fillCard(l, member.name, member.female)),
+  };
+}
+
+/**
+ * Each roster person's own line at each of the four stages, in their voice. Their lewdness (`staffLewdness`) rises
+ * with their own job's work (`lewdWork`), so the barmaid and the dancer get here long before the cook does.
+ */
+export const STAFF_STAGE_LINES: Readonly<Record<string, Readonly<Record<ArcStage, string>>>> = {
+  tamsin: {
+    sheltered: "Sabine had me smiling for free for two years. Here I smile for a share. It's a different smile.",
+    curious: "Had a soldier last night who said please and thank you. I nearly fell off the bed. I'll ask for him again.",
+    willing: "Put me down for the garrison's payday. All of them. I've been stretched for worse and paid less.",
+    known: "Half the pass has had me and the other half's saving up. Tell Sabine that. Tell her slowly.",
+    legend: "Sabine sent a girl to spy on my bookings. She ended up booking me. Twice. Then she asked for a job.",
+  },
+  maud: {
+    sheltered: "Hands where I can see them, lads. I've buried one husband and I'm not scared of a second.",
+    curious: "A drover pinched my bum and tipped me a silver for it. That's a quarter of a goat. Pinch away.",
+    willing: "I let the cattle men have a feel of my tits for the farm fund. The farm doesn't care where the coin's been. Nor do I, now.",
+    known: "They call me the Widow's Udders down the market. I bought back the top field with them. Moo.",
+    legend: "The cattle market stopped the auction to sing my song. The Widow's Udders, verse four. I joined in on the moo.",
+  },
+  corvin: {
+    sheltered: "Out of my kitchen unless you're the stew. Or paying.",
+    curious: "The new barmaid licked gravy off my thumb. On purpose. I burned the onions.",
+    willing: "I'll bring the stew out with my shirt off if it gets a tip. It's hot back there, and I owe a lot of dice money.",
+    known: "Half the ladies who come for the stew come for the cook. I had a merchant's wife on the flour sacks. The bread's never been better.",
+    legend: "They chant \"COOK! COOK!\" when I bring the stew out in the apron. Just the apron. From the back it's all cook.",
+  },
+  ash: {
+    sheltered: "I stand at the door. I don't talk. I definitely don't do whatever that lot are doing.",
+    curious: "A smuggler's lass kissed me on the way out. I let her. I keep thinking about it on the stool.",
+    willing: "I walk the drunk girls home. Sometimes they ask me in. Sometimes I go in.",
+    known: "The garrison wants the deserter back. The ladies of the pass want the big quiet one off the door. The ladies are winning.",
+    legend: "The garrison sent a sergeant to drag me back. He's in the queue now. I've given him a number.",
+  },
+  lysa: {
+    sheltered: "I dance. Nobody touches. My father's guards taught me how to bite.",
+    curious: "I let the soldiers stuff coin in my garter, and their fingers stayed a while. I didn't kick them. Mother would faint.",
+    willing: "Top comes off after the second song, the rest after the third. My family wrote to disown me. I danced on the letter.",
+    known: "A lord's daughter, naked on a tavern bar and as rich as her father. They want me back? They can buy a ticket.",
+    legend: "My father came up the pass to drag me home and ended up in the front row. He tipped. We don't talk about it. The whole pass does.",
+  },
+  wynn: {
+    sheltered: "Oden's prayers at dusk, Veyra's at midnight. Neither of them mentions... that. I checked.",
+    curious: "A pilgrim girl asked me to bless her. All of her. I said a very long prayer with my eyes shut. Mostly shut.",
+    willing: "Veyra says the flesh is a gift. I've been unwrapping a lot of gifts in the vestry.",
+    known: "Standing room only at the midnight service. Half come for the sermon, half for what comes after. Veyra's delighted. Oden's stopped speaking to me.",
+    legend: "I preach the midnight sermon naked now. Veyra says it's honest. Oden says it's Tuesday. Attendance has tripled.",
+  },
+  pip: {
+    sheltered: "I write down what people do upstairs. I don't do it. It's purely professional.",
+    curious: "I watched through the keyhole for the ledger. For accuracy. I needed a sit down after.",
+    willing: "The rich ones pay extra to be written down. I let them watch me write it, sat on the desk with my stockings rolled.",
+    known: "I keep a column for everyone who's had me. It's the longest column in the book. I'm very thorough.",
+    legend: "I've started a second ledger just for the people who've had me. It has an index. It's getting a sequel.",
+  },
+  sylvie: {
+    sheltered: "Courtly elves don't touch in public. Or in private, mostly. It's terribly dull.",
+    curious: "I brewed a stamina tonic and tested it on myself. Then on a soldier. For science. Twice.",
+    willing: "My tonics sell better served in my smallclothes. The court would die. I've never been happier.",
+    known: "Three hundred years of manners, and I've unlearned every one in this kitchen. The lodgers say I scream like a banshee. Fair.",
+    legend: "The elven court sent an envoy to shame me. I sold her a tonic and she screamed the inn down. Now there are two of us.",
+  },
+  bru: {
+    sheltered: "Touch my cask and lose a hand. Touch me and lose both.",
+    curious: "A tall lad lifted me onto the bar to see the taps better, and didn't put me down for a while. Didn't mind.",
+    willing: "Buy the house a round of Copperkeg and I'll sit on your lap for it. Two rounds and I'll bounce.",
+    known: "Every brewery in the Deephold that turned me down has heard of me now. Not for the beer.",
+    legend: "They carry me round the taproom on a shield while I drink. I'm not sure what we're celebrating. It's me. We're celebrating me.",
+  },
+  grukka: {
+    sheltered: "Grukka throws out men who grab. Grukka has thrown out three today. It is not yet dark.",
+    curious: "A soldier grabbed, and Grukka did not throw him. Grukka is confused. Grukka liked it.",
+    willing: "Grukka takes the brave ones round the back after close. Grukka is gentle. Mostly. They limp home happy.",
+    known: "In Grask they sing of battles. On the pass they sing of Grukka's thighs. Grukka prefers the pass.",
+    legend: "Grukka is a song now. Grukka is three songs. One is just Grukka's name, very loud, then moaning. Grukka wrote that one.",
+  },
+  mirri: {
+    sheltered: "You may look. You may not touch. I have claws, and a very good lawyer.",
+    curious: "Someone scratched behind my ears during the third dance and I purred. In front of everyone. I need a drink.",
+    willing: "Ears, tail, everything else: scratch where you like, and the coin goes in the garter. Not the tail. Fine, the tail.",
+    known: "I'm in heat every night of the week, darling. It's called a career. Form a queue.",
+    legend: "They hold my tail and chant my name and I purr loud enough to rattle the windows. I'm not in heat, darling. I'm on tour.",
+  },
+  hikari: {
+    sheltered: "I was summoned to fight a demon lord, not to get my arse pinched by a turnip farmer.",
+    curious: "The bard wrote a song about my thighs. I pretended to hate it. I hummed it all night.",
+    willing: "Where I come from this is a whole genre. Fine. I'll be the heroine who never leaves the inn.",
+    known: "Hero of a war that ended without me, and now hero of the back room. The bards say it's a better story.",
+    legend: "A new summoned hero turned up begging me to save the world. I said after close. He's still here. He's very saved.",
+  },
+  edda: {
+    sheltered: "I'm a widow. I mend, I keep the books, and I'm in bed alone by nine.",
+    curious: "A traveller asked me to measure his inside leg. I measured it twice. It was a very long leg.",
+    willing: "I make the outfits, so I model them. Fitted on, for the gentlemen paying for the fitting.",
+    known: "My husband would be shocked, then he'd want a turn. Half the road's been through my sewing room, and I've mended all their trousers after.",
+    legend: "I've stopped mending trousers. Half the pass comes in without them now, to save me the bother. Very considerate.",
+  },
+  clara: {
+    sheltered: "A lady's maid keeps her eyes down and her knees together, sir. Your ale.",
+    curious: "A gentleman tipped me for curtseying deeper. I curtseyed deeper. He tipped again. I see how this works now.",
+    willing: "I served the nobles' table on my knees tonight. Manners, sir, are knowing what a guest needs.",
+    known: "My old lady rang for her maid. Now the whole pass rings for me, and I always come. Ha.",
+    legend: "They ring the bell, I curtsey, and the whole taproom shouts \"DEEPER!\" I always go deeper. Manners.",
+  },
+  snik: {
+    sheltered: "I sing about other people's sex lives. Mine's a short song. A short, sad song.",
+    curious: "A big lass asked for a private song. Turned out she wanted the bard. I wrote three verses about it.",
+    willing: "Everything's a deal, love. A song for a kiss, a ballad for a blowie, and the epic... you'll want a room.",
+    known: "I've had more of the pass than the toll road has. Wrote it all down, set it to music, and it's top of my phone.",
+    legend: "My song about me is top of every phone on the pass. The chorus is just my name and a noise. The noise is me.",
+  },
+};
+
+/** For applicants, a line by their job at each stage. */
+export const JOB_STAGE_LINES: Readonly<Record<StaffJob, Readonly<Record<ArcStage, string>>>> = {
+  barmaid: {
+    sheltered: "Two ales, a stew, and no hands, thank you.",
+    curious: "A soldier tipped me for leaning over the table. I lean over a lot now.",
+    willing: "Feel what you like, love. The till's right there.",
+    known: "They come for the ale and stay for my tits. The ale's not that good.",
+    legend: "They chant my name when I bend for the bottom shelf. I keep all the good stuff on the bottom shelf now.",
+  },
+  cook: {
+    sheltered: "Kitchen's mine. Out.",
+    curious: "Someone pinched me by the ovens and I didn't throw the ladle. Strange night.",
+    willing: "I'll bring the stew round myself, apron and nothing under it, for a silver.",
+    known: "Everyone in town's had a taste of the cook. The stew comes a close second.",
+    legend: "The kitchen's got a queue and a chant. They're not here for the gravy. Well. Some gravy.",
+  },
+  doorman: {
+    sheltered: "Name, coin, and hands to yourself.",
+    curious: "Got kissed on the doorstep last night. Let them in for free. Don't tell her.",
+    willing: "I walk the lonely ones home. Some nights I don't walk back till morning.",
+    known: "Half the queue at the door isn't for the tavern. It's for me.",
+    legend: "They cheer when I pat them down at the door. Some go back out just to get patted down again.",
+  },
+  girl: {
+    sheltered: "Plain bookings. Gentle ones. I'm still learning.",
+    curious: "I took a soldier up tonight and enjoyed it. I wasn't meant to enjoy it, was I?",
+    willing: "The rough ones pay double. Send me the rough ones.",
+    known: "I'm the one they climb the stairs for. Every night. All night.",
+    legend: "They sing on the stairs while they wait for me. In harmony now. I taught them the harmony.",
+  },
+  dancer: {
+    sheltered: "I dance. Look all you like. That's the job.",
+    curious: "My strap slipped and the room roared. I let it stay slipped.",
+    willing: "Second song, the top goes. Third, the rest. Fourth, someone's lap.",
+    known: "They've named a dance after me on the pass. You do it with no clothes and a lot of knees.",
+    legend: "Halfway through the first song they're chanting for the third. I skip straight to the third. Everyone wins.",
+  },
+  devotee: {
+    sheltered: "The service is for prayer. Only prayer.",
+    curious: "A worshipper kissed my hand during the rite, then my wrist. I let the rite run long.",
+    willing: "Veyra blesses the flesh. I bless it for her, personally.",
+    known: "The midnight rite's the busiest thing in Tarven. Nobody leaves unblessed. Or dressed.",
+    legend: "The midnight rite has a chant now, and it's my name. Veyra's a little jealous. Veyra can wait her turn.",
+  },
+  clerk: {
+    sheltered: "Rooms, keys and the ledger. Nothing else.",
+    curious: "A lodger asked if I deliver. I delivered. I'm still blushing.",
+    willing: "Room four's on the house, if I come with it.",
+    known: "The ledger says I've stayed in every room. It's not wrong.",
+    legend: "Every room on the ledger has my name in it, and a little star. Room four has three stars and a song.",
+  },
+};
+
+/** Their own line at the stage they're at: their own if they're on the roster, else their job's. */
+export function staffStageLine(member: Pick<StaffMember, "id" | "job" | "lewdness" | "legend">): string {
+  return (STAFF_STAGE_LINES[member.id] ?? JOB_STAGE_LINES[member.job])[staffStage(member)];
+}
+
+/**
+ * The hook for their look at each stage (no art yet): an outfit key the wardrobe can map per person or job, from
+ * their plain work clothes to the house favourite's. As with the heroine, each stage shows a little more.
+ */
+export const STAFF_STAGE_LOOK: Readonly<Record<ArcStage, string>> = {
+  sheltered: "work",
+  curious: "work_loosened",
+  willing: "work_showing",
+  known: "house_favourite",
+  legend: "house_legend",
+};
+
+/** Their look now: the outfit key, as `<id>/<outfit>` (the art can fall back to `<job>/<outfit>`, then the outfit). */
+export function staffLook(member: Pick<StaffMember, "id" | "job" | "lewdness" | "legend">): { stage: ArcStage; outfit: string; key: string; jobKey: string } {
+  const stage = staffStage(member);
+  const outfit = STAFF_STAGE_LOOK[stage];
+  return { stage, outfit, key: `${member.id}/${outfit}`, jobKey: `${member.job}/${outfit}` };
+}
+
+/** What changes on the step up to each stage, for anyone (the person's own line follows it). */
+const STAGE_CARD_LINES: Readonly<Record<Exclude<ArcStage, "sheltered">, string>> = {
+  curious: "{name} has noticed the tips come bigger when the hand isn't slapped away, and has stopped slapping.",
+  willing: "\"I'd only be lying if I said I didn't want it,\" {name} tells the kitchen. Nobody argues.",
+  known: "Guests ask for {name} by name now, and the respectable ones have stopped saying good morning to {them} in the street. {They} hardly notice.",
+  legend: "The whole taproom chants {name}'s name on {their} way through, and {name} takes a bow every time, with nothing on to bow in. Shame has left the building. Nobody's sure it ever worked here.",
+};
+
+/**
+ * A lewdness stage card for one of them: the heroine's trope for that step (lewd.ts `ARC_TROPE`), what changed,
+ * their own new line, and that it was their choice (staff choose their work and can refuse anyone).
+ */
+export function staffStageCard(member: Pick<StaffMember, "id" | "job" | "name" | "female">, stage: Exclude<ArcStage, "sheltered">): StageCard {
+  const t = ARC_TROPE[stage];
+  const fill = (l: string) => fillCard(l, member.name, member.female);
+  const own = (STAFF_STAGE_LINES[member.id] ?? JOB_STAGE_LINES[member.job])[stage];
+  return {
+    id: `staff_stage_${stage}`,
+    ...t,
+    title: `${member.name}: ${arcStageName(stage)}`,
+    lines: [
+      fill(STAGE_CARD_LINES[stage]),
+      `${member.name}, ${arcStageName(stage)}: "${own}"`,
+      fill("{name} chose every bit of it, and can still say no to anyone. It just comes out less often."),
+    ],
+  };
+}
+
+/** Back from Legend to Known, after their nights off: the chant fades, and they're still their own. */
+export function staffLegendBackCard(member: Pick<StaffMember, "id" | "job" | "name" | "female">): StageCard {
+  const fill = (l: string) => fillCard(l, member.name, member.female);
+  return {
+    id: "staff_legend_back",
+    trope: "mindBreak",
+    also: "conditioning",
+    beat: "aftermath",
+    who: "nights off",
+    title: `${member.name}: nights off`,
+    lines: [
+      fill("Two nights off in a row, and the chant for {name} has dropped to a hopeful hum. The regulars keep looking at the door, and one of them has written {name} a poem. It's filthy. It's quite good."),
+      fill("{name} is Known again: still the talk of the pass, and back to remembering it's {their} own choice."),
+      fill("{name} chose every bit of it, and can still say no to anyone. A few nights off proved it."),
+    ],
+  };
 }
 
 /** What tonight's pay does to loyalty: a wage of 0 (a girl on the cut) never counts as short. */
@@ -562,7 +1078,7 @@ export function nightFor(member: StaffMember, night: StaffNight): { member: Staf
     passives: [...member.passives],
   };
   if (m.quit) {
-    return { member: m, dawn: { mood: "quit", loyalty: 0, fame: 0, corruption: 0, skill: 0, passives: [], beat: null, line: `${m.name} is gone.` } };
+    return { member: m, dawn: { mood: "quit", loyalty: 0, fame: 0, corruption: 0, skill: 0, passives: [], beat: null, line: `${m.name} is gone.`, cards: [] } };
   }
   const before = { loyalty: m.loyalty, fame: m.fame, corruption: m.corruption, skill: m.skill };
   let tired = false;
@@ -581,6 +1097,8 @@ export function nightFor(member: StaffMember, night: StaffNight): { member: Staf
     m.records.throwOuts += done.throwOuts ?? 0;
     m.records.dances += done.dances ?? 0;
     m.records.tips += done.tips ?? 0;
+    m.records.gropes = (m.records.gropes ?? 0) + (done.gropes ?? 0);
+    m.records.revels = (m.records.revels ?? 0) + (done.revels ?? 0);
     if (m.records.nights % SKILL_NIGHTS === 0) m.skill = Math.min(10, m.skill + 1);
     if (pay >= 0 && !tired) m.fame += 1;
     m.lewdness = Math.max(m.lewdness, staffLewdness(m.records));
@@ -604,10 +1122,30 @@ export function nightFor(member: StaffMember, night: StaffNight): { member: Staf
   else mood = "steady";
 
   const beat = m.quit ? null : arcDue(m);
+  // A step up tonight gets its story card, once (CORRUPTION_TROPES.md); nobody who's walked out gets one.
+  const cards: StageCard[] = [];
+  if (!m.quit) {
+    const tier = STAFF_TIERS.indexOf(staffTier(m.corruption));
+    if (tier > m.tierSeen) {
+      m.tierSeen = tier;
+      const step = STAFF_TIERS[tier];
+      if (step !== "honest") cards.push(staffTierCard(m, step));
+    }
+    const stage = mindStage(m.lewdness);
+    if (stage > m.stageSeen) {
+      m.stageSeen = stage;
+      cards.push(staffStageCard(m, ARC_STAGES[stage] as Exclude<ArcStage, "sheltered">));
+    }
+    // Their Legend: a card each time it rises, and one when nights off bring them back.
+    const legend = staffLegendStep(m.legend, m.lewdness, night.worked);
+    m.legend = legend.state;
+    if (legend.change === "rise") cards.push(staffStageCard(m, "legend"));
+    if (legend.change === "fall") cards.push(staffLegendBackCard(m));
+  }
   const line =
     mood === "quit"
       ? `${m.name} packed up and left before dawn. They'd had enough of this house.`
-      : `${m.name} ${MOOD_TEXT[mood]} (loyalty ${Math.round(m.loyalty)}, fame ${Math.round(m.fame)}, ${staffTier(m.corruption)}).${
+      : `${m.name} ${MOOD_TEXT[mood]} (loyalty ${Math.round(m.loyalty)}, fame ${Math.round(m.fame)}, ${staffTier(m.corruption)}, ${staffStage(m)}).${
           earned.length > 0 ? ` New: ${earned.map((id) => STAFF_PASSIVE_BY_ID[id].name).join(", ")}.` : ""
         }`;
   return {
@@ -621,6 +1159,7 @@ export function nightFor(member: StaffMember, night: StaffNight): { member: Staf
       passives: earned,
       beat,
       line,
+      cards,
     },
   };
 }
@@ -1378,6 +1917,7 @@ export function rollApplicant(stage: Stage, rng: StaffRng, id: string): StaffMem
   const charm = stat();
   const stamina = stat() + (perk ? (STAFF_PERK_BY_ID[perk].stamina ?? 0) : 0);
   const rank = RARITIES.indexOf(rarity);
+  const corruption = Math.floor(rng() * 50);
   return {
     id,
     name: `${pick(female ? FIRST_F : FIRST_M)} ${pick(LAST)}`,
@@ -1389,17 +1929,19 @@ export function rollApplicant(stage: Stage, rng: StaffRng, id: string): StaffMem
     charm,
     stamina: { current: stamina, max: stamina },
     loyalty: 40 + Math.floor(rng() * 21),
-    corruption: Math.floor(rng() * 50),
+    corruption,
     resolve: stat(),
     lewdness: 0,
     fame: 0,
     wage: 2 + Math.floor((skill + appeal + charm) / 6) + rank,
     arcBeat: 0,
-    records: { nights: 0, served: 0, bookings: 0, throwOuts: 0, dances: 0, tips: 0 },
+    records: { nights: 0, served: 0, bookings: 0, throwOuts: 0, dances: 0, tips: 0, gropes: 0, revels: 0 },
     passives: [],
     quit: false,
     rarity,
     perks: perk ? [perk] : [],
+    tierSeen: STAFF_TIERS.indexOf(staffTier(corruption)),
+    stageSeen: 0,
   };
 }
 
@@ -1438,6 +1980,10 @@ export function readStaffMember(raw: unknown): StaffMember | null {
   const n = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
   const rec = (m.records ?? {}) as Partial<StaffRecords>;
   const stamina = m.stamina && typeof m.stamina === "object" ? m.stamina : { current: 5, max: 5 };
+  const corruption = n(m.corruption, 0);
+  const lewdness = n(m.lewdness, 0);
+  // An older save hasn't heard of any cards: the tier and stage they're at, so nothing's announced twice.
+  const seen = (v: unknown, now: number, top: number) => (typeof v === "number" && Number.isFinite(v) ? clamp(Math.floor(v), 0, top) : now);
   return {
     id: m.id,
     name: m.name,
@@ -1449,9 +1995,9 @@ export function readStaffMember(raw: unknown): StaffMember | null {
     charm: n(m.charm, 3),
     stamina: { current: n(stamina.current, 5), max: n(stamina.max, 5) },
     loyalty: n(m.loyalty, 50),
-    corruption: n(m.corruption, 0),
+    corruption,
     resolve: n(m.resolve, 5),
-    lewdness: n(m.lewdness, 0),
+    lewdness,
     fame: n(m.fame, 0),
     wage: n(m.wage, 0),
     arcBeat: n(m.arcBeat, 0),
@@ -1462,10 +2008,16 @@ export function readStaffMember(raw: unknown): StaffMember | null {
       throwOuts: n(rec.throwOuts, 0),
       dances: n(rec.dances, 0),
       tips: n(rec.tips, 0),
+      gropes: n(rec.gropes, 0),
+      revels: n(rec.revels, 0),
     },
     passives: Array.isArray(m.passives) ? m.passives.filter((id) => typeof id === "string" && id in STAFF_PASSIVE_BY_ID) : [],
     quit: m.quit === true,
     rarity: RARITIES.includes(m.rarity as Rarity) ? (m.rarity as Rarity) : "common",
     perks: Array.isArray(m.perks) ? m.perks.filter((id) => typeof id === "string" && id in STAFF_PERK_BY_ID) : [],
+    tierSeen: seen(m.tierSeen, STAFF_TIERS.indexOf(staffTier(corruption)), STAFF_TIERS.length - 1),
+    stageSeen: seen(m.stageSeen, mindStage(lewdness), 3),
+    // An older save (or one never a Legend) has none.
+    ...(m.legend ? { legend: readLegend(m.legend) } : {}),
   };
 }

@@ -16,8 +16,8 @@
  * - Eight more of Tarven's own (deep throat, on her back, laid on a table, bent over the bar, against the wall, flat
  *   on her belly, on his lap), for variety: each kind has a couple more.
  *
- * The big picture for the KP scenes uses Tarven's nearest pose for now (`pose`); POSES_TODO.md lists the ones still
- * to be made. Pure rules and data, kept apart from fight.ts so they can be tested.
+ * The big picture for each KP scene is its own pose where one has been made, or Tarven's nearest (`pose`); POSES_TODO.md lists
+ * the ones still to be made. Pure rules and data, kept apart from fight.ts so they can be tested.
  */
 import type { DuelArea } from "./duel";
 import type { JoinSlot, ScenePoseName } from "./sexpose";
@@ -108,7 +108,7 @@ export const FOE_SCENES: Readonly<Record<FoeSceneId, FoeSceneDef>> = {
     ready: { need: { cock: 50 } },
     joins: ["mouth", "left", "right"],
     boldness: 1,
-    pose: "stroke",
+    pose: "footjob",
     kp: "footj",
     toggle: "footjob",
     offer: [
@@ -142,7 +142,7 @@ export const FOE_SCENES: Readonly<Record<FoeSceneId, FoeSceneDef>> = {
     ready: { need: { mouth: 80 } },
     joins: ["left", "right"],
     boldness: 3,
-    pose: "kneel",
+    pose: "rimjob",
     kp: "rimming",
     toggle: "rimjob",
     offer: [
@@ -176,7 +176,7 @@ export const FOE_SCENES: Readonly<Record<FoeSceneId, FoeSceneDef>> = {
     ready: { need: { breasts: 80, cock: 50 }, exposure: 0.4 },
     joins: ["mouth"],
     boldness: 2,
-    pose: "paizuri",
+    pose: "standPaizuri",
     kp: "orc_paizuri / yeti_paizuri",
     offer: [
       "{Name} backs you against the post, rips your top open, and shoves his cock between your breasts.",
@@ -275,7 +275,7 @@ export const FOE_SCENES: Readonly<Record<FoeSceneId, FoeSceneDef>> = {
     ready: PUSSY,
     joins: ["mouth", "left", "right"],
     boldness: 5,
-    pose: "gangbang",
+    pose: "soldierGangbang",
     kp: "guard_gb",
     offer: [
       "{Name} marches you to the middle of the room, bends you over a bench, and shoves in while his squad forms ranks.",
@@ -473,7 +473,7 @@ export const FOE_SCENES: Readonly<Record<FoeSceneId, FoeSceneDef>> = {
     ready: ANAL,
     joins: ["mouth"],
     boldness: 5,
-    pose: "prone",
+    pose: "piledriver",
     kp: "slime_piledriver",
     offer: [
       "{Name} folds you onto your back, pushes your legs over your head, and drives his cock into your ass from above.",
@@ -506,7 +506,7 @@ export const FOE_SCENES: Readonly<Record<FoeSceneId, FoeSceneDef>> = {
     ready: PUSSY,
     joins: ["mouth"],
     boldness: 4,
-    pose: "carry",
+    pose: "kickCounter",
     kp: "kick_counter",
     counterOnly: true,
     offer: [
@@ -676,7 +676,7 @@ export const FOE_SCENES: Readonly<Record<FoeSceneId, FoeSceneDef>> = {
     ready: PUSSY,
     joins: [],
     boldness: 4,
-    pose: "bentover",
+    pose: "againstWall",
     kp: "(none: Tarven's own)",
     offer: [
       "{Name} presses you face-first to the wall and shoves his cock into your pussy from behind.",
@@ -730,7 +730,7 @@ export const FOE_SCENES: Readonly<Record<FoeSceneId, FoeSceneDef>> = {
     ready: PUSSY,
     joins: ["left", "right"],
     boldness: 4,
-    pose: "cowgirl",
+    pose: "lapRide",
     kp: "(none: Tarven's own)",
     offer: [
       "{Name} sits on the bench, pulls you onto his lap facing him, and guides your pussy down on his cock.",

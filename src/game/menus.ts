@@ -1,6 +1,7 @@
 /** The settings, save and load menus, and the yes/no question they ask before overwriting or losing progress. */
 import type { Button, Game } from "./game";
 import { CUT_INS, type CutKind } from "./cutin";
+import { SCENE_POSE_LIST } from "./sexpose";
 import type { GuestKind } from "./tavern";
 import { pixelSvg } from "./icons";
 import { MANUAL_SLOTS, readSave, slotName, SLOTS } from "./save";
@@ -8,8 +9,11 @@ import { desirePenalties, horny, WET_PLEASURE, type DesirePenalties } from "./de
 import { KINK_NAMES } from "./kinktalk";
 import { METER_NAMES, METERS, PASSIVE_BY_ID, PASSIVE_GROUPS } from "./passives";
 import { AUTO_TOUCH_MAX, DIFFICULTIES, HOLD_BASE, PREFER_PUSH, writeTouchSettings, type Difficulty } from "./touchsettings";
-import { FRIEND_AT, FRIEND_PERK, FRIEND_RARITY, POSTING_FEE, RARITY_NAME, STAFF_BY_ID, STAFF_PERK_BY_ID, type StaffMember } from "./staff";
-import { REVEL_HALL_COST } from "./tavern";
+import { FRIEND_AT, FRIEND_PERK, FRIEND_RARITY, POSTING_FEE, RARITY_NAME, STAFF_BY_ID, STAFF_PERK_BY_ID, staffStage, staffStageLine, staffTier, type StaffMember } from "./staff";
+import { GUILD_COUNTER_COST, REVEL_HALL_COST } from "./tavern";
+import * as Feed from "./feedstar";
+import * as Knight from "./knight";
+import * as Guild from "./guild";
 
 /** The gear that marks a settings board, in the same pixel art as the HUD's icons. */
 const GEAR = pixelSvg(
@@ -190,7 +194,18 @@ export function showSettingsMenu(game: Game, back: () => void): void {
   revel.className = "settings-toggle";
   revel.textContent = "Revel nights (18+)";
   revel.addEventListener("click", () => showRevel(game, () => showSettingsMenu(game, back)));
-  for (const row of [heading, note, toggle, boldness, rimjob, footjob, difficulty, trinkets, work, staff, revel]) box.insertBefore(row, menu);
+  // Feed Star (feedstar.ts), the Knight path (knight.ts) and the Guild (guild.ts), from menus until their art is made.
+  const sideMenu = (text: string, open: (game: Game, back: () => void) => void) => {
+    const button = document.createElement("button");
+    button.className = "settings-toggle";
+    button.textContent = text;
+    button.addEventListener("click", () => open(game, () => showSettingsMenu(game, back)));
+    return button;
+  };
+  const feed = sideMenu("Feed (posts, DMs, streams, sponsors)", (g, b) => showFeed(g, b));
+  const knight = sideMenu("Knight (the garrison)", showKnight);
+  const guild = sideMenu("Guild (quests and party)", (g, b) => showGuild(g, b));
+  for (const row of [heading, note, toggle, boldness, rimjob, footjob, difficulty, trinkets, work, staff, revel, feed, knight, guild]) box.insertBefore(row, menu);
 }
 
 /** One number for the dev panel: whole numbers plain, the rest to one place. */
@@ -250,6 +265,7 @@ export function showDevPanel(game: Game, back: () => void): void {
     [
       { label: consentOff ? "Consent is Off: switch On (always ask)" : "Consent is On: switch Off (stop asking)", onPick: flip },
       { label: "Cut-in tester", onPick: () => showCutInTester(game, back) },
+      { label: "Scene pose tester", onPick: () => showScenePoseTester(game, back) },
       { label: "Refresh", onPick: () => showDevPanel(game, back) },
     ],
     back,
@@ -283,6 +299,36 @@ function showCutInTester(game: Game, back: () => void): void {
         onPick: () => {
           back();
           game.testCutIn(kind, tester.guest);
+        },
+      })),
+    ],
+    back,
+  );
+}
+
+/** The scene pose tester's choices, kept while the game runs. */
+const poseTester: { guest: GuestKind; joins: boolean } = { guest: "soldier", joins: false };
+
+/**
+ * In development, from the ] panel: every sex-scene pose (sexpose.ts), shown in the big picture in the game's own
+ * camera, with a man as the lead and, if asked, one at each join. \ takes it down.
+ */
+function showScenePoseTester(game: Game, back: () => void): void {
+  const again = () => showScenePoseTester(game, back);
+  game.openMenu(
+    "Dev: Scene pose tester",
+    ["Pick a pose to show it now in the big picture. \\ takes it down."],
+    [
+      {
+        label: `Guest: ${poseTester.guest} (next)`,
+        onPick: () => ((poseTester.guest = TEST_GUESTS[(TEST_GUESTS.indexOf(poseTester.guest) + 1) % TEST_GUESTS.length]), again()),
+      },
+      { label: `Joins: ${poseTester.joins ? "on" : "off"}`, onPick: () => ((poseTester.joins = !poseTester.joins), again()) },
+      ...SCENE_POSE_LIST.map((scene) => ({
+        label: scene,
+        onPick: () => {
+          back();
+          game.testScenePose(scene, poseTester.guest, poseTester.joins);
         },
       })),
     ],
@@ -417,7 +463,7 @@ const perkText = (ids: readonly string[]) =>
 
 /** One of her staff, or an applicant, in a line. */
 const memberText = (m: StaffMember) =>
-  `${m.name} (${m.age}, ${m.female ? "woman" : "man"}), ${m.job} · ${RARITY_NAME[m.rarity]} · skill ${m.skill}, appeal ${m.appeal}, charm ${m.charm}, stamina ${m.stamina.current}/${m.stamina.max}, loyalty ${Math.round(m.loyalty)}, fame ${Math.round(m.fame)}, wage ${m.wage} · ${perkText(m.perks)}`;
+  `${m.name} (${m.age}, ${m.female ? "woman" : "man"}), ${m.job} · ${RARITY_NAME[m.rarity]} · skill ${m.skill}, appeal ${m.appeal}, charm ${m.charm}, stamina ${m.stamina.current}/${m.stamina.max}, loyalty ${Math.round(m.loyalty)}, fame ${Math.round(m.fame)}, wage ${m.wage} · ${perkText(m.perks)} · ${staffTier(m.corruption)}, ${staffStage(m)}: "${staffStageLine(m)}"`;
 
 /**
  * Her staff (staff.ts, STAFF.md), from a menu until the Staff page and the HUD's staff bar are drawn: the stage and
@@ -514,4 +560,447 @@ export function showRevel(game: Game, back: () => void): void {
     ],
     back,
   );
+}
+
+// ---------- Feed Star, the Knight path and the Guild (placeholder menus until their art) ----------
+
+/** Starts a brawl from a menu: the menu shuts and the night's brawl screen takes over. */
+function toTheBrawl(game: Game): void {
+  game.closePanel();
+  game.screen = "play";
+}
+
+const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
+
+/** Where the feed's and the guild's menus go back to once a sub-menu has done its thing (set as each opens). */
+let feedBack: () => void = () => {};
+let guildBack: () => void = () => {};
+
+/**
+ * Feed Star (feedstar.ts, FEED_STAR.md), from a menu until the phone screen is drawn: her page, a post (the photo
+ * shoot as choices and a timing button), her DMs, a live stream, this week's trend, and sponsors.
+ */
+export function showFeed(game: Game, back: () => void, note?: string): void {
+  const tavern = game.tavern;
+  feedBack = back;
+  const again = (n?: string) => showFeed(game, back, n);
+  const f = tavern.feed;
+  const held = tavern.watchedPassives.map((id) => Feed.WATCHED_PASSIVES.find((p) => p.id === id)?.name ?? id);
+  const trend = Feed.TRENDS[tavern.feedTrend];
+  const paragraphs = [
+    `${f.followers} followers · ${f.totalLikes} likes · ${f.boldPosts} bold posts · ${f.virals} viral · ${f.streams} streams.`,
+    `Watched: ${cap(tavern.watchedStage)}${held.length ? ` (${held.join(", ")})` : ""}.`,
+    `Sponsors: ${tavern.feedDeals.length ? tavern.feedDeals.map((d) => `${Feed.SPONSORS[d.id].name} ${d.postsThisWeek}/${Feed.SPONSORS[d.id].perWeek} this week`).join("; ") : "none"}.`,
+    "The phone screen, the photo poses and the scrying crystal are still to be drawn; for now it's menus and the log.",
+  ];
+  if (note) paragraphs.push(note);
+  const dms = tavern.phase === "day" ? tavern.feedDms().length : 0;
+  const buttons: Button[] = [
+    { label: tavern.postedToday ? "Make a post (done today)" : "Make a post: the shoot, then the post (1 gold)", disabled: !tavern.canFeedPost, onPick: () => showFeedShoot(game, () => again(), {}) },
+    { label: `Read your DMs (${dms})`, disabled: tavern.phase !== "day" || dms === 0, onPick: () => showFeedDms(game, () => again()) },
+    { label: tavern.feedStreamedToday ? "Go live (done today)" : "Go live on the scrying crystal (18+ dares, all yours to take or not)", disabled: !tavern.canStream, onPick: () => { tavern.feedGoLive(); showFeedStream(game, () => again()); } },
+    {
+      label: `This week's trend: ${trend.tag} (${trend.what})${tavern.feedTrendWeek === tavern.feedWeek ? " · done this week" : ""}`,
+      disabled: !tavern.canTrend,
+      onPick: () => showFeedTrend(game, () => again(), []),
+    },
+    ...tavern.feedSponsorOffers().map((id) => ({
+      label: `Sign with ${Feed.SPONSORS[id].name} (${Feed.SPONSORS[id].who}): ${Feed.SPONSORS[id].pay} gold a post showing their goods, ${Feed.SPONSORS[id].perWeek} a week`,
+      onPick: () => {
+        tavern.signSponsor(id);
+        game.audio.play("click");
+        again();
+      },
+    })),
+  ];
+  game.openMenu("Feed", paragraphs, buttons, back);
+}
+
+/** The shoot, one choice at a time: the post, outfit, prop, angle, then the tap. */
+function showFeedShoot(
+  game: Game,
+  back: () => void,
+  pick: { kind?: Feed.PostKind; outfit?: Feed.ShootOutfit; prop?: Feed.ShootProp; angle?: Feed.ShootAngle },
+): void {
+  const tavern = game.tavern;
+  const next = (p: typeof pick) => () => showFeedShoot(game, back, p);
+  if (!pick.kind) {
+    game.openMenu(
+      "The shoot: what's the post?",
+      ["Bolder posts open as her arc and her Watched stage go on."],
+      Feed.POST_KINDS.map((k) => ({
+        label: `${Feed.POSTS[k].name} (${["plain", "flirty", "bold", "bare"][Feed.POSTS[k].tier]})`,
+        disabled: !tavern.feedAllowedPosts().includes(k),
+        onPick: next({ kind: k }),
+      })),
+      back,
+    );
+    return;
+  }
+  if (!pick.outfit) {
+    const outfits: Feed.ShootOutfit[] = ["apron", "dress", "lace", "nothing"];
+    game.openMenu("The shoot: what's she wearing?", [], outfits.map((o) => ({ label: cap(o), disabled: Feed.OUTFIT_TIER[o] > tavern.feedMaxTier, onPick: next({ ...pick, outfit: o }) })), back);
+    return;
+  }
+  if (!pick.prop) {
+    const props: Feed.ShootProp[] = ["stew", "tankard", "candle", "mirror"];
+    game.openMenu("The shoot: the prop", ["The right prop for the post makes a better picture."], props.map((p) => ({ label: cap(p), onPick: next({ ...pick, prop: p }) })), back);
+    return;
+  }
+  if (!pick.angle) {
+    const angles: Feed.ShootAngle[] = ["front", "shoulder", "above", "low"];
+    const words = { front: "From the front", shoulder: "Over the shoulder", above: "From above", low: "From low" };
+    game.openMenu("The shoot: the angle", ["A daring angle makes a shot bolder than its outfit."], angles.map((a) => ({ label: words[a], onPick: next({ ...pick, angle: a }) })), back);
+    return;
+  }
+  const shoot = (when: "early" | "on" | "late") => () => {
+    const out = tavern.feedPost(pick.kind!, { outfit: pick.outfit!, prop: pick.prop!, angle: pick.angle! }, tavern.feedTapOffset(when));
+    game.audio.play("click");
+    showFeed(game, feedBack, out ? `${out.post.line} (${out.shot.grade}, quality ${Math.round(out.shot.quality * 100)}%)` : "You can't post that today.");
+  };
+  game.openMenu(
+    "The shoot: tap when the light's right",
+    ["The candle flickers, her pose settles... now."],
+    [
+      { label: "Too early", onPick: shoot("early") },
+      { label: "Right on the moment", onPick: shoot("on") },
+      { label: "Too late", onPick: shoot("late") },
+    ],
+    back,
+  );
+}
+
+
+/** Today's DMs, each with her four answers. */
+function showFeedDms(game: Game, back: () => void): void {
+  const tavern = game.tavern;
+  const dms = tavern.feedDms();
+  const words: Record<Feed.DmChoice, string> = { charm: "Charm", tease: "Tease", ignore: "Ignore", block: "Block" };
+  game.openMenu(
+    "DMs",
+    dms.length ? dms.map((d, i) => `${i + 1}. ${d.from}: "${d.text}"`) : ["Nothing new."],
+    dms.flatMap((d, i) =>
+      Feed.DM_CHOICES.map((c) => ({
+        label: `${i + 1}. ${d.from}: ${words[c]}`,
+        onPick: () => {
+          tavern.feedReply(i, c);
+          game.audio.play("click");
+          showFeedDms(game, back);
+        },
+      })),
+    ),
+    back,
+  );
+}
+
+/** The live stream: one chat request at a time, take it, decline it, or let it pass. */
+function showFeedStream(game: Game, back: () => void): void {
+  const tavern = game.tavern;
+  const req = tavern.feedStreamRequest;
+  if (!req) {
+    back();
+    return;
+  }
+  const answer = (a: boolean | null) => () => {
+    const result = tavern.feedStreamAnswer(a);
+    game.audio.play("click");
+    if (result) showFeed(game, feedBack, result.endedEarly ? `The chat drifted off. (+${result.tips} gold)` : `Stream over: +${result.tips} gold, +${result.newFollowers} followers.`);
+    else showFeedStream(game, back);
+  };
+  const tooBold = req.tier > tavern.feedMaxTier;
+  game.openMenu(
+    "Live on the crystal",
+    [`Chat: "${req.text}" (${["plain", "flirty", "bold", "bare"][req.tier]}, tip ${req.tip})`, tooBold ? "That's more than she's ready for: taking it counts as a no." : "Her choice, always."],
+    [
+      { label: "Take the dare", onPick: answer(true) },
+      { label: "Decline", onPick: answer(false) },
+      { label: "Let it pass", onPick: answer(null) },
+    ],
+    back,
+  );
+}
+
+/** This week's trend as a run of timing buttons, one per beat. */
+function showFeedTrend(game: Game, back: () => void, beats: ("early" | "on" | "late" | "miss")[]): void {
+  const tavern = game.tavern;
+  const def = Feed.TRENDS[tavern.feedTrend];
+  if (beats.length >= def.beats.length) {
+    const result = tavern.feedTrendDance(tavern.feedTrendTaps(beats));
+    showFeed(game, feedBack, result ? `${def.tag}: accuracy ${Math.round(result.accuracy * 100)}%, +${result.newFollowers} followers.` : undefined);
+    return;
+  }
+  const tap = (b: "early" | "on" | "late" | "miss") => () => {
+    game.audio.play("click");
+    showFeedTrend(game, back, [...beats, b]);
+  };
+  game.openMenu(
+    def.tag,
+    [def.what, `Beat ${beats.length + 1} of ${def.beats.length}.`],
+    [
+      { label: "Early", onPick: tap("early") },
+      { label: "On the beat", onPick: tap("on") },
+      { label: "Late", onPick: tap("late") },
+      { label: "Miss it", onPick: tap("miss") },
+    ],
+    back,
+  );
+}
+
+/**
+ * The Knight path (knight.ts, KNIGHT_PATH.md), from a menu until the drill yard, the lists and her kits are drawn:
+ * her rank and standing, what's missing for the next, and the day's work.
+ */
+export function showKnight(game: Game, back: () => void): void {
+  const tavern = game.tavern;
+  const again = () => showKnight(game, back);
+  const click = (run: () => unknown) => () => {
+    run();
+    game.audio.play("click");
+    again();
+  };
+  const k = tavern.knight;
+  const day = tavern.phase === "day";
+  if (!k) {
+    game.openMenu(
+      "Knight",
+      ["Captain Rhea Vance's garrison takes volunteers by day. It's the Baron's garrison: you'd be climbing inside his army."],
+      [{ label: "Sign up at the garrison", disabled: !tavern.canJoinGarrison, onPick: click(() => tavern.joinGarrison()) }],
+      back,
+    );
+    return;
+  }
+  const rank = Knight.KNIGHT_RANKS[k.rank];
+  const fx = Knight.effectsOf(k);
+  const check = Knight.canPromote(k, tavern.knightFacts());
+  const paragraphs = [
+    `${rank.name}. Favour ${k.favour}, scandal ${k.scandal}/${Knight.SCANDAL_LIMIT}. Best drill ${k.drillBest}, patrols ${k.patrols}, raids ${k.raids}, tourney wins ${k.tourneyWins}, oath ${k.oath ?? "not sworn"}.`,
+    `Your rank: +${fx.brawlDamage} brawl damage, ${fx.heatPerNight} heat a night (in favour), +${fx.respectPerWeek} respect a week, the Baron's watch ${fx.baronWatch}/4.`,
+    k.squad.length ? `Squad: ${k.squad.map((m) => `${m.name} (${m.loyalty})`).join(", ")}.` : "No squad yet.",
+    check.next ? (check.ok ? `Ready for ${Knight.KNIGHT_RANKS[check.next].name}.` : `For ${Knight.KNIGHT_RANKS[check.next].name}: ${check.missing.join("; ")}.`) : check.missing.join(" "),
+    "The drill yard, the lists and the knight kits are still to be drawn.",
+  ];
+  const buttons: Button[] = [
+    { label: "Drill: keep steady on the beat", disabled: !tavern.canKnight("drill"), onPick: click(() => tavern.knightDrill(tavern.knightDrillTimings("steady"))) },
+    { label: "Drill: push the pace", disabled: !tavern.canKnight("drill"), onPick: click(() => tavern.knightDrill(tavern.knightDrillTimings("rushed"))) },
+    { label: "Drill: go through the motions", disabled: !tavern.canKnight("drill"), onPick: click(() => tavern.knightDrill(tavern.knightDrillTimings("sloppy"))) },
+    { label: "Walk a patrol", disabled: !tavern.canKnight("patrol"), onPick: () => showPatrol(game, again) },
+    { label: `Raid with your squad${fx.raids ? "" : " (Knight-Captain)"}`, disabled: !fx.raids || !tavern.canKnight("raid"), onPick: () => showRaids(game, again) },
+    {
+      label: "Fight in the tourney (a brawl, once a week)",
+      disabled: !tavern.canTourney,
+      onPick: () => {
+        if (tavern.knightTourney()) toTheBrawl(game);
+      },
+    },
+    { label: "Swear the oath to the Baron", disabled: !day || k.rank !== "squire" || k.tourneyWins < 1 || k.oath !== null, onPick: click(() => tavern.knightOath("baron")) },
+    { label: "Swear the oath to the town", disabled: !day || k.rank !== "squire" || k.tourneyWins < 1 || k.oath !== null, onPick: click(() => tavern.knightOath("town")) },
+    { label: check.next ? `Ask for promotion to ${Knight.KNIGHT_RANKS[check.next].name}` : "Promotion", disabled: !day || !check.ok, onPick: click(() => tavern.knightPromote()) },
+  ];
+  if (k.rank === "captain") {
+    buttons.push({
+      label: `Call out ${Knight.OLD_COMMANDER.name} (a brawl)`,
+      disabled: !day || k.commanderBeaten || tavern.fight !== null,
+      onPick: () => {
+        if (tavern.knightCommanderDuel()) toTheBrawl(game);
+      },
+    });
+    buttons.push({ label: "Call the squad's vote", disabled: !day || k.voteWon, onPick: click(() => tavern.knightVote()) });
+  }
+  if (fx.rules) {
+    const order: Knight.GarrisonRules[] = ["none", "fair", "harsh", "loose"];
+    const nextRules = order[(order.indexOf(k.rules) + 1) % order.length];
+    buttons.push({ label: `Garrison rules: ${k.rules === "none" ? "none" : Knight.GARRISON_RULES[k.rules].name} (change)`, onPick: click(() => tavern.knightRules(nextRules)) });
+  }
+  const reeve = tavern.reeveCheck();
+  if (k.reeve) buttons.push({ label: "The Law board (Reeve)", onPick: () => showLaws(game, again) });
+  else buttons.push({ label: reeve.ok ? "Take the Reeve's chain" : `Reeve of Tarven (still needed: ${reeve.missing.join("; ")})`, disabled: !reeve.ok, onPick: click(() => tavern.becomeReeve()) });
+  game.openMenu("Knight", paragraphs, buttons, back);
+}
+
+/** Today's patrol: its event and her choices (a fight choice is a real brawl). */
+function showPatrol(game: Game, back: () => void): void {
+  const tavern = game.tavern;
+  const event = tavern.knightPatrol();
+  if (!event) {
+    back();
+    return;
+  }
+  game.openMenu(
+    event.name,
+    [event.intro],
+    event.choices.map((c) => ({
+      label: `${c.label}${c.fight ? " (a brawl)" : ""}`,
+      onPick: () => {
+        const r = tavern.knightPatrolChoose(c.id);
+        game.audio.play("click");
+        if (r === "fight") toTheBrawl(game);
+        else back();
+      },
+    })),
+    back,
+  );
+}
+
+/** Raids open to her rank, each with the three orders. */
+function showRaids(game: Game, back: () => void): void {
+  const tavern = game.tavern;
+  const k = tavern.knight;
+  if (!k) {
+    back();
+    return;
+  }
+  const buttons: Button[] = [];
+  for (const id of Object.keys(Knight.RAID_TARGETS) as Knight.RaidTargetId[]) {
+    if (!Knight.canRaid(k, id)) continue;
+    for (const order of Object.keys(Knight.SQUAD_ORDERS) as Knight.SquadOrder[]) {
+      buttons.push({
+        label: `${Knight.RAID_TARGETS[id].name}: ${Knight.SQUAD_ORDERS[order].name} (${Math.round(Knight.raidOdds(k.squad, id, order) * 100)}%)`,
+        onPick: () => {
+          tavern.knightRaid(id, order);
+          game.audio.play("click");
+          back();
+        },
+      });
+    }
+  }
+  game.openMenu("Raid", buttons.length ? ["Pick a target and give the order."] : ["Nothing your rank can raid yet."], buttons, back);
+}
+
+/** The Law board: each law, and the levels she can put to the council. The town's side of it is still to come. */
+function showLaws(game: Game, back: () => void): void {
+  const tavern = game.tavern;
+  const k = tavern.knight;
+  if (!k) {
+    back();
+    return;
+  }
+  const again = () => showLaws(game, back);
+  const buttons: Button[] = [];
+  for (const id of Object.keys(Knight.LAWS) as Knight.LawId[]) {
+    const law = Knight.LAWS[id];
+    ([0, 1, 2] as Knight.LawLevel[]).forEach((level) => {
+      if (level === k.laws[id]) return;
+      const cost = Knight.lawCost(k.laws[id], level);
+      buttons.push({
+        label: `${law.name}: ${law.levels[level]} (support ${cost.support}, ${cost.gold} gold)`,
+        disabled: tavern.gold < cost.gold || tavern.councilSupport < cost.support,
+        onPick: () => {
+          tavern.passLaw(id, level);
+          game.audio.play("click");
+          again();
+        },
+      });
+    });
+  }
+  game.openMenu(
+    "The Law board",
+    [
+      `Council support for you: ${tavern.councilSupport}.`,
+      ...(Object.keys(Knight.LAWS) as Knight.LawId[]).map((id) => `${Knight.LAWS[id].name}: ${Knight.LAWS[id].levels[k.laws[id]]}. ${Knight.LAWS[id].changes}`),
+      "What the laws change in town is still to come; for now they're kept on the board.",
+    ],
+    buttons,
+    back,
+  );
+}
+
+/**
+ * The Adventurers' Guild (guild.ts, ADVENTURERS_GUILD.md), from a menu until the hall is drawn: her card, the board,
+ * her party, and the hall once she runs it.
+ */
+export function showGuild(game: Game, back: () => void, note?: string): void {
+  const tavern = game.tavern;
+  guildBack = back;
+  const again = (n?: string) => showGuild(game, back, n);
+  const click = (run: () => unknown) => () => {
+    run();
+    game.audio.play("click");
+    again();
+  };
+  const g = tavern.guild;
+  if (!g) {
+    game.openMenu(
+      "Guild",
+      [tavern.guildOpen ? "Kestrel Vey has a guild card with your name on it, if you want it." : `The guild only ranks names people know: ${Guild.JOIN_FANS} fans (${tavern.fans}).`],
+      [{ label: "Join the guild (F rank)", disabled: !tavern.guildOpen || tavern.phase !== "day", onPick: click(() => tavern.joinGuild()) }],
+      back,
+    );
+    return;
+  }
+  const rank = Guild.GUILD_RANK_BY_ID[g.rank];
+  const missing = tavern.guildMissing();
+  const master = tavern.guildMasterCheck();
+  const paragraphs = [
+    `${rank.name} (${rank.career}). ${g.points} points, ${g.quests} quests done, ${g.failed} failed.`,
+    missing.length ? `Next rank: ${missing.join("; ")}.` : g.rank === "S" ? "The top of the guild." : "Ready for the next rank.",
+    `Party (${g.party.length}/${rank.maxCompanions}): ${g.party.length ? g.party.map((c) => `${c.name} (${c.role}${c.fee ? `, fee ${c.fee}` : ""})`).join(", ") : "nobody"}.`,
+    g.injuries.length ? `Hurt: ${g.injuries.map((i) => `${i.who === "her" ? "you" : i.who}: ${Guild.INJURIES[i.id].name} (${i.days} days)`).join("; ")}.` : "Nobody's hurt.",
+    "The hall, the board and the expedition screens are still to be drawn; fights are rolled for now.",
+  ];
+  if (note) paragraphs.push(note);
+  const buttons: Button[] = [
+    { label: "The quest board", disabled: tavern.phase !== "day", onPick: () => showQuestBoard(game, () => again()) },
+    { label: "Your party", onPick: () => showParty(game, () => again()) },
+    { label: "Ask the clerk to rank you up", disabled: missing.length > 0, onPick: click(() => tavern.guildPromote()) },
+  ];
+  if (Guild.rankIndex(g.rank) >= Guild.rankIndex("A") && !g.counter) {
+    buttons.push({ label: `Put up a guild counter at your bar (${GUILD_COUNTER_COST} gold)`, disabled: tavern.gold < GUILD_COUNTER_COST || tavern.phase !== "day", onPick: click(() => tavern.buildGuildCounter()) });
+  }
+  if (!g.master) buttons.push({ label: master.ok ? "Take the hall: become guild master" : `Guild master (still needed: ${master.missing.join("; ")})`, disabled: !master.ok, onPick: click(() => tavern.becomeGuildMaster()) });
+  else {
+    const cuts: Guild.QuestCutId[] = ["low", "fair", "steep"];
+    buttons.push({ label: `The hall's cut: ${Guild.QUEST_CUTS[g.cut].name} (change)`, onPick: click(() => tavern.setGuildCut(cuts[(cuts.indexOf(g.cut) + 1) % cuts.length])) });
+    buttons.push({ label: "Run the hall today", disabled: tavern.guildHallToday || tavern.phase !== "day", onPick: click(() => tavern.runGuildHall()) });
+    for (const d of Object.values(Guild.RECRUIT_DRIVES)) {
+      buttons.push({ label: `Run the hall with a drive: ${d.name} (${d.cost} gold)`, disabled: tavern.guildHallToday || tavern.phase !== "day" || tavern.gold < d.cost, onPick: click(() => tavern.runGuildHall(d.id)) });
+    }
+  }
+  game.openMenu("Guild", paragraphs, buttons, back);
+}
+
+/** Today's board: each quest, and whether she can take it with this party. */
+function showQuestBoard(game: Game, back: () => void): void {
+  const tavern = game.tavern;
+  const quests = tavern.guildQuests();
+  game.openMenu(
+    "The quest board",
+    quests.length ? ["One quest a day. Choices on the road take their first option for now."] : ["Nothing for you today."],
+    quests.map((q) => {
+      const blocked = tavern.guildBlocked(q.id);
+      return {
+        label: `[${q.rank}] ${q.title} · ${q.place} · ${q.gold} gold, ${q.points} points${blocked ? ` (${blocked})` : ""}`,
+        disabled: blocked !== null,
+        onPick: () => {
+          const res = tavern.guildRun(q.id);
+          game.audio.play("click");
+          showGuild(game, guildBack, res ? `${q.title}: ${res.outcome} (${res.gold} gold, ${res.points} points, ${res.fans} fans).` : undefined);
+        },
+      };
+    }),
+    back,
+  );
+}
+
+/** Her party: friends on her staff to take along, adventurers to hire for one quest, anyone to leave behind. */
+function showParty(game: Game, back: () => void): void {
+  const tavern = game.tavern;
+  const g = tavern.guild;
+  if (!g) {
+    back();
+    return;
+  }
+  const again = () => showParty(game, back);
+  const click = (run: () => unknown) => () => {
+    run();
+    game.audio.play("click");
+    again();
+  };
+  const buttons: Button[] = [
+    ...g.party.map((c) => ({ label: `Leave ${c.name} behind`, onPick: click(() => tavern.guildLeave(c.id)) })),
+    ...tavern.guildFriends()
+      .filter((c) => !g.party.some((p) => p.id === c.id))
+      .map((c) => ({ label: `Take ${c.name} (${c.role}, power ${c.power}, loyalty ${c.loyalty}) · ${c.about}`, onPick: click(() => tavern.guildTakeFriend(c.id)) })),
+    ...Guild.PARTY_ROLES.map((role) => ({ label: `Hire a ${role} off the bench · ${Guild.ROLE_ABOUT[role]}`, onPick: click(() => tavern.guildHire(role)) })),
+  ];
+  game.openMenu("Your party", [`Up to ${Guild.GUILD_RANK_BY_ID[g.rank].maxCompanions} at ${Guild.GUILD_RANK_BY_ID[g.rank].name}. Staff friends go for nothing; the hired are paid from the quest.`], buttons, back);
 }

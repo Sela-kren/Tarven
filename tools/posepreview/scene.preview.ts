@@ -11,8 +11,8 @@ import { Box3, Mesh, PerspectiveCamera, type Object3D } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { poseBones } from "../../src/game/battlepose";
 import { Dresser, newLook } from "../../src/game/appearance";
-import { placeBody, SCENE_JOINS, SCENE_POSE_LIST, SCENE_POSES, sceneFraming, type Posed, type ScenePoseName } from "../../src/game/sexpose";
-import { makeTable } from "../../src/game/scenetable";
+import { placeBody, SCENE_JOINS, SCENE_POSE_LIST, SCENE_POSES, sceneFraming, sizeForScene, type Posed, type ScenePoseName } from "../../src/game/sexpose";
+import { makeProps, makeTable } from "../../src/game/scenetable";
 import { colourOf, drawAll, H, stripImages, W } from "./raster";
 
 async function load(file: string, name: "Female" | "Male", nude: boolean): Promise<Posed> {
@@ -26,6 +26,8 @@ async function load(file: string, name: "Female" | "Male", nude: boolean): Promi
   model.traverse((o) => {
     if (o instanceof Mesh) o.visible = o.visible && colourOf(o, name) !== null;
   });
+  // The men drawn as big as the game's picture draws them (SCENE_MAN_SCALE), so what's measured here matches it.
+  sizeForScene(model, name);
   const bones = poseBones(model, name);
   const hipsBaseY = bones.hips?.position.y ?? 0;
   return {
@@ -62,14 +64,16 @@ test("render the after-hours scenes", async () => {
       placeBody(others[i], spot.body, spot.place);
       items.push({ model: others[i].model, name: "Male" });
     });
-    // The table under her, if the scene has one: in the picture, and framed with them.
-    if (scene.table) items.push({ model: makeTable(scene.table), name: "Table" });
+    // Framed on the bodies alone, as the game does (battleview.ts frameScene).
     const box = new Box3();
     for (const { model } of items) {
       model.updateMatrixWorld(true);
       box.union(new Box3().setFromObject(model, true));
     }
-    const camera = new PerspectiveCamera(28, W / H, 0.05, 30);
+    // The table under her, and any post, wall or bench, if the scene has them.
+    if (scene.table) items.push({ model: makeTable(scene.table), name: "Table" });
+    for (const prop of makeProps(scene.props ?? [])) items.push({ model: prop, name: "Table" });
+    const camera = new PerspectiveCamera(scene.view.fov ?? 28, W / H, 0.05, 30);
     const view = { ...scene.view, yaw: scene.view.yaw + Number(process.env.YAW_ADD ?? 0) };
     const frame = sceneFraming(box, view, camera.fov, W / H);
     camera.position.copy(frame.position);

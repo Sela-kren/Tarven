@@ -28,6 +28,7 @@ import {
   LOOK_OPTIONS,
   nearestStop,
   newLook,
+  startLook,
   outfitOf,
   ADVENTURER_OUTFITS,
   BANDIT_OUTFITS,
@@ -309,13 +310,19 @@ describe("keeping looks", () => {
       { sliders: { height: 3, bust: -0.5, wings: 1 }, colors: { skin: "#ABCDEF", hair: "red", fins: "#000000" }, hidden: ["apron", "hat"] },
       "Female",
     );
-    expect(read).toEqual({ sliders: { height: 1, bust: -0.5 }, colors: { skin: "#abcdef" }, hidden: ["apron"] });
+    // Saved with no outfit, she comes back in the one she starts in, in its colours and its own underwear.
+    expect(read).toEqual({
+      sliders: { height: 1, bust: -0.5 }, colors: { skin: "#abcdef", ...outfitOf("Female", { outfit: "tee" }).preset }, hidden: ["apron"],
+      outfit: "tee", bra: "demi", briefs: "brazilian",
+    });
+    // He has no other to start in: nothing stored for his.
+    expect(readLook({ sliders: {}, colors: {}, hidden: [] }, "Male")).toEqual(newLook());
   });
 
   it("reads both siblings, with a missing one as built", () => {
     const looks = readLooks({ Male: { sliders: { chest: 0.4 }, colors: {}, hidden: [] } });
     expect(looks!.Male.sliders).toEqual({ chest: 0.4 });
-    expect(looks!.Female).toEqual(newLook());
+    expect(looks!.Female).toEqual(startLook("Female"));
     expect(readLooks("nope")).toBeNull();
   });
 });
@@ -702,6 +709,37 @@ describe("outfits", () => {
     expect([mesh.visible, dirndl.visible]).toEqual([false, true]);
   });
 
+  it("starts her in her T-shirt and leggings, while a look naming none (a guest's) keeps the tavern dress", () => {
+    const own = LOOK_OPTIONS.Female.outfits[0];
+    expect([own.id, own.mesh]).toEqual(["tavern", ""]);
+    expect(LOOK_OPTIONS.Female.defaultOutfit).toBe("tee");
+    const start = startLook("Female");
+    expect(outfitOf("Female", start)).toMatchObject({ id: "tee", mesh: "Tee", legwear: "leggings" });
+    expect(start.colors).toEqual(outfitOf("Female", start).preset);
+    expect(outfitOf("Female", newLook()).id).toBe("tavern");
+    expect(outfitOf("Female", {}).id).toBe("tavern");
+    expect(startLook("Male")).toEqual(newLook());
+    // A saved look with none named is hers from before: back in the tee. The dress, named, stays the dress.
+    expect(readLook({ sliders: {}, colors: {}, hidden: [] }, "Female")!.outfit).toBe("tee");
+    expect(readLook({ sliders: {}, colors: { stockings: "#24345a" }, hidden: [] }, "Female")!.colors.stockings).toBe("#24345a");
+    expect(readLook({ outfit: "tavern" }, "Female")!.outfit).toBe("tavern");
+    // Rolled at random, she always names hers.
+    let seed = 1;
+    const random = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+    for (let i = 0; i < 20; i++) expect(randomLook("Female", random).outfit).toBeDefined();
+  });
+
+  it("puts guests in the tavern dress when none is named, never her T-shirt", () => {
+    const { model, mesh, dirndl } = outfitRig();
+    const tee = dirndl.clone();
+    tee.name = "Female_ClothTee";
+    dirndl.parent!.add(tee);
+    dressColors(model, "Female", {});
+    expect([mesh.visible, dirndl.visible, tee.visible]).toEqual([true, false, false]);
+    dressColors(model, "Female", {}, "tee");
+    expect([mesh.visible, dirndl.visible, tee.visible]).toEqual([false, false, true]);
+  });
+
   it("dresses guests in the character's own outfit, unless another is named", () => {
     const { model, mesh, dirndl } = outfitRig();
     dressColors(model, "Female", {});
@@ -718,7 +756,7 @@ describe("outfits", () => {
       ] as const) {
         expect(outfitOf(body, { outfit: id }).mesh).toBe(mesh);
         expect(playerOutfits(body).map((o) => o.id)).not.toContain(id);
-        expect(readLook({ outfit: id }, body)!.outfit).toBeUndefined();
+        expect(readLook({ outfit: id }, body)!.outfit).toBe(LOOK_OPTIONS[body].defaultOutfit);
         let seed = 0;
         const random = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
         for (let i = 0; i < 50; i++) expect(randomLook(body, random).outfit).not.toBe(id);
@@ -769,18 +807,26 @@ describe("outfits", () => {
     expect(dirndl.colors.belt).toBeUndefined();
     expect(dirndl.colors.apron).toBe(outfitOf("Female", dirndl).preset.apron);
     expect(dirndl.hairstyle).toBe("long");
-    // Back to the tavern dress: the model's own colours again, and nothing stored for the outfit.
+    // Back to the tavern dress: the model's own colours again. She starts in her tee, so the dress is named.
     const tavern = wearOutfit("Female", dirndl, "tavern");
-    expect(tavern.outfit).toBeUndefined();
-    expect(tavern.colors).toEqual({ skin: "#c68a64" });
+    expect(tavern.outfit).toBe("tavern");
+    expect(tavern.colors).toEqual({ skin: "#c68a64", ...outfitOf("Female", { outfit: "tavern" }).preset });
+    // His tunic is his own and what he starts in: nothing stored for it.
+    expect(wearOutfit("Male", { ...newLook(), outfit: "pirate" }, "tunic").outfit).toBeUndefined();
   });
 
   it("puts the bunny set on with its heart pasties, which she can then change", () => {
     const bunny = wearOutfit("Female", { ...newLook(), bra: "plunge", briefs: "thong" }, "bunny");
     expect(bunny).toMatchObject({ outfit: "bunny", bra: "hearts", briefs: "heart" });
     expect(underOf("Female", bunny)).toMatchObject({ top: { id: "hearts" }, bottom: { id: "heart" } });
-    // Other outfits leave her underwear as it was.
-    expect(wearOutfit("Female", bunny, "dirndl")).toMatchObject({ bra: "hearts", briefs: "heart" });
+    // Every outfit she can pick comes with its own underwear, never the old band and braies.
+    expect(wearOutfit("Female", bunny, "dirndl")).toMatchObject({ bra: "balconette", briefs: "tanga" });
+    for (const outfit of playerOutfits("Female")) {
+      expect(outfit.under?.bra, outfit.id).toBeTruthy();
+      expect(outfit.under?.briefs, outfit.id).toBeTruthy();
+    }
+    // A guest's look (in the first outfit, put on without wearOutfit) keeps the plain band and braies.
+    expect(newLook().bra).toBeUndefined();
   });
 
   it("lists only clothes colours each body has, and keeps only known outfits", () => {
@@ -791,8 +837,9 @@ describe("outfits", () => {
       }
     }
     expect(readLook({ outfit: "priestess" }, "Female")!.outfit).toBe("priestess");
-    expect(readLook({ outfit: "tavern" }, "Female")!.outfit).toBeUndefined();
-    expect(readLook({ outfit: "ballgown" }, "Female")!.outfit).toBeUndefined();
+    expect(readLook({ outfit: "tavern" }, "Female")!.outfit).toBe("tavern");
+    expect(readLook({ outfit: "ballgown" }, "Female")!.outfit).toBe("tee");
+    expect(readLook({ outfit: "pirate" }, "Male")!.outfit).toBeUndefined();
     expect(copyLook({ ...newLook(), outfit: "dirndl" }).outfit).toBe("dirndl");
   });
 });
@@ -868,6 +915,40 @@ describe("legwear", () => {
     dresser.setStripped(["stockings"]);
     expect([seat.visible, thigh.visible, garter.visible]).toEqual([false, false, false]);
     expect(cuff.material).toBe(skin.material);
+  });
+
+  it("pulls her T-shirt outfit's leggings down to her knees, bunched in a roll, rather than off", () => {
+    const { model, seat, thigh, cuff, skin } = legRig();
+    const tee = (material: string) => {
+      const geometry = new BufferGeometry();
+      geometry.setAttribute("position", new Float32BufferAttribute([-0.1, 0.5, 0.05], 3));
+      geometry.setAttribute("skinIndex", new Uint16BufferAttribute([1, 0, 0, 0], 4));
+      geometry.setAttribute("skinWeight", new Float32BufferAttribute([1, 0, 0, 0], 4));
+      const mesh = new SkinnedMesh(geometry, new MeshLambertMaterial({ name: material }));
+      mesh.name = `Female_ClothTee_${material}`;
+      model.getObjectByName("Female")!.add(mesh);
+      mesh.bind(seat.skeleton);
+      return mesh;
+    };
+    const [shirt, teeSeat, teeThigh, knee, calf, roll] = ["T_tee", "T_hose", "T_hose_thigh", "T_hose_knee", "T_hose_calf", "T_legroll"].map(tee);
+    const dresser = new Dresser(model, "Female");
+    const look = wearOutfit("Female", newLook(), "tee");
+    dresser.apply(look);
+    // Dressed: her tee and leggings, no roll, and none of the tavern dress's own bands.
+    expect([shirt, teeSeat, teeThigh, knee, calf, roll].map((m) => m.visible)).toEqual([true, true, true, true, true, false]);
+    expect([seat.visible, thigh.visible]).toEqual([false, false]);
+    // Down: off her hips and thighs, still on from the knee down, rolled up above it.
+    dresser.setStripped(["stockings"]);
+    expect([shirt, teeSeat, teeThigh, knee, calf, roll].map((m) => m.visible)).toEqual([true, false, false, true, true, true]);
+    expect(cuff.material).toBe(skin.material);
+    // Undressed, they're off with everything else.
+    dresser.setDressing("nude");
+    expect([teeSeat, knee, calf, roll].map((m) => m.visible)).toEqual([false, false, false, false]);
+    dresser.setDressing("dressed");
+    // Thigh-highs don't reach her hips: they come off as stockings do.
+    dresser.apply({ ...look, legwear: "thighhigh" });
+    dresser.setStripped(["stockings"]);
+    expect([teeThigh, knee, roll].map((m) => m.visible)).toEqual([false, false, false]);
   });
 
   it("dresses guests in their outfit's legwear unless another is named", () => {

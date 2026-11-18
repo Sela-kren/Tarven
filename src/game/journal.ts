@@ -233,6 +233,8 @@ export interface PrivateState {
   clothesLost: number;
   lets: Partial<Record<TouchRegion, number>>;
   passivesHeld: number;
+  /** Her stage on her arc (lewd.ts `arcStageName`), and a note on the Legend past Known, if it's in reach. */
+  arc?: { name: string; note: string };
 }
 
 /** The boldness scale, as the concept names it: 1 is barely there, 10 adult play. */
@@ -278,6 +280,10 @@ export function privateBook(state: PrivateState): HTMLElement {
   left.append(el("p", "role", "Not for anyone else's eyes."));
 
   left.append(el("h2", "", "Who she's becoming"));
+  if (state.arc) {
+    left.append(row("Stage", state.arc.name, { icon: FLAME }));
+    if (state.arc.note) left.append(el("p", "note", state.arc.note));
+  }
   left.append(row("Lewdness", String(state.lewdness), { icon: FLAME, bar: meter(state.lewdness, 0, 100, "red") }));
   left.append(el("p", "reach", lewdWord(state.lewdness)));
   left.append(row("Corruption", String(state.corruption), { bar: meter(state.corruption, 0, 100, "purple") }));
@@ -685,5 +691,69 @@ export function skillsBook(state: SkillsState): HTMLElement {
   const acts = el("div", "skill-grid");
   for (const skill of ACT_SKILLS) acts.append(skillLine(skill.name, xp(skill.id), bonus(skill.id), skillBonusText(skill.id, level(skill.id))));
   right.append(acts);
+  return book;
+}
+
+// ---------- Letters: Wren's, and how Chapter 1 ended ----------
+
+/** One of Wren's letters as the Letters page shows it: found (with its text) or still a blank. */
+export interface LetterEntry {
+  title: string;
+  /** "The madam's", "The keeper's", "The warning", "The story". */
+  set: string;
+  /** What finds it, in words. */
+  unlock: string;
+  found: boolean;
+  /** Where she found it, then the letter. Only for one she's found. */
+  lines?: readonly string[];
+}
+
+export interface LettersState {
+  /** Every letter, in the book's order; the found ones in the order she found them. */
+  letters: readonly LetterEntry[];
+  found: readonly LetterEntry[];
+  /** How Chapter 1 ended (chapter1.ts), once it has. */
+  chapter?: { title: string; previews: string; text: string; needs: string };
+}
+
+/**
+ * Wren's letters, to reread: on the left, every set with a blank for each letter not found yet (what finds it), and
+ * how Chapter 1 ended; on the right, the letters she's found, in full, in the order she found them.
+ */
+export function lettersBook(state: LettersState): HTMLElement {
+  const book = el("div", "journal-book letters passives titles");
+  const left = el("div", "page left");
+  const right = el("div", "page right");
+  book.append(left, el("div", "spine"), right);
+
+  left.append(el("h1", "title", "Letters"));
+  left.append(el("p", "role", `Grandma's letters, hidden about the house. ${state.found.length} of ${state.letters.length} found.`));
+  const sets = [...new Set(state.letters.map((l) => l.set))];
+  for (const set of sets) {
+    left.append(el("h2", "", set));
+    for (const letter of state.letters.filter((l) => l.set === set)) {
+      left.append(letter.found ? row(letter.title, "found") : el("p", "note", `Not found yet. (${letter.unlock})`));
+    }
+  }
+  if (state.chapter) {
+    left.append(el("h2", "", "How Chapter 1 ended"));
+    left.append(row(state.chapter.title, state.chapter.previews && state.chapter.previews !== state.chapter.title ? `on the road to ${state.chapter.previews}` : ""));
+    left.append(el("p", "note", state.chapter.text));
+    left.append(el("p", "note", `Picked by: ${state.chapter.needs}`));
+  }
+
+  const cards = el("div", "pcards");
+  if (state.found.length === 0) cards.append(el("p", "note", "None yet. Grandma hid them where you'd find them when you needed them, and not before."));
+  for (const letter of state.found) {
+    const card = el("div", "pcard ready letter");
+    const head = el("div", "phead");
+    head.append(el("b", "pname", letter.title), el("span", "pstate", letter.set));
+    card.append(head);
+    const [where, ...text] = letter.lines ?? [];
+    if (where) card.append(el("p", "benefit", where));
+    for (const line of text) card.append(el("p", "thought", line));
+    cards.append(card);
+  }
+  right.append(el("h2", "", "Found"), cards);
   return book;
 }

@@ -88,6 +88,14 @@
   margin-bottom: 0;
 }
 
+/* A story card's title on the dawn report, over its lines. */
+#panel .story p.card-title {
+  margin: 18px 0 6px;
+  font-weight: bold;
+  color: var(--gold);
+  text-align: center;
+}
+
 /* ---------- Plank buttons ---------- */
 
 #panel .menu {

@@ -18,9 +18,11 @@
  * builds and switches on the house plans.
  */
 import type { Persona } from "./banter";
-import { mindStage, mindStageName } from "./lewd";
+import { mindStage, mindStageName, readLegend, type LegendState } from "./lewd";
 import { feltMood, STRONG_LUST } from "./mood";
 import { FANS_DELIGHTED, FANS_HAPPY } from "./ledger";
+import { staffLegendBackCard, staffLegendStep, staffStageCard, staffTierCard } from "./staff";
+import { cardLines } from "./tropes";
 import type { Arrival, Cue, Guest, GuestKind, TalkChoice, TalkLine } from "./tavern";
 
 /** Where a Lantern night's chances come from: who asks for company, and how it goes. Tests pin it. */
@@ -134,6 +136,9 @@ export const RULE_TEXT: Record<HouseRule, { name: string; fair: string; greedy: 
  */
 export const NEVER_CLIENTS: readonly string[] = ["baron"];
 
+/** Bookings on a lit night that make it a wild one for her Legend. */
+export const GIRL_LEGEND_BOOKINGS = 2;
+
 /** One of the Lantern's girls: an adult who chose the work, with her own numbers (STORY.md, "The girls"). */
 export interface Girl {
   id: string;
@@ -165,6 +170,10 @@ export interface Girl {
   records: { bookings: number; enjoyed: number; refused: number };
   /** What she's been paid, all told. */
   purse: number;
+  /** The furthest tier the dawn has told her story card for (CORRUPTION_TROPES.md); unset, the one she started at. */
+  tierSeen?: number;
+  /** Her Legend, the comic stage past Known (staff.ts `staffLegendStep`); unset, she's never been one. */
+  legend?: LegendState;
 }
 
 /** Tamsin (26): she worked unpaid at the Velvet House and came to the Lantern for a fair share. Starts shady. */
@@ -273,6 +282,8 @@ const KIND_WORDS: Record<GuestKind, string> = {
   bandit: "bandits",
   noble: "nobles",
 };
+
+const TIERS = ["honest", "shady", "crooked", "rotten"] as const;
 
 /** Her tier, on the madam's scale (STORY.md, section 8). */
 export function tierOf(corruption: number): "honest" | "shady" | "crooked" | "rotten" {
@@ -618,7 +629,16 @@ export class Lantern {
       if (girl.quit) continue;
       const worked = night.worked[girl.id] ?? 0;
       if (night.lit) {
+        const tierBefore = TIERS.indexOf(tierOf(girl.corruption));
         girl.corruption = drift(girl.corruption, host.madamCorruption, girl.resolve) + GREEDY_PUSH * greedy.length;
+        // A tier she's not reached before gets its story card, tagged with who's pushing (staff.ts, CORRUPTION_TROPES.md).
+        const tier = TIERS.indexOf(tierOf(girl.corruption));
+        girl.tierSeen ??= tierBefore;
+        if (tier > girl.tierSeen) {
+          girl.tierSeen = tier;
+          const step = TIERS[tier];
+          if (step !== "honest") night.trouble.push(...cardLines(staffTierCard({ id: girl.id, job: "girl", name: girl.name, female: true }, step)));
+        }
         girl.loyalty += greedy.length === 0 ? FAIR_NIGHT_LOYALTY : GREEDY_NIGHT_LOYALTY * greedy.length;
         if (tierOf(girl.corruption) === "honest" && host.madamCorruption >= CROOKED_MADAM) girl.loyalty += HONEST_UNDER_CROOK;
         girl.loyalty = clamp(girl.loyalty, 0, 100);
@@ -629,6 +649,12 @@ export class Lantern {
         girl.fatigue = 0;
         if (girl.ill > 0) girl.ill--;
       }
+      // Her Legend: two or more bookings on a lit night is a wild one, a night with none a night off (staff.ts).
+      const legend = staffLegendStep(girl.legend, girlLewdness(girl), night.lit && worked >= GIRL_LEGEND_BOOKINGS);
+      girl.legend = legend.state;
+      const who = { id: girl.id, job: "girl" as const, name: girl.name, female: true };
+      if (legend.change === "rise") night.trouble.push(...cardLines(staffStageCard(who, "legend")));
+      if (legend.change === "fall") night.trouble.push(...cardLines(staffLegendBackCard(who)));
       if (girl.loyalty <= 0) {
         girl.quit = true;
         night.trouble.push(`${girl.name} packed her things and left for the Velvet House. She'd had enough of this house.`);
@@ -648,7 +674,8 @@ export class Lantern {
   dawnLines(): string[] {
     const night = this.lastNight;
     if (!this.hung || !night) return [];
-    if (!night.lit) return ["The lantern stayed dark last night."];
+    // A dark night can still have news of the girls: a card, or one walking out.
+    if (!night.lit) return ["The lantern stayed dark last night.", ...night.trouble];
     const girls = this.girls.map((g) => `${g.name} is ${girlMood(g)}${g.quit ? "" : ` (loyalty ${Math.round(g.loyalty)}, ${tierOf(g.corruption)})`}.`);
     const turned = night.turnedAway + night.refused;
     return [
@@ -660,7 +687,9 @@ export class Lantern {
 
   /** Her mind stage, by the heroine's thresholds, for the house plans. */
   stageOf(girl: Girl): string {
-    return mindStageName(mindStage(girlLewdness(girl))) || "new";
+    const stage = mindStage(girlLewdness(girl));
+    if (stage === 3 && girl.legend?.on) return "legend";
+    return mindStageName(stage) || "new";
   }
 
   save(): LanternSave {
@@ -703,6 +732,8 @@ function readGirl(raw: unknown): Girl | null {
   girl.ill = Math.floor(num(saved.ill, 0, 9, 0));
   girl.purse = Math.floor(num(saved.purse, 0, 1e6, 0));
   girl.quit = saved.quit === true;
+  if (typeof saved.tierSeen === "number" && Number.isFinite(saved.tierSeen)) girl.tierSeen = Math.floor(clamp(saved.tierSeen, 0, TIERS.length - 1));
+  if (saved.legend) girl.legend = readLegend(saved.legend);
   const records = saved.records ?? girl.records;
   girl.records = {
     bookings: Math.floor(num(records.bookings, 0, 1e5, 0)),

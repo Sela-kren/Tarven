@@ -602,3 +602,15 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/* ---------- Letters: Wren's, in her hand (journal.ts lettersBook) ---------- */
+
+#panel .journal-book.letters .pcard.letter .benefit {
+  color: #5a4630;
+}
+
+#panel .journal-book.letters .pcard.letter .thought {
+  margin: 4px 0 0;
+  font-style: normal;
+  color: var(--ink);
+}

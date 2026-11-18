@@ -3,14 +3,40 @@ import { fightTier } from "./fightface";
 const DENY_UNLOCK = 10;
 import { growthOf, rentRooms, RIOT_AFTER, RIOT_PUT_DOWN, RIOT_TROUBLE, runShow, type Growth } from "./sidejobs";
 import { TRINKET_BY_ID, TRINKET_SLOTS, TRINKETS, trinketsOwned } from "./trinkets";
-import { crowdFactor, defeatFor, defeatLine, DEFEATS, type DefeatId } from "./defeat";
+import { crowdFactor, defeatFor, defeatLine, defeatPlay, DEFEATS, type DefeatId } from "./defeat";
+import type { ScenePoseName } from "./sexpose";
 import { foePrefixFor } from "./foeprefix";
 import { barVoice, HER_BAR_LINES, type BarMoment } from "./barher";
 import { BAR_VOICES, QUIP_LUST, REACH_PART } from "./barvoices";
 import { DOOR_CREW_LINES, DOOR_LINES, FORCED_ROOM_CREW, FORCED_ROOM_ONE, invaderCount, invasionChance, NOISE_LINES, TALKED_LINES, WON_LINES } from "./invasion";
 import { brawlFatigue, duelFatigue, FATIGUE_MAX, FATIGUE_REST, fatigueLevel, maxEnergy, NAP_ENERGY } from "./herstate";
 import { cloneLayout, type HouseLayout } from "./house";
-import { ARC_DAWN, arcIndex, arcStage, ARC_STAGES, flavorLine, TANSY_CALLBACK, type ArcStage, wildSensitivity } from "./lewd";
+import {
+  ARC_AFTERMATH_SEEN,
+  arcCardLines,
+  arcDawnStep,
+  arcIndex,
+  arcSeenFor,
+  arcStage,
+  corruptionDawnStep,
+  CORRUPTION_TIERS,
+  corruptionTier,
+  flavorLine,
+  herLegendNight,
+  LEGEND_AT,
+  LEGEND_FALL,
+  LEGEND_RISE,
+  legendCardLines,
+  legendStep,
+  newLegend,
+  readLegend,
+  TANSY_CALLBACK,
+  type ArcFacts,
+  type ArcStage,
+  type LegendState,
+  wildSensitivity,
+} from "./lewd";
+import { cardLines, cardTitle } from "./tropes";
 import { faceLine } from "./facetalk";
 import {
   JOIN_CHEERS,
@@ -142,8 +168,9 @@ import {
   pellOpening,
   SHADY_AT,
   type PellAnswer,
-  WREN_FIRST_LETTER,
 } from "./ledger";
+import { countWillNight, findLetter, findNextLetter, LETTER_BY_ID, letterLines, newLetterState, queueLetters, readLetters, saveLetters, type LetterId, type LettersSave, type LetterState } from "./letters";
+import { addFanNight, CHAPTER_ENDINGS, chapterEndingFor, HOUSE_GROUP, isChapterEnding, newFanGroups, readFanGroups, type ChapterEndingId, type FanGroups } from "./chapter1";
 import {
   partToSee,
   PART_WORDS,
@@ -216,6 +243,7 @@ import {
   FRIEND_TIME,
   hire,
   hireable,
+  lewdWork,
   metAt,
   nightFor,
   perkNightly,
@@ -231,6 +259,18 @@ import {
   type StaffMember,
   type Stage as StaffStage,
 } from "./staff";
+import {
+  FEED_COST,
+  FLYER_COST,
+  handOutFlyers,
+  marketPackCost,
+  marketReplaceCost,
+  MAX_ERRAND_GUESTS,
+  postOnFeed,
+  type ErrandResult,
+  type FlyerFacts,
+} from "./errands";
+import { blockedReason, TOWN_PLACES, type TownOutcome, type TownPlaceId, type TownState } from "./townplaces";
 import {
   CENTREPIECE_MAX,
   centrepieceCrowd,
@@ -248,6 +288,50 @@ import {
   type RevelSettings,
   type RevelWho,
 } from "./revel";
+import * as Feed from "./feedstar";
+import * as Knight from "./knight";
+import * as Guild from "./guild";
+
+// ---------- Feed Star, the Knight path and the Guild (feedstar.ts, knight.ts, guild.ts) ----------
+
+/** The staff friend behind each sponsor (staff.ts ids): breaking her deal costs their loyalty. */
+const FEED_SPONSOR_STAFF: Readonly<Record<Feed.SponsorId, string | null>> = { brunhild: "bru", edda: "edda", warmhouse: null };
+/** A live stream: how many chat requests, and how long it runs (seconds). */
+const FEED_STREAM_REQUESTS = 5;
+const FEED_STREAM_SECONDS = 32;
+/** The chat's dares, by boldness: placeholders until the stream overlay and its lines are written. */
+const FEED_DARES: Readonly<Record<Feed.Boldness, readonly string[]>> = {
+  0: ["Pour one on camera!", "Show us the stew!", "Say hi to my mum!"],
+  1: ["Twirl for us!", "Blow the chat a kiss!", "Show us tonight's dress!"],
+  2: ["Lean over the bar for us...", "Lose the apron?", "Show a bit more leg!"],
+  3: ["Top off for a hundred tips!", "Nothing but the apron, go on!", "Turn around and bend over?"],
+};
+/** Who she fights when a patrol choice comes to blows. */
+const PATROL_FOES: Readonly<Record<string, GuestKind>> = { thief: "fugitive", fight: "farmer", soldier: "soldier", escort: "bandit", cart: "smuggler" };
+/** A brawl outside the taproom, and what it's for. */
+type SideFight = { kind: "tourney" } | { kind: "commander" } | { kind: "patrol"; eventId: string; choiceId: string };
+/** Her stamina going out on a quest (guild.ts, fight.ts's scale), before what her Level adds. */
+const GUILD_STAMINA = 20;
+/** The guild counter in her taproom, the guild master's first step (A rank). */
+export const GUILD_COUNTER_COST = 100;
+
+/** Her guild card (guild.ts): rank, points, quests done and failed, a legend's deed, her party, injuries, and the hall once she runs it. */
+export interface GuildCard {
+  rank: Guild.GuildRankId;
+  points: number;
+  quests: number;
+  failed: number;
+  deed: boolean;
+  party: Guild.Companion[];
+  injuries: Guild.Injury[];
+  counter: boolean;
+  master: boolean;
+  cut: Guild.QuestCutId;
+  mood: number;
+  members: number;
+}
+/** How much less guests wait on a night she keeps checking her phone (Feed Star's Refresh, Refresh). */
+const PHONE_PATIENCE = 0.05;
 
 /** One line of a set, by a roll from 0 to 1. */
 function oneOf(lines: readonly string[], roll: number): string {
@@ -284,7 +368,7 @@ import {
   willingJoiners,
   type RoomGuest,
 } from "./taproom";
-import { Duel, DUEL_AREAS, type DuelArea, type DuelistStats, type DuelMove, type DuelOutcome, type DuelTest, type Partner } from "./duel";
+import { AREA_NAMES, Duel, DUEL_AREAS, type DuelArea, type DuelDefeat, type DuelistStats, type DuelMove, type DuelOutcome, type DuelTest, type Partner } from "./duel";
 import {
   ACT_SKILL_OF,
   ACT_SKILLS,
@@ -409,8 +493,11 @@ const TAKE_CUES: Record<Item, Cue> = {
  */
 export type MessKind = "dishes" | "spill" | "dust" | "cobweb";
 export type UpgradeId = "quicktap" | "bigpot" | "cushions";
-/** The one way the story ends: the village rises, and the baron's hold on the pass is broken. */
-export type EndingId = "overthrow";
+/**
+ * The story's endings. For now only Chapter 1's (chapter1.ts), and those are chapter cards read as she becomes first
+ * in Tarven, never the end of the run: `ending` and the "ended" phase are kept for the story's last endings, later.
+ */
+export type EndingId = ChapterEndingId;
 
 export const DEBT = 150;
 /** Heat at the most brings a raid instead of an arrest: a fine, the heat let off, and soldiers at the door. */
@@ -784,9 +871,8 @@ export interface NightPlan {
   lastCall: LastCall;
 }
 
-/** What Pell says at dawn, and the letter she finds after. */
+/** What Pell says at dawn (the letter she finds after is Wren's first: letters.ts "pell"). */
 const PELL_LINES = PELL_AT_DAWN;
-const WREN_LETTER = WREN_FIRST_LETTER;
 const ordinalOf = ordinal;
 
 const sideNights = new Map<number, NightPlan>();
@@ -1096,12 +1182,8 @@ export const NIGHTS: NightPlan[] = [
   },
 ];
 
-export const ENDINGS: Record<EndingId, { title: string; text: string }> = {
-  overthrow: {
-    title: "The Village Rises",
-    text: "When the baron comes to collect, the whole village is waiting at your door. He rides away with nothing, and the debt dies with his power on the pass.",
-  },
-};
+/** Each ending's title and line (the Village Rises, overthrow, and the rest of Chapter 1's: chapter1.ts). */
+export const ENDINGS: Readonly<Record<EndingId, { title: string; text: string }>> = CHAPTER_ENDINGS;
 
 export interface Guest {
   id: number;
@@ -1259,6 +1341,16 @@ export interface StorySave {
   flags?: string[];
   /** The furthest stage of her arc the dawn report has spoken of (STORY.md 4b). */
   arc?: number;
+  /** Her Legend, the stage past Known (lewd.ts `legendStep`). Older saves have none: she's never been one. */
+  legend?: LegendState;
+  /** The furthest corruption tier the dawn has told her card for (CORRUPTION_TROPES.md). */
+  tier?: number;
+  /** Wren's letters (letters.ts). Older saves have none, except Pell's if his dawn has been. */
+  letters?: LettersSave;
+  /** The Chapter 1 ending she got (chapter1.ts). Older saves have none. */
+  chapter1?: string;
+  /** Her fans by group (chapter1.ts). Older saves count them all as Keeper. */
+  fanGroups?: FanGroups;
 }
 
 /** How Pell's collection went: what was due, what he took, and what she still owes. */
@@ -1324,6 +1416,26 @@ export interface TavernSave {
   staff?: { members: StaffMember[]; applicants: StaffMember[]; applicantsNight: number; nextApplicant: number; friendship: Record<string, number> };
   /** The Revel House (revel.ts): the hall, the night's settings and whether tonight's one. Older saves have none. */
   revel?: { hall: boolean; settings: RevelSettings; tonight: boolean };
+  /** Her day errands (errands.ts): done today, and the guests and fans they're bringing. Older saves have none. */
+  errands?: { flyered: boolean; posted: boolean; guests: number; fans: number; town?: string[] };
+  /** Feed Star (feedstar.ts): her feed, sponsors, quiet days, DM hype, today's inbox, the trend week, today's stream. Older saves have none. */
+  feed?: {
+    records: Feed.FeedRecords;
+    deals: Feed.SponsorDeal[];
+    warned: Feed.SponsorId[];
+    broken: Feed.SponsorId[];
+    quietDays: number;
+    hype: number;
+    stalkerRisk: number;
+    trendWeek: number;
+    streamed: boolean;
+    inbox: Feed.Dm[];
+    inboxDay: number;
+  };
+  /** The Knight path (knight.ts): her place in the garrison, flags, the week of her last tourney, today's work and patrol. Older saves have none. */
+  knight?: { state: Knight.KnightState; flags: string[]; tourneyWeek: number; done: string[]; patrol: string | null };
+  /** The Guild (guild.ts): her card, today's board, and what she's done at the hall today. Older saves have none. */
+  guild?: { card: GuildCard; board: string[]; boardDay: number; questToday: boolean; hallToday: boolean; questGold: number[] };
 }
 
 /** A moment that wants an 18+ card: a guest she's said yes to on the table, or being overwhelmed. */
@@ -1583,8 +1695,12 @@ export class Tavern {
   readonly beatsDone = new Set<string>(["salt"]);
   /** Act 1's story flags (plot.ts): what she did at the written nights' last calls, and what she's heard. */
   readonly plotFlags = new Set<PlotFlag>();
-  /** The furthest stage of her arc the dawn report has spoken of (-1 for none yet): each is spoken of once. */
+  /** The furthest stage of her arc the dawn report has spoken of (-1 for none yet; 4 once Known's aftermath has). */
   arcSeen = -1;
+  /** Her Legend, the lasting comic stage past Known, and the nights counting toward it or back from it. */
+  legend: LegendState = newLegend();
+  /** The furthest corruption tier the dawn has told her card for (0 honest to 3 rotten; CORRUPTION_TROPES.md). */
+  tierSeen = 0;
   /** The written night tonight plays (a beat night), or -1 for a night between beats. */
   storyNight = 0;
   /** The houses she's passed, and what she did with each (partner or ruin; "fallen" until its boss has come). */
@@ -1593,6 +1709,17 @@ export class Tavern {
   pendingBeat: Beat | null = null;
   /** First in Tarven: the chapter's end, shown once. */
   private firstInTarven = false;
+  /** The Chapter 1 ending she got as she became first in Tarven (chapter1.ts), or none yet. Saved with the story. */
+  chapterEnding: ChapterEndingId | null = null;
+  /** Her fans by why they come (Keeper, Lantern, Network; chapter1.ts), and tonight's tagged ones, counted at dawn. */
+  fanGroups: FanGroups = newFanGroups();
+  private fanTags = { lantern: 0, network: 0 };
+  /** Wren's letters (letters.ts): found, waiting to be found, and the counters they read. Saved with the story. */
+  letters: LetterState = newLetterState();
+  /** The letter found this morning, for the morning card, once. */
+  private letterToday: LetterId | null = null;
+  /** Her willpower went below half at some point tonight (for the keeper's last letter). */
+  private willDipped = false;
   /**
    * What she owes the Baron (Grandma's debt; doubled at Pell's dawn unless she promises the book), what's left
    * unpaid from his last collection, and whether she promised.
@@ -1835,6 +1962,15 @@ export class Tavern {
   /** Who she's spent time with today (once a day each). */
   private friendTimeToday = new Set<string>();
 
+  /** Her day errands in the square (errands.ts): flyers and the feed, once a day each. */
+  flyeredToday = false;
+  postedToday = false;
+  /** Guests her errands are bringing in tonight, and fans they've won, counted at dawn. */
+  errandGuests = 0;
+  errandFans = 0;
+  /** What she's done in town today ("place:action", townplaces.ts): each once a day. */
+  readonly townDoneToday = new Set<string>();
+
   /**
    * Where the game is, for staff (STAFF.md §1): early (nights 1 to 5, no staff), mid (after Pell's first visit for
    * the Baron, gold 150 or more, or from night 6), and late (the chapter's end, first in Tarven, or fame 60).
@@ -1985,19 +2121,848 @@ export class Tavern {
         if (perks.fame) this.shift({ fame: perks.fame });
         this.fansTonight += perks.fans;
       }
+      // What their job brought them tonight, lewd work too (staff.ts lewdWork): as handsy as the room was with
+      // her, and the whole hall on a revel night.
       const done = worked
         ? {
             served: m.job === "barmaid" ? Math.floor(this.served * BARMAID_SHARE) : 0,
             throwOuts: m.job === "doorman" ? Math.min(DOORMAN_THROWS, this.fightsTonight) : 0,
+            ...lewdWork(m.job, { reached: this.touchesTonight.reached, revel: this.revelHeld }),
           }
         : {};
       const { member, dawn } = nightFor(m, { worked, wagePaid: paid, houseFame: this.persona.fame, madamCorruption: this.corruption, greedyRules: greedy, done });
       this.morningAfter.push(paid < m.wage && worked ? `${dawn.line} You could only pay ${paid} of ${m.wage} gold.` : dawn.line);
+      for (const card of dawn.cards) this.morningAfter.push(...cardLines(card));
       if (dawn.beat) this.morningAfter.push(`${member.name}: "${dawn.beat.title}" is waiting (Settings, Staff).`);
       if (member.quit) continue;
       kept.push(member);
     }
     this.staff = kept;
+  }
+
+  // ---------- Feed Star (feedstar.ts, FEED_STAR.md) ----------
+  // Placeholder menus (menus.ts showFeed) until the phone screen, the photo poses and the stream's crystal are drawn.
+
+  /** Her feed records: followers, likes, bold posts, virals and streams (what the Watched awakening reads). */
+  feed: Feed.FeedRecords = { ...Feed.EMPTY_RECORDS };
+  /** Sponsor deals signed, sponsors warned once this deal, and sponsors she's broken with (they never offer again). */
+  feedDeals: Feed.SponsorDeal[] = [];
+  feedWarned: Feed.SponsorId[] = [];
+  feedBroken: Feed.SponsorId[] = [];
+  /** Days in a row without a post; hype her DMs have built for the next post (a share of its likes); a creep's pull. */
+  feedQuietDays = 0;
+  feedHype = 0;
+  feedStalkerRisk = 0;
+  /** Today's DMs (rolled the first time she looks, `feedInboxDay`), the week's trend she's joined, today's stream. */
+  feedInbox: Feed.Dm[] = [];
+  feedInboxDay = -1;
+  feedTrendWeek = -1;
+  feedStreamedToday = false;
+  /** A live stream going on: its chat requests and her answers so far (true take, false decline, null let it pass). */
+  feedStream: { requests: Feed.StreamRequest[]; answers: (boolean | null)[] } | null = null;
+  /** She stopped to check her phone tonight (Refresh, Refresh): guests wait a little less. */
+  private phoneTonight = false;
+
+  /** The week, for sponsors and trends: seven nights each. */
+  get feedWeek(): number {
+    return Math.floor(this.nightIndex / 7);
+  }
+
+  /** Her Watched stage (FEED_STAR.md §5): what her feed records reach, never past her arc. */
+  get watchedStage(): Feed.WatchedStage {
+    return Feed.watchedStage(this.feed, this.arcStage);
+  }
+
+  /** The Watched passives she holds right now (her stage's, and the extras), and what they do. */
+  get watchedPassives(): string[] {
+    return Feed.earnedWatchedPassives(this.feed, this.arcStage);
+  }
+
+  get watchedEffects(): Feed.WatchedEffects {
+    return Feed.watchedEffects(this.watchedPassives);
+  }
+
+  /** The posts her arc and stage allow, and the boldest tier among them (the most a stream's dare can be). */
+  feedAllowedPosts(): Feed.PostKind[] {
+    return Feed.allowedPosts(this.arcStage, this.watchedStage);
+  }
+
+  get feedMaxTier(): Feed.Boldness {
+    return Math.max(0, ...this.feedAllowedPosts().map((k) => Feed.POSTS[k].tier)) as Feed.Boldness;
+  }
+
+  /** A Feed Star post shares the day's one feed post with the plain one (errands.ts): by day, once, the relay's fee. */
+  get canFeedPost(): boolean {
+    return this.canPostOnFeed();
+  }
+
+  /** A timing tap from the menu (until the camera view is drawn): how far off the moment, in ms, with a little wobble. */
+  feedTapOffset(when: "early" | "on" | "late"): number {
+    if (when === "on") return Math.round((this.random() - 0.5) * 100);
+    const off = 110 + Math.round(this.random() * 200);
+    return when === "early" ? -off : off;
+  }
+
+  /**
+   * A Feed Star post (FEED_STAR.md §2, §6a): the shoot (outfit, prop, angle, and how far off the moment her tap was),
+   * then the post. Likes, followers, fame and respect; willpower it costs her shy and the thrill of a good one; guests
+   * tonight and fans at dawn; sponsors' gold for posts that show their goods; and the risks (stalker, Pell's men,
+   * gossip). Null if she can't post it today.
+   */
+  feedPost(
+    kind: Feed.PostKind,
+    shoot: { outfit: Feed.ShootOutfit; prop: Feed.ShootProp; angle: Feed.ShootAngle },
+    tapOffsetMs: number,
+  ): { shot: Feed.ShootResult; post: Feed.PostResult; risks: Feed.RiskResult } | null {
+    if (!this.canFeedPost || !Feed.postAllowed(kind, this.arcStage, this.watchedStage)) return null;
+    const effects = this.watchedEffects;
+    const shot = Feed.photoShoot({ post: kind, ...shoot }, tapOffsetMs);
+    const post = Feed.scorePost({ kind, quality: shot.quality, followers: this.feed.followers, effects }, () => this.random());
+    // Her Watched passives, and the hype her DMs built, add to the likes.
+    const boost = 1 + this.effects.feedLikes + this.feedHype;
+    if (boost !== 1) {
+      post.likes = Math.round(post.likes * boost);
+      post.newFollowers = Math.floor(post.likes / Feed.LIKES_PER_NEW_FOLLOWER);
+    }
+    this.feedHype = 0;
+    this.gold -= FEED_COST;
+    this.postedToday = true;
+    this.feed = Feed.recordPost(this.feed, kind, post);
+    this.records.feedPosts++;
+    this.shift({ fame: post.fame, respect: post.respect });
+    if (post.willpower < 0) this.spendWill(-post.willpower);
+    if (post.bodyDesire > 0) this.raise("body", post.bodyDesire);
+    // Followers come in tonight and as fans at dawn.
+    this.errandGuests = Math.min(MAX_ERRAND_GUESTS, this.errandGuests + 1 + (post.newFollowers >= 10 ? 1 : 0) + (post.viral ? 1 : 0));
+    this.errandFans += Math.max(1, Math.floor(post.newFollowers / 5));
+    this.say(`${post.line} (${shot.grade} shot, +${post.newFollowers} followers, ${this.feed.followers} in all${post.respect ? `, respect ${post.respect}` : ""}${post.fame ? `, fame +${post.fame}` : ""})`);
+    for (const deal of this.feedDeals) {
+      const pay = Feed.sponsorPayout(deal.id, kind, shot.quality);
+      if (pay <= 0) continue;
+      deal.postsThisWeek++;
+      this.adjust(pay, 0, 0);
+      this.say(`${Feed.SPONSORS[deal.id].name} pays ${pay} gold for it.`);
+    }
+    const risks = this.feedRisks(shot.tier, post.viral);
+    if (shot.tier >= 2) this.knightScandal("boldPost");
+    this.feedSync();
+    return { shot, post, risks };
+  }
+
+  /** A post's or a trend's risks (rollRisks), plus the pull of any creep she's teased in her DMs; into the log. */
+  private feedRisks(tier: Feed.Boldness, viral: boolean): Feed.RiskResult {
+    const risks = Feed.rollRisks(tier, this.feed.followers, viral, () => this.random());
+    if (!risks.stalker && this.feedStalkerRisk > 0 && this.random() < this.feedStalkerRisk) {
+      risks.stalker = true;
+      risks.lines.unshift("One of the accounts from your DMs has found the tavern. He's at the end of the bar, not drinking.");
+    }
+    if (risks.stalker) {
+      // TODO (FEED_STAR.md §8): the stalker as a guest event at the bar. For now a line and a record.
+      this.records.stalkers++;
+      this.feedStalkerRisk = 0;
+    }
+    if (risks.heat) this.adjust(0, 0, risks.heat);
+    for (const line of risks.lines) this.say(line);
+    return risks;
+  }
+
+  /** Copies her feed into her records (for the Watched passives) and checks for anything earned. */
+  private feedSync(): void {
+    const r = this.records;
+    r.feedLikes = this.feed.totalLikes;
+    r.feedFollowersMost = Math.max(r.feedFollowersMost, this.feed.followers);
+    r.feedBold = this.feed.boldPosts;
+    r.feedVirals = this.feed.virals;
+    r.feedStreams = this.feed.streams;
+    r.feedStage = Math.max(r.feedStage, Feed.watchedIndex(this.watchedStage));
+    this.awardPassives();
+  }
+
+  /** Today's DMs: one to three, rolled the first time she looks each day. */
+  feedDms(): Feed.Dm[] {
+    if (this.feedInboxDay !== this.nightIndex) {
+      this.feedInboxDay = this.nightIndex;
+      const n = 1 + Math.floor(this.random() * 3);
+      const names = ["quarry_lad", "goatwatch", "pell_is_watching_u", "mead_mage", "sir_likes_a_lot", "bakehouse_bea", "tollroad_tom", "zane_reposts"];
+      this.feedInbox = [];
+      for (let i = 0; i < n; i++) {
+        const roll = this.random();
+        const kind: Feed.DmKind = roll < 0.35 ? "fan" : roll < 0.6 ? "flirt" : roll < 0.75 ? "creep" : roll < 0.9 ? "gift" : "sponsor";
+        const texts = Feed.DM_SAMPLES[kind];
+        this.feedInbox.push({ kind, from: `@${oneOf(names, this.random())}`, text: oneOf(texts, this.random()) });
+      }
+    }
+    return this.feedInbox;
+  }
+
+  /** Her answer to one of today's DMs (replyDM): followers, hype, a creep's pull, a gift's gold, a sponsor's offer. */
+  feedReply(index: number, choice: Feed.DmChoice): Feed.DmOutcome | null {
+    const dm = this.feedDms()[index];
+    if (!dm) return null;
+    const out = Feed.replyDM(dm, choice, () => this.random());
+    this.feedInbox.splice(index, 1);
+    this.feed = { ...this.feed, followers: Math.max(0, this.feed.followers + out.loyal) };
+    this.feedHype = Math.min(0.5, this.feedHype + out.hype);
+    this.feedStalkerRisk = clamp(this.feedStalkerRisk + out.stalkerRisk, 0, 0.5);
+    if (out.gold) this.adjust(out.gold, 0, 0);
+    if (out.respect) this.shift({ respect: out.respect });
+    this.say(out.line);
+    if (out.sponsorOffer) {
+      const offers = this.feedSponsorOffers();
+      this.say(offers.length > 0 ? `${Feed.SPONSORS[offers[0]].name} would sign you too (Feed, sponsors).` : "Nobody you'd want to work for, yet. Grow the feed and they'll come.");
+    }
+    this.feedSync();
+    return out;
+  }
+
+  /** Sponsors who'd sign her now. */
+  feedSponsorOffers(): Feed.SponsorId[] {
+    return Feed.sponsorOffers(this.feed.followers, this.watchedStage, this.feedDeals.map((d) => d.id), this.feedBroken);
+  }
+
+  /** Signs a sponsor's deal, if they're offering. */
+  signSponsor(id: Feed.SponsorId): boolean {
+    if (!this.feedSponsorOffers().includes(id)) return false;
+    this.feedDeals.push({ id, postsThisWeek: 0 });
+    this.say(`${Feed.SPONSORS[id].offer} You sign. (${Feed.SPONSORS[id].perWeek} posts a week that show their goods.)`);
+    return true;
+  }
+
+  /** The week's end for her sponsors: kept, warned, or broken (a broken deal costs her name and the friend's goodwill). */
+  private feedSponsorWeek(): void {
+    for (const deal of [...this.feedDeals]) {
+      const verdict = Feed.weekForDeal(deal, this.feedWarned.includes(deal.id));
+      const name = Feed.SPONSORS[deal.id].name;
+      if (verdict === "kept") this.feedWarned = this.feedWarned.filter((id) => id !== deal.id);
+      else if (verdict === "warned") {
+        this.feedWarned.push(deal.id);
+        this.say(`${name} wanted more posts this week. Next week, or the deal's off.`);
+      } else {
+        const b = Feed.breakDeal(deal.id, this.feed.followers);
+        this.shift({ respect: b.respect });
+        this.feed = { ...this.feed, followers: Math.max(0, this.feed.followers - b.followersLost) };
+        const friend = this.staff.find((m) => m.id === FEED_SPONSOR_STAFF[deal.id]);
+        if (friend && b.loyalty) friend.loyalty = clamp(friend.loyalty + b.loyalty, 0, 100);
+        this.feedDeals = this.feedDeals.filter((d) => d.id !== deal.id);
+        this.feedWarned = this.feedWarned.filter((id) => id !== deal.id);
+        this.feedBroken.push(deal.id);
+        this.say(`${b.line} (respect ${b.respect}, -${b.followersLost} followers)`);
+      }
+      deal.postsThisWeek = 0;
+    }
+  }
+
+  /** Going live on the scrying crystal (§6c): by day, once a day. Five chat requests, one at a time. */
+  get canStream(): boolean {
+    return this.phase === "day" && !this.feedStreamedToday && this.feedStream === null;
+  }
+
+  feedGoLive(): boolean {
+    if (!this.canStream) return false;
+    const requests: Feed.StreamRequest[] = [];
+    for (let i = 0; i < FEED_STREAM_REQUESTS; i++) {
+      const tier = Math.min(3, Math.floor(this.random() * 4)) as Feed.Boldness;
+      requests.push({ id: `r${i}`, at: 2 + i * 6, ttl: 5, tier, tip: 1 + Math.floor(this.random() * 4), text: oneOf(FEED_DARES[tier], this.random()) });
+    }
+    this.feedStreamedToday = true;
+    this.feedStream = { requests, answers: [] };
+    this.say("You prop the crystal on the bar and go live. The chat fills up.");
+    return true;
+  }
+
+  /** The request she's answering now, or null. */
+  get feedStreamRequest(): Feed.StreamRequest | null {
+    const s = this.feedStream;
+    return s ? (s.requests[s.answers.length] ?? null) : null;
+  }
+
+  /**
+   * Her answer to the request on screen: take it (only if it's not bolder than she's ready for: then it counts as a
+   * decline), decline it, or let it pass. After the last, the stream ends and its result is applied and returned.
+   */
+  feedStreamAnswer(answer: boolean | null): Feed.StreamResult | null {
+    const s = this.feedStream;
+    if (!s || !this.feedStreamRequest) return null;
+    s.answers.push(answer);
+    if (s.answers.length < s.requests.length) return null;
+    const responses: Feed.StreamResponse[] = [];
+    s.requests.forEach((req, i) => {
+      const a = s.answers[i];
+      if (a !== null) responses.push({ id: req.id, at: req.at + 2, accept: a });
+    });
+    const max = this.feedMaxTier;
+    const result = Feed.liveStream(s.requests, responses, FEED_STREAM_SECONDS, max);
+    this.feedStream = null;
+    this.adjust(result.tips, 0, 0);
+    this.feed = { ...this.feed, followers: this.feed.followers + result.newFollowers, streams: this.feed.streams + (result.endedEarly ? 0 : 1) };
+    const bold = s.requests.some((req, i) => s.answers[i] === true && req.tier >= 2 && req.tier <= max);
+    if (result.taken > 0) this.raise("body", result.taken * 2);
+    this.say(
+      result.endedEarly
+        ? `The chat drifts off after ${result.lasted}s. (+${result.tips} gold in tips)`
+        : `You sign off to a wall of hearts. (+${result.tips} gold in tips, +${result.newFollowers} followers, peak hype ${result.peak})`,
+    );
+    if (bold) this.knightScandal("boldPost");
+    this.feedSync();
+    return result;
+  }
+
+  /** This week's trend (§6d), and whether she can join it: by day, once a week, if her arc and stage allow it. */
+  get feedTrend(): Feed.TrendId {
+    return Feed.weeklyTrend(this.feedWeek);
+  }
+
+  get canTrend(): boolean {
+    return this.phase === "day" && this.feedTrendWeek !== this.feedWeek && Feed.trendAllowed(this.feedTrend, this.arcStage, this.watchedStage);
+  }
+
+  /** Her taps for the trend's beats from the menu (until the rhythm screen is drawn): early, on the beat, late, or missed. */
+  feedTrendTaps(beats: readonly ("early" | "on" | "late" | "miss")[]): number[] {
+    const def = Feed.TRENDS[this.feedTrend];
+    const taps: number[] = [];
+    beats.forEach((b, i) => {
+      const at = def.beats[i];
+      if (at === undefined || b === "miss") return;
+      if (b === "on") taps.push(at + Math.round((this.random() - 0.5) * 80));
+      else taps.push(at + (b === "early" ? -1 : 1) * (90 + Math.round(this.random() * 90)));
+    });
+    return taps;
+  }
+
+  /** Joins this week's trend with her taps (ms from the start): followers, a sponsor's eye, its risks. */
+  feedTrendDance(taps: readonly number[]): Feed.TrendResult | null {
+    if (!this.canTrend) return null;
+    const result = Feed.trendChallenge(this.feedTrend, taps);
+    this.feedTrendWeek = this.feedWeek;
+    const def = Feed.TRENDS[this.feedTrend];
+    this.feed = { ...this.feed, followers: this.feed.followers + result.newFollowers, boldPosts: this.feed.boldPosts + (def.tier >= 2 ? 1 : 0) };
+    this.shift({ respect: Feed.POST_RESPECT[def.tier], fame: result.sponsorAttention ? 2 : 0 });
+    const place = typeof result.placement === "number" ? ["", "1st", "2nd", "3rd"][result.placement] : result.placement === "top10" ? "top ten" : "unplaced";
+    this.say(`${def.tag}: ${place} (accuracy ${Math.round(result.accuracy * 100)}%, +${result.newFollowers} followers).${result.sponsorAttention ? " A sponsor's noticed you." : ""}`);
+    this.feedRisks(def.tier, false);
+    if (def.tier >= 2) this.knightScandal("boldPost");
+    this.feedSync();
+    return result;
+  }
+
+  /** A day passes on the feed: followers drift in or away, a quiet day leaves her restless (Craving), and at the week's turn the sponsors count her posts. */
+  private feedDayPassed(postedYesterday: boolean): void {
+    if (this.records.feedPosts === 0 && this.feed.followers === 0) return;
+    this.feedQuietDays = postedYesterday ? 0 : this.feedQuietDays + 1;
+    const day = Feed.followerDay(this.feed.followers, postedYesterday, this.feedQuietDays, this.watchedEffects);
+    if (day.followers < this.feed.followers) this.say(`A quiet day on the feed: ${this.feed.followers - day.followers} followers drift away.`);
+    this.feed = { ...this.feed, followers: day.followers };
+    if (day.restless > 0 && this.playerBody === "Female") {
+      this.raise("body", day.restless);
+      this.say("No post yesterday, and you keep reaching for your phone. You start the day restless.");
+    }
+    if (this.nightIndex % 7 === 0) this.feedSponsorWeek();
+    this.feedSync();
+  }
+
+  // ---------- The Knight path (knight.ts, KNIGHT_PATH.md) ----------
+  // Placeholder menus (menus.ts showKnight) until the drill yard, the lists and her knight kits are drawn.
+
+  /** Her place in the garrison, or null before she signs up. */
+  knight: Knight.KnightState | null = null;
+  /** Story flags her knight work has set (ashCaught, silasAngry ...), what she's done today, today's patrol, the week of her last tourney. */
+  knightFlags: string[] = [];
+  readonly knightDoneToday = new Set<string>();
+  knightPatrolId: string | null = null;
+  knightTourneyWeek = -1;
+  /** A brawl going on that isn't a tavern brawl (a tourney, a patrol, the old commander), and what it's for. */
+  private sideFight: SideFight | null = null;
+
+  /** The story's act, for the ladder: 2 once Chapter 1's done (First in Tarven). Act 3 is still to come (STORY.md). */
+  get storyAct(): number {
+    return this.beatsDone.has("copperBell") ? 2 : 1;
+  }
+
+  /** What the ladder reads off the rest of the game. TODO: Rhea's doubts, the Baron's fall and the town vote (faction moods) once the story has them. */
+  knightFacts(): Knight.KnightFacts {
+    return {
+      brawlsWon: this.records.fightsWon,
+      fame: this.persona.fame,
+      respect: this.persona.respect,
+      act: this.storyAct,
+      rheaDoubts: false,
+      councilSeat: this.beatsDone.has("copperBell"),
+      baronFallen: false,
+      townVote: 0,
+    };
+  }
+
+  /** What her rank adds to her brawl hits (a sword at her hip). */
+  get knightBrawlDamage(): number {
+    return this.knight ? Knight.effectsOf(this.knight).brawlDamage : 0;
+  }
+
+  /** Signing up at the garrison: by day, once. Captain Rhea Vance takes her name. */
+  get canJoinGarrison(): boolean {
+    return this.phase === "day" && this.knight === null;
+  }
+
+  joinGarrison(): boolean {
+    if (!this.canJoinGarrison) return false;
+    this.knight = Knight.newKnightState();
+    this.say("Captain Rhea Vance writes your name in the garrison book and hands you an armband. \"Volunteer. Don't make me regret it.\"");
+    return true;
+  }
+
+  /** Whether she can do this bit of knight work now: by day, enrolled, once a day, no brawl going on. */
+  canKnight(what: "drill" | "patrol" | "raid"): boolean {
+    return this.phase === "day" && this.knight !== null && !this.knightDoneToday.has(what) && this.fight === null;
+  }
+
+  /** The drill's presses from the menu (until the beat bar is drawn): eight beats, steady, rushed or sloppy. */
+  knightDrillTimings(style: "steady" | "rushed" | "sloppy"): (number | null)[] {
+    const spread = style === "steady" ? 90 : style === "rushed" ? 170 : 300;
+    return Array.from({ length: 8 }, () => (style === "sloppy" && this.random() < 0.15 ? null : Math.round((this.random() * 2 - 1) * spread)));
+  }
+
+  /** The drill (§2): scored, her best kept, XP; a pass lifts the squad. Hikari on staff widens the windows. */
+  knightDrill(timings: readonly (number | null)[]): Knight.DrillResult | null {
+    if (!this.canKnight("drill") || !this.knight) return null;
+    this.knightDoneToday.add("drill");
+    const hikari = this.staff.some((m) => m.id === "hikari" && !m.quit);
+    const r = Knight.drill(timings, { hikari });
+    this.knight = Knight.recordDrill(this.knight, r);
+    this.gainXp("agility", r.xp);
+    if (r.passed) this.records.drillsPassed++;
+    this.say(`Drill: ${r.score}/100 (${r.perfect} perfect, ${r.good} good, ${r.ok} ok, ${r.miss} missed)${r.passed ? ". Passed." : ". Not a pass."} (+${r.xp} XP)`);
+    return r;
+  }
+
+  /** Today's patrol (§2): one event for her rank, rolled the first time she asks. */
+  knightPatrol(): Knight.PatrolEvent | null {
+    if (!this.knight) return null;
+    if (this.knightPatrolId === null) {
+      const open = Knight.patrolEvents(this.knight.rank);
+      this.knightPatrolId = open[Math.floor(this.random() * open.length) % open.length].id;
+    }
+    return Knight.PATROL_EVENTS.find((e) => e.id === this.knightPatrolId) ?? null;
+  }
+
+  /**
+   * Her choice on today's patrol. A fight choice is played as a real brawl when `brawl` is on (the result comes when
+   * it ends: "fight"); otherwise it's rolled.
+   */
+  knightPatrolChoose(choiceId: string, brawl = true): Knight.PatrolResult | "fight" | null {
+    const event = this.knightPatrol();
+    if (!this.canKnight("patrol") || !this.knight || !event) return null;
+    const choice = event.choices.find((c) => c.id === choiceId);
+    if (!choice) return null;
+    this.knightDoneToday.add("patrol");
+    if (choice.fight && brawl && this.startSideFight(PATROL_FOES[event.id] ?? "farmer", { kind: "patrol", eventId: event.id, choiceId })) return "fight";
+    const r = Knight.resolvePatrol(event, choiceId, this.knight.rank, () => this.random());
+    this.knightPatrolDone(r);
+    return r;
+  }
+
+  private knightPatrolDone(r: Knight.PatrolResult): void {
+    if (!this.knight) return;
+    this.knight = Knight.recordPatrol(this.knight, r);
+    this.herKnightEffects(r.effects);
+    this.records.knightPatrols++;
+    if (r.line) this.say(r.line);
+  }
+
+  /** A raid with her squad (§2, Knight-Captain and up), with an order given. */
+  knightRaid(target: Knight.RaidTargetId, order: Knight.SquadOrder): Knight.RaidResult | null {
+    if (!this.canKnight("raid") || !this.knight || !Knight.canRaid(this.knight, target)) return null;
+    this.knightDoneToday.add("raid");
+    const r = Knight.resolveRaid(this.knight.squad, target, () => this.random(), order);
+    this.knight = Knight.recordRaid(this.knight, r);
+    const { favour: _f, scandal: _s, loyalty: _l, ...hers } = r.effects;
+    this.herKnightEffects(hers);
+    this.records.knightRaids++;
+    this.say(`${r.line} (odds ${Math.round(r.odds * 100)}%)`);
+    return r;
+  }
+
+  /** The tourney (§2): once a week, a one-on-one brawl in the lists. Only a win counts. */
+  get canTourney(): boolean {
+    return this.phase === "day" && this.knight !== null && this.knightTourneyWeek !== this.feedWeek && this.fight === null && this.duel === null;
+  }
+
+  knightTourney(): boolean {
+    if (!this.canTourney || !this.startSideFight("soldier", { kind: "tourney" })) return false;
+    this.knightTourneyWeek = this.feedWeek;
+    this.say("The lists are sanded and the crowd's filming. Your rival salutes with a blunted sword.");
+    return true;
+  }
+
+  /** The oath, to the Baron or the town (a squire with a tourney win). */
+  knightOath(to: Knight.OathTo): boolean {
+    if (!this.knight || this.phase !== "day") return false;
+    const r = Knight.swearOath(this.knight, to, this.knightFacts());
+    this.knight = r.state;
+    this.say(r.line);
+    return r.ok;
+  }
+
+  /** Step up a rank if she's earned it; what's missing goes in the log if not. */
+  knightPromote(): boolean {
+    if (!this.knight || this.phase !== "day") return false;
+    const r = Knight.promote(this.knight, this.knightFacts());
+    this.knight = r.state;
+    if (!r.ok) {
+      this.say(`${r.line} Still to do: ${r.missing.join("; ")}.`);
+      return false;
+    }
+    this.gainXp("strength", r.xp);
+    this.records.knightRankBest = Math.max(this.records.knightRankBest, Knight.rankIndex(this.knight.rank));
+    this.say(`${r.line} You're ${Knight.KNIGHT_RANKS[this.knight.rank].name} now.`);
+    this.refreshEffects();
+    return true;
+  }
+
+  /** A Captain calls the old commander out: a brawl in the yard. */
+  knightCommanderDuel(): boolean {
+    if (!this.knight || this.knight.rank !== "captain" || this.phase !== "day" || this.knight.commanderBeaten) return false;
+    return this.startSideFight("soldier", { kind: "commander" });
+  }
+
+  /** A Captain calls the squad's vote. TODO: Rhea backs her once the story gives her doubts. */
+  knightVote(): boolean {
+    if (!this.knight || this.knight.rank !== "captain" || this.phase !== "day") return false;
+    const r = Knight.squadVote(this.knight, false);
+    this.knight = r.state;
+    this.say(`The squad votes: ${r.yes} for you, ${r.no} against.${r.won ? " The garrison is yours if you want it." : ""}`);
+    return r.won;
+  }
+
+  /** The garrison's rules (Commander). */
+  knightRules(rules: Knight.GarrisonRules): boolean {
+    if (!this.knight) return false;
+    const r = Knight.setRules(this.knight, rules);
+    this.knight = r.state;
+    return r.ok;
+  }
+
+  /** Reeve of Tarven (§6): whether she can be, and taking the chain. */
+  reeveCheck(): { ok: boolean; route: "baronFell" | "vote" | null; missing: string[] } {
+    return this.knight ? Knight.mayorEligible(this.knight, this.knightFacts()) : { ok: false, route: null, missing: ["Sign up at the garrison"] };
+  }
+
+  becomeReeve(): boolean {
+    if (!this.knight) return false;
+    const r = Knight.becomeReeve(this.knight, this.knightFacts());
+    this.knight = r.state;
+    if (r.ok) this.say("The town hall's chain goes round your neck. Reeve of Tarven.");
+    return r.ok;
+  }
+
+  /** The council's support for her laws: her respect, roughly. TODO: the council and faction moods (TOWN_DAY.md §6.2). */
+  get councilSupport(): number {
+    return clamp(Math.round(40 + this.persona.respect / 2), 0, 100);
+  }
+
+  /** Puts a law to the council (Reeve only). The laws are kept; what they do to the town is still to come. */
+  passLaw(law: Knight.LawId, level: Knight.LawLevel): boolean {
+    if (!this.knight || this.phase !== "day") return false;
+    const cost = Knight.lawCost(this.knight.laws[law], level);
+    if (this.gold < cost.gold) return false;
+    const r = Knight.passLaw(this.knight, law, level, this.councilSupport);
+    this.knight = r.state;
+    if (r.passed) this.adjust(-r.gold, 0, 0);
+    this.say(r.line);
+    return r.passed;
+  }
+
+  /** What her knight work does to her and the tavern (the career's own share is applied in knight.ts). */
+  private herKnightEffects(e: Knight.KnightEffects): void {
+    if (e.xp) this.gainXp("strength", e.xp);
+    if (e.respect || e.fame) this.shift({ respect: e.respect ?? 0, fame: e.fame ?? 0 });
+    if (e.gold || e.heat) this.adjust(e.gold ?? 0, 0, e.heat ?? 0);
+    if (e.flag && !this.knightFlags.includes(e.flag)) this.knightFlags.push(e.flag);
+  }
+
+  /** Her double life (§4): a bold post, a Lantern night or a revel may be found out (caughtChance), and talk adds up. */
+  private knightScandal(kind: Knight.ScandalKind): void {
+    if (!this.knight || this.random() >= Knight.caughtChance(kind, this.knight)) return;
+    const r = Knight.scandal(this.knight, kind);
+    this.knight = r.state;
+    this.records.scandalsCaught++;
+    if (this.phase === "day") this.say(r.line);
+    else this.morningAfter.push(r.line);
+  }
+
+  /** A day passes in the garrison: talk fades, the Commander's rules have their say, and each week the town's respect for her rank. */
+  private knightDayPassed(): void {
+    if (!this.knight) return;
+    this.knight = Knight.fadeScandal(this.knight, 1);
+    if (this.knight.rules !== "none") {
+      const per = Knight.GARRISON_RULES[this.knight.rules].perDay;
+      this.knight = Knight.applyEffects(this.knight, per);
+      this.herKnightEffects({ respect: per.respect, heat: per.heat });
+    }
+    const respect = Knight.effectsOf(this.knight).respectPerWeek;
+    if (this.nightIndex % 7 === 0 && respect) {
+      this.shift({ respect });
+      this.say(`The town tips its hat to ${Knight.KNIGHT_RANKS[this.knight.rank].title}. (+${respect} respect)`);
+    }
+  }
+
+  /** A brawl that isn't a tavern brawl: nobody in the room, a foe of this kind. */
+  private startSideFight(kind: GuestKind, purpose: SideFight): boolean {
+    if (this.fight || this.duel) return false;
+    const roster = ROLES_OF[kind];
+    this.sideFight = purpose;
+    this.fight = new Fight(-1, kind, false, this.fighterStats(), this.random, rollStats(roster[Math.floor(this.random() * roster.length) % roster.length], this.rollRandom));
+    return true;
+  }
+
+  /** A side brawl's end: counted like any brawl (no till taken, no offer: it was in the lists or on patrol), then its purpose. */
+  private finishSideFight(fight: Fight, purpose: SideFight): void {
+    this.sideFight = null;
+    const outcome = fight.outcome!;
+    const r = this.records;
+    if (outcome === "won") r.fightsWon++;
+    else if (outcome === "talked") r.talkedDown++;
+    else {
+      r.fightsLost++;
+      this.addDebuff("bruised");
+    }
+    let text = outcome === "won" ? "You win." : outcome === "talked" ? "You talk it down." : "You're beaten.";
+    if (this.knight && purpose.kind === "tourney") {
+      const t = Knight.tourneyDuel(this.knight, outcome);
+      this.knight = Knight.applyEffects(t.state, t.effects);
+      this.herKnightEffects({ ...t.effects, favour: undefined });
+      if (outcome === "won") r.tourneyWins++;
+      text = t.line;
+    } else if (this.knight && purpose.kind === "patrol") {
+      const event = Knight.PATROL_EVENTS.find((e) => e.id === purpose.eventId);
+      if (event) {
+        const res = Knight.resolvePatrol(event, purpose.choiceId, this.knight.rank, () => this.random(), outcome);
+        this.knightPatrolDone({ ...res, line: "" });
+        text = res.line;
+      }
+    } else if (this.knight && purpose.kind === "commander") {
+      const c = Knight.commanderDuel(this.knight, outcome);
+      this.knight = c.state;
+      text = c.line;
+    }
+    this.lastFight = { outcome, text };
+    this.say(text);
+    this.fight = null;
+  }
+
+  // ---------- The Adventurers' Guild (guild.ts, ADVENTURERS_GUILD.md) ----------
+  // Placeholder menus (menus.ts showGuild) until the hall, the board and the expedition screens are drawn.
+
+  /** Her guild card, or null before she joins. */
+  guild: GuildCard | null = null;
+  /** Today's board (quest ids), the day it was put up, and what she's done at the hall today. */
+  guildBoard: string[] = [];
+  guildBoardDay = -1;
+  guildQuestToday = false;
+  guildHallToday = false;
+  /** The posted gold of the quests done today, for the hall's cut (guild master). */
+  guildQuestGold: number[] = [];
+
+  /** Kestrel opens the guild to her at 300 fans. */
+  get guildOpen(): boolean {
+    return this.fans >= Guild.JOIN_FANS;
+  }
+
+  joinGuild(): boolean {
+    if (this.guild || !this.guildOpen || this.phase !== "day") return false;
+    this.guild = { rank: "F", points: 0, quests: 0, failed: 0, deed: false, party: [], injuries: [], counter: false, master: false, cut: "fair", mood: 0, members: 0 };
+    this.records.guildRankBest = Math.max(this.records.guildRankBest, 1);
+    this.say("Kestrel Vey slides a guild card across the counter. \"F rank. Everyone starts somewhere, barmaid.\"");
+    return true;
+  }
+
+  guildFacts(): Guild.GuildFacts {
+    const g = this.guild;
+    return { rank: g?.rank ?? "unranked", quests: g?.quests ?? 0, brawlWins: this.records.fightsWon, fans: this.fans, deed: g?.deed ?? false };
+  }
+
+  /** What stands between her and the next rank (empty at S). */
+  guildMissing(): string[] {
+    return this.guild ? Guild.promoteGuild(this.guild.points, this.guildFacts()).missing : [`${Guild.JOIN_FANS} fans (${this.fans})`];
+  }
+
+  /** Her card goes up a rank if she's earned it. */
+  guildPromote(): boolean {
+    const g = this.guild;
+    if (!g) return false;
+    const p = Guild.promoteGuild(g.points, this.guildFacts());
+    if (!p.promoted) return false;
+    g.rank = p.rank;
+    this.records.guildRankBest = Math.max(this.records.guildRankBest, Guild.rankIndex(p.rank));
+    this.say(`The clerk stamps your card: ${Guild.GUILD_RANK_BY_ID[p.rank].name}. ${Guild.GUILD_RANK_BY_ID[p.rank].about}`);
+    return true;
+  }
+
+  /** Today's quests: put up the first time she looks each day. */
+  guildQuests(): Guild.QuestTemplate[] {
+    if (!this.guild) return [];
+    if (this.guildBoardDay !== this.nightIndex) {
+      this.guildBoardDay = this.nightIndex;
+      this.guildBoard = Guild.questBoard(this.guild.rank, () => this.random()).map((q) => q.id);
+    }
+    return this.guildBoard.map((id) => Guild.QUEST_BY_ID[id]).filter((q): q is Guild.QuestTemplate => q !== undefined);
+  }
+
+  /** Her staff friends who'd go adventuring with her (on her books, not quit), at their loyalty as staff. */
+  guildFriends(): Guild.Companion[] {
+    return this.staff
+      .filter((m) => !m.quit && Guild.FRIEND_COMPANIONS[m.id])
+      .map((m) => ({ ...Guild.FRIEND_COMPANIONS[m.id], loyalty: Math.round(m.loyalty) }));
+  }
+
+  /** Takes a friend along, or hires an adventurer off the bench (the fee is paid with the quest), or leaves one behind. */
+  guildTakeFriend(id: string): boolean {
+    const g = this.guild;
+    const c = this.guildFriends().find((f) => f.id === id);
+    if (!g || !c || g.party.some((p) => p.id === id) || Guild.partyProblem(g.rank, [...g.party, c])) return false;
+    g.party.push(c);
+    return true;
+  }
+
+  guildHire(role: Guild.PartyRole): boolean {
+    const g = this.guild;
+    if (!g) return false;
+    const c = Guild.hireAdventurer(role, g.rank, () => this.random());
+    if (Guild.partyProblem(g.rank, [...g.party, c])) return false;
+    g.party.push(c);
+    this.say(`${c.name} signs on for the next quest (${c.role}, fee ${c.fee} gold).`);
+    return true;
+  }
+
+  guildLeave(id: string): boolean {
+    const g = this.guild;
+    if (!g || !g.party.some((c) => c.id === id)) return false;
+    g.party = g.party.filter((c) => c.id !== id);
+    return true;
+  }
+
+  /** Why she can't take this quest now, or null. */
+  guildBlocked(questId: string): string | null {
+    const g = this.guild;
+    if (!g) return "no guild card";
+    if (this.phase !== "day") return "only by day";
+    if (this.guildQuestToday) return "one quest a day";
+    if (this.fight || this.duel) return "busy";
+    const quest = Guild.QUEST_BY_ID[questId];
+    if (!quest || !this.guildBoard.includes(questId)) return "not on today's board";
+    const problem = Guild.partyProblem(g.rank, g.party);
+    if (problem) return problem;
+    for (const c of g.party) {
+      const no = Guild.companionRefuses(c, quest);
+      if (no) return no;
+    }
+    return null;
+  }
+
+  /**
+   * An expedition (runExpedition, with the tavern's dice): gold (after fees), points, fans at dawn and adventurers
+   * tonight, corruption, injuries (hers take levels off a stat for their days), loyalty to her friends, and who leaves.
+   * Fights are rolled here. TODO: play them as real brawls (fight.ts) and feed the outcome back.
+   */
+  guildRun(questId: string, choices?: Readonly<Record<string, string>>): Guild.ExpeditionResult | null {
+    const g = this.guild;
+    if (!g || this.guildBlocked(questId)) return null;
+    const quest = Guild.QUEST_BY_ID[questId];
+    this.guildQuestToday = true;
+    const res = Guild.runExpedition(quest, g.party, { levels: this.statLevels(), stamina: GUILD_STAMINA + this.levelStamina }, () => this.random(), { choices });
+    for (const e of res.encounters) this.say(`${e.text}${e.kind === "fight" ? (e.passed ? " (won)" : " (lost)") : ""}`);
+    this.adjust(res.gold, 0, 0);
+    g.points = Math.max(0, g.points + res.points);
+    if (res.outcome === "fail") {
+      g.failed++;
+      this.records.questsFailed++;
+    } else {
+      g.quests++;
+      this.records.questsDone++;
+    }
+    if (res.deed) g.deed = true;
+    this.errandFans += res.fans;
+    this.errandGuests = Math.min(MAX_ERRAND_GUESTS, this.errandGuests + res.guestsTonight);
+    if (res.corruption) this.corruption = clamp(this.corruption + res.corruption, 0, 1000);
+    for (const i of res.injuries) {
+      g.injuries.push({ ...i });
+      const def = Guild.INJURIES[i.id];
+      const who = i.who === "her" ? "You" : (g.party.find((c) => c.id === i.who)?.name ?? i.who);
+      this.say(`${who}: ${def.name} (${def.days} days).`);
+    }
+    // Loyalty: her friends' as staff; anyone it's sunk too low leaves the party; the hired go home paid.
+    for (const [id, d] of Object.entries(res.loyalty)) {
+      const m = this.staff.find((s) => s.id === id);
+      if (m) m.loyalty = clamp(m.loyalty + d, 0, 100);
+    }
+    for (const id of res.leaves) {
+      const c = g.party.find((p) => p.id === id);
+      if (c?.friend) this.say(`${c.name} won't go out with you again for a while.`);
+    }
+    g.party = g.party.filter((c) => c.friend && !res.leaves.includes(c.id));
+    this.guildQuestGold.push(quest.gold);
+    if (res.captured) {
+      // TODO (ADVENTURERS_GUILD.md §6): play it under the brawl-loss rule (Consent on: offered; off: KP's defeat).
+      this.records.captures++;
+      this.addDebuff("bruised");
+      this.say(`${res.captured.by} take you. Your party gets you out by morning, without the loot.`);
+    }
+    const outcome = { success: "Quest done", partial: "Half done", fail: "Failed" }[res.outcome];
+    this.say(`${outcome}: ${quest.title}. (${res.gold >= 0 ? "+" : ""}${res.gold} gold, ${res.points >= 0 ? "+" : ""}${res.points} points, +${res.fans} fans${res.loot.length ? `, ${res.loot.join(", ")}` : ""})`);
+    this.refreshEffects();
+    return res;
+  }
+
+  /** Guild master (§8): whether she can take the hall, what's missing, and the counter in her taproom she needs first. */
+  guildMasterCheck(): { ok: boolean; missing: string[] } {
+    const g = this.guild;
+    if (!g) return { ok: false, missing: ["a guild card"] };
+    return Guild.guildMasterEligible({ rank: g.rank, points: g.points, quests: g.quests, guildCounter: g.counter, kestrelBacks: Guild.rankIndex(g.rank) >= Guild.rankIndex("C") });
+  }
+
+  buildGuildCounter(): boolean {
+    const g = this.guild;
+    if (!g || g.counter || this.phase !== "day" || Guild.rankIndex(g.rank) < Guild.rankIndex("A") || this.gold < GUILD_COUNTER_COST) return false;
+    this.gold -= GUILD_COUNTER_COST;
+    g.counter = true;
+    this.say("A guild counter goes up at the end of your bar. Adventurers start leaving their cards on it.");
+    return true;
+  }
+
+  becomeGuildMaster(): boolean {
+    const g = this.guild;
+    if (!g || g.master || !this.guildMasterCheck().ok) return false;
+    g.master = true;
+    this.say("The lowland hall's seal arrives by courier. You run the guild in Tarven now.");
+    return true;
+  }
+
+  /** The hall's cut (guild master). */
+  setGuildCut(cut: Guild.QuestCutId): boolean {
+    if (!this.guild?.master) return false;
+    this.guild.cut = cut;
+    return true;
+  }
+
+  /** A day running the hall (guild master): the cut of today's quests, and a recruiting drive if she runs one. Once a day. */
+  runGuildHall(drive?: Guild.RecruitDriveId): Guild.HallDay | null {
+    const g = this.guild;
+    if (!g?.master || this.guildHallToday || this.phase !== "day") return null;
+    if (drive && this.gold < Guild.RECRUIT_DRIVES[drive].cost) return null;
+    this.guildHallToday = true;
+    const day = Guild.hallDay(g.cut, this.guildQuestGold, () => this.random(), drive);
+    this.adjust(day.gold, 0, 0);
+    g.mood += day.mood;
+    g.members += day.recruits;
+    this.say(`The hall's day: ${day.gold >= 0 ? "+" : ""}${day.gold} gold, mood ${g.mood}${drive ? `, ${day.recruits} recruits` : ""}.`);
+    return day;
+  }
+
+  /** A day passes: her injuries and her friends' heal a day. */
+  private guildDayPassed(): void {
+    const g = this.guild;
+    if (!g || g.injuries.length === 0) return;
+    for (const i of g.injuries) i.days--;
+    g.injuries = g.injuries.filter((i) => i.days > 0);
+    this.refreshEffects();
   }
 
   // ---------- The Revel House (revel.ts, REVEL_HOUSE.md) ----------
@@ -2131,15 +3096,23 @@ export class Tavern {
     this.earned += dawn.gold;
     this.shift({ fame: dawn.fame, respect: dawn.respect });
     this.fansTonight += dawn.fans.count;
+    this.fanTags.lantern += Math.max(0, dawn.fans.count);
     r.revelNights = dawn.records.revelNights;
     r.revelPartnersMost = dawn.records.revelPartnersMost;
     r.mixedNights = dawn.records.mixedNights;
+    // More than hosting, and the barracks may hear of it (knight.ts).
+    if (s.herPart !== "host") this.knightScandal("lanternNight");
     this.morningAfter.push(`${dawn.line} (+${dawn.gold} gold, fame +${dawn.fame}, respect ${dawn.respect}${dawn.heat ? `, +${dawn.heat} heat` : ""}, ${dawn.fans.count} Revel fans)`);
     return true;
   }
 
   /** Tonight's defeat, if she's had one (defeat.ts): which, for the picture and the morning. */
   defeatTonight: DefeatId | null = null;
+  /** The pose the big picture holds while a defeat plays: its stand-in until its own is made (POSES_TODO.md). */
+  get defeatPose(): ScenePoseName | null {
+    const id = this.duel?.defeat?.id as DefeatId | undefined;
+    return id && DEFEATS[id] ? DEFEATS[id].standIn : null;
+  }
   /** An after-hours game in progress, or null; and how the last one ended, for the game to show once. */
   duel: Duel | null = null;
   lastDuel: { outcome: DuelOutcome; text: string; line: string; gold: number; test?: boolean; brawl?: boolean; taproom?: boolean } | null = null;
@@ -2318,6 +3291,12 @@ export class Tavern {
     // Her line as the night starts (KP's waitress start).
     if (this.playerBody === "Female") this.say(`You: ${this.herBar("shift")}`);
     this.openedDirty = this.messes.length > 0;
+    // Refresh, Refresh (feedstar.ts): some nights she can't keep off her phone.
+    if (this.playerBody === "Female" && Feed.checksPhone(this.watchedEffects, () => this.random())) {
+      this.phoneTonight = true;
+      this.refreshEffects();
+      this.say("You catch yourself checking the feed between orders. Again.");
+    }
     this.say(
       this.messes.length > 0
         ? "You ring the bell and open up, mess and all. Guests won't wait as long in a dirty room."
@@ -2376,6 +3355,8 @@ export class Tavern {
     // A night without a drink keeps her head clear; with a proper night's work, it's a sober shift.
     if (this.drinksTonight === 0) this.gainXp("mind", 3);
     if (this.drinksTonight === 0 && this.served >= SOBER_NIGHT_SERVED) r.soberNights++;
+    // A Lantern night may be talked about in the barracks (knight.ts, her double life).
+    if (this.lantern.hung && this.lantern.litTonight) this.knightScandal("lanternNight");
     // Anyone still upstairs comes down and pays, and the night has its say on the girls (lantern.ts).
     this.lantern.endNight(this.lanternHost);
     // Her staff: paid, their night, their dawn lines (staff.ts).
@@ -2383,10 +3364,16 @@ export class Tavern {
     const nightly = this.effects.perNight;
     this.adjust(nightly.gold, nightly.trust, nightly.heat);
     if (nightly.respect) this.shift({ respect: nightly.respect });
+    // Her garrison rank keeps the heat down while she's in favour (knight.ts).
+    if (this.knight) {
+      const heat = Knight.effectsOf(this.knight).heatPerNight;
+      if (heat) this.adjust(0, 0, heat);
+    }
     this.settleRegulars();
     this.awardPassives();
     this.arcDawn();
     this.countFans();
+    this.lettersAtDawn();
     // A night gone off every debuff that lasts for nights.
     this.debuffs = this.debuffs.filter((d) => d.nights === 0 || --d.nights > 0);
     this.refreshEffects();
@@ -2395,16 +3382,54 @@ export class Tavern {
   }
 
   /**
-   * The first morning she's a new stage on her arc (STORY.md 4b), she has her own line on the dawn report, and at
-   * Willing, the words she said to Tansy come back to her.
+   * The first morning she's a new stage on her arc (STORY.md 4b), she has her own line on the dawn report and the
+   * stage's story card in its trope's voice (lewd.ts `ARC_CARDS`, CORRUPTION_TROPES.md), and at Willing, the words
+   * she said to Tansy come back to her; the morning after Known, its aftermath. A new corruption tier has its card
+   * too. Only words: no card starts anything.
    */
   private arcDawn(): void {
-    const stage = this.arcStage;
-    const at = arcIndex(stage);
-    if (at <= this.arcSeen) return;
-    this.arcSeen = at;
-    this.news.push(ARC_DAWN[stage]);
-    if (stage === "willing" && this.plotFlags.has("deniedLantern")) this.news.push(TANSY_CALLBACK);
+    const base = arcStage(this.arcFacts);
+    const step = arcDawnStep(base, this.arcSeen, CORRUPTION_TIERS.indexOf(corruptionTier(this.corruption)) >= 2);
+    if (step) {
+      this.arcSeen = step.seen;
+      this.news.push(cardTitle(step.card.title), ...arcCardLines(step, this.consentOff));
+      if (step.stage === "willing" && this.plotFlags.has("deniedLantern")) this.news.push(TANSY_CALLBACK);
+    }
+    this.legendDawn(base);
+    const tier = corruptionDawnStep(this.corruption, this.tierSeen);
+    if (tier) {
+      this.tierSeen = tier.seen;
+      this.news.push(...cardLines(tier.card));
+    }
+  }
+
+  /**
+   * Her Legend at dawn (lewd.ts `legendStep`): tonight was wild (LEGEND_WILD touches let), quiet (willpower kept
+   * above half, as Wren's keeper letter counts it, and next to nothing let), or neither, and a chapel visit today
+   * counts toward coming back. A rise or a fall has its card. Only words: it changes no check and starts nothing.
+   */
+  private legendDawn(base: ArcStage): void {
+    const night = herLegendNight({
+      stage: base,
+      lewdness: this.lewdness,
+      lets: this.touchesTonight.allowed,
+      keptWill: !this.willDipped && this.willpower * 2 >= this.maxWillpower,
+      chapel: [...this.townDoneToday].some((done) => done.startsWith("chapel:")),
+    });
+    const { state, change } = legendStep(this.legend, night);
+    this.legend = state;
+    if (!change) return;
+    if (change === "rise") this.records.legendRises++;
+    else this.records.legendFalls++;
+    this.news.push(...legendCardLines(change, state.rises, this.consentOff));
+  }
+
+  /** Where she stands on the Legend, for the journal: how close she is to it, or to coming back from it. */
+  get legendNote(): string {
+    if (this.legend.on) return `The room chants her name. ${this.legend.streak} of ${LEGEND_FALL} quiet nights to come back to Known (a day at the chapel counts one).`;
+    if (arcStage(this.arcFacts) !== "known") return "";
+    if (this.lewdness < LEGEND_AT) return `Legend lies past Lewdness ${LEGEND_AT}.`;
+    return `${this.legend.streak} of ${LEGEND_RISE} wild nights in a row to Legend.`;
   }
 
   /** How many touches she's let happen, all told. */
@@ -2414,9 +3439,12 @@ export class Tavern {
 
   /** The night's fans, counted at dawn: the guests', a filthy room against her, and her partner houses'. */
   private countFans(): void {
-    let won = this.fansTonight;
+    let won = this.fansTonight + this.errandFans;
+    this.errandFans = 0;
     if (this.messes.length >= FILTHY_AT) won += FANS_FILTHY;
     const partners = HOUSES.filter((h) => this.houses[h.id] === "partner");
+    // Partner houses send fans of their own kind (chapter1.ts HOUSE_GROUP).
+    for (const h of partners) if (HOUSE_GROUP[h.id] === "network") this.fanTags.network += PARTNER_FANS;
     if (partners.length > 0) {
       won += PARTNER_FANS * partners.length;
       const gold = PARTNER_GOLD * partners.length;
@@ -2426,7 +3454,52 @@ export class Tavern {
     const before = this.fans;
     this.fans = Math.max(0, this.fans + won);
     this.fansTonight = 0;
+    addFanNight(this.fanGroups, this.fans - before, this.fanTags);
+    this.fanTags = { lantern: 0, network: 0 };
     if (won !== 0) this.news.push(`${won > 0 ? "+" : ""}${this.fans - before} fans (${this.fans} in all).`);
+  }
+
+  /** What Wren's letters read (letters.ts): all of it already kept, and the two counters of their own. */
+  private get letterFacts() {
+    const r = this.records;
+    return {
+      lets: this.timesLet,
+      temptedNo: this.letters.temptedNo,
+      duels: r.duelsWon + r.duelsLost + r.duelsStopped,
+      brawlsWon: r.fightsWon,
+      lewdness: this.lewdness,
+      arc: this.arcStage,
+      trust: this.trust,
+      trustMax: TRUST_MAX,
+      protected: this.persona.protected,
+      willStreak: this.letters.willStreak,
+      corruption: this.corruption,
+    };
+  }
+
+  /**
+   * At dawn, for Wren's letters: tonight's willpower counts toward her streak, and every letter whose milestone
+   * she's reached is put by for the morning (one a morning: findMorningLetter).
+   */
+  private lettersAtDawn(): void {
+    countWillNight(this.letters, !this.willDipped && this.willpower * 2 >= this.maxWillpower);
+    this.willDipped = false;
+    if (this.storyBeats) queueLetters(this.letters, this.letterFacts);
+  }
+
+  /** The morning: the next of Wren's letters is found, unless Pell's dawn brings his own (it's one a morning). */
+  private findMorningLetter(): void {
+    this.letterToday = null;
+    if (!this.storyBeats || this.pendingBeat?.kind === "pell") return;
+    this.letterToday = findNextLetter(this.letters);
+  }
+
+  /** The letter she found this morning, for the morning card: where, and the letter. Once. */
+  takeLetter(): { id: LetterId; title: string; lines: string[] } | null {
+    const id = this.letterToday;
+    this.letterToday = null;
+    if (!id) return null;
+    return { id, title: `Wren's letter: ${LETTER_BY_ID.get(id)!.title}`, lines: letterLines(id) };
   }
 
   /** The house just above her on the Village Ledger: the next one to beat, or none once she's first. */
@@ -2668,7 +3741,9 @@ export class Tavern {
       this.plotFlags.add("pellsEar");
       this.news.push(PELL_EARS);
     }
-    this.news.push(WREN_LETTER);
+    // Then Wren's first letter (letters.ts): found this morning, shown with what her answer brought.
+    findLetter(this.letters, "pell");
+    this.news.push(...letterLines("pell"));
   }
 
   /**
@@ -2690,6 +3765,7 @@ export class Tavern {
       this.adjust(0, 0, RUIN_HEAT);
       const gained = Math.floor(house.fans / 2);
       this.fans += gained;
+      this.fanGroups[HOUSE_GROUP[house.id]] += gained;
       this.news.push(`${house.name} closes its doors. +${gained} fans walk up the hill to you.`);
     }
     this.news.push(house.clue);
@@ -2706,7 +3782,25 @@ export class Tavern {
     }
     // Pike's soldiers talk about the silver wagons: she's heard it now, if she missed it on the deserter night.
     if (house.id === "canteen") this.plotFlags.add("heardSilver");
-    if (house.id === "copperBell") this.firstInTarven = true;
+    if (house.id === "copperBell") {
+      this.firstInTarven = true;
+      this.chapterEnding = this.chapterEndingNow();
+    }
+  }
+
+  /** The Chapter 1 ending her state earns right now (chapter1.ts `chapterEndingFor`). */
+  chapterEndingNow(): ChapterEndingId {
+    return chapterEndingFor({
+      flags: this.plotFlags,
+      trust: this.trust,
+      groups: this.fanGroups,
+      owed: this.owed,
+      arrears: this.arrears,
+      bookPromised: this.bookPromised,
+      arc: this.arcStage,
+      respect: this.persona.respect,
+      lanternHung: this.lantern.hung,
+    });
   }
 
   /** The baron's last visit, once. */
@@ -2841,6 +3935,24 @@ export class Tavern {
     }
     arrivals.sort((a, b) => a.at - b.at);
     return { arrivals, extra: arrivals.length - script.length };
+  }
+
+  /**
+   * The guests her flyers and posts drew in (errands.ts), added to tonight's crowd: the night's own kinds, coming
+   * through the evening. How many came; the count is spent either way.
+   */
+  private errandArrivals(arrivals: Arrival[]): number {
+    const n = Math.min(MAX_ERRAND_GUESTS, this.errandGuests);
+    this.errandGuests = 0;
+    const script = this.plan.guests;
+    if (n <= 0 || script.length === 0) return 0;
+    const last = Math.max(...script.map((a) => a.at)) + EXTRA_TAIL;
+    for (let i = 0; i < n; i++) {
+      const like = script[Math.floor(this.random() * script.length) % script.length];
+      arrivals.push({ at: EXTRA_FIRST + this.random() * (last - EXTRA_FIRST), kind: like.kind, order: like.order });
+    }
+    arrivals.sort((a, b) => a.at - b.at);
+    return n;
   }
 
   private spawnArrivals(): void {
@@ -3012,7 +4124,11 @@ export class Tavern {
       } else if (guest.status === "eating") {
         guest.eatLeft -= dt;
         if (guest.eatLeft <= 0 && this.tableFinished(guest)) {
-          this.fansTonight += this.fansFrom(guest);
+          const fansWon = this.fansFrom(guest);
+          this.fansTonight += fansWon;
+          // Why they'll come back (chapter1.ts): for her, if she let them touch her; for the talk, a rumour guest.
+          if ((this.touchHistory.get(guest.id)?.allowed ?? 0) > 0) this.fanTags.lantern += fansWon;
+          else if (guest.rumor) this.fanTags.network += fansWon;
           guest.status = "leaving";
           this.leaveDirty(guest);
           if (behaviour.spills) this.spiltAt.add(guest.seat);
@@ -3122,6 +4238,8 @@ export class Tavern {
         this.phase = "service";
         this.say(this.plan.intro);
         const { arrivals, extra } = this.rollArrivals();
+        const drawn = this.errandArrivals(arrivals);
+        if (drawn > 0) this.say(`Your flyers and posts worked: ${drawn} ${drawn === 1 ? "guest says" : "guests say"} they came because of them.`);
         this.regularsTonight(arrivals);
         this.rivalNight(arrivals);
         this.plotNight(arrivals);
@@ -3545,8 +4663,13 @@ export class Tavern {
 
   /** Where she is on her arc (STORY.md 4b): Sheltered, Curious, Willing or Known. The writing picks by it. */
   get arcStage(): ArcStage {
+    return arcStage({ ...this.arcFacts, legend: this.legend.on });
+  }
+
+  /** What her stage is read from, without the Legend (that's a saved switch on top of Known). */
+  private get arcFacts(): ArcFacts {
     const kinds = new Set(Object.values(this.records.kinds).flatMap((k) => k ?? [])).size;
-    return arcStage({ lewdness: this.lewdness, backStairs: this.passives.has("backStairs"), kinds });
+    return { lewdness: this.lewdness, backStairs: this.passives.has("backStairs"), kinds };
   }
 
   /** Her desire for a kind of touch in the moment, 0 to 10: its meter, and whatever her passives take off. */
@@ -3856,6 +4979,7 @@ export class Tavern {
   /** Spends willpower, never below none. */
   private spendWill(n: number): void {
     this.willSpent = Math.min(this.maxWillpower, this.willSpent + Math.max(0, n));
+    if (this.willpower * 2 < this.maxWillpower) this.willDipped = true;
   }
 
   /** Gives willpower back, never past the top. */
@@ -3866,6 +4990,7 @@ export class Tavern {
   /** After a brawl or a duel: she has what it left her with. */
   private settleWill(left: number): void {
     this.willSpent = Math.max(0, this.maxWillpower - left);
+    if (this.willpower * 2 < this.maxWillpower) this.willDipped = true;
   }
 
   private gainXp(id: StatId | SkillId, n: number): void {
@@ -3911,6 +5036,14 @@ export class Tavern {
     for (const m of this.staff) {
       if (m.quit || m.stamina.current <= 0) continue;
       for (const id of m.perks) STAFF_PERK_BY_ID[id]?.effect?.(e);
+    }
+    // Checking her phone mid-shift (feedstar.ts): guests wait a little less.
+    if (this.phoneTonight) e.patience -= PHONE_PATIENCE;
+    // Her guild injuries (guild.ts) take levels off a stat while they last.
+    for (const i of this.guild?.injuries ?? []) {
+      if (i.who !== "her") continue;
+      const d = Guild.INJURIES[i.id];
+      e.skill[d.stat] = (e.skill[d.stat] ?? 0) - d.amount;
     }
     this.effects = e;
   }
@@ -4121,7 +5254,8 @@ export class Tavern {
       denyOk: this.records.slapped + this.records.domWins >= DENY_UNLOCK,
       foeScale: DIFFICULTIES[this.touchSettings.difficulty ?? "normal"].foes,
       levels: this.statLevels(),
-      damage: e.fightDamage,
+      // Her garrison rank's sword (knight.ts).
+      damage: e.fightDamage + this.knightBrawlDamage,
       dodge: e.fightDodge,
       talk: e.fightTalk,
       stare: e.fightStare,
@@ -4217,6 +5351,11 @@ export class Tavern {
     for (const [stat, n] of Object.entries(fight.xp)) this.gainXp(stat as StatId, n ?? 0);
     this.gainXp("endurance", 3);
     const r = this.records;
+    // A tourney, a patrol or the old commander (knight.ts): not a tavern brawl.
+    if (this.sideFight) {
+      this.finishSideFight(fight, this.sideFight);
+      return;
+    }
     if (this.invading) {
       this.finishInvasion(fight);
       return;
@@ -4306,7 +5445,8 @@ export class Tavern {
       text = "You're down on your own floor, and they're standing over you.";
       const partners = fight.foes.filter((f) => f.out !== "spent").map((f) => ({ kind: f.kind, female: false }));
       if (partners.length > 0) {
-        this.forceDuel(partners, "upstairs", partners.length > 1 ? FORCED_ROOM_CREW : FORCED_ROOM_ONE);
+        const play = defeatPlay(defeatFor({ place: "upstairs", kind: partners[0].kind, heat: this.heat, invasion: true }));
+        this.forceDuel(partners, "upstairs", partners.length > 1 ? FORCED_ROOM_CREW : FORCED_ROOM_ONE, play);
         this.beginDefeat("upstairs", partners[0].kind, partners.length, true);
       }
     }
@@ -4377,6 +5517,13 @@ export class Tavern {
     this.defeatTonight = id;
     const def = DEFEATS[id];
     this.duel?.note(defeatLine(def.start, this.storyRoll(this.nightIndex, 13), n));
+    // Its slots: what of her is theirs, how many stand round her, and how many at once (KP's defeat battles).
+    const play = this.duel?.defeat;
+    if (play) {
+      const parts = DUEL_AREAS.filter((a) => play.areas.includes(a.id)).map((a) => AREA_NAMES[a.id].toLowerCase());
+      const round = play.others > 0 ? `, and up to ${play.others} standing round you` : "";
+      this.duel?.note(`${def.name}: ${parts.join(", ")}${round}. ${play.atOnce} at a time; the rest wait.`);
+    }
     this.morningAfter.push(defeatLine(def.morning, this.storyRoll(this.nightIndex, 14), n));
   }
 
@@ -4742,7 +5889,9 @@ export class Tavern {
     this.brawlDuel = offer !== null;
     this.brawlOffer = null;
     this.revelScene = false;
-    this.duel = new Duel(kind, new Set(areas), stake, this.duelistStats(), this.random, partners, scene);
+    // A lost brawl (not the revel's chosen scene) is a defeat: its slots decide what's in play and how many at once.
+    const defeat = offer && !revel ? defeatPlay(defeatFor({ place, kind, heat: this.heat })) : null;
+    this.duel = new Duel(kind, new Set(areas), stake, this.duelistStats(), this.random, partners, scene, false, defeat);
     if (offer) {
       this.brawlPlace = place;
       const many = partners.length > 1;
@@ -4773,7 +5922,8 @@ export class Tavern {
     if (!offer) return;
     const partners = [{ kind: offer.kind, female: offer.female, stats: offer.stats }, ...offer.crew.map((c) => ({ kind: c.kind, female: c.female, stats: c.stats }))];
     this.brawlOffer = null;
-    this.forceDuel(partners, "here", partners.length > 1 ? FORCED_HERE_CREW : FORCED_HERE_ONE);
+    const play = defeatPlay(defeatFor({ place: "here", kind: offer.kind, heat: this.heat }));
+    this.forceDuel(partners, "here", partners.length > 1 ? FORCED_HERE_CREW : FORCED_HERE_ONE, play);
     this.beginDefeat("here", offer.kind, partners.length);
     this.say(`Right there on the taproom floor where you fell, ${partners.length > 1 ? `${partners.length} of them` : "they"} take you, and the room watches.`);
   }
@@ -4782,12 +5932,12 @@ export class Tavern {
    * KP's defeat (Consent off): a game that just happens, with every part of her she's warm enough for (a kiss
    * always), no stake and no Stop; it ends when they're all spent or she gives in, and the night with it.
    */
-  private forceDuel(partners: readonly { kind: GuestKind; female: boolean; stats?: RoleStats }[], place: BrawlPlace, lines: readonly string[]): void {
+  private forceDuel(partners: readonly { kind: GuestKind; female: boolean; stats?: RoleStats }[], place: BrawlPlace, lines: readonly string[], defeat: DuelDefeat | null = null): void {
     const areas = this.duelAreas().filter((a) => a.ready).map((a) => a.id);
     this.duelTonight = true;
     this.brawlDuel = true;
     this.brawlPlace = place;
-    this.duel = new Duel(partners[0].kind, new Set(areas), 0, this.duelistStats(), this.random, partners, "plain", true);
+    this.duel = new Duel(partners[0].kind, new Set(areas), 0, this.duelistStats(), this.random, partners, "plain", true, defeat);
     this.duel.note(storyLine(lines, this.storyRoll(this.nightIndex, 12)).replaceAll("{n}", String(partners.length)));
   }
 
@@ -4944,6 +6094,7 @@ export class Tavern {
     // in first, happy if she did. Called off, nobody's anything. Whoever robbed the till after a brawl isn't a fan.
     if (!brawl && duel.outcome !== "stopped") {
       this.fansTonight += duel.partners.length * (duel.outcome === "won" ? FANS_DELIGHTED : FANS_HAPPY);
+      this.fanTags.lantern += duel.partners.length * (duel.outcome === "won" ? FANS_DELIGHTED : FANS_HAPPY);
     }
     this.lastDuel = { outcome: duel.outcome!, text, line, gold: change, brawl };
     this.say(text);
@@ -5484,6 +6635,8 @@ export class Tavern {
     // Willpower: giving in wears it down; saying no costs it when part of her wanted it, and steadies her when not.
     const refusing = answer === "slap" || answer === "pull";
     const willCost = refusing ? this.refuseWill(chat.tier, touch.level) : 0;
+    // A no while part of her wanted it (torn or wanting it): Wren's keeper letter answers the first (letters.ts).
+    if (refusing && chat.tier > 0) this.letters.temptedNo++;
     const shaky = refusing && willCost > 0 && this.willpower < willCost;
     if (took) this.spendWill(answer === "lean" ? LEAN_WILL : ALLOW_WILL);
     else if (refusing && willCost === 0) this.restoreWill(STEADY_WILL);
@@ -6496,6 +7649,7 @@ export class Tavern {
       },
       addFans: (n) => {
         this.fansTonight += n;
+        this.fanTags.lantern += Math.max(0, n);
       },
       guestSays: (guest, text) => this.guestSays(guest, text),
       nameOf: (guest) => this.nameOf(guest),
@@ -6532,6 +7686,119 @@ export class Tavern {
     this.stock[ware] += STOCK_PACK;
     this.cleanWare[ware] += STOCK_PACK;
     this.cue("buy");
+  }
+
+  /** Silas's crew have been crossed: the bottles and the market stalls charge more (plot.ts). */
+  get silasCrossed(): boolean {
+    return bottlesDearer(this.plotFlags);
+  }
+
+  /** A set of cups or dishes from the market stalls (errands.ts): cheaper than the cart, by day. */
+  canMarketBuy(ware: Ware): boolean {
+    return this.phase === "day" && this.gold >= marketPackCost(this.silasCrossed) && this.stock[ware] + STOCK_PACK <= MAX_WARE[ware];
+  }
+
+  marketBuy(ware: Ware): void {
+    if (!this.canMarketBuy(ware)) return;
+    this.gold -= marketPackCost(this.silasCrossed);
+    this.stock[ware] += STOCK_PACK;
+    this.cleanWare[ware] += STOCK_PACK;
+    this.cue("buy");
+  }
+
+  /** One cup or dish from the stalls to replace a broken one. */
+  canMarketReplace(ware: Ware): boolean {
+    return this.phase === "day" && this.broken[ware] > 0 && this.gold >= marketReplaceCost(this.silasCrossed);
+  }
+
+  marketReplace(ware: Ware): void {
+    if (!this.canMarketReplace(ware)) return;
+    this.gold -= marketReplaceCost(this.silasCrossed);
+    this.broken[ware]--;
+    this.stock[ware]++;
+    this.cleanWare[ware]++;
+    this.cue("buy");
+  }
+
+  /** What the town sees of her (townplaces.ts). */
+  get townState(): TownState {
+    return {
+      arc: this.arcStage,
+      corruption: this.corruption,
+      fame: this.persona.fame,
+      respect: this.persona.respect,
+      flirt: this.persona.flirt,
+      heat: this.heat,
+      trust: this.trust,
+      fatigueLevel: this.fatigueLevel,
+      flags: this.plotFlags,
+      houses: this.houses,
+    };
+  }
+
+  /** Why she can't do this in town right now, or null. `hoursLeft` is what's left before five. */
+  townBlocked(place: TownPlaceId, id: string, hoursLeft: number): string | null {
+    const action = TOWN_PLACES[place].actions.find((a) => a.id === id);
+    if (!action) return "unknown";
+    if (this.phase !== "day") return "only by day";
+    return blockedReason(action, this.townState, this.gold, this.townDoneToday.has(`${place}:${id}`), hoursLeft);
+  }
+
+  /**
+   * Does something in town (townplaces.ts), once a day each: pays the cost, then applies what it did to her (gold,
+   * fans and guests, her name, heat, trust, corruption, fatigue, desire). Null if she can't. The game moves the
+   * clock on by its hours.
+   */
+  doTownAction(place: TownPlaceId, id: string, hoursLeft = 24): TownOutcome | null {
+    if (this.townBlocked(place, id, hoursLeft)) return null;
+    const action = TOWN_PLACES[place].actions.find((a) => a.id === id)!;
+    const o = action.run(this.townState, () => this.random());
+    this.townDoneToday.add(`${place}:${id}`);
+    this.adjust((o.gold ?? 0) - (action.cost ?? 0), o.trust ?? 0, o.heat ?? 0);
+    this.errandGuests = Math.min(MAX_ERRAND_GUESTS, this.errandGuests + (o.guests ?? 0));
+    this.errandFans += o.fans ?? 0;
+    shiftPersona(this.persona, { respect: o.respect ?? 0, fame: o.fame ?? 0, flirt: o.flirt ?? 0, lust: o.lust ?? 0, kindness: o.kindness ?? 0 });
+    if (o.corruption) {
+      this.corruption = Math.max(0, Math.min(1000, this.corruption + o.corruption));
+      this.unlockBrothel();
+    }
+    if (o.fatigue) this.tire(o.fatigue);
+    if (o.desire) {
+      const meter: Meter = this.playerBody === "Female" ? "pussy" : "cock";
+      this.meters[meter] = Math.max(0, Math.min(this.desireCap(meter), this.meters[meter] + o.desire));
+    }
+    if ((o.gold ?? 0) > 0) this.cue("buy");
+    return o;
+  }
+
+  canHandOutFlyers(): boolean {
+    return this.phase === "day" && !this.flyeredToday && this.gold >= FLYER_COST;
+  }
+
+  canPostOnFeed(): boolean {
+    return this.phase === "day" && !this.postedToday && this.gold >= FEED_COST;
+  }
+
+  /**
+   * Flyers in the square or a post on the feed (errands.ts), once a day each: the cost, then what it did to her
+   * name and the guests and fans it brings. `facts` is what the square sees (the game reads her clothes). Null if
+   * she can't today.
+   */
+  runErrand(kind: "flyers" | "feed", facts?: Omit<FlyerFacts, "flirt" | "fame" | "respect" | "arc">): ErrandResult | null {
+    if (kind === "flyers" ? !this.canHandOutFlyers() : !this.canPostOnFeed()) return null;
+    const rng = () => this.random();
+    const result =
+      kind === "flyers"
+        ? handOutFlyers({ flirt: this.persona.flirt, fame: this.persona.fame, respect: this.persona.respect, arc: this.arcStage, dress: facts?.dress ?? "dressed", outfit: facts?.outfit ?? "work" }, rng)
+        : postOnFeed(this.persona.fame, rng);
+    this.gold -= kind === "flyers" ? FLYER_COST : FEED_COST;
+    if (kind === "flyers") this.flyeredToday = true;
+    else this.postedToday = true;
+    this.errandGuests = Math.min(MAX_ERRAND_GUESTS, this.errandGuests + result.guests);
+    this.errandFans += result.fans;
+    shiftPersona(this.persona, { respect: result.respect, fame: result.fame, lust: result.lust });
+    if (result.heat) this.adjust(0, 0, result.heat);
+    return result;
   }
 
   /** A new drink for the shelf, bought once. */
@@ -6588,9 +7855,15 @@ export class Tavern {
   nextNight(): void {
     if (this.phase !== "dawn") return;
     const messes = this.leftovers();
+    const posted = this.postedToday;
     this.nightIndex++;
     this.openDay(messes);
+    // A day passes on the feed, in the garrison and for her injuries (feedstar.ts, knight.ts, guild.ts).
+    this.feedDayPassed(posted);
+    this.knightDayPassed();
+    this.guildDayPassed();
     if (this.storyBeats) this.fireBeat();
+    this.findMorningLetter();
   }
 
   /** How long guests will wait, as a share of usual, given how dirty the room is. */
@@ -6746,6 +8019,11 @@ export class Tavern {
         sideRumor: 0,
         flags: [...this.plotFlags],
         arc: this.arcSeen,
+        legend: { ...this.legend },
+        tier: this.tierSeen,
+        letters: saveLetters(this.letters),
+        ...(this.chapterEnding ? { chapter1: this.chapterEnding } : {}),
+        fanGroups: { ...this.fanGroups },
       },
       bottles: [...this.bottles],
       name: this.name,
@@ -6781,6 +8059,49 @@ export class Tavern {
           }
         : {}),
       ...(this.revelHall || this.revelTonight ? { revel: { hall: this.revelHall, settings: { ...this.revelSettings }, tonight: this.revelTonight } } : {}),
+      ...(this.flyeredToday || this.postedToday || this.errandGuests || this.errandFans || this.townDoneToday.size
+        ? {
+            errands: {
+              flyered: this.flyeredToday,
+              posted: this.postedToday,
+              guests: this.errandGuests,
+              fans: this.errandFans,
+              town: [...this.townDoneToday],
+            },
+          }
+        : {}),
+      ...(this.records.feedPosts > 0 || this.feed.followers > 0 || this.feedDeals.length > 0 || this.feedBroken.length > 0 || this.feedTrendWeek >= 0 || this.feedStreamedToday || this.feedInboxDay >= 0
+        ? {
+            feed: {
+              records: { ...this.feed },
+              deals: this.feedDeals.map((d) => ({ ...d })),
+              warned: [...this.feedWarned],
+              broken: [...this.feedBroken],
+              quietDays: this.feedQuietDays,
+              hype: this.feedHype,
+              stalkerRisk: this.feedStalkerRisk,
+              trendWeek: this.feedTrendWeek,
+              streamed: this.feedStreamedToday,
+              inbox: this.feedInbox.map((d) => ({ ...d })),
+              inboxDay: this.feedInboxDay,
+            },
+          }
+        : {}),
+      ...(this.knight
+        ? { knight: { state: structuredClone(this.knight), flags: [...this.knightFlags], tourneyWeek: this.knightTourneyWeek, done: [...this.knightDoneToday], patrol: this.knightPatrolId } }
+        : {}),
+      ...(this.guild
+        ? {
+            guild: {
+              card: structuredClone(this.guild),
+              board: [...this.guildBoard],
+              boardDay: this.guildBoardDay,
+              questToday: this.guildQuestToday,
+              hallToday: this.guildHallToday,
+              questGold: [...this.guildQuestGold],
+            },
+          }
+        : {}),
     };
   }
 
@@ -6894,8 +8215,14 @@ export class Tavern {
     this.plotFlags.clear();
     for (const flag of story?.flags ?? []) if (isPlotFlag(flag)) this.plotFlags.add(flag);
     // Older saves don't know which stage she's heard of: the one she's at, so nothing's announced twice.
+    // Her Legend first (an older save has never been one), so the stage below reads it.
+    this.legend = readLegend(story?.legend);
     const arc = story?.arc;
-    this.arcSeen = typeof arc === "number" && arc >= -1 && arc < ARC_STAGES.length ? Math.floor(arc) : arcIndex(this.arcStage);
+    this.arcSeen = typeof arc === "number" && arc >= -1 && arc <= ARC_AFTERMATH_SEEN ? Math.floor(arc) : arcSeenFor(this.arcStage);
+    // And her corruption tier's card, the same way.
+    const tier = story?.tier;
+    this.tierSeen =
+      typeof tier === "number" && tier >= 0 && tier < CORRUPTION_TIERS.length ? Math.floor(tier) : CORRUPTION_TIERS.indexOf(corruptionTier(this.corruption));
     this.houses = {};
     for (const h of HOUSES) {
       const fate = story?.houses?.[h.id];
@@ -6908,6 +8235,13 @@ export class Tavern {
     this.storyNight = story ? (typeof story.storyNight === "number" ? story.storyNight : -1) : save.nightIndex;
     this.pendingBeat = null;
     this.firstInTarven = false;
+    // Wren's letters, the Chapter 1 ending and her fans by group (letters.ts, chapter1.ts).
+    this.letters = readLetters(story?.letters, this.beatsDone.has("pell"));
+    this.letterToday = null;
+    this.willDipped = false;
+    this.chapterEnding = isChapterEnding(story?.chapter1) ? story.chapter1 : null;
+    this.fanGroups = readFanGroups(story?.fanGroups, this.fans);
+    this.fanTags = { lantern: 0, network: 0 };
     this.fansTonight = 0;
     this.rivalMove = null;
     this.baronVisit = null;
@@ -6925,6 +8259,87 @@ export class Tavern {
     this.lastResult = "";
     this.ending = null;
     this.openDay((save.messes ?? []).map(copyMess));
+    // Her day errands (errands.ts), after the new day's reset: older saves have none.
+    const errands = save.errands;
+    this.flyeredToday = errands?.flyered === true;
+    this.postedToday = errands?.posted === true;
+    this.errandGuests = typeof errands?.guests === "number" ? Math.max(0, Math.min(MAX_ERRAND_GUESTS, errands.guests)) : 0;
+    this.errandFans = typeof errands?.fans === "number" ? Math.max(0, errands.fans) : 0;
+    for (const done of Array.isArray(errands?.town) ? errands.town : []) if (typeof done === "string") this.townDoneToday.add(done);
+    this.restoreSideJobs(save);
+  }
+
+  /** Feed Star, the Knight path and the Guild from a save (older saves have none of them). */
+  private restoreSideJobs(save: TavernSave): void {
+    const n = (v: unknown, fallback = 0) => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
+    const ids = <T extends string>(list: unknown, ok: readonly T[]): T[] => (Array.isArray(list) ? list.filter((x): x is T => ok.includes(x as T)) : []);
+    const f = save.feed;
+    const rec = f?.records;
+    this.feed = {
+      followers: Math.max(0, Math.floor(n(rec?.followers))),
+      totalLikes: Math.max(0, Math.floor(n(rec?.totalLikes))),
+      boldPosts: Math.max(0, Math.floor(n(rec?.boldPosts))),
+      virals: Math.max(0, Math.floor(n(rec?.virals))),
+      streams: Math.max(0, Math.floor(n(rec?.streams))),
+    };
+    this.feedDeals = (Array.isArray(f?.deals) ? f.deals : [])
+      .filter((d) => d && Feed.SPONSOR_IDS.includes(d.id))
+      .map((d) => ({ id: d.id, postsThisWeek: Math.max(0, Math.floor(n(d.postsThisWeek))) }));
+    this.feedWarned = ids(f?.warned, Feed.SPONSOR_IDS);
+    this.feedBroken = ids(f?.broken, Feed.SPONSOR_IDS);
+    this.feedQuietDays = Math.max(0, Math.floor(n(f?.quietDays)));
+    this.feedHype = clamp(n(f?.hype), 0, 0.5);
+    this.feedStalkerRisk = clamp(n(f?.stalkerRisk), 0, 0.5);
+    this.feedTrendWeek = Math.floor(n(f?.trendWeek, -1));
+    this.feedStreamedToday = f?.streamed === true;
+    this.feedStream = null;
+    this.feedInbox = (Array.isArray(f?.inbox) ? f.inbox : []).filter((d) => d && typeof d.from === "string" && typeof d.text === "string" && d.kind in Feed.DM_SAMPLES).map((d) => ({ ...d }));
+    this.feedInboxDay = Math.floor(n(f?.inboxDay, -1));
+    // The Knight path: a state with a rank she could hold, or none.
+    const k = save.knight;
+    const state = k?.state;
+    if (state && Knight.KNIGHT_RANK_ORDER.includes(state.rank)) {
+      const base = Knight.newKnightState();
+      this.knight = {
+        ...base,
+        ...state,
+        favour: clamp(n(state.favour, base.favour), 0, 100),
+        scandal: Math.max(0, n(state.scandal)),
+        squad: (Array.isArray(state.squad) ? state.squad : []).filter((m) => m && typeof m.name === "string").map((m) => ({ name: m.name, loyalty: clamp(n(m.loyalty), 0, 100) })),
+        laws: { ...base.laws, ...(state.laws ?? {}) },
+      };
+    } else this.knight = null;
+    this.knightFlags = Array.isArray(k?.flags) ? k.flags.filter((x): x is string => typeof x === "string") : [];
+    this.knightTourneyWeek = Math.floor(n(k?.tourneyWeek, -1));
+    this.knightDoneToday.clear();
+    for (const d of Array.isArray(k?.done) ? k.done : []) if (typeof d === "string") this.knightDoneToday.add(d);
+    this.knightPatrolId = typeof k?.patrol === "string" && Knight.PATROL_EVENTS.some((e) => e.id === k.patrol) ? k.patrol : null;
+    this.sideFight = null;
+    // The Guild: a card with a rank, or none.
+    const g = save.guild;
+    const card = g?.card;
+    if (card && Guild.GUILD_RANK_IDS.includes(card.rank)) {
+      this.guild = {
+        rank: card.rank,
+        points: Math.max(0, n(card.points)),
+        quests: Math.max(0, Math.floor(n(card.quests))),
+        failed: Math.max(0, Math.floor(n(card.failed))),
+        deed: card.deed === true,
+        party: (Array.isArray(card.party) ? card.party : []).filter((c) => c && typeof c.id === "string" && Guild.PARTY_ROLES.includes(c.role)).map((c) => ({ ...c })),
+        injuries: (Array.isArray(card.injuries) ? card.injuries : []).filter((i) => i && i.id in Guild.INJURIES && typeof i.who === "string").map((i) => ({ who: i.who, id: i.id, days: Math.max(1, Math.floor(n(i.days, 1))) })),
+        counter: card.counter === true,
+        master: card.master === true,
+        cut: card.cut in Guild.QUEST_CUTS ? card.cut : "fair",
+        mood: n(card.mood),
+        members: Math.max(0, Math.floor(n(card.members))),
+      };
+    } else this.guild = null;
+    this.guildBoard = Array.isArray(g?.board) ? g.board.filter((id): id is string => typeof id === "string" && id in Guild.QUEST_BY_ID) : [];
+    this.guildBoardDay = Math.floor(n(g?.boardDay, -1));
+    this.guildQuestToday = g?.questToday === true;
+    this.guildHallToday = g?.hallToday === true;
+    this.guildQuestGold = Array.isArray(g?.questGold) ? g.questGold.filter((x): x is number => typeof x === "number") : [];
+    this.refreshEffects();
   }
 
   /** Starts a new day with the tavern closed, clearing everything that only lasts one night. */
@@ -7007,6 +8422,19 @@ export class Tavern {
     this.revelScene = false;
     if (this.revelTonight && !this.revelOpen) this.revelTonight = false;
     this.friendTimeToday.clear();
+    this.flyeredToday = false;
+    this.postedToday = false;
+    this.townDoneToday.clear();
+    // Feed Star, the Knight path and the Guild: what's done once a day starts again.
+    this.feedStreamedToday = false;
+    this.feedStream = null;
+    this.phoneTonight = false;
+    this.knightDoneToday.clear();
+    this.knightPatrolId = null;
+    this.sideFight = null;
+    this.guildQuestToday = false;
+    this.guildHallToday = false;
+    this.guildQuestGold = [];
     // A fresh lot of applicants every few nights, once staff come in (staff.ts).
     if (this.staffStage !== "early" && (this.applicantsNight < 0 || this.nightIndex - this.applicantsNight >= APPLICANTS_EVERY)) this.postForWork(false);
     this.taproom = null;

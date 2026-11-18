@@ -1,18 +1,22 @@
 /** The journal on the chest, opened over the game: ribbon tabs across the top, one spread per tab. */
 import type { Game } from "./game";
-import { journalBook, passivesBook, privateBook, recordsBook, skillsBook, titlesBook, wantedBook } from "./journal";
+import { journalBook, lettersBook, passivesBook, privateBook, recordsBook, skillsBook, titlesBook, wantedBook, type LetterEntry } from "./journal";
+import { LETTER_BY_ID, LETTERS, letterLines, type LetterSet } from "./letters";
+import { CHAPTER_ENDINGS } from "./chapter1";
 import { roleLabel } from "./guestroles";
 import { MEMORY_WORDS, regularNerve, REGULARS_PER_KIND } from "./regulars";
 import { lewdWord } from "./passives";
+import { arcStageName } from "./lewd";
 import { TWO_SLOTS_FAME } from "./titles";
 import { DEBUFFS } from "./debuffs";
 import { HOUSES } from "./ledger";
 import { HEAT_MAX, TRUST_MAX, TRUST_TO_OVERTHROW } from "./tavern";
 
 /** The journal's spreads, in tab order. */
-export type JournalPage = "ledger" | "private" | "passives" | "titles" | "skills" | "records" | "wanted";
+export type JournalPage = "ledger" | "letters" | "private" | "passives" | "titles" | "skills" | "records" | "wanted";
 export const JOURNAL_PAGES: readonly { id: JournalPage; label: string }[] = [
   { id: "ledger", label: "Ledger" },
+  { id: "letters", label: "Letters" },
   { id: "private", label: "Private" },
   { id: "passives", label: "Passives" },
   { id: "titles", label: "Titles" },
@@ -63,6 +67,21 @@ export function showJournal(game: Game, page: JournalPage = "ledger"): void {
       },
       (name) => (tavern.name = name),
     );
+  } else if (page === "letters") {
+    // Wren's letters to reread, the blanks still to find, and how Chapter 1 ended (letters.ts, chapter1.ts).
+    const SET_NAMES: Record<LetterSet, string> = { madam: "The madam's", keeper: "The keeper's", warning: "The warning", story: "The story" };
+    const found = new Set(tavern.letters.found);
+    const entry = (id: (typeof LETTERS)[number]["id"]): LetterEntry => {
+      const def = LETTER_BY_ID.get(id)!;
+      const has = found.has(id);
+      return { title: def.title, set: SET_NAMES[def.set], unlock: def.unlock, found: has, ...(has ? { lines: letterLines(id) } : {}) };
+    };
+    const ending = tavern.chapterEnding ? CHAPTER_ENDINGS[tavern.chapterEnding] : null;
+    book = lettersBook({
+      letters: LETTERS.map((l) => entry(l.id)),
+      found: tavern.letters.found.map(entry),
+      ...(ending ? { chapter: { title: ending.title, previews: ending.previews, text: ending.text, needs: ending.needs } } : {}),
+    });
   } else if (page === "private") {
     book = privateBook({
       touchable: tavern.playerBody === "Female",
@@ -74,6 +93,7 @@ export function showJournal(game: Game, page: JournalPage = "ledger"): void {
       clothesLost: tavern.stripped,
       lets: tavern.touchMemory.lets,
       passivesHeld: tavern.passives.size,
+      arc: { name: arcStageName(tavern.arcStage), note: tavern.legendNote },
     });
   } else if (page === "passives") {
     book = passivesBook({ owned: tavern.passives, facts });

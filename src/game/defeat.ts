@@ -2,12 +2,16 @@
  * Defeats, after Karryn's Prison's defeat battles (RemtairyEnemyTroop.js setupDefeatedLevel…Battle): which of six a
  * lost brawl becomes depends on where it ends and who won, and how many are in it on her records (KP's
  * getDefeatedLv…Factor). DEFEAT_SCENES.md has the full plan; the art (each defeat's own pose and props) is still to
- * come, so for now each plays as the After Hours game with a stand-in. Its lines were written with Grok in the house
- * voice.
+ * come, so for now each plays as the After Hours game with a stand-in pose. It plays like KP's defeat battles
+ * (`defeatPlay`): its slots are the parts of her in play, up to 4 are on her at once and the rest step in as spots
+ * free up, and with no stamina and no willpower left she's too tired to act (duel.ts DuelDefeat). Its lines were
+ * written with Grok in the house voice.
  *
  * The consent rule holds for all six: Consent on, she's asked (the lost-brawl offer) and Stop always works; Consent
  * off, it just happens (KP). Never while she's passed out, never with anyone roaring drunk. Pure rules.
  */
+import type { DuelArea, DuelDefeat } from "./duel";
+import type { ScenePoseName } from "./sexpose";
 import type { GuestKind } from "./tavern";
 
 export type DefeatId = "taproom" | "yard" | "room" | "storeroom" | "baron" | "garrison";
@@ -19,7 +23,7 @@ export interface DefeatDef {
   kp: string;
   /** The slots on her the pose has (DEFEAT_SCENES.md), and the pose it uses until its own is made. */
   slots: readonly string[];
-  standIn: string;
+  standIn: ScenePoseName;
   /** Its opening, in the log. `{n}` is how many. */
   start: readonly string[];
   /** The morning after. */
@@ -156,6 +160,34 @@ export function crowdFactor(r: { taproomPartners: number; fightsLost: number; de
   const n = 2 + Math.floor(r.taproomPartners / 10) + Math.floor(r.fightsLost / 3) + Math.min(2, here);
   // Her own room only holds so many.
   return Math.min(id === "room" ? 3 : CROWD_MAX, n);
+}
+
+/** How many are on her at the start of a defeat, at most (KP: Math.min(4, max)); the rest step in as spots free up. */
+export const DEFEAT_AT_ONCE = 4;
+
+/** Each slot on her (DEFEAT_SCENES.md) as the After Hours game's part of her; "other 1-N" are men standing round. */
+const SLOT_AREA: Readonly<Record<string, DuelArea>> = { mouth: "mouth", left: "hands", right: "hands", breasts: "breasts", pussy: "pussy", rear: "butt" };
+
+/**
+ * A defeat as the After Hours game plays it (duel.ts DuelDefeat): its slots are the parts of her in play (each
+ * holding one; both hands hold two), the "others" are how many stand round her, and at most DEFEAT_AT_ONCE are on her
+ * at once (fewer if the slots hold fewer).
+ */
+export function defeatPlay(id: DefeatId): DuelDefeat {
+  const holds: Partial<Record<DuelArea, number>> = {};
+  let others = 0;
+  for (const slot of DEFEATS[id].slots) {
+    const many = /^other 1-(\d+)$/.exec(slot);
+    if (many) {
+      others += Number(many[1]);
+      continue;
+    }
+    const area = SLOT_AREA[slot];
+    if (area) holds[area] = (holds[area] ?? 0) + 1;
+  }
+  const areas = Object.keys(holds) as DuelArea[];
+  const room = Object.values(holds).reduce((n, h) => n + (h ?? 0), 0) + others;
+  return { id, areas, holds, others, atOnce: Math.min(DEFEAT_AT_ONCE, room) };
 }
 
 /** A line from a list, by a roll 0 to 1. */

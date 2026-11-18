@@ -3,8 +3,11 @@ import {
   Box3,
   Color,
   DirectionalLight,
+  Group,
   HemisphereLight,
+  type Material,
   MathUtils,
+  Mesh,
   Object3D,
   PerspectiveCamera,
   Scene,
@@ -17,8 +20,8 @@ import { applyPose, BATTLE_POSES, blendPose, NO_EXTRA, poseBones, type BattlePos
 import { chestOverHips } from "./player";
 import { cardFraming, facingTurn } from "./battleframe";
 import type { BrawlBeat } from "./brawlscene";
-import { makeTable } from "./scenetable";
-import { blendScene, placeBody, SCENE_JOINS, SCENE_POSES, sceneFraming, type Body, type Posed, type ScenePose, type ScenePoseName } from "./sexpose";
+import { makeProps, makeTable } from "./scenetable";
+import { blendScene, placeBody, SCENE_JOINS, SCENE_POSES, sceneFraming, sizeForScene, type Body, type Posed, type ScenePose, type ScenePoseName } from "./sexpose";
 
 /**
  * The big picture of her during a fight, the way Karryn's Prison shows Karryn the whole time she battles,
@@ -50,15 +53,27 @@ export interface BattleStat {
 
 /** How long a new pose takes to snap in: Karryn's Prison swaps the whole picture; this is barely more than that. */
 const SNAP = 0.12;
+/** The picture's lens, in degrees up and down; a scene can widen it (`SceneView.fov`) for a close shot, as KP's POV ones. */
+const FOV = 28;
 /** How long her swing's streak shows, in seconds. */
 const STREAK_TIME = 0.45;
+/**
+ * Drawn whatever its bounds say: a skinned mesh's bounds are measured once, as it stood in the room, so a head or a
+ * leg posed far from there (upside down, a leg up) would be culled as out of the picture while it's in it.
+ */
+function unculled(model: Object3D): void {
+  model.traverse((o) => {
+    if (o instanceof Mesh) o.frustumCulled = false;
+  });
+}
+
 function linearToSrgb(c: number): number {
   return c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
 }
 
 export class BattleView {
   private readonly scene = new Scene();
-  private readonly camera = new PerspectiveCamera(28, WIDTH / HEIGHT, 0.05, 30);
+  private readonly camera = new PerspectiveCamera(FOV, WIDTH / HEIGHT, 0.05, 30);
   private readonly target = new WebGLRenderTarget(WIDTH, HEIGHT);
   private readonly pixels = new Uint8Array(WIDTH * HEIGHT * 4);
   private readonly canvas = document.createElement("canvas");
@@ -189,6 +204,7 @@ export class BattleView {
   show(body: Object3D, name: string, mode: BattleMode, title: string, facing: "left" | "right" = "right"): void {
     if (this.model) this.scene.remove(this.model);
     const model = cloneSkinned(body);
+    unculled(model);
     model.position.set(0, 0, 0);
     // Turned a little toward the fight beside the picture, like Karryn facing her enemies.
     const fresh = !this.active || this.mode !== mode;
@@ -229,6 +245,7 @@ export class BattleView {
     this.height = top;
     if (this.bones.head) this.bones.head.worldToLocal(this.crown.set(head.x, top, head.z));
 
+    this.lens();
     if (this.inScene) {
       this.frameScene(this.toCam);
     } else if (this.closeUp) {
@@ -255,6 +272,26 @@ export class BattleView {
     this.root.classList.toggle("right", facing === "left");
     this.active = true;
     this.root.classList.add("open");
+    this.render();
+  }
+
+  /**
+   * Her picture's copy barefoot, as KP draws her in its sex scenes (the dev scene pose tester's): whatever shoes she
+   * has on hidden, and the bare-foot mesh shown in her skin. Only the copy; she's as she was in the room.
+   */
+  bareFeet(): void {
+    const model = this.model;
+    if (!model) return;
+    let skin: Material | null = null;
+    model.traverse((o) => {
+      if (!skin && o instanceof Mesh && !Array.isArray(o.material) && /^T_skin/.test(o.material.name)) skin = o.material;
+    });
+    model.traverse((o) => {
+      if (!(o instanceof Mesh) || !/_Shoes/.test(o.name) || /Outline/.test(o.name)) return;
+      const bare = /_ShoesBarefoot/.test(o.name);
+      o.visible = bare;
+      if (bare && skin) o.material = skin;
+    });
     this.render();
   }
 
@@ -363,7 +400,10 @@ export class BattleView {
         continue;
       }
       const model = cloneSkinned(member.body);
+      unculled(model);
       model.position.set(0, 0, 0);
+      // A man drawn bigger in the picture than in the room, towering over her as KP's do (sexpose.ts SCENE_MAN_SCALE).
+      sizeForScene(model, member.name);
       model.visible = true;
       this.scene.add(model);
       const bones = poseBones(model, member.name);
@@ -388,7 +428,7 @@ export class BattleView {
       return;
     }
     if (scene === this.sceneName && !changed) return;
-    this.setTable(SCENE_POSES[scene].table ?? null);
+    this.setTable(SCENE_POSES[scene]);
     const first = this.sceneName === null;
     this.fromScene = first || scene === this.sceneName ? null : this.currentScene();
     this.fromCam.position.copy(this.camera.position);
@@ -403,10 +443,11 @@ export class BattleView {
     }
   }
 
-  /** Puts the scene's table on the stage under her, or takes it away. */
-  private setTable(table: ScenePose["table"] | null): void {
+  /** Puts the scene's table under her, and its other props (a post, a wall, a bench), on the stage, or takes them away. */
+  private setTable(scene: ScenePose | null): void {
     if (this.table) this.scene.remove(this.table);
-    this.table = table ? makeTable(table, this.scale) : null;
+    const pieces = scene ? [...(scene.table ? [makeTable(scene.table, this.scale)] : []), ...makeProps(scene.props ?? [], this.scale)] : [];
+    this.table = pieces.length > 0 ? new Group().add(...pieces) : null;
     if (this.table) this.scene.add(this.table);
   }
 
@@ -448,6 +489,14 @@ export class BattleView {
     }
   }
 
+  /** The lens for what the picture shows: a scene's own (its `view.fov`), or the usual one. */
+  private lens(): void {
+    const fov = (this.inScene && this.sceneName ? SCENE_POSES[this.sceneName].view.fov : undefined) ?? FOV;
+    if (this.camera.fov === fov) return;
+    this.camera.fov = fov;
+    this.camera.updateProjectionMatrix();
+  }
+
   /** Where the camera stands for the scene they're snapping into: framed on all of them, set in it outright. */
   private frameScene(out: { position: Vector3; target: Vector3 }): void {
     if (!this.sceneName) return;
@@ -459,7 +508,8 @@ export class BattleView {
       model.updateMatrixWorld(true);
       box.union(new Box3().setFromObject(model, true));
     }
-    const frame = sceneFraming(box, scene.view, this.camera.fov, WIDTH / HEIGHT);
+    this.lens();
+    const frame = sceneFraming(box, scene.view, this.camera.fov, WIDTH / HEIGHT, this.scale);
     out.position.copy(frame.position);
     out.target.copy(frame.target);
   }
@@ -556,6 +606,7 @@ export class BattleView {
       headY: (this.flinchHard ? f * 0.45 : 0) + tremble * 2,
       headZ: heat * 0.08,
     };
+    this.lens();
     if (this.inScene) {
       this.setScene(this.currentScene(), extra);
       // The camera comes round with them as they snap into a scene.

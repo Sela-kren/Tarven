@@ -14,6 +14,8 @@ import type { GuestKind } from "./tavern";
  *   mouth, or at one of her hands. With three or more of them and nothing holding her, they all take her together.
  * - A game after a brawl she lost starts with her down on the floor where she fell, the winner over her.
  * - With her willpower gone, she can't hold herself up: the scenes become their limp, defeated ones.
+ * - A defeat (defeat.ts) holds its own pose the whole way through (for now its stand-in, DEFEATS[id].standIn): the
+ *   first still in is at its heart, the rest at its slots as they're free, and the next steps in as one's done.
  * - On a table in the taproom (KP's Waitress Sex), it starts with her on her back across it, the one who asked between
  *   her legs and the others at her head and hands, and the scenes stay on it (sexpose.ts `onTable`); a crowd on her is all of them at her slots there.
  */
@@ -54,6 +56,8 @@ export class DuelStage {
   private readonly joined = new Map<number, number>();
   /** A game on a table in the taproom: the scenes are on it. */
   private table = false;
+  /** A defeat's pose, held the whole game (null when it isn't one). */
+  private fixed: ScenePoseName | null = null;
 
   /** Who's in the picture now, or null before anything's happened. */
   get cast(): StageCast | null {
@@ -65,11 +69,17 @@ export class DuelStage {
    * A new game. After a brawl she lost (`fromBrawl`) she starts down on the floor, the one who won standing over her
    * and his crew round her; otherwise there's no picture of them together until something happens.
    */
-  start(fromBrawl: boolean, partners: readonly StagePartner[], table = false): void {
+  start(fromBrawl: boolean, partners: readonly StagePartner[], table = false, defeatPose: ScenePoseName | null = null): void {
     this.scene = null;
     this.lead = null;
     this.joined.clear();
     this.table = table;
+    this.fixed = defeatPose;
+    if (defeatPose) {
+      this.scene = defeatPose;
+      this.holdFixed(partners);
+      return;
+    }
     const first = partners.find((p) => !p.done);
     // On the table: she's on her back across it with the one who asked, from the start.
     if (table && first && !first.female) {
@@ -94,6 +104,10 @@ export class DuelStage {
     options: { defeated: boolean; alt: boolean },
   ): boolean {
     const before = JSON.stringify(this.cast);
+    if (this.fixed) {
+      this.holdFixed(partners);
+      return JSON.stringify(this.cast) !== before;
+    }
     const byId = (id: number | null) => partners.find((p) => p.id === id);
     // Whoever's given in is out of it.
     for (const id of [...this.joined.keys()]) if (byId(id)?.done !== false) this.joined.delete(id);
@@ -121,6 +135,18 @@ export class DuelStage {
       return;
     }
     this.set(want, partner.id);
+  }
+
+  /** A defeat's pose: whoever's done is out of it, the first still in is at its heart, and the rest at its free slots. */
+  private holdFixed(partners: readonly StagePartner[]): void {
+    const active = partners.filter((p) => !p.done);
+    for (const id of [...this.joined.keys()]) if (!active.some((p) => p.id === id)) this.joined.delete(id);
+    if (!active.some((p) => p.id === this.lead)) {
+      const next = active.find((p) => !p.female) ?? active[0];
+      this.lead = next ? next.id : null;
+      if (next) this.joined.delete(next.id);
+    }
+    for (const p of active) this.join(p.id, undefined);
   }
 
   /** Puts her in a scene with a partner; those joined stay on at the same slot, if the new scene has it. */

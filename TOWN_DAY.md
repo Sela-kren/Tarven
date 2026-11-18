@@ -1,7 +1,23 @@
 # Tarven by Day: Going Outside
 
 > **Rating: Adults only (18+).** All characters are adults. The heroine follows the consent rule in `GAME_PATH.MD`.
-> **Status: design draft, 2026-11-17. Nothing here is built yet.**
+> **Status: design draft, 2026-11-17.** Built so far: build steps 1 and 2 (the high street, the market and flyers), see section 7, and **the town v1** (2026-11-18, below).
+
+**Town v1 (built 2026-11-18, `townplaces.ts`, shown by `game.ts` `openTownPlace`).** Every place on the street has 2 to 4 things to do, each once a day, each costing hours (never past five). What they bring: gold, guests tonight and fans at dawn (shared with the flyers, at most 5 guests a night), her name (Respect, Fame, Flirt, Lust, Kindness), heat, trust, corruption, fatigue and tonight's desire. Hard work is refused at fatigue 5. The story shuts doors: Oden gone (`odenShut`), Mara taken (`maraArrested`), Silas crossed (`silasAngry`).
+
+| Place | What she can do |
+|---|---|
+| **Notice board** | Find Gerald the goat (1 h, maybe 4 gold); sit for the painter Fennick (Curious, 2 h, 10 gold, Fame); model nude for his class (Willing, 2 h, 20 gold, desire, Respect −1); a "private delivery" (Known, 1 h, 25 gold) |
+| **Chapel** | Talk to Oden (lines by her stage and corruption); light a candle for Wren (1 gold, rests her); confess (corruption 40+: −5 corruption, −1 Respect, +1 heat) |
+| **Warm House** | A red ribbon and a service (Lust, a little desire); a blessing of Veyra (Curious, 2 gold, desire 15); a session with the priestesses (Willing, 2 h, desire 25, tiring) |
+| **Copper Bell** | Scout the room (2 gold: a fan and a guest); whisper that Jory waters his ale (2 guests, +3 corruption) |
+| **Bakehouse** | Help Tansy at the ovens (4 gold); buy pies for the bar (4 gold: a guest and a fan); the gossip at the long table (by her stage, and Tansy's Lantern callback) |
+| **Cider Barn** | Help press apples (5 gold, farmers' trust); a cider with the farmers (trust) |
+| **Garrison yard** | Spar with the soldiers (guests tonight, more once she's Willing); wash their laundry (5 gold); drink with Rhea (−1 heat) |
+| **Mara's fields** | Help with the harvest (trust, kindness); talk with Mara (by her stage) |
+| **Quarry road** | Haul stone (6 gold, a guest); carry a crate for Silas's crew (15 gold, +2 heat, +3 corruption) |
+
+Not in v1: shrines (no spot on the street yet), invitations by day, being seen (step 5), the full Warm House recruits (step 6) and the day-job ladder's guild work (step 7).
 
 ---
 
@@ -123,7 +139,7 @@ Free use and sex anywhere apply to the whole town, her included. How they treat 
 | Step | What | Size |
 |---|---|---|
 | 1 | The front door goes outside: the high street scene, the world clock, the 5 PM deadline, walking back in. **Built 2026-11-17** (`street.ts`, town kit from D:/planet via `tools/blender/build_street_kit.py`, townsfolk walking the street in `townsfolk.ts`). The places only show a panel so far | Medium |
-| 2 | Market (cheaper stock) and flyers (fans): two simple day errands so going out pays from day 1 | Small |
+| 2 | Market (cheaper stock) and flyers (fans): two simple day errands so going out pays from day 1. **Built 2026-11-18** (`errands.ts`, the market panel in `game.ts` `openMarket`): cups and dishes for 7 gold a set (the cart's 10) and broken ones replaced for 1, +2 once Silas is crossed, half an hour each; flyers by the market cross once a day (3 gold, 1.5 hours: guests tonight by Flirt, Fame and how much she shows, fans at dawn, Respect lost for showing, less once she's Known); a post on the town feed once a day (1 gold, 15 minutes: a guest or two and a fan, +1 heat because Pell reads it). Errand guests (at most 5) join tonight's crowd. After five the stalls are shut | Small |
 | 3 | The grass port to three.js (the `build-grass` skill), for the street verges and Mara's fields | Medium |
 | 4 | Chapel and rival-house visits, using the plot and Ledger already written | Medium |
 | 5 | Being seen: street reactions by arc stage, outfit and reputation | Small |

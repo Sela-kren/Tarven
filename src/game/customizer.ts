@@ -149,7 +149,12 @@ export class Customizer {
     for (const def of options.colors) if (tab === null || def.tab === tab) delete this.look.colors[def.id];
     if (tab === null || tab === "clothes") {
       this.look.hidden = [];
-      delete this.look.outfit;
+      // Back in the outfit the character starts in, in its colours.
+      const own = options.defaultOutfit;
+      if (own) {
+        this.look.outfit = own;
+        Object.assign(this.look.colors, outfitOf(this.body, this.look).preset);
+      } else delete this.look.outfit;
       delete this.look.legwear;
       delete this.look.shoes;
       delete this.look.jewellery;

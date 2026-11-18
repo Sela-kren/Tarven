@@ -94,7 +94,8 @@ describe("her underwear styles", () => {
 
   it("keeps her styles in a saved look and drops unknown ones", () => {
     expect(readLook({ bra: "plunge", briefs: "thong" }, "Female")).toMatchObject({ bra: "plunge", briefs: "thong" });
-    const odd = readLook({ bra: "chainmail", briefs: "band" }, "Female")!;
+    // In an outfit she picked, an unknown style is dropped (an outfit-less old save gets the tee's own instead).
+    const odd = readLook({ outfit: "tavern", bra: "chainmail", briefs: "band" }, "Female")!;
     expect(odd.bra).toBeUndefined();
     expect(odd.briefs).toBeUndefined();
   });

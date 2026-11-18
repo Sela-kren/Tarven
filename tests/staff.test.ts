@@ -236,18 +236,18 @@ describe("their stories", () => {
   });
 
   it("reports the due beat at dawn", () => {
-    const corvin = { ...hire("corvin"), records: { nights: 3, served: 0, bookings: 0, throwOuts: 0, dances: 0, tips: 0 } };
+    const corvin = { ...hire("corvin"), records: { nights: 3, served: 0, bookings: 0, throwOuts: 0, dances: 0, tips: 0, gropes: 0, revels: 0 } };
     expect(nightFor(corvin, fair(corvin)).dawn.beat?.id).toBe("corvin_dice");
   });
 
   it("holds a loyalty-gated beat until they're loyal enough", () => {
-    const ash = { ...hire("ash"), arcBeat: 2, loyalty: 30, records: { nights: 30, served: 0, bookings: 0, throwOuts: 0, dances: 0, tips: 0 } };
+    const ash = { ...hire("ash"), arcBeat: 2, loyalty: 30, records: { nights: 30, served: 0, bookings: 0, throwOuts: 0, dances: 0, tips: 0, gropes: 0, revels: 0 } };
     expect(arcDue(ash)).toBeNull();
     expect(arcDue({ ...ash, loyalty: 60 })?.id).toBe("ash_end");
   });
 
   it("has no beat left once the story's done", () => {
-    const lysa = { ...hire("lysa"), arcBeat: STAFF_ARCS.lysa.length, records: { nights: 99, served: 0, bookings: 0, throwOuts: 0, dances: 0, tips: 0 } };
+    const lysa = { ...hire("lysa"), arcBeat: STAFF_ARCS.lysa.length, records: { nights: 99, served: 0, bookings: 0, throwOuts: 0, dances: 0, tips: 0, gropes: 0, revels: 0 } };
     expect(arcDue(lysa)).toBeNull();
   });
 });

@@ -9,8 +9,8 @@
  */
 import type { ArcStage } from "./lewd";
 
-/** Her voice at the bar: her stage, or her state over it. */
-export type BarVoice = ArcStage | "horny" | "drunk";
+/** Her voice at the bar: her stage, or her state over it. A Legend talks at the bar in her Known voice. */
+export type BarVoice = Exclude<ArcStage, "legend"> | "horny" | "drunk";
 
 /** The moments she says something at the bar. */
 export type BarMoment =
@@ -37,8 +37,9 @@ export const BAR_DRUNK_VOICE = 0.5;
 /** Her voice now: drunk over everything, then horny unless she's Known, else her stage. */
 export function barVoice(stage: ArcStage, horny: boolean, drunk: number): BarVoice {
   if (drunk >= BAR_DRUNK_VOICE) return "drunk";
-  if (horny && stage !== "known") return "horny";
-  return stage;
+  const voice = stage === "legend" ? "known" : stage;
+  if (horny && voice !== "known") return "horny";
+  return voice;
 }
 
 type Lines = Readonly<Record<BarVoice, readonly string[]>>;

@@ -71,6 +71,20 @@ export function newLook(): Look {
   return { sliders: {}, colors: {}, hidden: [] };
 }
 
+/**
+ * A player character's look as they start: as built, in the outfit they start in (LookOptions.defaultOutfit, with
+ * its colours) when that isn't their first. A look from newLook() is a guest's: in the first.
+ */
+export function startLook(body: BodyName): Look {
+  const own = LOOK_OPTIONS[body].defaultOutfit;
+  return own ? wearOutfit(body, newLook(), own) : newLook();
+}
+
+/** Both siblings' looks as they start (startLook). */
+export function startLooks(): Record<BodyName, Look> {
+  return { Male: startLook("Male"), Female: startLook("Female") };
+}
+
 export function copyLook(look: Look): Look {
   const copy: Look = { sliders: { ...look.sliders }, colors: { ...look.colors }, hidden: [...look.hidden] };
   if (look.hairstyle) copy.hairstyle = look.hairstyle;
@@ -325,6 +339,12 @@ export interface OutfitDef {
   under?: { bra?: string; briefs?: string };
   /** How much of her skin colour shows through its stockings below their top band, out of 1: sheer stockings. */
   sheer?: number;
+  /**
+   * Its legwear comes down rather than off (leggings): the band they're pulled down to, rolled up in the outfit's
+   * roll (LEGROLL_MATERIAL) just above it, with the bands from there down still on her. Only for a style that reaches
+   * up over her groin and down to that band; any other comes off as usual.
+   */
+  legsDown?: string;
 }
 
 export interface LookOptions {
@@ -333,8 +353,16 @@ export interface LookOptions {
   pieces: PieceDef[];
   /** The first is the character's own hair, which the look starts with. */
   hairstyles: HairstyleDef[];
-  /** The first is the character's own outfit, which the look starts with. */
+  /**
+   * The first is the character's own outfit: what a look with none named has on, guests included ("<Body>_Cloth").
+   * A player character may start in another (`defaultOutfit`).
+   */
   outfits: OutfitDef[];
+  /**
+   * The outfit a player's look starts in and a saved look with none named comes back in, when it isn't the first.
+   * Such a look always names its outfit, the first included, so guests (who name none) keep the first.
+   */
+  defaultOutfit?: string;
   /** Lengths of stockings and socks, for the outfits that have legwear. */
   legwear: LegwearDef[];
   /** Her necklace and piercings, for a body built with them. */
@@ -822,6 +850,8 @@ const HOSE_BANDS = ["T_hose", "T_hose_thigh", "T_hose_over", "T_hose_knee", "T_h
 const hoseFrom = (first: string, last?: string) =>
   HOSE_BANDS.slice(HOSE_BANDS.indexOf(first), last ? HOSE_BANDS.indexOf(last) + 1 : undefined);
 const LEGWEAR_PIECES = [...HOSE_BANDS, "T_warmer", "T_garter"];
+/** The roll an outfit's leggings bunch up in when they're pulled down (OutfitDef.legsDown). */
+const LEGROLL_MATERIAL = "T_legroll";
 /** The sock cuff, which shows at the top of the shoes. */
 const CUFF: [MeshPart, string] = ["Shoes", "T_hose"];
 /**
@@ -896,7 +926,7 @@ const FEMALE_COLORS: ColorDef[] = [
   { id: "belt", label: "Belt", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_leather"]] },
   {
     id: "stockings", label: "Legwear", tab: "clothes", mode: "dye", palette: CLOTH_COLORS,
-    parts: [...LEGWEAR_PIECES.map((name): [MeshPart, string] => ["Cloth", name]), CUFF, INSTEP],
+    parts: [...LEGWEAR_PIECES.map((name): [MeshPart, string] => ["Cloth", name]), ["Cloth", LEGROLL_MATERIAL], CUFF, INSTEP],
   },
   { id: "shoes", label: "Shoes", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Shoes", "T_leather"]] },
   // Her shoes' soles and heels, and a boot's laces.
@@ -934,6 +964,8 @@ const FEMALE_COLORS: ColorDef[] = [
   // plunge dress with its choker.
   { id: "bow", label: "Bow", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_bow"]] },
   { id: "dress", label: "Dress", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_dress"]] },
+  // Her T-shirt; its leggings are the legwear.
+  { id: "tee", label: "T-shirt", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_tee"]] },
   // The pirate's rig. Her corset is the bodice, her shirt the blouse, and her belt and corset laces the belt.
   ...pirateColors(),
   { id: "feather", label: "Feather", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_plume"]] },
@@ -947,8 +979,22 @@ const FEMALE_OUTFITS: OutfitDef[] = [
   {
     id: "tavern", label: "Tavern dress", mesh: "",
     colors: ["blouse", "bodice", "skirt", "apron", "belt", "stockings", "shoes", "soles", "bra", "smalls"],
-    preset: {},
+    // Under it, a wine-red balconette and tanga.
+    preset: { bra: "#7a1e2a", smalls: "#7a1e2a" },
     legwear: "tights",
+    under: { bra: "balconette", briefs: "tanga" },
+  },
+  {
+    // What she starts in (defaultOutfit): a fitted white T-shirt, cropped above her navel with a low scoop neck,
+    // and black leggings low on her hips, with white shoes. The tee lifts up over her breasts; the leggings come
+    // down to her knees, bunched there.
+    id: "tee", label: "T-shirt and leggings", mesh: "Tee",
+    colors: ["tee", "stockings", "shoes", "soles", "bra", "smalls"],
+    // Under them, a red demi bra and brazilian briefs.
+    preset: { tee: "#f1efea", stockings: "#1c1a1e", shoes: "#f1ece0", soles: "#c9c2b6", bra: "#b0213a", smalls: "#b0213a" },
+    legwear: "leggings",
+    legsDown: "T_hose_knee",
+    under: { bra: "demi", briefs: "brazilian" },
   },
   {
     // Olive-gold bodice and skirt, a white chemise, a green apron and ribbons, and white socks.
@@ -956,9 +1002,11 @@ const FEMALE_OUTFITS: OutfitDef[] = [
     colors: ["blouse", "ribbons", "bodice", "skirt", "apron", "gems", "stockings", "shoes", "soles", "bra", "smalls"],
     preset: {
       blouse: "#f1ece0", ribbons: "#2e5e3e", bodice: "#6e6233", skirt: "#5c5530", apron: "#2f6040",
-      gems: "#3f9a5a", stockings: "#f1ece0", shoes: "#3d2314",
+      gems: "#3f9a5a", stockings: "#f1ece0", shoes: "#3d2314", bra: "#f1ece0", smalls: "#f1ece0",
     },
     legwear: "noshow",
+    // A white balconette pushing her up under the chemise, and a tanga.
+    under: { bra: "balconette", briefs: "tanga" },
   },
   {
     // Gold and cream: a gold top and girdle, pale sleeves and drapes, gold jewellery with blue gems.
@@ -966,9 +1014,11 @@ const FEMALE_OUTFITS: OutfitDef[] = [
     colors: ["top", "sleeves", "girdle", "drapes", "jewels", "gems", "stockings", "shoes", "soles", "bra", "smalls"],
     preset: {
       top: "#b8892e", sleeves: "#efe4c4", girdle: "#b8892e", drapes: "#efe6cf", jewels: "#c99a3a",
-      gems: "#3aa6d6", shoes: "#9a7430", stockings: "#9a7430", smalls: "#b8892e", bra: "#b8892e",
+      gems: "#3aa6d6", shoes: "#9a7430", stockings: "#9a7430", smalls: "#f3efe6", bra: "#f3efe6",
     },
     legwear: "noshow",
+    // A white string set, so taking off the gold shows something new.
+    under: { bra: "triangle", briefs: "stringbikini" },
   },
   {
     // A brothel girl's bunny set: black ears lined in pink, a white collar with a pink bow tie and white cuffs, a
@@ -987,15 +1037,19 @@ const FEMALE_OUTFITS: OutfitDef[] = [
     // skirt parted at the front, banded with white lace.
     id: "babydoll", label: "Babydoll", mesh: "Babydoll",
     colors: ["straps", "trim", "skirt", "stockings", "shoes", "soles", "bra", "smalls"],
-    preset: { straps: "#8fb0e0", skirt: "#a9c2ea", trim: "#eef2fa", shoes: "#e8eef8", soles: "#c9d4e6" },
+    preset: { straps: "#8fb0e0", skirt: "#a9c2ea", trim: "#eef2fa", shoes: "#e8eef8", soles: "#c9d4e6", bra: "#8fb0e0", smalls: "#8fb0e0" },
     legwear: "noshow",
+    // A shelf under her bare breasts, and a g-string under the parted skirt.
+    under: { bra: "shelf", briefs: "gstring" },
   },
   {
     // A white corset gown: an underbust corset laced in black, and a long skirt open at the front, edged in black lace.
     id: "gown", label: "Corset gown", mesh: "Gown",
     colors: ["trim", "bodice", "skirt", "stockings", "shoes", "soles", "bra", "smalls"],
-    preset: { bodice: "#f1ece0", skirt: "#f1ece0", trim: "#1c1716", shoes: "#f1ece0", soles: "#9a8f80" },
+    preset: { bodice: "#f1ece0", skirt: "#f1ece0", trim: "#1c1716", shoes: "#f1ece0", soles: "#9a8f80", bra: "#1c1716", smalls: "#1c1716" },
     legwear: "noshow",
+    // A black shelf under the corset, and a black thong in the skirt's split.
+    under: { bra: "shelf", briefs: "thong" },
   },
   {
     // All in white: a strapless top under her bare breasts with a big bow on her hip, three tiers of ruffles round her
@@ -1004,17 +1058,21 @@ const FEMALE_OUTFITS: OutfitDef[] = [
     colors: ["bow", "trim", "bodice", "skirt", "stockings", "shoes", "soles", "bra", "smalls"],
     preset: {
       bow: "#f6f3ee", trim: "#f6f3ee", bodice: "#f6f3ee", skirt: "#f6f3ee", stockings: "#f1ece0", shoes: "#f1ece0",
-      soles: "#c9c2b6",
+      soles: "#c9c2b6", bra: "#f6f3ee", smalls: "#f6f3ee",
     },
     legwear: "garter",
     sheer: 0.45,
+    // A white shelf and thong.
+    under: { bra: "shelf", briefs: "thong" },
   },
   {
     // A gold choker and a gold dress hanging from it, open at the front from her throat to below her hips, with long
     // panels down her legs. Nothing on her legs.
     id: "plunge", label: "Plunge dress", mesh: "Plunge",
     colors: ["dress", "shoes", "soles", "bra", "smalls"],
-    preset: { dress: "#d9b85c", shoes: "#b8892e", soles: "#7a5c22" },
+    preset: { dress: "#d9b85c", shoes: "#b8892e", soles: "#7a5c22", bra: "#d9b85c", smalls: "#d9b85c" },
+    // A stick-on bra down the open front, and a gold g-string.
+    under: { bra: "adhesive", briefs: "gstring" },
   },
   {
     // A cream shirt, an oxblood corset under a red sash, brown breeches, black boots, and a cocked hat with a white feather.
@@ -1149,6 +1207,7 @@ export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
       { id: "tail", label: "High tail", mesh: "Tail" },
     ],
     outfits: FEMALE_OUTFITS,
+    defaultOutfit: "tee",
     legwear: FEMALE_LEGWEAR,
     jewellery: FEMALE_JEWELLERY,
     nipples: NIPPLE_TYPES,
@@ -1542,7 +1601,8 @@ export function wearOutfit(body: BodyName, look: Look, id: string): Look {
   const next = copyLook(look);
   for (const def of options.colors) if (def.tab === "clothes") delete next.colors[def.id];
   Object.assign(next.colors, outfit.preset);
-  if (outfit === options.outfits[0]) delete next.outfit;
+  // The first is what a look naming none has on, unless the body starts in another: then every look names its own.
+  if (outfit === options.outfits[0] && !options.defaultOutfit) delete next.outfit;
   else next.outfit = outfit.id;
   delete next.legwear;
   if (outfit.under?.bra) next.bra = outfit.under.bra;
@@ -2239,6 +2299,8 @@ const PULL_FRONT: readonly [number, number] = [-0.05, 0.6];
  */
 const PULL_UNDER_WEIGHT = 0.5;
 const PULL_UNDER_BAND = 0.03;
+/** A top lifted over her breasts is taken up to this far above their top (Dresser.overBreasts), and bunches there. */
+const PULL_OVER_BAND = 0.03;
 /** Her chest just under each breast as built (across, height): where its underside's gone says where the roll goes. */
 const PULL_CREASE: readonly [number, number] = [0.06, 1.08];
 /**
@@ -3192,12 +3254,18 @@ export class Dresser {
       low = Math.min(low, y);
       high = Math.max(high, y);
     }
-    const cut = dir === "down" ? (under ?? PULL_CREASE[1]) : low;
+    // Up, all of it from its hem, the lowest row too (left behind, it would stretch long slivers up to the roll), but
+    // only as high as just over her breasts: a top reaching higher (a T-shirt up to her shoulders) bunches there,
+    // and what's above stays put.
+    const cut = dir === "down" ? (under ?? PULL_CREASE[1]) : low - 1e-3;
+    const over = dir === "up" ? this.overBreasts(totals) : null;
+    const ceiling = over === null ? Infinity : over + PULL_OVER_BAND;
 
-    // Which points are taken: down, those above the breasts' undersides; up, all of it at the front.
+    // Which points are taken: down, those above the breasts' undersides; up, all of it at the front below the ceiling.
     const taken: number[] = [];
     for (let v = 0; v < count; v++) {
-      if (front[v] <= 0 || shapedAt(own, v).y <= cut) continue;
+      const y = shapedAt(own, v).y;
+      if (front[v] <= 0 || y <= cut || y > ceiling) continue;
       at[v] = taken.length;
       taken.push(v);
     }
@@ -3216,11 +3284,12 @@ export class Dresser {
 
     const target = new Float32Array(taken.length * 3);
     const weight = new Float32Array(taken.length);
-    const span = Math.max(0.01, high - cut);
     const { gap, height, narrow, thick } = PULL_ROLL;
-    // Pulled down, each strip of the cloth (across her, PULL_STRIP wide) is measured to its own top edge: a neckline
-    // isn't level (it dips between her breasts), and measured to the highest point of all, the strips would roll to
-    // different depths and their faces fold over each other into teeth. So the neckline is the roll's one even edge.
+    // Each strip of the cloth (across her, PULL_STRIP wide) is measured to its own top edge: a neckline isn't level
+    // (it dips between her breasts), and measured to the highest point of all, the strips would roll to different
+    // depths and their faces fold over each other into teeth. So the neckline is the roll's one even edge: pulled
+    // down, the roll's far edge; lifted, where the roll sits, just over it, so a scoop neck's roll sits on her chest
+    // above her breasts, not up at her throat.
     const strip = (x: number) => Math.round(x / PULL_STRIP);
     const tops = new Map<number, number>();
     for (const v of taken) {
@@ -3237,8 +3306,9 @@ export class Dresser {
     taken.forEach((v, k) => {
       const { x, y, z } = shapedAt(own, v);
       // How far through the pulled cloth the point is, from where the roll starts (0) to its far edge (1).
-      const t = Math.min(1, Math.max(0, dir === "down" ? (y - cut) / Math.max(0.01, topAt(x) - cut) : (high - y) / span));
-      const to = dir === "down" ? cut - gap - height * t : high + gap + height * t;
+      const top = topAt(x);
+      const t = Math.min(1, Math.max(0, dir === "down" ? (y - cut) / Math.max(0.01, top - cut) : (top - y) / Math.max(0.01, top - cut)));
+      const to = dir === "down" ? cut - gap - height * t : top + gap + height * t;
       const on = ground.frontAt(x, to) ?? z;
       // The roll stands off what it lies on, the far edge outermost, as rolled cloth does.
       target[k * 3] = x * (1 - narrow * t);
@@ -3302,6 +3372,27 @@ export class Dresser {
     });
     // Never higher than it always went, for a small bust; lower for one that hangs below that.
     return Math.min(crease ?? PULL_CREASE[1], lowest);
+  }
+
+  /** The top of her breasts as shaped now: the highest of her skin at the front the Bust bone carries most of. */
+  private overBreasts(totals: Float32Array[]): number | null {
+    let highest = -Infinity;
+    this.slots.forEach((slot, s) => {
+      if (slot.part !== "Body" || PULL_SKIP_SKIN.includes(slot.original.name)) return;
+      const { bind, mesh } = slot;
+      const bust = mesh.skeleton.bones.findIndex((bone) => this.boneIndex.get(bone)?.label === "Bust");
+      const skinIndex = mesh.geometry.getAttribute("skinIndex");
+      const skinWeight = mesh.geometry.getAttribute("skinWeight");
+      if (bust < 0 || !skinIndex || !skinWeight) return;
+      for (let v = 0; v < bind.length / 3; v++) {
+        if (bind[v * 3 + 2] > 0) continue;
+        let w = 0;
+        for (let k = 0; k < 4; k++) if (skinIndex.getComponent(v, k) === bust) w += skinWeight.getComponent(v, k);
+        if (w < PULL_UNDER_WEIGHT) continue;
+        highest = Math.max(highest, bind[v * 3 + 1] + totals[s][v * 3 + 1]);
+      }
+    });
+    return Number.isFinite(highest) ? highest : null;
   }
 
   /** How high the undersides of her breasts are as shaped now: the chest just under them as built, where it's gone. */
@@ -3788,6 +3879,13 @@ export class Dresser {
     const legwear = legwearOf(this.body, this.look);
     // Undressed or down to her smallclothes, her stockings are off too, feet and all.
     const stockingsOff = this.undressed || this.underwear || covers(this.stripped, "Cloth", HOSE_BANDS[0]);
+    // Leggings taken "off" only come down (OutfitDef.legsDown): the bands from that one down stay on her, bunched in
+    // the roll above them. The first band shown, or -1 while they're up or off.
+    const { legsDown } = outfitOf(this.body, this.look);
+    const downTo =
+      legsDown && legwear && stockingsOff && !this.undressed && !this.underwear && legwear.bands.includes(HOSE_BANDS[0]) && legwear.bands.includes(legsDown)
+        ? HOSE_BANDS.indexOf(legsDown)
+        : -1;
     const shoes = shoeMeshFor(this.body, this.look);
     const under = this.underwearOn();
     // Her vulva shows once nothing covers it; it rises from the skin as it shows and lies flat again as it's covered.
@@ -3816,6 +3914,13 @@ export class Dresser {
         continue;
       }
       if (slot.part === "Shoes") slot.mesh.material = slot.worn;
+      if (slot.part === "Cloth" && (slot.original.name === LEGROLL_MATERIAL || (downTo >= 0 && LEGWEAR_PIECES.includes(slot.original.name)))) {
+        const band = HOSE_BANDS.indexOf(slot.original.name);
+        const shown = slot.original.name === LEGROLL_MATERIAL ? downTo >= 0 : band >= downTo && legs !== "hide";
+        slot.mesh.visible = shown && outfitMeshOf(slot.mesh, this.body) === outfit;
+        coverCoat(slot.mesh.material as Material);
+        continue;
+      }
       const stripped = covers(this.stripped, slot.part, slot.original.name);
       if (slot === this.nipples?.slot) {
         slot.mesh.material = this.discMaterial(slot);
@@ -4156,7 +4261,7 @@ export function randomLook(body: BodyName, random: () => number = Math.random): 
   const style = pick(options.hairstyles);
   if (style !== options.hairstyles[0]) look.hairstyle = style.id;
   const outfit = pick(playerOutfits(body));
-  if (outfit !== options.outfits[0]) look.outfit = outfit.id;
+  if (outfit !== options.outfits[0] || options.defaultOutfit) look.outfit = outfit.id;
   if (outfit.legwear && options.legwear.length) look.legwear = pick(options.legwear).id;
   if (options.nipples.length) {
     const type = pick(options.nipples);
@@ -4222,7 +4327,17 @@ export function readLook(raw: unknown, body: BodyName): Look | null {
   }
   // The character's own style is the default, so it is left out rather than stored.
   if (options.hairstyles.slice(1).some((style) => style.id === data.hairstyle)) look.hairstyle = data.hairstyle;
-  if (playerOutfits(body).slice(1).some((outfit) => outfit.id === data.outfit)) look.outfit = data.outfit;
+  // A body that starts in another outfit than its first names every outfit, the first too; one saved with none (from
+  // before it had that default) comes back in the default, in its colours where none were set.
+  const named = playerOutfits(body).find((outfit) => outfit.id === data.outfit);
+  let startUnder: OutfitDef["under"];
+  if (named && (named !== options.outfits[0] || options.defaultOutfit)) look.outfit = named.id;
+  else if (options.defaultOutfit) {
+    const start = outfitOf(body, { outfit: options.defaultOutfit });
+    look.outfit = start.id;
+    for (const [id, hex] of Object.entries(start.preset)) if (!(id in look.colors)) look.colors[id] = hex;
+    startUnder = start.under;
+  }
   if (options.legwear.some((style) => style.id === data.legwear)) look.legwear = data.legwear;
   if (options.nipples.slice(1).some((type) => type.id === data.nipples)) look.nipples = data.nipples;
   if (options.bustShapes.slice(1).some((shape) => shape.id === data.bustShape)) look.bustShape = data.bustShape;
@@ -4233,6 +4348,9 @@ export function readLook(raw: unknown, body: BodyName): Look | null {
   if (options.shoes.slice(1).some((style) => style.id === data.shoes)) look.shoes = data.shoes;
   if (options.tops.slice(1).some((style) => style.id === data.bra)) look.bra = data.bra;
   if (options.bottoms.slice(1).some((style) => style.id === data.briefs)) look.briefs = data.briefs;
+  // A save from before she started in the tee, still in her old band and braies, gets the tee's own underwear too.
+  if (startUnder?.bra && !look.bra) look.bra = startUnder.bra;
+  if (startUnder?.briefs && !look.briefs) look.briefs = startUnder.briefs;
   if (Array.isArray(data.jewellery) && options.jewellery.length) {
     look.jewellery = options.jewellery.map((def) => def.id).filter((id) => (data.jewellery as unknown[]).includes(id));
   }
@@ -4244,7 +4362,7 @@ export type Looks = Record<BodyName, Look>;
 export function readLooks(raw: unknown): Looks | null {
   if (!raw || typeof raw !== "object") return null;
   const data = raw as Partial<Record<BodyName, unknown>>;
-  return { Male: readLook(data.Male, "Male") ?? newLook(), Female: readLook(data.Female, "Female") ?? newLook() };
+  return { Male: readLook(data.Male, "Male") ?? startLook("Male"), Female: readLook(data.Female, "Female") ?? startLook("Female") };
 }
 
 const LOOKS_KEY = "tarven.looks";
@@ -4253,11 +4371,11 @@ const LOOKS_KEY = "tarven.looks";
 export function loadLooks(): Looks {
   try {
     const text = localStorage.getItem(LOOKS_KEY);
-    if (text) return readLooks(JSON.parse(text)) ?? { Male: newLook(), Female: newLook() };
+    if (text) return readLooks(JSON.parse(text)) ?? startLooks();
   } catch {
     // No storage, or a broken entry: start as built.
   }
-  return { Male: newLook(), Female: newLook() };
+  return startLooks();
 }
 
 export function storeLooks(looks: Looks): void {

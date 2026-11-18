@@ -832,7 +832,7 @@ function partnerRow(duel: Duel, partner: Partner, aimed: boolean, onPick: () => 
   row.disabled = partner.done;
   const head = document.createElement("span");
   head.className = "who";
-  const where = partner.done ? "gave in" : partner.area ? `has your ${AREA_NAMES[partner.area].toLowerCase()}` : "waiting";
+  const where = partner.done ? "gave in" : partner.area ? `has your ${AREA_NAMES[partner.area].toLowerCase()}` : duel.defeat ? "standing round you" : "waiting";
   head.textContent = `${aimed ? "▶ " : ""}${duel.nameOf(partner)} ${partner.female ? "(woman)" : "(man)"} · ${where}`;
   row.append(head, statBar("Pleasure", partner.pleasure, 100, "pleasure"), statBar("Stamina", partner.stamina, partner.maxStamina, "foe"));
   row.addEventListener("click", onPick);
@@ -961,8 +961,10 @@ export function showDuel(game: Game): void {
     const aim = many && target ? ` · Your moves go to: ${duel.nameOf(target)}` : "";
     const line = duel.waiting.length > 0 ? ` · ${duel.waiting.length} waiting their turn` : "";
     const stake = duel.stake > 0 ? ` · Stake: ${duel.stake} gold` : "";
-    const lost = duel.defeated ? " · Lost: they're not done yet (Stop still ends it)" : "";
-    state.textContent = `You feel: ${STATE_NAMES[duel.state]}${lost} · In play: ${inPlay}${stake}${aim}${line}`;
+    const lost = duel.defeated ? (duel.forced ? " · Lost: they're not done yet" : " · Lost: they're not done yet (Stop still ends it)") : "";
+    // A defeat (KP's STATE_DISABLED): no stamina and no willpower, and all she can do is let them.
+    const tired = duel.tooTired ? ` · Too tired to act: you can only let them${duel.forced ? "" : " (or Stop)"}` : "";
+    state.textContent = `You feel: ${STATE_NAMES[duel.state]}${tired}${lost} · In play: ${inPlay}${stake}${aim}${line}`;
     const log = duelLog(duel.entries);
     box.insertBefore(log, box.querySelector(".menu"));
     box.insertBefore(state, log);
@@ -998,6 +1000,7 @@ function showDuelBattle(game: Game, duel: Duel): void {
 function showDuelStats(game: Game, duel: Duel, cum: readonly CumSpot[]): void {
   game.showBattle("duel", "You · After hours", duel.pleasure / 100, duel.state === "edge", [
     { label: "Feeling", value: STATE_NAMES[duel.state], tone: duel.state === "calm" ? undefined : "hot" },
+    ...(duel.tooTired ? [{ label: "Status", value: "Too tired to act", tone: "hot" as const }] : []),
     { label: "Pleasure", value: `${duel.pleasure}/100`, tone: "hot" },
     { label: "Willpower", value: `${duel.will}/${duel.maxWill} · ${willLabel(duel.will, duel.maxWill)}` },
     { label: "Clothes", value: UNDRESSED[Math.min(2, duel.undressed)] },

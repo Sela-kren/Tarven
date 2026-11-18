@@ -48,6 +48,8 @@ export interface LegPose {
   x: number;
   out: number;
   knee: number;
+  /** The thigh turned about its own length, its knee out (positive) or in: a scene's sitting with her soles together. */
+  twist?: number;
 }
 
 export interface BattlePose {
@@ -204,7 +206,7 @@ export function blendPose(a: BattlePose, b: BattlePose, t: number): BattlePose {
   const armL = (x: ArmPose, y: ArmPose): ArmPose => ({
     x: l(x.x, y.x), y: l(x.y, y.y), out: l(x.out, y.out), elbow: l(x.elbow, y.elbow), twist: l(x.twist, y.twist), fist: l(x.fist, y.fist),
   });
-  const legL = (x: LegPose, y: LegPose): LegPose => ({ x: l(x.x, y.x), out: l(x.out, y.out), knee: l(x.knee, y.knee) });
+  const legL = (x: LegPose, y: LegPose): LegPose => ({ x: l(x.x, y.x), out: l(x.out, y.out), knee: l(x.knee, y.knee), ...(x.twist || y.twist ? { twist: l(x.twist ?? 0, y.twist ?? 0) } : {}) });
   return {
     arch: l(a.arch, b.arch), drop: l(a.drop, b.drop), turn: l(a.turn, b.turn), torso: v(a.torso, b.torso), head: v(a.head, b.head),
     armNear: armL(a.armNear, b.armNear), armFar: armL(a.armFar, b.armFar), legNear: legL(a.legNear, b.legNear), legFar: legL(a.legFar, b.legFar),
@@ -318,7 +320,7 @@ export function applyPose(
   setHand(bones.fingersL, bones.tipsL, bones.thumbL, left.arm.fist, -1);
   // The thighs hang from the tipped pelvis, so they swing forwards by the arch to stay upright.
   const setLeg = (thigh: Object3D | null, shin: Object3D | null, l: LegPose, s: number) => {
-    thigh?.rotation.set(arch + l.x, 0, l.out * s);
+    thigh?.rotation.set(arch + l.x, (l.twist ?? 0) * s, l.out * s);
     shin?.rotation.set(-l.knee, 0, 0);
   };
   setLeg(bones.thighR, bones.shinR, right.leg, 1);

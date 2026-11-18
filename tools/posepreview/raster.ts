@@ -1,8 +1,8 @@
 /** The preview's software rasteriser: a model's skin posed on the CPU and its triangles filled into a depth buffer. */
 import { Matrix4, Object3D, PerspectiveCamera, SkinnedMesh, Mesh, Vector3 } from "three";
 
-export const W = 336;
-export const H = 560;
+export const W = Number(process.env.PREVIEW_W ?? 336);
+export const H = Number(process.env.PREVIEW_H ?? 560);
 
 /** The GLB with its pictures taken out, so it loads without a browser to decode them. */
 export function stripImages(file: Buffer): ArrayBuffer {

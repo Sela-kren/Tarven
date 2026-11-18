@@ -1,6 +1,17 @@
 # Defeat scenes, Karryn's Prison style (for later)
 
-**Status:** a plan only; nothing in this file is built yet. Today a lost brawl has one scene (GAME_PATH.MD "Brawl loss": `forceBrawlDuel` with Consent off, the offer with Consent on). This file sets out how to turn that into six defeat scenes, like Karryn's Prison, with the rules, the models and poses, and the lines each one needs. Work through it when the pose work starts. POSES_TODO.md covers the brawl scenes; this file covers defeats.
+**Status (18 Nov 2026):** the rules are built; the art isn't. Built:
+- **Which defeat, and how many** (`defeat.ts`): `defeatFor` picks one of the six by where she lost and who won; `crowdFactor` sets the total from her records; each has its opening and morning-after lines, and counts in her records and passives.
+- **Played like KP's defeat battles** (`defeatPlay` in `defeat.ts`, `DuelDefeat` in `duel.ts`, tests in `tests/defeatplay.test.ts`). It's the After Hours game, with:
+  - **Up to 4 on her at once** (KP's `Math.min(4, max)`); the rest of the total (the one who won, his company and the room's keenest, up to the crowd factor) wait in line. Each time one finishes, the next steps into the free spot ("The bandit 3 steps into the free spot. 2 still waiting."), until the total's done.
+  - **The slots are the parts of her in play:** mouth, left and right (her hands), breasts, pussy and rear (her butt), each holding one. The "other 1–4" are men standing round her: with no part of her free, one works himself up watching and finishes on her. The taproom floor is her mouth and hands plus 4 round her; the yard, her pussy and rear plus 4 round her; and so on, by the table below. With Consent on it's only what she offered of those.
+  - **Everyone's ready:** a man goes straight for a free part of her (no warming up with kisses).
+  - **Too tired to act** (KP's `STATE_DISABLED`, when `hasNoStamina() && hasNoEnergy()`): each of their moves wears 1 off her stamina, and with no stamina and no willpower left she can only *Let them* (and *Stop*, with Consent on). It lifts as soon as either is above nothing (Let them gives a little stamina back; so does a second wind when one finishes). The duel panel shows it ("Too tired to act").
+  - **The picture** holds the defeat's stand-in pose (`DEFEATS[id].standIn`) the whole way through, the first still in at its heart and the rest at its join spots (`DuelStage.start(…, defeatPose)`, `tavern.defeatPose`).
+- **The consent rule:** Consent on, she's offered it, each of the crowd asks and she ticks who comes (they're the line), and Stop always works. Consent off, it starts where she fell with no Stop.
+- **Still to come:** each defeat's own pose and props (POSES_TODO.md, the table at the end), the per-slot lines, and the respect / fame / heat afterwards listed below.
+
+This file sets out the six defeat scenes, like Karryn's Prison, with the rules, the models and poses, and the lines each one needs. POSES_TODO.md covers the brawl scenes; this file covers defeats.
 
 Every character is an adult (18+). The consent rule (GAME_PATH.MD) still applies to all six:
 

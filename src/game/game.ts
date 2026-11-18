@@ -24,6 +24,7 @@ import {
   LOOK_OPTIONS,
   loadLooks,
   newLook,
+  startLooks,
   GUEST_PERSON_LOOKS,
   guestOutfitColors,
   guestPersonColors,
@@ -77,8 +78,8 @@ import { DRINK_COLORS, Icon, type IconName } from "./icons";
 import type { Input } from "./input";
 import { CURSOR_EVENT, CURSOR_START, KeyNav } from "./keynav";
 import { DEBUFFS } from "./debuffs";
-import { FIRST_IN_TARVEN, ordinal } from "./ledger";
-import { firstInTarvenLines } from "./plot";
+import { ordinal } from "./ledger";
+import { biggestFanGroup, chapterEndingCard, firstInTarvenCard } from "./chapter1";
 import { findCobwebSpots, findDustSpots, MessLayer } from "./mess";
 import { Outline, outlineMaterial } from "./outline";
 import { renderPortrait, renderThumbnail } from "./portraits";
@@ -97,6 +98,7 @@ import { showJournal } from "./journalpanel";
 import { showBedChoice, showDuelTest, showFight, playAdultScene } from "./fightpanels";
 import { confirmMenu, showDevPanel, showLoadMenu, showSaveMenu, showSettingsMenu } from "./menus";
 import { arcStageName } from "./lewd";
+import { isCardTitle } from "./tropes";
 import { PASSIVE_ICONS } from "./passiveicons";
 import { saveBadges } from "./saveicons";
 import { SkyDial } from "./skydial";
@@ -139,6 +141,8 @@ import { StreetTalk } from "./streettalk";
 import { dressOf, outfitStyleOf, type HeatMoment, type TownFacts, type Townsperson } from "./towntalk";
 import { shiftPersona } from "./banter";
 import { formatHour, type WorldClock } from "./time";
+import { costLabel, isTownPlace, TOWN_PLACES, type TownPlaceId } from "./townplaces";
+import { ERRANDS_CLOSE_HOUR, FEED_COST, FEED_HOURS, FLYER_COST, FLYER_HOURS, MARKET_HOURS, marketPackCost, marketReplaceCost } from "./errands";
 import { NavGrid } from "./path";
 import type { CumSpot } from "./cum";
 import type { Duel, DuelArea, DuelLogEntry, DuelState } from "./duel";
@@ -296,76 +300,12 @@ const BACK_INSIDE: Vec2 = { x: -1.5, z: -3.8 };
 const STREET_REMIND_HOUR = 16;
 /** How much further back the camera stands in the street than in the room. */
 const STREET_ZOOM = 1.25;
-/** What each place on the high street says for now (TOWN_DAY.md). Places that do something come later. */
+/** The market's own words (its errands are errands.ts); every other place is townplaces.ts. */
 const STREET_PLACES: Record<string, { title: string; text: string[] }> = {
   market: {
     title: "The Market Stalls",
     text: [
       "Flour, onions, and a whole side of something that used to be a boar. A goblin at the end stall is selling phone charms, and swears one of them is lucky.",
-      "Not open yet: buying stock here, cheaper than the delivery cart, comes next.",
-    ],
-  },
-  board: {
-    title: "The Notice Board",
-    text: [
-      "LOST: one goat, answers to Gerald. WANTED: strong backs for the quarry. A poster for the Copper Bell's \"Two-for-One Thursdays\". Somebody has drawn something rude on the Baron's toll notice.",
-      "Not open yet: day jobs from the board come later.",
-    ],
-  },
-  chapel: {
-    title: "The Chapel",
-    text: [
-      "Cold stone and the smell of candles. A carving of the Stone-Hearted watches the door, his helmet shut. Brother Oden is somewhere at the back, pretending he didn't see you come in.",
-      "Not open yet: talking to Oden by day comes later.",
-    ],
-  },
-  warmhouse: {
-    title: "The Warm House",
-    text: [
-      "Red curtains, warm air, and the smell of scented oil. A priestess at the door smiles like she already knows exactly how tight you are, and offers you a ribbon.",
-      "Not open yet: the Church of Veyra comes later.",
-    ],
-  },
-  copperbell: {
-    title: "The Copper Bell",
-    text: [
-      "The biggest tavern in Tarven, and it knows it. Jory Bell is polishing the same tankard he was polishing last week, and watching you count his customers.",
-      "Not open yet: scouting the rival houses comes later.",
-    ],
-  },
-  garrison: {
-    title: "The Garrison Yard",
-    text: [
-      "Soldiers drilling half-heartedly. Two of them are checking their phones under their helmets. Up on the keep's tower the relay stone glows: every message in town goes through it, and Pell reads them all.",
-      "Not open yet: sparring in the yard comes later.",
-    ],
-  },
-  ciderbarn: {
-    title: "Hollin's Cider Barn",
-    text: [
-      "Half the farmers in Tarven drink here on credit, sitting on hay bales. Hollin writes every cup in his little book, and the chickens wander in and out like paying customers.",
-      "Not open yet: scouting the rival houses comes later.",
-    ],
-  },
-  bakehouse: {
-    title: "The Bakehouse",
-    text: [
-      "Pies, warm bread and one long table of gossip. Goodwife Tansy looks you up and down, and says you have your grandmother's walk.",
-      "Not open yet: scouting the rival houses comes later.",
-    ],
-  },
-  fields: {
-    title: "The Road to Mara's Fields",
-    text: [
-      "The road runs on west between the fields and the long grass, down to Mara's farm.",
-      "Not open yet: the walk out to the fields comes later.",
-    ],
-  },
-  quarry: {
-    title: "The Quarry Road",
-    text: [
-      "The road climbs east toward the quarry and the high pass. Up there the phones go quiet, which is exactly why Silas's crew likes it.",
-      "Not open yet: the quarry road comes later.",
     ],
   },
 };
@@ -1916,6 +1856,8 @@ export class Game {
       for (const text of paragraphs) {
         const paragraph = document.createElement("p");
         paragraph.textContent = text;
+        // A story card's title (tropes.ts `cardTitle`) reads as a heading over its lines.
+        if (isCardTitle(text)) paragraph.className = "card-title";
         story.append(paragraph);
       }
       box.append(story);
@@ -2192,7 +2134,7 @@ export class Game {
       this.active = isPlayable(data.active) ? data.active : PLAYABLE[0];
       this.chosen = this.active;
       // Always the saved looks, never whatever was last on screen; saves from before customising load as built.
-      this.looks = data.looks ?? { Male: newLook(), Female: newLook() };
+      this.looks = data.looks ?? startLooks();
       this.siblings.forEach((_, index) => this.applyLook(index));
       // Nothing the last character had on (or off) tonight carries over to the loaded one.
       this.strippedShown = "";
@@ -2295,6 +2237,16 @@ export class Game {
       this.goInside();
       return;
     }
+    if (place === "market") {
+      this.clearTarget();
+      this.openMarket();
+      return;
+    }
+    if (isTownPlace(place)) {
+      this.clearTarget();
+      this.openTownPlace(place);
+      return;
+    }
     const info = STREET_PLACES[place];
     if (!info) return;
     this.clearTarget();
@@ -2307,6 +2259,118 @@ export class Game {
         },
       },
     ]);
+  }
+
+  /** The day's errand clock (TOWN_DAY.md §2): moves the hour on by what an errand took, never past five. */
+  private spendHours(hours: number): void {
+    const hour = Math.min(AFTERNOON_HOLD_HOUR, this.clock.hour + hours);
+    this.clock.setTime(this.tavern.nightIndex, hour);
+    if (hour < AFTERNOON_HOLD_HOUR) this.clock.run(DAY_HOURS_PER_SECOND, AFTERNOON_HOLD_HOUR);
+  }
+
+  /**
+   * The market square (errands.ts, TOWN_DAY.md build step 2): cups and dishes cheaper than the cart, flyers, and a
+   * post on the feed. Each costs time; after five the stalls are packing up.
+   */
+  private openMarket(note?: string): void {
+    const tavern = this.tavern;
+    const closed = this.clock.hour >= ERRANDS_CLOSE_HOUR;
+    const pack = marketPackCost(tavern.silasCrossed);
+    const fix = marketReplaceCost(tavern.silasCrossed);
+    const wares = Object.keys(WARE_NAMES) as Ware[];
+    const after = (hours: number, done: () => string | void) => () => {
+      const line = done();
+      this.spendHours(hours);
+      this.openMarket(line || undefined);
+    };
+    const text = [...STREET_PLACES.market.text];
+    if (tavern.silasCrossed) text.push("Half the stalls belong to Silas's cousins. Their prices went up the day you crossed him.");
+    text.push(
+      closed
+        ? "It's past five: the stalls are packing up and the square is emptying. Head home and ring the bell."
+        : `${formatHour(this.clock.hour)}. You have ${tavern.gold} gold. Everything here takes time.`,
+    );
+    if (note) text.push(note);
+    const buttons: Button[] = [
+      ...wares.map((ware) => ({
+        label: `${STOCK_PACK} ${WARE_NAMES[ware]}: ${pack} gold (the cart wants ${STOCK_COST}), half an hour (${tavern.stock[ware]}/${MAX_WARE[ware]})`,
+        disabled: closed || !tavern.canMarketBuy(ware),
+        onPick: after(MARKET_HOURS, () => tavern.marketBuy(ware)),
+      })),
+      ...wares
+        .filter((ware) => tavern.broken[ware] > 0)
+        .map((ware) => ({
+          label: `Replace a broken ${WARE_NAMES[ware].replace(/e?s$/, "")}: ${fix} gold, half an hour (${tavern.broken[ware]} broken)`,
+          disabled: closed || !tavern.canMarketReplace(ware),
+          onPick: after(MARKET_HOURS, () => tavern.marketReplace(ware)),
+        })),
+      {
+        label: tavern.flyeredToday ? "Hand out flyers (done today)" : `Hand out flyers by the market cross: ${FLYER_COST} gold, an hour and a half`,
+        disabled: closed || !tavern.canHandOutFlyers(),
+        onPick: after(FLYER_HOURS, () => {
+          const facts = this.townFacts();
+          const result = tavern.runErrand("flyers", { dress: facts.dress, outfit: facts.outfit });
+          if (result) this.log.add(result.line);
+          return result?.line;
+        }),
+      },
+      {
+        label: tavern.postedToday ? "Post on the town feed (done today)" : `Post tonight's menu on the town feed: ${FEED_COST} gold, a quarter of an hour (Pell reads it)`,
+        disabled: closed || !tavern.canPostOnFeed(),
+        onPick: after(FEED_HOURS, () => {
+          const result = tavern.runErrand("feed");
+          if (result) this.log.add(result.line);
+          return result?.line;
+        }),
+      },
+      {
+        label: "Back to the street",
+        onPick: () => {
+          this.closePanel();
+          this.screen = "play";
+        },
+      },
+    ];
+    this.openPanel(STREET_PLACES.market.title, text, buttons);
+  }
+
+  /**
+   * A place in town (townplaces.ts, TOWN_DAY.md v1): what she sees, and what she can do there, each once a day, each
+   * costing hours. What it did goes in the log and under the place's words.
+   */
+  private openTownPlace(place: TownPlaceId, note?: string): void {
+    const tavern = this.tavern;
+    const info = TOWN_PLACES[place];
+    const hoursLeft = ERRANDS_CLOSE_HOUR - this.clock.hour;
+    const text = [...info.describe(tavern.townState)];
+    text.push(
+      hoursLeft <= 0
+        ? "It's past five. Whatever this is, it'll keep till tomorrow: head home and ring the bell."
+        : `${formatHour(this.clock.hour)}. You have ${tavern.gold} gold.`,
+    );
+    if (note) text.push(note);
+    const buttons: Button[] = info.actions.map((action) => {
+      const why = tavern.townBlocked(place, action.id, hoursLeft);
+      return {
+        label: `${action.label}: ${costLabel(action)}${why ? ` (${why})` : ""}`,
+        disabled: why !== null,
+        onPick: () => {
+          const outcome = tavern.doTownAction(place, action.id, hoursLeft);
+          if (!outcome) return;
+          this.log.add(outcome.line);
+          this.spendHours(action.hours);
+          this.openTownPlace(place, outcome.line);
+        },
+      };
+    });
+    buttons.push({
+      label: "Back to the street",
+      onPick: () => {
+        this.closePanel();
+        this.screen = "play";
+      },
+    });
+    this.openPanel(info.title, text, buttons);
   }
 
   /** One of the townsfolk: every kind of person in Tarven, men and women, each with a look of their own. */
@@ -2738,7 +2802,7 @@ export class Game {
     const partners = duel.partners.map((p) => ({ id: p.id, kind: p.kind, female: p.female, done: p.done }));
     if (this.stagedDuel !== duel) {
       this.stagedDuel = duel;
-      this.duelStage.start(this.tavern.duelAfterBrawl, partners, this.tavern.onTable);
+      this.duelStage.start(this.tavern.duelAfterBrawl, partners, this.tavern.onTable, this.tavern.defeatPose);
     }
     if (entry) {
       const alt = entry.partner !== undefined && (entry.partner + duel.climaxes) % 2 === 1;
@@ -3245,12 +3309,23 @@ export class Game {
       this.openPanel(card.title, card.lines, buttons);
       return;
     }
-    if (tavern.takeFirstInTarven()) {
-      // The card changes with what she did in Act 1 (plot.ts): Mara free or taken, Ash hidden, Oden's chapel.
-      const [opening, ...rest] = FIRST_IN_TARVEN;
-      const lines = [opening, ...firstInTarvenLines(tavern.plotFlags), ...rest];
-      this.openPanel("First in Tarven", lines, [{ label: "Start the day", onPick: again }]);
+    // Wren's letter, if she found one this morning (letters.ts): where, and the letter. Words only.
+    const letter = tavern.takeLetter();
+    if (letter) {
+      this.openPanel(letter.title, letter.lines, [{ label: "Fold it away", onPick: again }]);
       this.panelBack = again;
+      return;
+    }
+    if (tavern.takeFirstInTarven()) {
+      // The card changes with what she did in Act 1 (plot.ts) and her biggest fan group; then her Chapter 1 ending
+      // (chapter1.ts), and the teaser. The chapter ends; the nights go on.
+      const ending = chapterEndingCard(tavern.chapterEnding ?? tavern.chapterEndingNow());
+      const showEnding = () => {
+        this.openPanel(ending.title, ending.lines, [{ label: "Start the day", onPick: again }]);
+        this.panelBack = again;
+      };
+      this.openPanel("First in Tarven", firstInTarvenCard(tavern.plotFlags, biggestFanGroup(tavern.fanGroups)), [{ label: "Go on", onPick: showEnding }]);
+      this.panelBack = showEnding;
       return;
     }
     this.showDayCard();
@@ -3309,7 +3384,14 @@ export class Game {
       const { kind, guest } = this.testedCut;
       this.testCutIn(kind, guest);
     }
-    if (import.meta.env.DEV && input.pressed("Backslash")) this.touchComic.clear();
+    if (import.meta.env.DEV && input.pressed("Backslash")) {
+      this.touchComic.clear();
+      if (this.scenePoseShown) {
+        this.scenePoseShown = false;
+        this.battleView.hide();
+        this.battleShown = "";
+      }
+    }
 
     // P opens the sex fight test panel, in development only.
     if (import.meta.env.DEV && input.pressed("KeyP")) {
@@ -3486,6 +3568,47 @@ export class Game {
     this.testedCut = { kind, guest };
     this.playComic({ id: "grab", region: CUT_INS[kind].region, answer: "allow", kind: guest, level: 6, hold: true, heat: 0.7, cut: kind });
   }
+
+  /**
+   * Dev only: shows one sex-scene pose in the big picture, in the game's own camera and look, with a man of `guest`'s
+   * kind as the lead and (with `joins`) one at every slot the pose has. She's shown bare, as in the scenes. The \ key
+   * takes it down. The dev panel's scene pose tester.
+   */
+  testScenePose(scene: ScenePoseName, guest: GuestKind, joins: boolean): void {
+    const index = BODY_NAMES.indexOf("Female");
+    const body = this.siblings[index]?.root.getObjectByName("Female");
+    if (!body) return;
+    // Her clothes and jewellery hidden just while the picture copies her, then put back; her band and smallclothes
+    // (painted on her) and tights over her groin taken off for it too, as a cut-in does (playComic).
+    const { tavern } = this;
+    const dresser = this.dressers[index];
+    const mine = index === this.active;
+    const was = mine ? tavern.shownPieces : [];
+    const off = cutInPieces("Female", mine ? tavern.playerOutfit : undefined, mine ? tavern.playerLegwear : undefined, mine ? tavern.playerUnder : undefined, was);
+    if (off.length) dresser.setStripped([...was, ...off]);
+    const hidden: Object3D[] = [];
+    body.traverse((o) => {
+      if (/_Cloth|_Jewel/.test(o.name) && o.visible) {
+        o.visible = false;
+        hidden.push(o);
+      }
+    });
+    this.battleShown = "";
+    // Afresh each time, so the same pose shown again is set down and framed again.
+    this.battleView.setCast(null, []);
+    this.battleView.show(body, "Female", "duel", `Scene: ${scene}`);
+    for (const o of hidden) o.visible = true;
+    if (off.length) dresser.setStripped(was);
+    // Barefoot, as KP draws her in its sex scenes.
+    this.battleView.bareFeet();
+    const man = (spot: CastMember["spot"]): CastMember => ({ key: `test:${String(spot)}`, body: this.duelPartnerBody(guest, false).root, name: "Male", spot });
+    const spots = joins ? (SCENE_JOINS[scene] ?? []).map((_, i) => man(i)) : [];
+    this.battleView.setCast(scene, [man("lead"), ...spots]);
+    this.scenePoseShown = true;
+  }
+
+  /** Whether the dev scene pose tester has a pose up (\ takes it down). */
+  private scenePoseShown = false;
 
   /**
    * Plays a moment in the comic panel. A cut-in (Karryn-style) always shows her bare, as KP's do, never dressed, and

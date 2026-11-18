@@ -21,6 +21,7 @@ import type { TouchRegion } from "./touchtalk";
 import type { SkillId, StatId } from "./skills";
 import type { DuelMove } from "./duel";
 import { REVEL_HONOURS } from "./revel";
+import { WATCHED_PASSIVES } from "./feedstar";
 
 /**
  * Her desires. `cock` is her wanting to be intimate with someone: it fills when the bold touches land (a lap, a
@@ -245,6 +246,36 @@ export interface Records {
   revelNights: number;
   revelPartnersMost: number;
   mixedNights: number;
+  /**
+   * Feed Star (feedstar.ts): posts made, likes in all, the most followers she's had, bold posts, viral posts, live
+   * streams seen through, the furthest Watched stage reached (0 Shy to 3 Known), and stalkers drawn.
+   */
+  feedPosts: number;
+  feedLikes: number;
+  feedFollowersMost: number;
+  feedBold: number;
+  feedVirals: number;
+  feedStreams: number;
+  feedStage: number;
+  stalkers: number;
+  /**
+   * The Knight path (knight.ts): her best rank (0 Volunteer to 4 Commander, -1 never enrolled is 0 here), drills
+   * passed, patrols walked, raids led, tourney wins, and times caught at her double life.
+   */
+  knightRankBest: number;
+  drillsPassed: number;
+  knightPatrols: number;
+  knightRaids: number;
+  tourneyWins: number;
+  scandalsCaught: number;
+  /** The Guild (guild.ts): quests done (success or partial), quests failed, her best rank (1 F to 7 S), times taken. */
+  questsDone: number;
+  questsFailed: number;
+  guildRankBest: number;
+  captures: number;
+  /** Her Legend (lewd.ts `legendStep`): times she rose to it, and times she came back to Known. */
+  legendRises: number;
+  legendFalls: number;
 }
 
 export function newRecords(): Records {
@@ -327,6 +358,26 @@ export function newRecords(): Records {
     revelNights: 0,
     revelPartnersMost: 0,
     mixedNights: 0,
+    feedPosts: 0,
+    feedLikes: 0,
+    feedFollowersMost: 0,
+    feedBold: 0,
+    feedVirals: 0,
+    feedStreams: 0,
+    feedStage: 0,
+    stalkers: 0,
+    knightRankBest: 0,
+    drillsPassed: 0,
+    knightPatrols: 0,
+    knightRaids: 0,
+    tourneyWins: 0,
+    scandalsCaught: 0,
+    questsDone: 0,
+    questsFailed: 0,
+    guildRankBest: 0,
+    captures: 0,
+    legendRises: 0,
+    legendFalls: 0,
   };
 }
 
@@ -482,6 +533,8 @@ export interface Effects {
   revelGuests: number;
   revelWomen: number;
   centrepieceExtra: number;
+  /** Feed Star (feedstar.ts): more likes on every post, as a fraction. */
+  feedLikes: number;
 }
 
 export function noEffects(): Effects {
@@ -565,6 +618,7 @@ export function noEffects(): Effects {
     revelGuests: 0,
     revelWomen: 0,
     centrepieceExtra: 0,
+    feedLikes: 0,
   };
 }
 
@@ -853,6 +907,37 @@ const REVEL_WIRING: Record<string, Pick<PassiveDef, "group" | "benefit" | "effec
 const REVEL_PASSIVES: PassiveDef[] = REVEL_HONOURS.filter((h) => h.kind === "passive" && REVEL_WIRING[h.id]).map((h): PassiveDef => {
   const [key, need] = Object.entries(h.needs)[0] as [keyof Pick<Records, "revelNights" | "revelPartnersMost" | "mixedNights">, number];
   return { id: h.id, name: h.name, need: h.need, progress: (f) => count(f.records[key] ?? 0, need), ...REVEL_WIRING[h.id] };
+});
+
+/**
+ * The Watched passives (feedstar.ts WATCHED_PASSIVES, FEED_STAR.md §5), in the Exhibition group. Names, needs and
+ * words come from the feed's table; here each is earned from her feed records (the stage ones from the furthest
+ * Watched stage she's reached) and adds a little to her posts' likes. What the stage itself does (willpower for bold
+ * posts, the thrill of likes, checking her phone) follows her current stage, read live in tavern.ts
+ * (`watchedEffects`), so a stage passive's numbers give way to the next one's as she moves on.
+ */
+const WATCHED_WIRING: Record<string, { progress: (f: PassiveFacts) => [number, number]; likes: number; lewd: number }> = {
+  camera_shy: { progress: (f) => count(f.records.feedPosts, 1), likes: 0.02, lewd: 1 },
+  little_thrill: { progress: (f) => count(f.records.feedStage, 1), likes: 0.05, lewd: 3 },
+  refresh_refresh: { progress: (f) => count(f.records.feedStage, 2), likes: 0.05, lewd: 5 },
+  everyones_watching: { progress: (f) => count(f.records.feedStage, 3), likes: 0.1, lewd: 8 },
+  went_viral: { progress: (f) => count(f.records.feedVirals, 3), likes: 0.05, lewd: 3 },
+  crystal_darling: { progress: (f) => count(f.records.feedStreams, 5), likes: 0.05, lewd: 5 },
+};
+const FEED_PASSIVES: PassiveDef[] = WATCHED_PASSIVES.filter((p) => WATCHED_WIRING[p.id]).map((p): PassiveDef => {
+  const w = WATCHED_WIRING[p.id];
+  return {
+    id: p.id,
+    name: p.name,
+    group: "exhibition",
+    need: p.stage ? `Reach the ${p.stage[0].toUpperCase()}${p.stage.slice(1)} stage on the feed (${p.requirement})` : p.requirement,
+    progress: w.progress,
+    benefit: `${p.benefit}${p.stage ? " (while it's her stage)" : ""}; posts get ${Math.round(w.likes * 100)}% more likes`,
+    ...(p.cost ? { cost: p.cost } : {}),
+    effect: (e) => (e.feedLikes += w.likes),
+    lewd: w.lewd,
+    thought: p.thought,
+  };
 });
 
 export const PASSIVES: readonly PassiveDef[] = [
@@ -1598,6 +1683,7 @@ export const PASSIVES: readonly PassiveDef[] = [
   ...CAP_PASSIVES,
   ...KP_EXTRA_PASSIVES,
   ...REVEL_PASSIVES,
+  ...FEED_PASSIVES,
   {
     id: "restless",
     name: "Restless",
@@ -1941,6 +2027,19 @@ export const PASSIVES: readonly PassiveDef[] = [
     },
     thought: "(They mind themselves around me.)",
   },
+  {
+    id: "nightsOff",
+    name: "Even Legends Rest",
+    group: "composure",
+    need: "Come back from Legend to Known (quiet nights, or the chapel)",
+    progress: (f) => count(f.records.legendFalls, 1),
+    benefit: "+10 willpower; saying no costs 10% less willpower",
+    effect: (e) => {
+      e.willMax += 10;
+      e.refuseEase += 0.1;
+    },
+    thought: "(Turns out I can stop. I just have to really want to. I wanted to for three whole nights. Nobody's ever been prouder of three nights.)",
+  },
 
   // ---- Corruption ----
   {
@@ -2082,6 +2181,36 @@ export const PASSIVES: readonly PassiveDef[] = [
       e.nerve += 1;
     },
     thought: "(Every tavern on the pass talks about me.)",
+  },
+  {
+    id: "tarvensLegend",
+    name: "Tarven's Legend",
+    group: "fame",
+    need: "Become a Legend: past Known, the room chanting your name",
+    progress: (f) => count(f.records.legendRises, 1),
+    benefit: "+1 gold on tipped serves; guests wait 10% longer (they're waiting for the chant)",
+    cost: "Guests are bolder (+1 nerve)",
+    effect: (e) => {
+      e.serveTip += 1;
+      e.patience += 0.1;
+      e.nerve += 1;
+    },
+    lewd: 5,
+    thought: "(They wrote a song about me. It has a dance. The dance is mostly my arse, and I've learned it.)",
+  },
+  {
+    id: "byPopularDemand",
+    name: "By Popular Demand",
+    group: "fame",
+    need: "Rise to Legend a second time, after coming back",
+    progress: (f) => count(f.records.legendRises, 2),
+    benefit: "+10% gold on everything; guests offer coin for a look 25% more often",
+    effect: (e) => {
+      e.payPct += 0.1;
+      e.showAsk += 0.25;
+    },
+    lewd: 3,
+    thought: "(I took a few nights off and the whole pass sulked. Fine. I'm back. Somebody get the drum.)",
   },
 
   // ---- Brawler ----
@@ -2943,6 +3072,26 @@ export function readProgress(raw: unknown): ProgressSave {
       "revelNights",
       "revelPartnersMost",
       "mixedNights",
+      "feedPosts",
+      "feedLikes",
+      "feedFollowersMost",
+      "feedBold",
+      "feedVirals",
+      "feedStreams",
+      "feedStage",
+      "stalkers",
+      "knightRankBest",
+      "drillsPassed",
+      "knightPatrols",
+      "knightRaids",
+      "tourneyWins",
+      "scandalsCaught",
+      "questsDone",
+      "questsFailed",
+      "guildRankBest",
+      "captures",
+      "legendRises",
+      "legendFalls",
     ] as const) {
       rec[key] = Math.floor(num(src[key]));
     }

@@ -106,7 +106,8 @@ describe("her arc", () => {
   it("layers on the written line, never replaces it", () => {
     const written = "(Their hand's warm.)";
     expect(flavorLine(written, "sheltered", "hand", true)).toBe(written);
-    expect(flavorLine(written, "willing", "hand", true)).toBe(written);
+    // Willing talks herself into it only half the time (CORRUPTION_TROPES.md); the rest, the written line alone.
+    expect(flavorLine(written, "willing", "hand", true, () => 0.99)).toBe(written);
     expect(flavorLine(written, "curious", "hand", true)).toContain("Their hand's warm.");
     const known = flavorLine(written, "known", "chest", true);
     expect(known.startsWith(written)).toBe(true);

@@ -49,6 +49,34 @@ export const STATE_NAMES: Record<DuelState, string> = { calm: "Calm", aroused: "
  * it isn't over until the last of them has.
  */
 export const MAX_PARTNERS = 6;
+/**
+ * A defeat (defeat.ts, Karryn's Prison's defeat battles), as the game plays it: the parts of her its pose has slots
+ * for (and how many each holds), how many men can stand round her (KP's other 1-4), and how many are on her at once
+ * (KP starts Math.min(4, max); the rest wait and step in as spots free up). Everyone in it is ready from the start:
+ * a man goes straight for a free part of her, and with none free he stands round her working himself up, and
+ * finishes on her. Each of their moves wears her a little (KP's sex skills cost her stamina), and with no stamina
+ * and no willpower left she's too tired to act (KP's STATE_DISABLED): she can only let them (or Stop, with Consent
+ * on) until either comes back above nothing.
+ */
+export interface DuelDefeat {
+  /** Which defeat (a DefeatId). */
+  id: string;
+  areas: readonly DuelArea[];
+  holds: Partial<Record<DuelArea, number>>;
+  others: number;
+  atOnce: number;
+}
+/** What each of their moves in a defeat costs her stamina. */
+export const DEFEAT_WEAR = 1;
+/** A man standing round her: what his move does to her, and to him. */
+const STAND_ON_HER = 3;
+const STAND_SELF = 8;
+const STAND_LINES = [
+  "He stands over you, stroking himself, waiting for a turn.",
+  "He works himself hard and fast, watching the others use you.",
+  "He crowds in close, fist pumping, his eyes all over you.",
+];
+const STAND_LINES_WOMAN = ["She watches, touching herself, waiting her turn."];
 const PLEASURE_MAX = 100;
 /**
  * A climax, Karryn's way: it doesn't end the game. She comes, it costs her willpower, and she comes down to here.
@@ -222,6 +250,8 @@ export class Duel {
   readonly partners: Partner[] = [];
   /** In the game but waiting their turn: they step in, in order, as those on her give in. */
   readonly waiting: PartnerSetup[] = [];
+  /** How many can be on her at once: six, or a defeat's own (at most 4 to start, KP). */
+  readonly atOnce: number;
   /** What's in play; the test panel can change it mid-game. */
   readonly areas: Set<DuelArea>;
   outcome: DuelOutcome | null = null;
@@ -262,8 +292,11 @@ export class Duel {
      * when they're all spent, or she gives in.
      */
     readonly forced = false,
+    /** A defeat (defeat.ts): its slots decide what's in play and how many are on her at once. */
+    readonly defeat: DuelDefeat | null = null,
   ) {
-    this.areas = new Set(areas);
+    this.areas = new Set(defeat ? [...areas].filter((a) => defeat.areas.includes(a)) : areas);
+    this.atOnce = defeat ? Math.max(1, Math.min(MAX_PARTNERS, defeat.atOnce)) : MAX_PARTNERS;
     this.scene = scene;
     this.soloStamina = this.maxStamina = this.stamina = BASE_STAMINA + (stats.level("endurance") - 1) * 3 + stats.stamina;
     this.maxWill = stats.maxWill ?? maxWillpower(stats.level("mind"));
@@ -317,7 +350,7 @@ export class Duel {
 
   /** Someone joins the game: on her at once if there's room, or else at the end of the line. */
   join(setup: PartnerSetup): Partner | null {
-    if (this.active.length < MAX_PARTNERS) return this.addPartner(setup);
+    if (this.active.length < this.atOnce) return this.addPartner(setup);
     this.waiting.push(setup);
     return null;
   }
@@ -329,7 +362,7 @@ export class Duel {
 
   /** Someone else joins the game (the test panel adds them mid-game). */
   addPartner(setup: PartnerSetup): Partner | null {
-    if (this.active.length >= MAX_PARTNERS) return null;
+    if (this.active.length >= this.atOnce) return null;
     const max = (setup.stats ?? statsOf(setup.kind)).partner.stamina;
     const partner: Partner = { id: this.nextId++, ...setup, pleasure: 0, stamina: max, maxStamina: max, area: null, done: false, teased: false, held: 0, last: null };
     this.partners.push(partner);
@@ -434,11 +467,17 @@ export class Duel {
 
   /** Whether a part of her has room for this partner. */
   private room(area: DuelArea, partner: Partner): boolean {
-    return partner.area === area || this.holding(area, partner) < (HOLDS.get(area) ?? 1);
+    return partner.area === area || this.holding(area, partner) < (this.defeat?.holds[area] ?? HOLDS.get(area) ?? 1);
   }
 
   /** Her moves now, on a partner (the first still in, if none is named). Stop is always there, and always works. */
   choices(target?: number): DuelChoice[] {
+    // Too tired to act (a defeat, KP's STATE_DISABLED): she can only let them, or Stop if it's hers to stop.
+    if (this.tooTired) {
+      const tired: DuelChoice[] = [{ move: "endure", label: `Let them · too tired for anything else · +${ENDURE_STAMINA} stamina`, disabled: false }];
+      if (!this.forced) tired.push({ move: "stop", label: "Stop", disabled: false });
+      return tired;
+    }
     const partner = this.target(target);
     const out: DuelChoice[] = [];
     for (const move of Object.keys(HER_MOVES) as HerMove[]) {
@@ -481,9 +520,27 @@ export class Duel {
     this.xp[id] = (this.xp[id] ?? 0) + n;
   }
 
+  /**
+   * In a defeat, with no stamina and no willpower left, she's too tired to act (KP's STATE_DISABLED, when
+   * hasNoStamina() && hasNoEnergy()): only Let them (and Stop, if it's hers). It lifts once either is above nothing.
+   */
+  get tooTired(): boolean {
+    return this.defeat !== null && this.outcome === null && this.stamina <= 0 && this.will <= 0;
+  }
+
   /** She makes her move on a partner (the first still in, if none is named); then everyone still in makes theirs. */
   act(move: DuelMove, target?: number): void {
     if (this.outcome) return;
+    const was = this.tooTired;
+    if (was && move !== "endure" && move !== "stop") return;
+    this.round(move, target);
+    if (this.outcome) return;
+    if (this.tooTired && !was) this.note("You've nothing left. Too tired to do anything but let them.");
+    else if (was && !this.tooTired) this.note("You get a little breath back.");
+  }
+
+  /** One round: her move, then theirs. */
+  private round(move: DuelMove, target?: number): void {
     if (move === "stop" && this.forced) return;
     if (move === "stop") {
       this.used.stop = (this.used.stop ?? 0) + 1;
@@ -520,7 +577,11 @@ export class Duel {
         side: "her",
         actor: "You",
         action: "Let them",
-        text: this.defeated ? "You've nothing left to fight it with. You let them." : "You lie back and let them, catching your breath.",
+        text: this.tooTired
+          ? "You're too worn out to move. You let them."
+          : this.defeated
+            ? "You've nothing left to fight it with. You let them."
+            : "You lie back and let them, catching your breath.",
         effects: [{ who: "You", side: "her", stat: "stamina", amount: ENDURE_STAMINA }],
       });
     } else if (!this.herMove(move, target)) return;
@@ -641,9 +702,10 @@ export class Duel {
       }
     }
     // The next in line steps into the space they left.
-    while (this.waiting.length > 0 && this.active.length < MAX_PARTNERS) {
+    while (this.waiting.length > 0 && this.active.length < this.atOnce) {
       const next = this.addPartner(this.waiting.shift()!);
-      if (next) this.note(`The ${this.nameOf(next).toLowerCase()} steps in to take a turn.${this.waiting.length > 0 ? ` ${this.waiting.length} still waiting.` : ""}`);
+      const still = this.waiting.length > 0 ? ` ${this.waiting.length} still waiting.` : "";
+      if (next) this.note(this.defeat ? `The ${this.nameOf(next).toLowerCase()} steps into the free spot.${still}` : `The ${this.nameOf(next).toLowerCase()} steps in to take a turn.${still}`);
     }
     if (this.active.length === 0) {
       if (this.defeated) {
@@ -699,13 +761,19 @@ export class Duel {
     partner.stamina -= THEIR_COST;
     // Never outside her rules: a part taken out of play is let go of.
     if (partner.area && !this.areas.has(partner.area)) partner.area = null;
-    if (!partner.area && this.random() < TAKE_CHANCE) {
+    // In a defeat they're all ready from the start: a man goes straight for a free part of her.
+    if (!partner.area && (this.defeat !== null || this.random() < TAKE_CHANCE)) {
       const free = [...this.areas].filter((a) => this.room(a, partner));
       const liked = (partner.stats ?? statsOf(partner.kind)).prefers;
       if (free.length > 0) {
         partner.area = free.includes(liked) && this.random() < PREFER_CHANCE ? liked : free[Math.floor(this.random() * free.length) % free.length];
         partner.held = 0;
       }
+    }
+    // In a defeat, with no part of her free, he stands round her (KP's other 1-4).
+    if (this.defeat && !partner.area) {
+      this.standRound(partner);
+      return;
     }
     const pick = partner.area ?? "kiss";
     const def = (partner.female ? THEIR_MOVES_WOMEN : THEIR_MOVES)[pick];
@@ -732,6 +800,7 @@ export class Duel {
     partner.pleasure = Math.min(PLEASURE_MAX, partner.pleasure + theirs);
     this.meterGains[def.meter] = (this.meterGains[def.meter] ?? 0) + THEIR_METER;
     this.gain("endurance", 1);
+    const worn = this.wearHer();
     const lines = this.lines();
     this.entries.push({
       side: "partner",
@@ -747,6 +816,7 @@ export class Duel {
         { who: "You", side: "her", stat: "pleasure", amount: n },
         { who: this.nameOf(partner), side: "partner", stat: "pleasure", amount: theirs },
         { who: this.nameOf(partner), side: "partner", stat: "stamina", amount: -THEIR_COST },
+        ...(worn > 0 ? [{ who: "You", side: "her" as const, stat: "stamina" as const, amount: -worn }] : []),
       ],
       part: pick,
       stage,
@@ -754,6 +824,43 @@ export class Duel {
       partner: partner.id,
     });
     this.talk(partner, pick);
+  }
+
+  /** In a defeat, each of their moves wears her a little: what it took. */
+  private wearHer(): number {
+    if (!this.defeat) return 0;
+    const n = Math.min(Math.max(0, this.stamina), DEFEAT_WEAR);
+    this.stamina -= n;
+    return n;
+  }
+
+  /**
+   * In a defeat, one with no part of her free stands round her (KP's other 1-4): he works himself up watching, a
+   * little of it reaches her, and when he's there he finishes on her.
+   */
+  private standRound(partner: Partner): void {
+    const group = Math.pow(this.active.length, -GROUP_EXPONENT);
+    const n = Math.max(1, Math.round(STAND_ON_HER * group));
+    this.pleasure = Math.min(PLEASURE_MAX, this.pleasure + n);
+    const theirs = STAND_SELF + (this.defeated ? DEFEATED_THEIRS : 0);
+    partner.pleasure = Math.min(PLEASURE_MAX, partner.pleasure + theirs);
+    const worn = this.wearHer();
+    const who = this.nameOf(partner);
+    this.entries.push({
+      side: "partner",
+      actor: who,
+      action: partner.female ? "Touches herself" : "Works himself up",
+      target: "You",
+      text: this.pick(partner.female ? STAND_LINES_WOMAN : STAND_LINES, ""),
+      effects: [
+        { who: "You", side: "her", stat: "pleasure", amount: n },
+        { who, side: "partner", stat: "pleasure", amount: theirs },
+        { who, side: "partner", stat: "stamina", amount: -THEIR_COST },
+        ...(worn > 0 ? [{ who: "You", side: "her" as const, stat: "stamina" as const, amount: -worn }] : []),
+      ],
+      kind: partner.kind,
+      partner: partner.id,
+    });
   }
 
   /**

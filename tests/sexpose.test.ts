@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Box3, Object3D, Vector3 } from "three";
 import { poseBones } from "../src/game/battlepose";
 import { DUEL_AREAS } from "../src/game/duel";
-import { blendScene, placeBody, SCENE_POSE_LIST, SCENE_POSES, sceneForEntry, sceneFraming, type Posed } from "../src/game/sexpose";
+import { blendScene, HOLDING_SCENES, placeBody, SCENE_JOINS, SCENE_POSE_LIST, SCENE_POSES, sceneForEntry, sceneFraming, type Posed } from "../src/game/sexpose";
+import { FOE_SCENE_LIST } from "../src/game/brawlscenes";
 
 const them = (part: "kiss" | (typeof DUEL_AREAS)[number]["id"], stage = 0) => ({ side: "partner" as const, part, stage });
 const hers = (move: Parameters<typeof sceneForEntry>[0]["move"]) => ({ side: "her" as const, move });
@@ -118,5 +119,44 @@ describe("framing a scene", () => {
     const side = sceneFraming(small, { yaw: Math.PI / 2, pitch: 0.3 }, 28, 0.6);
     expect(side.position.x).toBeGreaterThan(0);
     expect(side.position.y).toBeGreaterThan(0.85);
+  });
+});
+
+describe("cropping in on a scene, as KP frames its poses", () => {
+  it("looks at the scene's focus, scaled with the stage, and comes closer with its zoom", () => {
+    const box = new Box3(new Vector3(-0.5, 0, -0.3), new Vector3(0.5, 1.7, 0.3));
+    const whole = sceneFraming(box, { yaw: 0, pitch: 0 }, 28, 0.6);
+    const crop = sceneFraming(box, { yaw: 0, pitch: 0, focus: [0.1, 0.5, 0], zoom: 0.5 }, 28, 0.6, 2);
+    expect(crop.target.toArray()).toEqual([0.2, 1, 0]);
+    expect(crop.position.z - crop.target.z).toBeCloseTo((whole.position.z - whole.target.z) * 0.5);
+  });
+});
+
+describe("the brawl scenes' own poses (POSES_TODO.md)", () => {
+  const own = FOE_SCENE_LIST.filter((def) =>
+    ["footjob", "rimjob", "piledriver", "kickCounter", "standPaizuri", "soldierGangbang", "againstWall", "lapRide"].includes(def.id),
+  );
+
+  it("each scene shows its own pose, and holds", () => {
+    expect(own.length).toBe(8);
+    for (const def of own) {
+      expect(def.pose, def.id).toBe(def.id);
+      expect(HOLDING_SCENES.has(def.pose!), def.id).toBe(true);
+    }
+  });
+
+  it("has a spot for every man its scene lets join her", () => {
+    for (const def of own) {
+      const slots = (SCENE_JOINS[def.pose!] ?? []).map((spot) => spot.slot);
+      for (const slot of def.joins) expect(slots, `${def.id} ${slot}`).toContain(slot);
+    }
+  });
+
+  it("stands on what it needs: the table, the post, the wall, the bench", () => {
+    expect(SCENE_POSES.rimjob.table).toBeDefined();
+    expect(SCENE_POSES.standPaizuri.props?.map((p) => p.kind)).toEqual(["post"]);
+    expect(SCENE_POSES.againstWall.props?.map((p) => p.kind)).toEqual(["wall"]);
+    expect(SCENE_POSES.lapRide.props?.map((p) => p.kind)).toEqual(["bench"]);
+    expect(SCENE_POSES.kickCounter.props?.map((p) => p.kind)).toEqual(["bench"]);
   });
 });

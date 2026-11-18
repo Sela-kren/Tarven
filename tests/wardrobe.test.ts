@@ -75,6 +75,26 @@ describe("the wardrobe", () => {
     );
   });
 
+  it("lifts her T-shirt off, then peels her leggings down to her knees, then her smallclothes", () => {
+    const ladder = stripLadder("Female", "tee");
+    expect(ladder.map((g) => g.id)).toEqual(["tee", "stockings", "bra", "smalls"]);
+    expect(stripStages("Female", "tee")).toBe(5);
+    // Her leggings go by their own name and lines: they only come down.
+    expect(ladder[1]).toMatchObject({ label: "leggings", lines: "leggings" });
+    expect(stripPiece(ladder[1]).accept).toBe(DARES.leggings.accept);
+    expect(stripPiece(ladder[0]).accept).toBe(DARES.tee.accept);
+    // Thigh-highs with it are stockings again, and come off.
+    expect(stripLadder("Female", "tee", "thighhigh")[1]).toMatchObject({ id: "stockings", label: "stockings" });
+    expect(stripLadder("Female", "tee", "thighhigh")[1].lines).toBeUndefined();
+    // Shown off, the tee lifts up over her breasts; once it's off there's nothing to pull.
+    expect(topPull("Female", "tee", [])).toEqual({ ids: ["tee"], dir: "up" });
+    expect(topPull("Female", "tee", ["tee"])).toBeNull();
+    // A cut-in lifts the tee and brings the leggings down, with her smallclothes off.
+    expect(cutInPieces("Female", "tee", undefined, undefined, [])).toEqual(["stockings", "bra", "smalls"]);
+    // A guest naming no outfit is in the tavern dress, whatever she starts in.
+    expect(stripLadder("Female").map((g) => g.id)).not.toContain("tee");
+  });
+
   it("strips the babydoll and the corset gown lace first", () => {
     expect(stripLadder("Female", "babydoll").map((g) => g.id)).toEqual(["straps", "trim", "skirt", "bra", "smalls"]);
     expect(stripLadder("Female", "gown").map((g) => g.id)).toEqual(["trim", "bodice", "skirt", "bra", "smalls"]);
