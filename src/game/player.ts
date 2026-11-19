@@ -98,6 +98,19 @@ const DRUNK_DROOP = 0.18;
 const DRUNK_SLUMP = 0.08;
 
 const ELBOW_REST = 0.08;
+/**
+ * Her arms as they hang, against her model's rest (radians, per model). The female model is built with its upper
+ * arms 20° behind her and 16° out from her sides, and standing she held them 11° behind with her forearms 27° in
+ * front, her hands back by her rear; the hero-shooter refs hang the upper arm 4° behind and the forearm 17° in front
+ * (measured 2026-11-19, ref/_sculpt_work/shoulder). So standing she swings her upper arms forward to the
+ * refs' line, a little further out, clear of her hips, and bends her elbows a little less. Standing still only: at
+ * first it held through her walk and run too, straightening the elbows and stiffening the swing they were tuned
+ * with, and the user found her walk and run broken. Carrying and sitting set their own angles, and the posed scenes
+ * (cut-ins, comics, fights) keep theirs, all worked out on the rest as built.
+ */
+const ARM_HANG: Record<string, { forward: number; out: number; elbow: number }> = {
+  Female: { forward: 0.13, out: 0.1, elbow: -0.25 },
+};
 
 /** One way of moving at one speed. Angles are in radians, distances in metres. */
 interface Stride {
@@ -922,17 +935,24 @@ export class Body {
     const raised = (angle: number) => lerp(lerp(angle, CARRY_UPPER_ARM, carrying), SIT_UPPER_ARM, sit);
     const armSwing = g("armSwing") * swing;
     const armBias = g("armBias") * swing;
-    this.upperArmL.rotation.x = raised(-phase * armSwing + armBias + s.freeArm * still - chestLean);
-    this.upperArmR.rotation.x = raised(phase * armSwing + armBias + s.standArm * still - chestLean);
+    const hang = ARM_HANG[this.name];
+    // Standing only: it fades out as she sets off, so her walk and run keep the swing they were tuned with.
+    const hanging = hang ? still * (1 - carrying) : 0;
+    const hangForward = hang ? hang.forward * hanging : 0;
+    const hangOut = hang ? hang.out * hanging : 0;
+    this.upperArmL.rotation.x = raised(-phase * armSwing + armBias + s.freeArm * still - chestLean + hangForward);
+    this.upperArmR.rotation.x = raised(phase * armSwing + armBias + s.standArm * still - chestLean + hangForward);
     // Loose arms hang straight down while the body above the hips tilts.
     const dangle = -(this.hips.rotation.z + this.torso.rotation.z) * g("armDangle") * moving;
     // Positive Z swings the left arm in and the right arm out. Running, each hand swings in across the body as it
     // comes up in front, with the chest turning the same way.
     const across = RUN_ARM_ACROSS * flight;
-    this.upperArmL.rotation.z = dangle - this.armSpread + Math.max(0, -phase) * across;
-    this.upperArmR.rotation.z = dangle + this.armSpread - Math.max(0, phase) * across;
+    this.upperArmL.rotation.z = dangle - this.armSpread - hangOut + Math.max(0, -phase) * across;
+    this.upperArmR.rotation.z = dangle + this.armSpread + hangOut - Math.max(0, phase) * across;
+    const hangElbow = hang ? hang.elbow * hanging : 0;
     const elbow = (ahead: number, resting: number) => {
-      const swinging = ELBOW_REST + (g("elbow") + Math.max(0, ahead) * g("elbowFlick")) * swing + resting * still;
+      const swinging =
+        ELBOW_REST + hangElbow + (g("elbow") + Math.max(0, ahead) * g("elbowFlick")) * swing + resting * still;
       return lerp(lerp(swinging, CARRY_ELBOW, carrying), SIT_ELBOW, sit);
     };
     this.foreArmL.rotation.x = elbow(-phase, s.elbow);

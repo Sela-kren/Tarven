@@ -868,6 +868,112 @@
   box-shadow: inset 0 0 0 2px var(--gold-dim);
 }
 
+/* In a brawl the log has the middle to itself: everyone's numbers are on their own cards. */
+#panel .fight-log.brawl-activity {
+  min-height: 300px;
+  padding: 10px 14px;
+}
+
+#panel .fight-log.brawl-activity p {
+  font-size: 16px;
+}
+
+/*
+ * The guard meter (brawlaim.ts): one of them swings, a needle sweeps back and forth, and she stops it. The green
+ * dodge zone sits in the gold block zone; anywhere else on the red is a full hit.
+ */
+#panel .box:has(.guard-meter) .fight-log.brawl-activity {
+  min-height: 200px;
+}
+
+#panel .guard-meter {
+  margin-top: 12px;
+  padding: 10px 12px 8px;
+  background: rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 0 0 2px var(--gold-dim);
+}
+
+#panel .guard-track {
+  position: relative;
+  height: 34px;
+  background: linear-gradient(#a8382a, #6a1a12);
+  box-shadow: inset 0 0 0 2px #2a0a06;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+#panel .guard-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+#panel .guard-zone.block {
+  background: linear-gradient(#f0c848, #a07a14);
+}
+
+#panel .guard-zone.dodge {
+  background: linear-gradient(#8ef0a8, #2a9a52);
+}
+
+#panel .guard-needle {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 4px;
+  margin-left: -2px;
+  background: #fff;
+  box-shadow: 0 0 0 1px #000, 0 0 6px #fff;
+}
+
+#panel .guard-word {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-weight: bold;
+  font-size: 18px;
+  color: #fff;
+  text-shadow: 0 0 3px #000, 1px 1px 0 #000;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+#panel .guard-meter.stopped .guard-needle {
+  background: #ffe08a;
+}
+
+#panel .guard-meter.stopped.dodge .guard-word {
+  color: #8ef0a8;
+}
+
+#panel .guard-meter.stopped.block .guard-word {
+  color: #fff0a0;
+}
+
+#panel .guard-meter.stopped.full .guard-word {
+  color: #ff9a8a;
+}
+
+#panel .guard-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+#panel .guard-legend .dodge {
+  color: #8ef0a8;
+}
+
+#panel .guard-legend .block {
+  color: #f0c848;
+}
+
+#panel .guard-legend .full {
+  color: #ff9a8a;
+}
+
 #panel .fight-log p {
   margin: 2px 0;
   font-size: 15px;

@@ -143,6 +143,12 @@ export function coatRetroMaterial(): MeshPhongMaterial {
  * All scaled by how lit she is there, so she doesn't glow in the dark.
  */
 const SKIN_GLOW_NAMES = /^(T_skin_f|T_areola)$/;
+/**
+ * Her eyes' pieces (build_world.py add_anime_eyes) aren't snapped: her pupil and shines are a few millimetres across,
+ * smaller than a snap step at room distance, and snapping crushed them into a blur (the user, 2026-11-19). Her lids
+ * reach well past the white, so her snapped skin round them never shows a gap.
+ */
+const UNSNAPPED_NAMES = /^T_eye_/;
 const SKIN_GLOW = {
   sheen: 0.1,
   sheenPower: 1.6,
@@ -175,11 +181,14 @@ function withPs1Rasterizer<T extends MeshLambertMaterial | MeshPhongMaterial>(ma
       shader.fragmentShader = shader.fragmentShader.replace("#include <dithering_fragment>", SKIN_GLOW_GLSL);
     }
     shader.uniforms.uSnap = snapResolution;
+    const snap = UNSNAPPED_NAMES.test(material.name)
+      ? ""
+      : `gl_Position.xy = floor(gl_Position.xy / gl_Position.w * uSnap * 0.5 + 0.5)
+        / (uSnap * 0.5) * gl_Position.w;`;
     shader.vertexShader = `${AFFINE_VARYINGS}uniform vec2 uSnap;\n${shader.vertexShader}`.replace(
       "#include <project_vertex>",
       `#include <project_vertex>
-      gl_Position.xy = floor(gl_Position.xy / gl_Position.w * uSnap * 0.5 + 0.5)
-        / (uSnap * 0.5) * gl_Position.w;
+      ${snap}
       #ifdef USE_MAP
         vAffineMapUv = vec3(vMapUv * gl_Position.w, gl_Position.w);
       #endif
@@ -203,7 +212,8 @@ function withPs1Rasterizer<T extends MeshLambertMaterial | MeshPhongMaterial>(ma
         #endif`,
       );
   };
-  material.customProgramCacheKey = () => (SKIN_GLOW_NAMES.test(material.name) ? "retro-ps1-skin" : "retro-ps1");
+  material.customProgramCacheKey = () =>
+    (SKIN_GLOW_NAMES.test(material.name) ? "retro-ps1-skin" : UNSNAPPED_NAMES.test(material.name) ? "retro-ps1-unsnapped" : "retro-ps1");
   // Her areolae's and vulva's painted detail, over the glow.
   addSkinDetail(material);
   return material;

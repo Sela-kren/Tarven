@@ -17,7 +17,7 @@ import {
   GLANS_MATERIAL, PENIS_MATERIAL, PENIS_TYPES, SCROTUM_MATERIAL, penisFrame, penisShape, readPenis, shapePenis, type PenisPatch,
   type PenisType,
 } from "./penis";
-import { FACE_LINES, faceMove, faceMoved, faceRig, faceSurface, REST_FACE, type FaceRig, type FaceShape } from "./face";
+import { FACE_EXTRAS, FACE_LINES, faceMove, faceMoved, faceRig, faceSurface, REST_FACE, type FacePart, type FaceRig, type FaceShape } from "./face";
 import { coatRetroMaterial, coverCoat, solidRetroMaterial, stainRetroMaterial } from "./retro";
 import type { LegSize } from "./skirt";
 
@@ -352,6 +352,12 @@ export interface OutfitDef {
    * up over her groin and down to that band; any other comes off as usual.
    */
   legsDown?: string;
+  /**
+   * Its own top's materials, which hide her bra's drawing while she has any of them on: the bra is all under the
+   * top but where the top opens (a low scoop neck), and there its cups' top edge showed in the opening and, drawn a
+   * little in front of her skin, through the cloth lying close to it at the neckline, as white blotches.
+   */
+  hidesBra?: string[];
 }
 
 export interface LookOptions {
@@ -464,6 +470,8 @@ const lumbar = (depth: number): BoneTerm[] =>
 const SKIN_TONES = ["#f6d5be", "#eab594", "#dba07f", "#c68a64", "#a86f4c", "#8a5536", "#6b3f27", "#4a2a1a"];
 const HAIR_COLORS = ["#130f0f", "#3b2416", "#6b4226", "#a0663a", "#8c2f1c", "#c9a066", "#e3cf9c", "#9a948a", "#e8e4dc"];
 const EYE_COLORS = ["#0a0807", "#192126", "#3a2416", "#5b8ead", "#3d6e3f", "#7a5a2c", "#6a6a78"];
+/** Her irises (anime eyes): the brown she's built with first, the rest as everyone's, then violet, red and gold. */
+const HER_EYE_COLORS = ["#73452b", ...EYE_COLORS, "#7a4a9e", "#a8343a", "#c7953a"];
 const LIP_COLORS = ["#cc706d", "#e59993", "#d88a7a", "#b04a52", "#8c3a3a", "#9e6554"];
 /** Areolae from pale pink to deep brown. */
 const NIPPLE_COLORS = ["#f0b8ad", "#e09a8c", "#c97d70", "#b46a5c", "#94544a", "#6e3d33", "#4c2a23"];
@@ -920,6 +928,8 @@ const FEMALE_COLORS: ColorDef[] = [
     parts: [
       ["Body", "T_skin_f"], ["Body", "T_navel"], ["Body", "T_nail"],["Body", LABIA_MATERIAL], ["Body", ANUS_SKIN_MATERIAL], ["Body", "T_face_skin"], ["Body", "T_face_mid"], ["Body", "T_face_cool"],
       ["Body", "T_face_lit"], ["Body", "T_face_white"], ["Body", "T_face_blush"], ["Body", "T_face_pink"],
+      // Her eyelids are her face's skin.
+      ["Body", "T_eye_lid"], ["Body", "T_eye_lid_low"],
     ],
   },
   { id: "lips", label: "Lips", tab: "face", mode: "dye", palette: LIP_COLORS, follows: "skin", parts: [["Body", "T_lip"], ["Body", "T_lip_lit"]] },
@@ -929,7 +939,8 @@ const FEMALE_COLORS: ColorDef[] = [
     parts: [["Body", VULVA_MATERIAL], ["Body", CANAL_MATERIAL]],
   },
   { id: "anus", label: "Anus", tab: "skin", mode: "dye", palette: ANUS_COLORS, follows: "skin", parts: [["Body", ANUS_MATERIAL]] },
-  { id: "eyes", label: "Eyes", tab: "face", mode: "dye", palette: EYE_COLORS, parts: [["Body", "T_soot"]] },
+  // Her irises (build_world.py add_anime_eyes): the iris the swatch, its darker top and her pupil keeping their depth.
+  { id: "eyes", label: "Eyes", tab: "face", mode: "dye", palette: HER_EYE_COLORS, parts: [["Body", "T_eye_iris"], ["Body", "T_eye_iris_dark"], ["Body", "T_eye_pupil"]] },
   { id: "hair", label: "Hair and brows", tab: "hair", mode: "dye", palette: HAIR_COLORS, parts: [["Hair", "T_hair_f"], ["Body", "T_hair_f"]] },
   { id: "pubes", label: "Pubic hair", tab: "hair", mode: "dye", palette: PUBIC_COLORS, follows: "hair", parts: [["Body", PUBIC_MATERIAL]] },
   { id: "blouse", label: "Blouse", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_linen"]] },
@@ -1026,6 +1037,7 @@ const FEMALE_OUTFITS: OutfitDef[] = [
     legwear: "leggings",
     legsDown: "T_hose_knee",
     under: EVERYDAY_UNDER,
+    hidesBra: ["T_tee"],
   },
   {
     // Olive-gold bodice and skirt, a white chemise, a green apron and ribbons, and white socks.
@@ -3190,8 +3202,27 @@ const FLUSHED = new Color(0.55, 0.16, 0.18);
  * inside of her mouth (its pocket, her teeth and her tongue);
  * and the ones her eyes, brows and lips are found by. Only her face is drawn this way.
  */
-const FACE_MATERIAL = /^T_(face_|lip|soot$|hair_f$|mouth$|teeth|tongue$)/;
-const EYE_MATERIAL = "T_soot";
+const FACE_MATERIAL = /^T_(face_|lip|hair_f$|mouth$|teeth|tongue$|eye_|drop_)/;
+/** Her eyes' pieces (build_world.py add_anime_eyes), and how each moves (face.ts FacePart). */
+const EYE_MATERIAL = "T_eye_sclera";
+const PUPIL_MATERIAL = "T_eye_pupil";
+const EYE_PART: Readonly<Record<string, FacePart>> = {
+  T_eye_sclera: "eyeWhite", T_eye_lid: "lid", T_eye_lid_low: "lidLow", T_eye_lash: "lash", T_eye_lash_low: "lashLow",
+  T_eye_iris: "iris", T_eye_iris_dark: "iris", T_eye_shine: "iris", T_eye_pupil: "pupil",
+  T_eye_wet: "iris", T_eye_heart: "pupil",
+  // The upper lid's shadow on the white goes with the lid, as its lash line does.
+  T_eye_shade: "lash",
+  // Her upper eyelid's crease sits on the lid's far side, which stays put as the lid closes.
+  T_eye_crease: "lid",
+};
+/** KP's extra layers on her face (face.ts FACE_EXTRAS): each shows only while her expression calls for it. */
+const EXTRA_MATERIALS: Readonly<Record<string, (shape: FaceShape) => boolean>> = {
+  T_eye_wet: (f) => f.wet >= FACE_EXTRAS.wet,
+  T_eye_heart: (f) => f.heart >= FACE_EXTRAS.heart,
+  T_drop_tear: (f) => f.tears >= FACE_EXTRAS.tears,
+  T_drop_sweat: (f) => f.sweat >= FACE_EXTRAS.sweat[0],
+  T_drop_sweat_more: (f) => f.sweat >= FACE_EXTRAS.sweat[1],
+};
 /** Her upper teeth, which stay with her skull as her mouth opens; her tongue, which can come out. */
 const UPPER_TEETH_MATERIAL = "T_teeth";
 const LOWER_TEETH_MATERIAL = "T_teeth_low";
@@ -3217,6 +3248,11 @@ const HATCH_MATERIAL = "T_hatch";
  */
 const PRESSED_LINE = new Color(0.16, 0.05, 0.05);
 const PRESSED_INTO = { T_lip: ["line", 1], T_lip_lit: ["T_face_skin", 0.55] } as const;
+/**
+ * The planes a blush is painted on (her cheeks and the tip of her nose): at rest they're the skin round them, as KP's
+ * calm faces never blush, and the red comes into them only as she blushes.
+ */
+const BLUSH_RESTS_AS: Readonly<Record<string, string>> = { T_face_blush: "T_face_skin", T_face_pink: "T_face_skin" };
 const BLUSH_SPREAD: Readonly<Record<string, { depth: number; from: number }>> = {
   T_face_blush: { depth: 0.9, from: 0 },
   T_face_pink: { depth: 0.75, from: 0.1 },
@@ -4030,6 +4066,7 @@ export class Dresser {
     if (shape.crease >= FACE_LINES.creases[0]) shown.push(CREASE_MATERIAL);
     if (shape.crease >= FACE_LINES.creases[1]) shown.push(CREASE_MID_MATERIAL);
     if (shape.blush >= FACE_LINES.hatch) shown.push(HATCH_MATERIAL);
+    for (const [material, shows] of Object.entries(EXTRA_MATERIALS)) if (shows(shape)) shown.push(material);
     return shown;
   }
 
@@ -4051,7 +4088,7 @@ export class Dresser {
     const pointsOf = (names: readonly string[]) =>
       slots.filter((slot) => names.includes(slot.original.name)).flatMap((slot) => Array.from({ length: slot.bind.length / 3 }, (_, v) => shapedAt(slot, v)));
     if (this.faceRigOn !== shaped) {
-      this.faceRig = faceRig(pointsOf([EYE_MATERIAL]), pointsOf([BROW_MATERIAL]), pointsOf(LIP_MATERIALS), pointsOf([TONGUE_MATERIAL]));
+      this.faceRig = faceRig(pointsOf([EYE_MATERIAL]), pointsOf([BROW_MATERIAL]), pointsOf(LIP_MATERIALS), pointsOf([TONGUE_MATERIAL]), pointsOf([PUPIL_MATERIAL]));
       this.faceRigOn = shaped;
     }
     const rig = this.faceRig;
@@ -4101,7 +4138,8 @@ export class Dresser {
       if (!moves) this.faceMoves.set(slot, (moves = new Float32Array(count * 3)));
       moves.fill(0);
       const name = slot.original.name;
-      const part = name === BROW_MATERIAL ? "brow" : name === UPPER_TEETH_MATERIAL ? "teeth" : name === LOWER_TEETH_MATERIAL ? "lowerTeeth" : name === TONGUE_MATERIAL ? "tongue" : "skin";
+      const part: FacePart = EYE_PART[name] ??
+        (name === BROW_MATERIAL ? "brow" : name === UPPER_TEETH_MATERIAL ? "teeth" : name === LOWER_TEETH_MATERIAL ? "lowerTeeth" : name === TONGUE_MATERIAL ? "tongue" : "skin");
       if (rig) {
         for (let v = 0; v < count; v++) {
           const p = shapedAt(slot, v);
@@ -4795,6 +4833,13 @@ export class Dresser {
     return paint(slot.original, averageColor(slot.worn).clone().lerp(FLUSHED, 0.22 * flush));
   }
 
+  /** Whether her outfit's top is on and hides her bra (OutfitDef.hidesBra): dressed, and that top not stripped. */
+  private braHiddenByTop(): boolean {
+    if (this.undressed || this.underwear) return false;
+    const materials = outfitOf(this.body, this.look).hidesBra ?? [];
+    return materials.some((name) => !covers(this.stripped, "Cloth", name));
+  }
+
   /**
    * Her underwear as it is now: whether her top and her briefs are on (a one-piece is on or off as one), which of
    * them are drawn on the patch rather than painted on her body, and whether her nipples are covered.
@@ -4912,8 +4957,9 @@ export class Dresser {
         continue;
       }
       if (slot.part === "Body" && slot.original.name === LINGERIE_MATERIAL) {
-        // Whatever styles she has on that aren't painted on her body, in their swatches' colours.
-        const top = under.topOn ? under.top : null;
+        // Whatever styles she has on that aren't painted on her body, in their swatches' colours; her bra not while
+        // a top that hides it is on (see OutfitDef.hidesBra).
+        const top = under.topOn && !this.braHiddenByTop() ? under.top : null;
         const bottom = under.bottomOn ? under.bottom : null;
         slot.mesh.visible = top !== null || bottom !== null;
         const colorOf = (name: string) => {
@@ -4924,7 +4970,7 @@ export class Dresser {
         continue;
       }
       // The lines an expression draws on her face show only while it does.
-      if (slot.part === "Body" && [CREASE_MATERIAL, CREASE_MID_MATERIAL, HATCH_MATERIAL].includes(slot.original.name)) {
+      if (slot.part === "Body" && ([CREASE_MATERIAL, CREASE_MID_MATERIAL, HATCH_MATERIAL].includes(slot.original.name) || slot.original.name in EXTRA_MATERIALS)) {
         slot.mesh.visible = this.faceLines(this.faceShape).includes(slot.original.name);
         continue;
       }
@@ -4937,9 +4983,13 @@ export class Dresser {
         // Her face flushes as she blushes, the red spreading the deeper it goes.
         const blush = Math.round(this.faceShape.blush * 10) / 10;
         const toneOf = (face: MeshSlot) => {
-          const spread = this.body === "Female" ? BLUSH_SPREAD[face.original.name] : undefined;
+          const female = this.body === "Female";
+          const spread = female ? BLUSH_SPREAD[face.original.name] : undefined;
           const flushed = spread ? spread.depth * Math.max(0, (blush - spread.from) / (1 - spread.from)) : 0;
-          return flushed > 0 ? averageColor(face.worn).clone().lerp(BLUSHED, flushed) : null;
+          const restsAs = female ? BLUSH_RESTS_AS[face.original.name] : undefined;
+          const round = restsAs ? this.slots.find((s) => s.part === "Body" && s.original.name === restsAs) : undefined;
+          const base = averageColor((round ?? face).worn).clone();
+          return flushed > 0 ? base.lerp(BLUSHED, flushed) : round ? base : null;
         };
         // Her lips pressed thin: the upper one an ink line, the lower one gone into her skin.
         const press = this.body === "Female" ? Math.round(this.faceShape.press * 10) / 10 : 0;

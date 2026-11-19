@@ -778,7 +778,7 @@ FEMALE = {
              (1.395, 0.033, 0.03, 0.034, -0.006, 0.0), (1.45, 0.03, 0.03, 0.034, -0.006, 0.0)],
     # Her head 8% smaller all round than built till 2026-11-19 (the user found it too big), scaled about her chin so
     # her neck keeps its length; a touch wider for its height than before (x 0.846, was 0.86 against 0.9 deep).
-    "chin_z": 1.4, "head_scale": (0.846, 0.828, 0.92), "jaw": 1.0, "ears": True, "head_grid": True,
+    "chin_z": 1.4, "head_scale": (0.846, 0.828, 0.92), "jaw": 1.0, "ears": True, "head_grid": True, "anime_face": False,
     # Her cranium taller (2026-11-19, the user asked): everything over her brows (0.12 above the chin, in head units)
     # stretched up by a fifth, her crown 1.4 cm higher; her face is all below it and stays as it was (see head_up).
     "cranium": (0.12, 0.2),
@@ -1224,13 +1224,16 @@ class Facet(Part):
         self.bm.faces.new(loops[-1]).material_index = caps[1]
         return self
 
-    def solid(self, points, faces, mat):
-        """A small closed shape from explicit corners, for details such as the nose and ears."""
+    def solid(self, points, faces, mat, smooth=None):
+        """A small closed shape from explicit corners, for details such as the nose and ears. `smooth`: which faces
+        shade smooth (one flag per face), flat if not given."""
         mats = mat if isinstance(mat, list) else [mat] * len(faces)
         px, py, pz = self.pivot
         verts = [self.bm.verts.new((x - px, y - py, z - pz)) for x, y, z in points]
-        for face, face_mat in zip(faces, mats):
-            self.bm.faces.new([verts[i] for i in face]).material_index = self._slot(face_mat)
+        for k, (face, face_mat) in enumerate(zip(faces, mats)):
+            f = self.bm.faces.new([verts[i] for i in face])
+            f.material_index = self._slot(face_mat)
+            f.smooth = bool(smooth and smooth[k])
         return self
 
     def finish(self, parent, parent_pivot, tile=2.0):
@@ -1556,6 +1559,61 @@ FACE_EYE_SOCKET = ("ein", "un1", "sd", "D6", "B6", "A6")
 FACE_EYE_DOT = (56, 143, 12, 13)
 # The plane of the socket: forward = a + b * pixels sideways + c * pixels up.
 FACE_EYE_PLANE = (0.09471, -0.000368, 0.00002545)
+# Her anime eye (2026-11-19, KP's eyes: EXPRESSION_STUDY.md), in reference pixels about the dot's centre, laid in
+# layers in front of the socket (the dot itself is now skin, behind them): the white, the iris with a darker top, the
+# pupil, two shines, then her eyelids (skin) framing the opening, and the lash lines on their edges. The game closes
+# her lids by moving their edges (face.ts eyeOpening, which mirrors EYE_SHAPE: keep the two in step).
+# The opening: half width, how high its top arches and how low its bottom dips (each times (1 - u^2) to the power),
+# and the corners' heights (inner, outer), u running -1 at the inner corner to 1 at the outer.
+# The whole eye drawn this much bigger than the numbers below (2026-11-19: the user asked for bigger eyes). The game
+# works in shares of the eye (face.ts EYE_OPENING), so it scales with it.
+EYE_SCALE = 1.15
+EYE_SHAPE = {"half": 21.0, "top": 12.5, "top_pow": 0.55, "bottom": 10.0, "bottom_pow": 0.8, "inner": -1.0, "outer": 2.5}
+EYE_WHITE_HALF = (23.0, 14.0)       # the white: an oval a little larger than the opening, all of it framed by the lids
+EYE_IRIS = (0.0, 0.5, 10.0, 13.0)   # centre x, centre up, half width, half height: tall, its top under the upper lid
+EYE_IRIS_DARK_FROM = 5.0            # the darker top of the iris, from this far above its centre
+EYE_PUPIL = (0.0, 1.0, 4.0, 5.5)
+# Two shines on the same side of both eyes (the light's), each (x across her face, up, radius) from the iris centre:
+# x is towards her own left on both eyes.
+EYE_SHINES = [(-4.0, 5.0, 3.0), (4.5, -5.0, 1.5)]
+EYE_LID_REACH = 8.0                 # how far past the opening the lids reach, all round (over her crease too)
+EYE_LID_ROWS = 8                    # rows across each lid, so it lies on the eyeball (strip in add_anime_eyes)
+# The upper lash line's thickness at the inner corner and the outer: bold, as anime draws it (the user, 2026-11-19:
+# the upper eyelid bigger, like anime), so it still reads when her face is small on screen.
+EYE_LASH = (2.0, 4.8)
+EYE_LASH_WING = (5.5, 4.0)          # past the outer corner, flicked out and up
+EYE_LASH_LOW = (-0.2, 0.8)          # the lower lash line: from this far along (u), this thick
+# Her upper eyelid's crease (the user, 2026-11-19): a thin line over the lash line, from `from` along (u) out to `to`,
+# `gap` pixels above the opening's top at each end (wider towards the outer corner), at most `thick` thick, tapering
+# at both ends. It sits on the lid's far side, so it stays put as her lid closes, as a real crease does.
+EYE_CREASE = {"from": -0.3, "to": 0.85, "gap": (3.6, 6.4), "thick": 0.9}
+# How far in front of the socket each layer's face is, and how thick each slab is (head units).
+EYE_LIFT = {"white": 0.0004, "shade": 0.0005, "iris": 0.0006, "iris_dark": 0.0007, "pupil": 0.0008, "heart": 0.00085, "shine": 0.0009,
+            "wet": 0.00095, "lid": 0.0016, "crease": 0.0017, "lash": 0.0019}
+# (The lids stand well clear of the iris: where the eyeball falls away steeply at the white's edge, the iris's flat
+# facets stand off it, and with the lids only 0.5 mm in front, its bottom edge showed through her lower lid.)
+# KP's extra eye layers (EXPRESSION_STUDY.md), shown by the game only when an expression calls for them (face.ts
+# FACE_EXTRAS): heart pupils (`heart`, its half size in pixels, over the pupil); wet, glossy eyes (`uru`: a pale band
+# across the bottom of the iris, between these shares of its size, plus two sparkles (x, up, radius) about its centre).
+EYE_HEART = 6.0
+EYE_WET_BAND = (0.6, 0.9)
+EYE_WET_SPARKLES = [(4.0, 6.5, 0.9), (-2.5, -3.5, 0.8)]
+# Tears (`namida`: a drop under the outer corner of each eye, another lower on her cheek) and sweat (KP's sweat 1 and
+# 2: drops on her temple), each (pixels out from her centre line, pixels up from her chin, radius in pixels), laid on
+# her face a little in front of it.
+FACE_TEARS = [(72.0, 121.0, 2.4), (75.0, 105.0, 1.8)]
+FACE_SWEAT = [(96.0, 150.0, 2.3), (90.0, 168.0, 1.7)]
+FACE_SWEAT_MORE = [(99.0, 128.0, 1.9), (84.0, 184.0, 1.4)]
+FACE_DROP_LIFT = 0.0012
+EYE_SLAB = 0.0001
+# Her eyeball: the eye isn't flat on the socket but a dome bulging out of it (the user, 2026-11-19: anime eyes, but 3D),
+# its height `depth` times the white's half width at the middle, falling off as (1 - r^2) to the `power` out to r = 1,
+# an oval just round the opening (`across` its half width, `up` its top, `down` its bottom, in shares of the white's
+# half size), so her lids lie almost flat on her face; every piece of the eye lies on it, her eyelids' edges too. The
+# game keeps what moves on it (face.ts EYE_DOME: keep the two in step).
+EYE_DOME = {"depth": 0.2, "power": 0.6, "across": 1.0, "up": 0.98, "down": 0.79}
+# The shadow her upper lid casts on the white, as anime eyes have it: a band this many pixels deep under the lid's edge.
+EYE_SHADE = 3.5
 # The ear: a ring where it meets the skull and the ring of its rim, as (x, y, height above the chin).
 FACE_EAR = [[(0.07, 0.0105, 0.0855), (0.07, -0.002, 0.0947), (0.07, -0.0147, 0.0935), (0.07, -0.0266, 0.0764), (0.07, -0.016, 0.058), (0.07, -0.0056, 0.0489)],
             [(0.086, 0.0105, 0.0855), (0.093, -0.002, 0.0947), (0.095, -0.0147, 0.0935), (0.093, -0.0266, 0.0764), (0.088, -0.016, 0.058), (0.082, -0.0056, 0.0489)]]
@@ -1839,11 +1897,53 @@ def head_corners():
     return corners
 
 
+def _catmull(p0, p1, p2, p3, t):
+    """The Catmull-Rom curve through p1 (t = 0) and p2 (t = 1), points as tuples."""
+    t2, t3 = t * t, t * t * t
+    return tuple(0.5 * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (3 * b - a - 3 * c + d) * t3)
+                 for a, b, c, d in zip(p0, p1, p2, p3))
+
+
+def skull_surface():
+    """
+    Her head as one smooth surface through the head grid's corners (head_corners): S(s, r) -> (x, depth, height),
+    s across the columns (0 her centre line, HEAD_AROUND.index("E") the edge of her face, 8 the back of her head), r
+    up the rows (0 her jaw, 9 her crown), passing through each corner where s and r are whole. Rows 1 to 5 have no
+    corners inside her face, which is her anime face's own; it's only used there along the face's edges.
+    """
+    corners = head_corners()
+    last_c, last_r = len(HEAD_AROUND) - 1, len(HEAD_FACE_ROWS) - 1
+
+    def ctrl(c, r):
+        if c < 0 or c > last_c:
+            x, y, up = ctrl(-c if c < 0 else 2 * last_c - c, r)
+            return (-x, y, up)
+        if r < 0 or r > last_r:
+            end, near = (0, 1) if r < 0 else (last_r, last_r - 1)
+            a, b = ctrl(c, end), ctrl(c, near)
+            return tuple(2 * i - j for i, j in zip(a, b))
+        p = corners.get((HEAD_AROUND[c], r))
+        if p:
+            return p
+        a, b = ctrl(c + 1, r), ctrl(c + 2, r)
+        return tuple(2 * i - j for i, j in zip(a, b))
+
+    def surf(s_, r_):
+        c0 = min(int(math.floor(s_)), last_c - 1)
+        r0 = min(int(math.floor(r_)), last_r - 1)
+        ts, tr = s_ - c0, r_ - r0
+        rows = [_catmull(*(ctrl(c, r) for c in range(c0 - 1, c0 + 3)), ts) for r in range(r0 - 1, r0 + 3)]
+        return _catmull(*rows, tr)
+
+    return surf
+
+
 class HeadMesh:
     """Corners placed by name and mirrored, shared along the centre line."""
 
     def __init__(self, at):
         self.at, self.points, self.index, self.faces, self.mats = at, [], {}, [], []
+        self.smooth = []
 
     def add(self, key, x, y, up):
         for sx in ((0,) if x == 0 else (-1, 1)):
@@ -1853,20 +1953,739 @@ class HeadMesh:
     def find(self, key, sx):
         return self.index[(key, sx)] if (key, sx) in self.index else self.index[(key, 0)]
 
-    def face(self, keys, mat, sides=(-1, 1)):
+    def face(self, keys, mat, sides=(-1, 1), smooth=False):
         for sx in sides:
             self.faces.append([self.find(key, sx) for key in keys])
             self.mats.append(mat)
+            self.smooth.append(smooth)
 
     def cap(self, row, mat, around=HEAD_AROUND):
         half = [(key, row) for key in around[1:-1]]
         self.faces.append([self.find((around[0], row), 0)] + [self.find(k, 1) for k in half]
                           + [self.find((around[-1], row), 0)] + [self.find(k, -1) for k in reversed(half)])
         self.mats.append(mat)
+        self.smooth.append(False)
 
 
-def head_grid(at, m):
-    """The head as one closed surface: the skull in loops, and the face traced plane by plane."""
+# Her anime face (2026-11-19, the user's anime head reference: edge loops round her eyes and mouth, a smooth surface):
+# a grid of quads from her chin up into her forehead (row ANIME_FACE_TOP of the head grid) and out to the edge of her
+# face (column E), sewn to her skull along those edges; a hole round each eye, closed with rings down to a flat socket
+# the eye sits on (just past her eyelids' reach); and a hole round her lips, closed with rings onto their outer edge
+# (her lips and the pocket of her mouth stay as FACE_PLANES draws them). Its depth is her traced face's, smoothed.
+ANIME_FACE_TOP = 7
+# Points along each edge between the head grid's corners: along her jaw and forehead (bottom and top), and up the
+# edge of her face (column E, rows 0 to ANIME_FACE_TOP).
+ANIME_FACE_SPLIT = (3, 3)
+# Heights (head units above the chin) of the grid's rows at her centre line, chin to ANIME_FACE_TOP's height: set so
+# rows pass under and over her lips, through the tip of her nose and across her eyes.
+ANIME_FACE_CENTRE_UPS = [0.0, 0.006, 0.012, 0.0185, 0.034, 0.041, 0.0475, 0.0513, 0.056, 0.062, 0.068, 0.0735, 0.079,
+                         0.0845, 0.09, 0.0955, 0.101, 0.107, 0.114, 0.124, 0.137, 0.1528]
+# The socket the eye sits on: an oval this many pixels round the eye's centre (out to the inner corner and the outer,
+# up, down) before EYE_SCALE, a little past her eyelids' reach; and the rings between it and the grid.
+ANIME_EYE_SOCKET = (29.0, 30.0, 23.0, 20.0)
+ANIME_EYE_RINGS = 2
+ANIME_MOUTH_RINGS = 2
+# How much her traced face's depth is smoothed: passes, and how far each goes.
+ANIME_FACE_SMOOTH = (14, 0.5)
+# Her anime nose, sculpted on after the smoothing (which takes her traced nose away): a small sharp point. Heights
+# above her chin of the top of its bridge (between her eyes), its tip and its base; how far the tip stands out, and the
+# bridge's share of that at its top; and its half width at the bridge and at the tip (head units).
+ANIME_NOSE = {"bridge": 0.085, "tip": 0.0513, "base": 0.0405, "height": 0.008, "bridge_share": 0.15,
+              "width": (0.0035, 0.006)}
+# Her lips' outer edge, from the middle of the top of her upper lip round her mouth's corner to the middle of the bottom
+# of her lower lip (FACE_POINTS), which the rings round her mouth close onto.
+ANIME_LIP_EDGE = ["lt0", "u6", "lt1", "u16", "u20", "u22", "lc", "b22", "b20", "b16", "lb1", "lb0"]
+
+
+def anime_face(head, at, m, named):
+    """
+    Builds her anime face into `head` (anime face notes above). Returns the seams to her skull, {(corner, corner):
+    [the face's points between them]}, for the skull's faces along them to take in, and under "surface" how far forward
+    the new face is at (x, up), for the lines drawn on it.
+    """
+    skin = m["face_skin"]
+    corners = head_corners()
+
+    # Her traced face, to take the new one's depth from.
+    old = HeadMesh(at)
+    for key, (x, y, up) in corners.items():
+        old.add(key, x, y, up)
+    for name, (x, up, y) in FACE_POINTS.items():
+        old.add(name, x * FACE_TRACE_X, y, up * FACE_TRACE_UP)
+    centre_x, centre_up, half_x, half_up = FACE_EYE_DOT
+    for i in range(12):
+        angle = math.pi + i * math.pi / 6
+        x, up = centre_x + half_x * math.cos(angle), centre_up + half_up * math.sin(angle)
+        a, b, c = FACE_EYE_PLANE
+        old.add(("dot", i), x * FACE_TRACE_X, a + b * x + c * up, up * FACE_TRACE_UP)
+    for points, tone in FACE_PLANES:
+        old.face([named(p) for p in points], None)
+    for i in range(6):
+        j = (i + 1) % 6
+        old.face((named(FACE_EYE_SOCKET[i]), named(FACE_EYE_SOCKET[j]), ("dot", 2 * j), ("dot", 2 * i + 1), ("dot", 2 * i)), None)
+    old.face([("dot", i) for i in range(12)], None)
+    # And the rest of her skull round it, so a point on the face's edge still finds the surface there.
+    edge_column = HEAD_AROUND.index("E")
+    for row in range(len(HEAD_FACE_ROWS) - 1):
+        for column, (one, two) in enumerate(zip(HEAD_AROUND, HEAD_AROUND[1:])):
+            if row >= FACE_TRACED_ROWS or column >= edge_column:
+                old.face(((one, row), (two, row), (two, row + 1), (one, row + 1)), None)
+    old_tree = BVHTree.FromPolygons([Vector(p) for p in old.points], old.faces)
+    _, ky, _ = (at(1, 0, 0)[0], at(0, 1, 0)[1], 0)
+
+    misses = []
+
+    def old_depth(x, up):
+        ox, _, oz = at(x, 0, up)
+        hit, _, _, _ = old_tree.ray_cast(Vector((ox, 1.0, oz)), Vector((0.0, -1.0, 0.0)))
+        if not hit:
+            # On the very edge of her jaw, where straight in from the front there's only the underside of her chin:
+            # the nearest of her surface instead.
+            misses.append((round(x, 4), round(up, 4)))
+            hit, _, _, _ = old_tree.find_nearest(Vector((ox, 0.06 * ky, oz)))
+        return hit.y / ky if hit else None
+
+    # The grid's edges: along her jaw and her forehead (the head grid's rows 0 and ANIME_FACE_TOP, corners C to E),
+    # up the edge of her face (column E), and up her centre line. All on her skull's smooth surface, which her skull's
+    # own quads (anime_skull) carry on from them.
+    cols = HEAD_AROUND[:5]
+    split_across, split_up = ANIME_FACE_SPLIT
+    surf = skull_surface()
+    edge_c = len(cols) - 1
+
+    def along(count, split, s_r, key_of):
+        """[(the head grid's corner where it is one, else None, (x, depth, up))] for k in 0..count."""
+        return [(key_of(k // split) if k % split == 0 else None, surf(*s_r(k / split))) for k in range(count + 1)]
+
+    bottom = along(edge_c * split_across, split_across, lambda c: (c, 0), lambda c: (cols[c], 0))
+    top = along(edge_c * split_across, split_across, lambda c: (c, ANIME_FACE_TOP), lambda c: (cols[c], ANIME_FACE_TOP))
+    right = along(ANIME_FACE_TOP * split_up, split_up, lambda r: (edge_c, r), lambda r: ("E", r))
+    edge_pos = {}
+    for i, (_, p_) in enumerate(bottom):
+        edge_pos[(i, 0)] = p_
+    for i, (_, p_) in enumerate(top):
+        edge_pos[(i, ANIME_FACE_TOP * split_up)] = p_
+    for j, (_, p_) in enumerate(right):
+        edge_pos[(edge_c * split_across, j)] = p_
+    nx, ny = len(bottom) - 1, len(right) - 1
+    assert len(ANIME_FACE_CENTRE_UPS) == ny + 1, (len(ANIME_FACE_CENTRE_UPS), ny + 1)
+    left = [(None, (0.0, None, up)) for up in ANIME_FACE_CENTRE_UPS]
+    left[0], left[-1] = bottom[0], top[0]
+
+    def xy(entry):
+        _, (x, _, up) = entry
+        return x, up
+
+    grid = {}
+    for i in range(nx + 1):
+        for j in range(ny + 1):
+            u, v = i / nx, j / ny
+            (bx, bu), (tx, tu), (lx, lu), (rx, ru) = xy(bottom[i]), xy(top[i]), xy(left[j]), xy(right[j])
+            (x00, u00), (x10, u10), (x01, u01), (x11, u11) = xy(bottom[0]), xy(bottom[-1]), xy(top[0]), xy(top[-1])
+            x = (1 - v) * bx + v * tx + (1 - u) * lx + u * rx - ((1 - u) * (1 - v) * x00 + u * (1 - v) * x10 + (1 - u) * v * x01 + u * v * x11)
+            up = (1 - v) * bu + v * tu + (1 - u) * lu + u * ru - ((1 - u) * (1 - v) * u00 + u * (1 - v) * u10 + (1 - u) * v * u01 + u * v * u11)
+            grid[(i, j)] = (x, up)
+    for i in range(nx + 1):
+        grid[(i, 0)], grid[(i, ny)] = xy(bottom[i]), xy(top[i])
+    for j in range(ny + 1):
+        grid[(0, j)], grid[(nx, j)] = (0.0, ANIME_FACE_CENTRE_UPS[j]), xy(right[j])
+
+    # Which grid point each is: the head grid's own corner where it is one, a new point otherwise.
+    fixed = {}
+    for i, (key, p) in enumerate(bottom):
+        if key:
+            fixed[(i, 0)] = key
+    for i, (key, p) in enumerate(top):
+        if key:
+            fixed[(i, ny)] = key
+    for j, (key, p) in enumerate(right):
+        if key:
+            fixed[(nx, j)] = key
+
+    def gkey(i, j):
+        return fixed.get((i, j), ("af", i, j))
+
+    # Holes: a block of cells round each eye and one round her lips, at her centre line.
+    ex, eu = centre_x * FACE_TRACE_X, centre_up * FACE_TRACE_UP
+    s_in, s_out, s_up, s_down = (v * EYE_SCALE for v in ANIME_EYE_SOCKET)
+    eye_box = (ex - s_in * FACE_TRACE_X, ex + s_out * FACE_TRACE_X, eu - s_down * FACE_TRACE_UP, eu + s_up * FACE_TRACE_UP)
+    lips = [(FACE_POINTS[k][0] * FACE_TRACE_X, FACE_POINTS[k][1] * FACE_TRACE_UP) for k in ANIME_LIP_EDGE]
+    lip_box = (0.0, max(x for x, _ in lips), min(u for _, u in lips), max(u for _, u in lips))
+
+    def block(box, margin):
+        x0, x1, u0, u1 = box
+        cells = [(i, j) for i in range(nx) for j in range(ny)
+                 if any(x0 - margin < grid[(i + di, j + dj)][0] < x1 + margin and u0 - margin < grid[(i + di, j + dj)][1] < u1 + margin
+                        for di in (0, 1) for dj in (0, 1))]
+        i0, i1 = min(i for i, _ in cells), max(i for i, _ in cells) + 1
+        j0, j1 = min(j for _, j in cells), max(j for _, j in cells) + 1
+        return i0, i1, j0, j1
+
+    eye = block(eye_box, 0.0)
+    mouth = block(lip_box, 0.0)
+    mouth = (0, mouth[1], mouth[2], mouth[3])
+    # As many points round the hole as along her lips' edge, so the rings between them are all quads: the hole grows a
+    # row down (towards her chin) at a time, or up once it reaches the bottom.
+    while 2 * mouth[1] + 1 + mouth[3] - mouth[2] < len(ANIME_LIP_EDGE):
+        i0_, i1_, j0_, j1_ = mouth
+        mouth = (i0_, i1_, j0_ - 1, j1_) if j0_ > 1 else (i0_, i1_, j0_, j1_ + 1)
+    holes = [eye, mouth]
+
+    def in_hole(i, j):
+        return any(i0 <= i < i1 and j0 <= j < j1 for i0, i1, j0, j1 in holes)
+
+    # Where everything is, and how far forward: the grid's points from her traced face, smoothed below.
+    pos = {}
+    for (i, j), (x, up) in grid.items():
+        key = gkey(i, j)
+        if key in corners:
+            pos[key] = corners[key]
+        elif (i, j) in edge_pos:
+            pos[key] = edge_pos[(i, j)]
+        else:
+            pos[key] = (x, old_depth(x, up) or 0.0, up)
+    pinned = {gkey(i, j) for i in range(nx + 1) for j in range(ny + 1) if i == nx or j in (0, ny)}
+    faces = []      # (keys, material)
+
+    def tone_of(x, up):
+        px, pu = x / FACE_TRACE_X, up / FACE_TRACE_UP
+        if inside(px, pu, [FACE_POINTS[k][:2] for k in ("nb0", "nb1", "nb2", "t3", "t2")]):
+            return m["face_pink"]
+        if inside(px, pu, [FACE_POINTS[k][:2] for k in ("un1", "sd", "j5", "j4", "nb2")]):
+            return m["face_blush"]
+        return skin
+
+    for i in range(nx):
+        for j in range(ny):
+            if in_hole(i, j):
+                continue
+            keys = [gkey(i, j), gkey(i + 1, j), gkey(i + 1, j + 1), gkey(i, j + 1)]
+            cx = sum(grid[k][0] for k in ((i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1))) / 4
+            cu = sum(grid[k][1] for k in ((i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1))) / 4
+            faces.append((keys, tone_of(cx, cu)))
+
+    def hole_loop(i0, i1, j0, j1, open_at_centre=False):
+        """The hole's edge as grid keys, round from its bottom inner corner (inner = towards her centre line)."""
+        loop = [(i, j0) for i in range(i0, i1 + 1)] + [(i1, j) for j in range(j0 + 1, j1 + 1)]
+        loop += [(i, j1) for i in range(i1 - 1, i0 - 1, -1)]
+        if not open_at_centre:
+            loop += [(i0, j) for j in range(j1 - 1, j0, -1)]
+        return loop
+
+    def bridge(inner, outer, closed, tone=None):
+        """Quads between two rings of the same count; triangles where they differ (matched by share of the way round)."""
+        n, k = len(inner), len(outer)
+        if n == k:
+            pairs = range(n if closed else n - 1)
+            for a in pairs:
+                b = (a + 1) % n
+                faces.append(([inner[a], inner[b], outer[b], outer[a]], tone or skin))
+            return
+        steps_n, steps_k = (n if closed else n - 1), (k if closed else k - 1)
+        a = c = 0
+        while a < steps_n or c < steps_k:
+            if c >= steps_k or (a < steps_n and (a + 1) / steps_n <= (c + 1) / steps_k):
+                faces.append(([inner[a % n], inner[(a + 1) % n], outer[c % k]], tone or skin))
+                a += 1
+            else:
+                faces.append(([inner[a % n], outer[(c + 1) % k], outer[c % k]], tone or skin))
+                c += 1
+
+    # The eye: rings from the hole's edge in to an oval socket, flat on the eye's plane, which closes it.
+    a, b, c = FACE_EYE_PLANE
+    edge_loop = [gkey(i, j) for i, j in hole_loop(*eye)]
+    n = len(edge_loop)
+    edge_xy = [grid[ij] for ij in hole_loop(*eye)]
+    # Each point of the socket's oval at the same angle round the eye as the hole's point it joins, so the rings run
+    # straight out from it.
+    socket = []
+    for k in range(n):
+        gx, gu = edge_xy[k]
+        t = math.atan2(gu - eu, gx - ex)
+        px = centre_x + (s_out if math.cos(t) > 0 else s_in) * math.cos(t)
+        pu = centre_up + (s_up if math.sin(t) > 0 else s_down) * math.sin(t)
+        key = ("afs", k)
+        pos[key] = (px * FACE_TRACE_X, a + b * px + c * pu, pu * FACE_TRACE_UP)
+        pinned.add(key)
+        socket.append(key)
+    rings = [socket]
+    for r in range(1, ANIME_EYE_RINGS):
+        t = r / ANIME_EYE_RINGS
+        ring = []
+        for k in range(n):
+            (sx_, _, su), (gx, gu) = pos[socket[k]], edge_xy[k]
+            x, up = sx_ + (gx - sx_) * t, su + (gu - su) * t
+            key = ("afr", r, k)
+            pos[key] = (x, old_depth(x, up) or pos[socket[k]][1], up)
+            ring.append(key)
+        rings.append(ring)
+    rings.append(edge_loop)
+    for inner, outer in zip(rings, rings[1:]):
+        bridge(inner, outer, closed=True)
+    mid = ("afs", "mid")
+    pos[mid] = (centre_x * FACE_TRACE_X, a + b * centre_x + c * centre_up, centre_up * FACE_TRACE_UP)
+    pinned.add(mid)
+    for k in range(n):
+        one, two = socket[k], socket[(k + 1) % n]
+        faces.append(([two, one, mid] if _turn(edge_xy) > 0 else [one, two, mid], skin))
+
+    # The mouth: rings from the hole's edge (open at her centre line) in to her lips' outer edge.
+    mouth_loop = hole_loop(*mouth, open_at_centre=True)
+    # The hole runs bottom-inner round to top-inner; her lips' edge runs top to bottom, so it's turned round to match.
+    mouth_edge = [gkey(i, j) for i, j in mouth_loop]
+    mouth_xy = [grid[ij] for ij in mouth_loop]
+    lip_keys = list(reversed([named(k) for k in ANIME_LIP_EDGE]))
+    lip_xy = list(reversed(lips))
+    for k, key in zip(ANIME_LIP_EDGE, [named(k) for k in ANIME_LIP_EDGE]):
+        x, up, y = FACE_POINTS[k]
+        pos[key] = (x * FACE_TRACE_X, y, up * FACE_TRACE_UP)
+        pinned.add(key)
+    m_rings = [lip_keys]
+    for r in range(1, ANIME_MOUTH_RINGS):
+        t = r / ANIME_MOUTH_RINGS
+        ring = []
+        for k in range(len(lip_keys)):
+            # Each of her lips' points out towards the hole's edge, matched by share of the way round.
+            s_ = k / (len(lip_keys) - 1)
+            g = mouth_xy[round(s_ * (len(mouth_xy) - 1))]
+            x, up = lip_xy[k][0] + (g[0] - lip_xy[k][0]) * t, lip_xy[k][1] + (g[1] - lip_xy[k][1]) * t
+            if k in (0, len(lip_keys) - 1):
+                x = 0.0
+            key = ("afm", r, k)
+            pos[key] = (x, old_depth(x, up) or pos[lip_keys[k]][1], up)
+            ring.append(key)
+        m_rings.append(ring)
+    m_rings.append(mouth_edge)
+    for inner, outer in zip(m_rings, m_rings[1:]):
+        bridge(inner, outer, closed=False)
+
+    # Smooth her traced face's facets away: each free point's depth towards its neighbours'.
+    neighbours = {}
+    for keys, _ in faces:
+        for p_, q in zip(keys, keys[1:] + keys[:1]):
+            neighbours.setdefault(p_, set()).add(q)
+            neighbours.setdefault(q, set()).add(p_)
+    passes, amount = ANIME_FACE_SMOOTH
+    for _ in range(passes):
+        depth = {k: v[1] for k, v in pos.items()}
+        for key, near in neighbours.items():
+            if key in pinned or key in corners or key not in pos:
+                continue
+            mean = sum(depth[q] for q in near) / len(near)
+            x, y, up = pos[key]
+            pos[key] = (x, y + (mean - y) * amount, up)
+
+    # The nose, on the smoothed face.
+    nose = ANIME_NOSE
+
+    def nose_lift(x, up):
+        if not nose["base"] < up < nose["bridge"]:
+            return 0.0
+        if up >= nose["tip"]:
+            # Down her bridge, rising to the tip: the bridge's share at the top, all of it at the tip.
+            t = (nose["bridge"] - up) / (nose["bridge"] - nose["tip"])
+            along = nose["bridge_share"] + (1 - nose["bridge_share"]) * t ** 1.8
+            width = nose["width"][0] + (nose["width"][1] - nose["width"][0]) * t
+        else:
+            # Under the tip, back in to her lip quickly.
+            t = (up - nose["base"]) / (nose["tip"] - nose["base"])
+            along = math.sin(t * math.pi / 2) ** 0.7
+            width = nose["width"][1]
+        across = max(0.0, 1 - (x / width) ** 2) ** 2
+        return nose["height"] * along * across
+
+    for key, (x, y, up) in list(pos.items()):
+        if key in pinned or key in corners:
+            continue
+        pos[key] = (x, y + nose_lift(x, up), up)
+
+    for key, (x, y, up) in pos.items():
+        if key in corners or key in FACE_POINTS or (isinstance(key, tuple) and key[0] in FACE_POINTS):
+            continue
+        head.add(key, x, y, up)
+    for keys, tone in faces:
+        head.face(keys, tone, smooth=True)
+
+    # The seams to her skull: along her jaw (row 0), her forehead (row ANIME_FACE_TOP) and up column E.
+    seams = {}
+
+    def seam(entries, keys_at):
+        corner_at = [k for k, (key, _) in enumerate(entries) if key]
+        for a_, b_ in zip(corner_at, corner_at[1:]):
+            seams[(entries[a_][0], entries[b_][0])] = [keys_at(k) for k in range(a_ + 1, b_)]
+
+    seam(bottom, lambda i: gkey(i, 0))
+    seam(top, lambda i: gkey(i, ny))
+    seam(right, lambda j: gkey(nx, j))
+
+    tree = BVHTree.FromPolygons([Vector(at(*pos_of(k, pos))) for k in _keys_in(faces)], _faces_index(faces))
+    seams["surface"] = lambda x, up: _ray(tree, at, ky, x, up)
+    seams["grid"] = {"key": gkey, "nx": nx, "ny": ny, "surf": surf, "split": (split_across, split_up)}
+    return seams
+
+
+# Her skull round her anime face, as quads carrying on its rows and columns (the user, 2026-11-19: a square wireframe,
+# as the reference): back round her head to the centre of the back, and up over her forehead to her crown, on the
+# skull as SKULL draws it (the outline her hair is fitted to), eased into her face's edge; her crown and the underside
+# of her jaw closed with grids of quads. The height of the ring her crown's grid closes (head units above the chin).
+ANIME_CROWN_RING = 0.196
+
+
+def anime_skull(head, grid, skin):
+    gkey, nx, ny, surf = grid["key"], grid["nx"], grid["ny"], grid["surf"]
+    sa, su = grid["split"]
+    last_s = (len(HEAD_AROUND) - 1) * sa
+    last_r = (len(HEAD_FACE_ROWS) - 1) * su
+
+    skull, square = SKULL["Female"], SKULL_SQUARE["Female"]
+    face_s = nx / sa  # the column of her face's edge
+
+    def on_skull(a, up):
+        """The point of SKULL's outline at a height, `a` round from her side (pi / 2 the front, -pi / 2 the back)."""
+        w, f, b = skull_at(skull, up)
+        c, s_ = math.cos(a), math.sin(a)
+        return (math.copysign(abs(c) ** square, c) * w, math.copysign(abs(s_) ** square, s_) * (f if s_ > 0 else b), up)
+
+    def round_of(x, y, up):
+        w, f, b = skull_at(skull, up)
+        return math.atan2(math.copysign((abs(y) / (f if y > 0 else b)) ** (1 / square), y), (abs(x) / w) ** (1 / square))
+
+    def back_height(r):
+        r0 = min(int(r), len(HEAD_BACK_ROWS) - 2)
+        t = r - r0
+        return HEAD_BACK_ROWS[r0][0] + (HEAD_BACK_ROWS[r0 + 1][0] - HEAD_BACK_ROWS[r0][0]) * t
+
+    def eased(start, a, up, t):
+        """SKULL's outline at (a, up), with start's offset from it (at its own place round) fading out over t 0..1."""
+        x0, y0, u0 = start
+        a0 = round_of(x0, y0, u0)
+        sx, sy, su_ = on_skull(a0, u0)
+        x, y, up_ = on_skull(a, up)
+        fade = (1 - t) ** 2
+        return (x + (x0 - sx) * fade, y + (y0 - sy) * fade, up_ + (u0 - su_) * fade)
+
+    def side(si, r):
+        """Round the side of her head from her face's edge (si = nx) to the middle of the back, along row r."""
+        edge = surf(face_s, r)
+        t = (si - nx) / (last_s - nx)
+        a0 = round_of(*edge)
+        ease = t * t * (3 - 2 * t)
+        return eased(edge, a0 + (-math.pi / 2 - a0) * t, edge[2] + (back_height(r) - edge[2]) * ease, t)
+
+    top_r = ny / su
+
+    def place(si, ri):
+        if ri <= ny:
+            x, y, up = side(si, ri / su)
+        else:
+            # Over her forehead and the top of her head, from the ring round row ANIME_FACE_TOP up to her crown's.
+            start = surf(si / sa, top_r) if si <= nx else side(si, top_r)
+            t = (ri - ny) / (last_r - ny)
+            x, y, up = eased(start, round_of(*start), start[2] + (ANIME_CROWN_RING - start[2]) * t, t)
+        return (0.0 if si in (0, last_s) else x), y, up
+
+    def key(si, ri):
+        return gkey(si, ri) if si <= nx and ri <= ny else ("sk", si, ri)  # on her face's edge: its own point
+
+    for si in range(last_s + 1):
+        for ri in range(last_r + 1):
+            if not (si <= nx and ri <= ny):
+                head.add(key(si, ri), *place(si, ri))
+    for si in range(last_s):
+        for ri in range(last_r):
+            if si < nx and ri < ny:
+                continue
+            head.face([key(si, ri), key(si + 1, ri), key(si + 1, ri + 1), key(si, ri + 1)], skin, smooth=True)
+
+    # The two caps: a q x q grid each, its corners a quarter of the way round from her centre line.
+    q = last_s // 2
+    h = q // 2
+
+    def cap(ri, name, dome):
+        def ring(a, b):
+            """The cap's edge point at (a, b) of the grid (a 0..q across her, b 0..q front to back): (key, side)."""
+            if b == 0:
+                si, side = abs(a - h), (1 if a >= h else -1)
+            elif b == q:
+                si, side = last_s - abs(a - h), (1 if a >= h else -1)
+            else:
+                si, side = h + b, (1 if a == q else -1)
+            return key(si, ri), si, side
+
+        def edge(a, b):
+            _, si, sx = ring(a, b)
+            x, y, up = surf(si / sa, ri / su) if si <= nx and ri <= ny else place(si, ri)
+            return (abs(x) * sx, y, up)
+
+        def ck(a, b):
+            if b in (0, q) or a == q:
+                return ring(a, b)[0]
+            return ("cap", name, a - h, b)
+
+        for a in range(h, q):
+            for b in range(1, q):
+                u, v = a / q, b / q
+                bu, tu, lv, rv = edge(a, 0), edge(a, q), edge(0, b), edge(q, b)
+                c00, c10, c01, c11 = edge(0, 0), edge(q, 0), edge(0, q), edge(q, q)
+                p_ = [(1 - v) * bu[i] + v * tu[i] + (1 - u) * lv[i] + u * rv[i]
+                      - ((1 - u) * (1 - v) * c00[i] + u * (1 - v) * c10[i] + (1 - u) * v * c01[i] + u * v * c11[i])
+                      for i in range(3)]
+                if dome:
+                    # Up onto SKULL's dome: as high as its outline still reaches out to the point.
+                    lo, hi = ANIME_CROWN_RING, skull[-1][0]
+                    for _ in range(30):
+                        mid = (lo + hi) / 2
+                        w, f, back = skull_at(skull, mid)
+                        reach = (abs(p_[0]) / w) ** (2 / square) + (abs(p_[1]) / (f if p_[1] > 0 else back)) ** (2 / square)
+                        lo, hi = (mid, hi) if reach < 1 else (lo, mid)
+                    p_[2] = lo
+                head.add(ck(a, b), 0.0 if a == h else p_[0], p_[1], p_[2])
+        for a in range(h, q):
+            for b in range(q):
+                head.face([ck(a, b), ck(a + 1, b), ck(a + 1, b + 1), ck(a, b + 1)], skin, smooth=True)
+
+    cap(0, "jaw", False)
+    cap(last_r, "crown", True)
+
+
+def inside(x, y, poly):
+    """Whether (x, y) is inside the polygon (a list of (x, y))."""
+    hit = False
+    for (x0, y0), (x1, y1) in zip(poly, poly[1:] + poly[:1]):
+        if (y0 > y) != (y1 > y) and x < x0 + (y - y0) * (x1 - x0) / (y1 - y0):
+            hit = not hit
+    return hit
+
+
+def _turn(points):
+    """Twice the signed area of a closed outline: > 0 if it runs anticlockwise."""
+    return sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(points, points[1:] + points[:1]))
+
+
+def pos_of(key, pos):
+    x, y, up = pos[key]
+    return x, y, up
+
+
+def _keys_in(faces):
+    seen, out = set(), []
+    for keys, _ in faces:
+        for k in keys:
+            if k not in seen:
+                seen.add(k)
+                out.append(k)
+    return out
+
+
+def _faces_index(faces):
+    index = {k: n for n, k in enumerate(_keys_in(faces))}
+    return [[index[k] for k in keys] for keys, _ in faces]
+
+
+def _ray(tree, at, ky, x, up):
+    ox, _, oz = at(x, 0, up)
+    hit, _, _, _ = tree.ray_cast(Vector((ox, 1.0, oz)), Vector((0.0, -1.0, 0.0)))
+    return hit.y / ky if hit else None
+
+
+def eye_opening(u):
+    """The opening of her eye at u (-1 inner corner to 1 outer): (pixels out from the centre, top, bottom) about the dot."""
+    s = EYE_SHAPE
+    tilt = s["inner"] + (s["outer"] - s["inner"]) * (u + 1) / 2
+    across = max(0.0, 1 - u * u)
+    return u * s["half"], tilt + s["top"] * across ** s["top_pow"], tilt - s["bottom"] * across ** s["bottom_pow"]
+
+
+def add_face_drops(part, at, surface, m):
+    """Tears and sweat drops (FACE_TEARS, FACE_SWEAT, FACE_SWEAT_MORE), each a thin slab laid on her face."""
+    def drop(x, up, r, mat):
+        outline = []
+        for i in range(14):
+            a = 2 * math.pi * i / 14
+            dx, du = r * math.cos(a), r * math.sin(a)
+            # Drawn to a point at the top, as a drop.
+            du += r * 1.4 * max(0.0, math.sin(a)) ** 6
+            outline.append((x + dx, up + du))
+        points = []
+        for layer in (0, 1):
+            for px, pu in outline:
+                hx, hu = px * FACE_TRACE_X, pu * FACE_TRACE_UP
+                front = surface(hx, hu)
+                if front is None:
+                    return
+                points.append(at(hx, front + FACE_DROP_LIFT - layer * EYE_SLAB, hu))
+        n = len(outline)
+        faces = [list(range(n)), list(reversed(range(n, 2 * n)))]
+        faces += [[(i + 1) % n, i, n + i, n + (i + 1) % n] for i in range(n)]
+        part.solid(points, faces, mat)
+
+    for sx in (-1, 1):
+        for drops, mat in ((FACE_TEARS, m["drop_tear"]), (FACE_SWEAT, m["drop_sweat"]), (FACE_SWEAT_MORE, m["drop_sweat_more"])):
+            for x, up, r in drops:
+                drop(sx * x, up, r, mat)
+
+
+def add_anime_eyes(head, m):
+    """Both eyes, layer on layer in front of the socket, each layer a thin closed slab so its face points the right way."""
+    centre_x, centre_up, _, _ = FACE_EYE_DOT
+    a, b, c = FACE_EYE_PLANE
+    white_x, white_up = EYE_WHITE_HALF
+
+    def dome(x, up):
+        """How far the eyeball stands out of the socket at (x, up), pixels about the eye's centre before EYE_SCALE."""
+        reach_up = EYE_DOME["up"] if up > 0 else EYE_DOME["down"]
+        r2 = (x / (white_x * EYE_DOME["across"])) ** 2 + (up / (white_up * reach_up)) ** 2
+        return EYE_DOME["depth"] * white_x * EYE_SCALE * FACE_TRACE_X * max(0.0, 1 - r2) ** EYE_DOME["power"]
+
+    def slab(name, outline, layer, mat, side, rings=0):
+        """
+        A thin piece over the socket on one side (sx), from its outline (pixels about the eye's centre, x outwards), on
+        the eyeball. With `rings`, it's filled with that many rings in towards its middle, so it can curve with the
+        eyeball (for a shape that's whole round its middle: an oval, a heart).
+        """
+        lift = EYE_LIFT[layer]
+        n = len(outline)
+        mx = sum(x for x, _ in outline) / n
+        mu = sum(u for _, u in outline) / n
+        loops = [[(mx + (x - mx) * (1 - k / (rings + 1)), mu + (u - mu) * (1 - k / (rings + 1))) for x, u in outline]
+                 for k in range(rings + 1)]
+
+        def put(key, x, up):
+            px, pu = centre_x + x * EYE_SCALE, centre_up + up * EYE_SCALE
+            front = a + b * px + c * pu + lift + dome(x, up)
+            head.add(key + (0,), px * FACE_TRACE_X, front, pu * FACE_TRACE_UP)
+            head.add(key + (1,), px * FACE_TRACE_X, front - EYE_SLAB, pu * FACE_TRACE_UP)
+
+        for k, loop in enumerate(loops):
+            for i, (x, up) in enumerate(loop):
+                put((name, side, k, i), x, up)
+        if rings:
+            put((name, side, "mid"), mx, mu)
+        for layer_ in (0, 1):
+            def key(k, i):
+                return (name, side, k, i, layer_)
+
+            faces = []
+            if rings:
+                for k in range(rings):
+                    for i in range(n):
+                        j = (i + 1) % n
+                        faces.append([key(k, i), key(k, j), key(k + 1, j), key(k + 1, i)])
+                for i in range(n):
+                    faces.append([key(rings, i), key(rings, (i + 1) % n), (name, side, "mid", layer_)])
+            else:
+                faces.append([key(0, i) for i in range(n)])
+            for f in faces:
+                head.face(f if layer_ == 0 else list(reversed(f)), mat, sides=(side,))
+        for i in range(n):
+            j = (i + 1) % n
+            head.face(((name, side, 0, j, 0), (name, side, 0, i, 0), (name, side, 0, i, 1), (name, side, 0, j, 1)), mat, sides=(side,))
+
+    def strip(name, inner, outer, layer, mat, side, rows=1):
+        """
+        A band between two lines (inner and outer, the same number of points) as one closed slab, its faces quads
+        across the band, so it lies smoothly on the eyeball (one many-sided face would fold where it curves). With
+        `rows`, the band is cut into that many rows across, closer together by the inner line, so it follows the
+        eyeball where it falls away steeply at the white's edge: one quad across would stand off it there, in front of
+        whatever lies over the band (her lash line, her crease).
+        """
+        lift = EYE_LIFT[layer]
+        n = len(inner)
+        lines = [[(x0 + (x1 - x0) * (k / rows) ** 2, u0 + (u1 - u0) * (k / rows) ** 2)
+                  for (x0, u0), (x1, u1) in zip(inner, outer)] for k in range(rows + 1)]
+        for row, line in enumerate(lines):
+            for i, (x, up) in enumerate(line):
+                px, pu = centre_x + x * EYE_SCALE, centre_up + up * EYE_SCALE
+                front = a + b * px + c * pu + lift + dome(x, up)
+                head.add((name, side, row, i, 0), px * FACE_TRACE_X, front, pu * FACE_TRACE_UP)
+                head.add((name, side, row, i, 1), px * FACE_TRACE_X, front - EYE_SLAB, pu * FACE_TRACE_UP)
+
+        def k(row, i, layer_):
+            return (name, side, row, i, layer_)
+
+        for r in range(rows):
+            for i in range(n - 1):
+                head.face([k(r, i, 0), k(r, i + 1, 0), k(r + 1, i + 1, 0), k(r + 1, i, 0)], mat, sides=(side,))
+                head.face([k(r + 1, i, 1), k(r + 1, i + 1, 1), k(r, i + 1, 1), k(r, i, 1)], mat, sides=(side,))
+        # Its rim: along both lines and across both ends.
+        rim = ([(0, i) for i in range(n)] + [(r, n - 1) for r in range(1, rows)] + [(rows, i) for i in reversed(range(n))]
+               + [(r, 0) for r in range(rows - 1, 0, -1)])
+        for (r0, i0), (r1, i1) in zip(rim, rim[1:] + rim[:1]):
+            head.face([k(r1, i1, 0), k(r0, i0, 0), k(r0, i0, 1), k(r1, i1, 1)], mat, sides=(side,))
+
+    def oval(cx, cu, hx, hu, n=16):
+        return [(cx + hx * math.cos(2 * math.pi * i / n), cu + hu * math.sin(2 * math.pi * i / n)) for i in range(n)]
+
+    steps = 10
+    us = [-1 + 2 * i / steps for i in range(steps + 1)]
+    opening = [eye_opening(u) for u in us]
+    top = [(x, t) for x, t, _ in opening]
+    bottom = [(x, low) for x, _, low in opening]
+    reach = EYE_LID_REACH
+    grow = (EYE_SHAPE["half"] + reach) / EYE_SHAPE["half"]
+    top_out = [(x * grow, t + reach) for x, t in top]
+    bottom_out = [(x * grow, low - reach) for x, low in bottom]
+    # The lids' outer edges meet past each corner, so between them they frame the whole white.
+    top_out[0], top_out[-1] = (top[0][0] * grow, top[0][1]), (top[-1][0] * grow, top[-1][1])
+    bottom_out[0], bottom_out[-1] = top_out[0], top_out[-1]
+    ix, iu, ihx, ihu = EYE_IRIS
+    for side in (-1, 1):
+        slab("eye_white", oval(0, 0, *EYE_WHITE_HALF, n=20), "white", m["eye_sclera"], side, rings=5)
+        slab("iris", oval(ix, iu, ihx, ihu), "iris", m["eye_iris"], side, rings=3)
+        # Along the iris's own edge above EYE_IRIS_DARK_FROM, closed by a straight line across it.
+        t0 = math.asin(min(1.0, EYE_IRIS_DARK_FROM / ihu))
+        dark = [(ix + ihx * math.cos(t), iu + ihu * math.sin(t)) for t in (t0 + (math.pi - 2 * t0) * i / 12 for i in range(13))]
+        slab("iris_dark", dark, "iris_dark", m["eye_iris_dark"], side, rings=2)
+        slab("pupil", oval(*EYE_PUPIL, n=12), "pupil", m["eye_pupil"], side, rings=2)
+        # A heart over her pupil, the point down (the classic curve: x = 16 sin^3 t, up = 13 cos t - 5 cos 2t - ...).
+        px, pu = EYE_PUPIL[0], EYE_PUPIL[1]
+        heart = []
+        for i in range(24):
+            t = 2 * math.pi * i / 24
+            hx = 16 * math.sin(t) ** 3
+            hu = 13 * math.cos(t) - 5 * math.cos(2 * t) - 2 * math.cos(3 * t) - math.cos(4 * t)
+            heart.append((px + hx / 16 * EYE_HEART, pu + (hu + 2) / 16 * EYE_HEART))
+        slab("heart", heart, "heart", m["eye_heart"], side, rings=2)
+        # Wet: a pale band across the bottom of her iris, and two sparkles.
+        inner_share, outer_share = EYE_WET_BAND
+        angles = [math.radians(200 + 140 * i / 10) for i in range(11)]
+        band = ([(ix + ihx * outer_share * math.cos(t), iu + ihu * outer_share * math.sin(t)) for t in angles]
+                + [(ix + ihx * inner_share * math.cos(t), iu + ihu * inner_share * math.sin(t)) for t in reversed(angles)])
+        slab("wet", band, "wet", m["eye_wet"], side)
+        for k, (wx, wu, r) in enumerate(EYE_WET_SPARKLES):
+            slab(("wet_spark", k), oval(ix + wx * side, iu + wu, r, r, n=8), "wet", m["eye_wet"], side)
+        # The shines sit to the same side on both eyes (the light's, towards -x): outline x runs outwards from her nose,
+        # so the offset flips with the side.
+        for k, (sx_off, su, r) in enumerate(EYE_SHINES):
+            slab(("shine", k), oval(ix + sx_off * side, iu + su, r, r, n=10), "shine", m["eye_shine"], side)
+        strip("lid", top, top_out, "lid", m["eye_lid"], side, rows=EYE_LID_ROWS)
+        crease_us = [EYE_CREASE["from"] + (EYE_CREASE["to"] - EYE_CREASE["from"]) * i / 10 for i in range(11)]
+        g0, g1 = EYE_CREASE["gap"]
+        crease = [(eye_opening(u)[0], eye_opening(u)[1] + g0 + (g1 - g0) * i / 10) for i, u in enumerate(crease_us)]
+        thick = [EYE_CREASE["thick"] * max(0.15, math.sin(math.pi * i / 10) ** 0.6) for i in range(11)]
+        strip("crease", crease, [(x, t + w) for (x, t), w in zip(crease, thick)], "crease", m["eye_crease"], side)
+        # The upper lid's shadow on the white, under its edge, moving with it.
+        strip("shade", top, [(x, t - EYE_SHADE * (1 - abs(u) ** 4)) for (x, t), u in zip(top, us)], "shade", m["eye_shade"], side)
+        strip("lid_low", list(reversed(bottom)), list(reversed(bottom_out)), "lid", m["eye_lid_low"], side, rows=EYE_LID_ROWS)
+        # The upper lash line: thin at the inner corner, thick at the outer, with a wing flicked out past it.
+        thick = [EYE_LASH[0] + (EYE_LASH[1] - EYE_LASH[0]) * (u + 1) / 2 for u in us]
+        lash_in = top[1:]
+        lash_out = [(x, t + w) for (x, t), w in zip(top[1:], thick[1:])]
+        wing_x, wing_up = EYE_LASH_WING
+        lash_in = [top[0]] + lash_in
+        lash_out = [(top[0][0], top[0][1] + thick[0] * 0.5)] + lash_out[:-1] + [(top[-1][0] + wing_x, top[-1][1] + wing_up)]
+        strip("lash", lash_in, lash_out, "lash", m["eye_lash"], side, rows=3)
+        low_from, low_thick = EYE_LASH_LOW
+        low_us = [low_from + (1 - low_from) * i / 6 for i in range(7)]
+        low_line = [(eye_opening(u)[0], eye_opening(u)[2]) for u in low_us]
+        strip("lash_low", low_line, [(x, low - low_thick) for x, low in low_line], "lash", m["eye_lash_low"], side)
+
+
+def head_grid(at, m, anime=False):
+    """
+    The head as one closed surface: the skull in loops, and the face traced plane by plane; or, `anime`, the face as a
+    smooth mesh of edge loops (anime_face) in place of the traced planes, its lips and mouth kept as they are.
+    """
     head = HeadMesh(at)
     skin = m["face_skin"]
     for key, (x, y, up) in head_corners().items():
@@ -1885,11 +2704,29 @@ def head_grid(at, m):
 
     edge = HEAD_AROUND.index("E")
     last = len(HEAD_FACE_ROWS) - 1
-    for row in range(last):
+    seams = anime_face(head, at, m, named) if anime else {}
+
+    def around(keys):
+        """A face's corners with the anime face's own points put in along the edges it shares with it."""
+        out = []
+        for a, b in zip(keys, keys[1:] + keys[:1]):
+            out.append(a)
+            if (a, b) in seams:
+                out += seams[(a, b)]
+            elif (b, a) in seams:
+                out += list(reversed(seams[(b, a)]))
+        return out
+
+    if anime:
+        anime_skull(head, seams["grid"], skin)
+    for row in range(last if not anime else 0):
         for column, (one, two) in enumerate(zip(HEAD_AROUND, HEAD_AROUND[1:])):
-            if row >= FACE_TRACED_ROWS or column >= edge:
-                head.face(((one, row), (two, row), (two, row + 1), (one, row + 1)), skin)
+            in_face = row < FACE_TRACED_ROWS and column < edge
+            if not in_face:
+                head.face(around([(one, row), (two, row), (two, row + 1), (one, row + 1)]), skin)
     for points, tone in FACE_PLANES:
+        if anime and tone not in ("lip", "lip_lit", "mouth"):
+            continue
         keys = [named(point) for point in points]
         if isinstance(tone, str):
             head.face(keys, m[tone])
@@ -1932,6 +2769,10 @@ def head_grid(at, m):
     crease_front = plane_through(FACE_CREASE_PLANE_POINTS)
     hatch_front = plane_through([(FACE_POINTS[k][0] * FACE_TRACE_X, FACE_POINTS[k][1] * FACE_TRACE_UP, FACE_POINTS[k][2])
                                  for k in FACE_HATCH_PLANE_POINTS])
+    if anime:
+        # On the anime face itself, wherever they are on it.
+        surface = seams["surface"]
+        crease_front = hatch_front = lambda x, up: surface(x, up) or 0.0
 
     def stroke(name, start, end, half, front, mat, centre=False):
         (x0, u0), (x1, u1) = start, end
@@ -1954,6 +2795,7 @@ def head_grid(at, m):
             for quad in quads:
                 head.faces.append([at(i, layer, side) for i, layer, side in quad])
                 head.mats.append(mat)
+                head.smooth.append(False)
             return
         for layer in (0, 1):
             head.face(((name, 0, layer), (name, 1, layer), (name, 2, layer), (name, 3, layer)), mat)
@@ -1966,14 +2808,38 @@ def head_grid(at, m):
     for i, (start, end) in enumerate(FACE_HATCH):
         stroke(("hatch", i), start, end, FACE_HATCH_WIDTH, hatch_front, m["hatch"])
 
-    for i in range(6):
-        j = (i + 1) % 6
-        head.face((named(FACE_EYE_SOCKET[i]), named(FACE_EYE_SOCKET[j]), ("dot", 2 * j), ("dot", 2 * i + 1), ("dot", 2 * i)), skin)
-    head.face([("dot", i) for i in range(12)], m["soot"])
+    if not anime:
+        for i in range(6):
+            j = (i + 1) % 6
+            head.face((named(FACE_EYE_SOCKET[i]), named(FACE_EYE_SOCKET[j]), ("dot", 2 * j), ("dot", 2 * i + 1), ("dot", 2 * i)), skin)
+        # The old dot is skin now, closing the socket behind her eye.
+        head.face([("dot", i) for i in range(12)], skin)
+    add_anime_eyes(head, m)
 
-    head.cap(0, skin)
+    if anime:
+        # The anime skull closes itself. The head grid's own corners it doesn't use are dropped.
+        used = sorted({i for f in head.faces for i in f})
+        new = {old: k for k, old in enumerate(used)}
+        return [head.points[i] for i in used], [[new[i] for i in f] for f in head.faces], head.mats, head.smooth
+    # Under her chin.
+    half = [(key, 0) for key in HEAD_AROUND[1:-1]]
+    ring = [((HEAD_AROUND[0], 0), 0)] + [(k, 1) for k in half] + [((HEAD_AROUND[-1], 0), 0)] + [(k, -1) for k in reversed(half)]
+    keys_by_side = {}
+    for key, side in ring:
+        keys_by_side.setdefault(side, []).append(key)
+    cap = []
+    for (a, sa), (b, sb) in zip(ring, ring[1:] + ring[:1]):
+        cap.append(head.find(a, sa))
+        side = sa or sb
+        if (a, b) in seams:
+            cap += [head.find(k, side) for k in seams[(a, b)]]
+        elif (b, a) in seams:
+            cap += [head.find(k, side) for k in reversed(seams[(b, a)])]
+    head.faces.append(cap)
+    head.mats.append(skin)
+    head.smooth.append(False)
     head.cap(last, skin)
-    return head.points, head.faces, head.mats
+    return head.points, head.faces, head.mats, head.smooth
 
 
 def add_bob(at, hair, hair_parts, locks=False):
@@ -2033,8 +2899,8 @@ def add_head(part, spec, m, hair_parts=None):
         points, faces, mats = angular_head(at, m, skin)
         part.solid(points, faces, mats)
     elif spec.get("head_grid"):
-        points, faces, mats = head_grid(at, m)
-        part.solid(points, faces, mats)
+        points, faces, mats, smooth = head_grid(at, m, anime=spec.get("anime_face", False))
+        part.solid(points, faces, mats, smooth)
         face_tree = BVHTree.FromPolygons([Vector(p) for p in points], [list(f) for f in faces])
     else:
         part.loft([outline(up, [(x * (jaw if i < 2 else 1.0), y) for x, y in half])
@@ -2054,6 +2920,8 @@ def add_head(part, spec, m, hair_parts=None):
 
         for sx in (-1, 1):
             part.loft(brow_stroke(at, sx, face_surface), hair)
+        if spec.get("head_grid"):
+            add_face_drops(part, at, face_surface, m)
     else:
         part.solid([at(0, 0.096, 0.122), at(0, 0.124, 0.072), at(0.021, 0.096, 0.066),
                     at(-0.021, 0.096, 0.066), at(0, 0.093, 0.06)], nose, skin)
@@ -8559,6 +9427,9 @@ def clean_tee(body_obj, obj, material="T_tee", cfg=TEE_CLEAN):
 # further than `edge` from the tee's edges (measured from that spot, not from her skin: her chest above the neckline
 # and her belly below the hem lie outside the tee by design, and pushed the edges out into flaps). No point goes out
 # more than `most` in all.
+# Tried 2026-11-19 and dropped: clearing skin under the cloth right up to the edges too (leaving alone only skin off
+# to the side of the tee): it pushed the turned-under strip inside the neckline out through the tee, and more of her
+# skin came through at the neckline (15 points to 32, up to 11 mm).
 TEE_COVER = {"gap": 0.0025, "rounds": 4, "reach": 0.012, "edge": 0.015, "most": 0.008}
 
 
@@ -9364,10 +10235,14 @@ NECK_FLARE = {"above": 0.03, "side": 0.45, "back": 0.0, "front": 0.08, "under": 
 # much worse. Now a gentle slope (1.2 cm, gone below her neck's middle) and a neck only a little fuller.
 # - "weights": her neck's lower part bent by her trunk as well as her head, all trunk at [0], all head at [1], so a
 #   turn of her head twists her neck along its length instead of turning its root round on her shoulders.
+# - "cap": her shoulders' caps drawn in, slimmer than they were (see shoulder_cap_move); her skin and
+#   everything on it only, not the joints.
 NECK_ROOT = {"axis": (0.0, -0.008), "arm_out": 0.014, "girdle_x": (0.05, 0.12), "girdle_z": (1.17, 1.25),
              "lift": 0.012, "lift_r": (0.07, 0.17), "lift_z": (1.18, 1.3, 1.37), "lift_turn": (0.35, 1.0, 0.85),
              "neck_k": (1.05, 1.15), "neck_z": (1.3, 1.35, 1.4, 1.45), "neck_r": (0.05, 0.08),
-             "weights": (1.33, 1.4)}
+             "weights": (1.33, 1.4),
+             "cap": {"at": (0.125, -0.03, 1.28), "r": (0.05, 0.11), "neck_x": (0.07, 0.12), "under_z": (-0.05, -0.02),
+                     "swell": -0.009, "lift": -0.003}}
 
 
 def neck_root_move(p, arm, root=NECK_ROOT):
@@ -9401,7 +10276,45 @@ def neck_root_move(p, arm, root=NECK_ROOT):
     kx, ky = root["neck_k"]
     nx += dx * (kx - 1) * k_at
     ny = y + dy * (ky - 1) * k_at
+    if "cap" in root:
+        return shoulder_cap_move((nx, ny, nz), root["cap"])
     return (nx, ny, nz)
+
+
+# Her shoulders' caps against the hero-shooter refs (2026-11-19; measured on the uncut bodies, scaled to 1.70 m, her
+# arms posed to the refs' angles; kit in ref/_sculpt_work/shoulder): the skin over her shoulder joint sat 1.7 cm
+# above it against the refs' 4.3, 1.1 cm behind it against 3.7, and her deltoids were 1.2 cm narrower each side, so
+# her shoulder line ran steeply down from her neck into a thin arm where theirs is a round, high cap.
+# Everything round the cap ("at": centre, inside the deltoid) is swollen out from it by "swell", most within "r"[0]
+# and none past "r"[1]; nothing near her neck ("neck_x": none at [0], all by [1], from her middle) or under her arm
+# ("under_z": none at [0], all by [1], below/above the centre); and the cap's top raised by "lift" on top of that.
+# First tried reaching in to 6 cm from her middle with a 1.2 cm lift: it peaked the cap's top like a pad and lifted
+# the shoulder past the neck's sunk bottom ring, opening a longer slit at the front of her neck.
+# Then swelled 1.2 cm and lifted 1 cm (the refs' measure): in the game the user found her shoulders too bulky, bare and
+# far worse in the tee (round puffs at her sleeves' tops). The refs are hero-shooter bodies; she is not. Now the
+# other way: her caps drawn in 9 mm and lowered 3 mm, a slimmer, softer slope than before any of this; kept off her
+# armpit (from 2 cm below the cap's centre, none from 5), where drawing in pulled the tee forward into her skin.
+def shoulder_cap_move(p, cap):
+    def smooth(t):
+        t = min(1.0, max(0.0, t))
+        return t * t * (3 - 2 * t)
+
+    x, y, z = p
+    side = 1.0 if x >= 0 else -1.0
+    cx, cy, cz = cap["at"]
+    dx, dy, dz = x - side * cx, y - cy, z - cz
+    d = math.sqrt(dx * dx + dy * dy + dz * dz)
+    if d < 1e-6:
+        return p
+    r0, r1 = cap["r"]
+    w = 1 - smooth((d - r0) / (r1 - r0))
+    w *= smooth((abs(x) - cap["neck_x"][0]) / (cap["neck_x"][1] - cap["neck_x"][0]))
+    w *= smooth((dz - cap["under_z"][0]) / (cap["under_z"][1] - cap["under_z"][0]))
+    if w <= 0:
+        return p
+    s = cap["swell"] * w / d
+    up = cap["lift"] * w * smooth(dz / 0.03 + 0.5)
+    return (x + dx * s, y + dy * s, z + dz * s + up)
 
 
 def shape_neck_root(name, meshes, joints, root=NECK_ROOT):
@@ -9451,9 +10364,13 @@ def shape_neck_root(name, meshes, joints, root=NECK_ROOT):
                 except RuntimeError:
                     pass
                 torso.add([index], old + head * (1 - keep), "REPLACE")
+    # The joints move with her arms but not with the shoulder caps' swelling round them.
+    bones_root = {k: v for k, v in root.items() if k != "cap"}
+    # The joints carry the character's name ("Female_UpperArm_R"): matched on the part after it, so the arms'
+    # bones move out with the arms' skin (till 2026-11-19 they stayed, the shoulder's pivot 1.4 cm inside the arm).
     for bone, (parent, head) in list(joints.items()):
-        if bone.startswith(ARM_BONES):
-            joints[bone] = (parent, neck_root_move(head, 1.0, root))
+        if bone.split("_", 1)[-1].startswith(ARM_BONES):
+            joints[bone] = (parent, neck_root_move(head, 1.0, bones_root))
     print(f"neck root: {moved} points moved")
 SUBDIVIDE_TRIM = 0.15  # a separate piece of clothing smaller than this across, in metres, is a trim and stays crisp
 LEG_CAP_BELOW = 0.3  # a flat, downward many-sided face below this height, off her middle, closes a leg's end
@@ -10481,7 +11398,18 @@ def main():
                         ("mouth", (0.3, 0.09, 0.1)), ("teeth", (0.93, 0.9, 0.84)), ("teeth_low", (0.9, 0.87, 0.8)),
                         ("tongue", (0.78, 0.4, 0.42)),
                         # The lines an expression draws on her face.
-                        ("crease", (0.36, 0.16, 0.14)), ("crease_mid", (0.36, 0.16, 0.14)), ("hatch", (0.78, 0.2, 0.25))):
+                        ("crease", (0.36, 0.16, 0.14)), ("crease_mid", (0.36, 0.16, 0.14)), ("hatch", (0.78, 0.2, 0.25)),
+                        # Her anime eyes (add_anime_eyes), last so the colours before keep their noise; her eyelids
+                        # are her face's skin.
+                        ("eye_sclera", (0.96, 0.95, 0.93)), ("eye_iris", (0.45, 0.27, 0.17)),
+                        ("eye_iris_dark", (0.2, 0.11, 0.07)), ("eye_pupil", (0.07, 0.04, 0.03)), ("eye_shine", (1.0, 1.0, 1.0)),
+                        ("eye_lid", (0.86, 0.63, 0.5)), ("eye_lid_low", (0.86, 0.63, 0.5)), ("eye_lash", (0.1, 0.06, 0.06)),
+                        ("eye_lash_low", (0.1, 0.06, 0.06)),
+                        # Her upper eyelid's crease: a soft brown line.
+                        ("eye_crease", (0.5, 0.29, 0.24)),
+                        # KP's extras (EXPRESSION_STUDY.md): heart pupils, wet eyes, tears and sweat.
+                        ("eye_shade", (0.74, 0.76, 0.86)), ("eye_heart", (0.93, 0.25, 0.47)), ("eye_wet", (0.86, 0.92, 1.0)), ("drop_tear", (0.72, 0.87, 0.98)),
+                        ("drop_sweat", (0.78, 0.9, 1.0)), ("drop_sweat_more", (0.78, 0.9, 1.0))):
         mats[key] = material("T_" + key, tex_flat("T_" + key, colour, variation=0.03))
     rng.bit_generator.state = random_state
     # The male face colours put the random numbers back afterwards, so the textures made after them stay the same.

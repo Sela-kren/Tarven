@@ -94,6 +94,7 @@ import {
   wearOutfit,
   type Look,
 } from "../src/game/appearance";
+import { REST_FACE } from "../src/game/face";
 
 /**
  * A tiny female-named rig: hips, one leg (thigh and shin) and a torso, with a body mesh of four points:
@@ -357,6 +358,63 @@ describe("the small of her back", () => {
   it("leaves her shoulder blades and her rear alone", () => {
     expect(moved({ arch: 1 }, "Torso", new Vector3(0, 0.25, 0.05)).length()).toBe(0);
     expect(moved({ arch: 1 }, "Hips", new Vector3(0, 0.0, 0.09)).length()).toBe(0);
+  });
+});
+
+describe("her blush", () => {
+  it("leaves her cheeks and the tip of her nose her skin's colour at rest, and reddens them as she blushes", () => {
+    const { root, hips, thigh, shin, torso } = rig();
+    const skin = new Color(0.86, 0.63, 0.5);
+    const patch = (name: string, color: Color) => {
+      const geometry = new BufferGeometry();
+      geometry.setAttribute("position", new Float32BufferAttribute([0, 1.45, -0.08], 3));
+      geometry.setAttribute("skinIndex", new Uint16BufferAttribute([3, 0, 0, 0], 4));
+      geometry.setAttribute("skinWeight", new Float32BufferAttribute([1, 0, 0, 0], 4));
+      const mesh = new SkinnedMesh(geometry, new MeshLambertMaterial({ name, color }));
+      mesh.name = "Female_Body";
+      root.add(mesh);
+      mesh.bind(new Skeleton([hips, thigh, shin, torso]));
+      return mesh;
+    };
+    const face = patch("T_face_skin", skin);
+    const cheek = patch("T_face_blush", new Color(0.87, 0.6, 0.52));
+    const nose = patch("T_face_pink", new Color(0.92, 0.55, 0.52));
+    const dresser = new Dresser(root.parent!, "Female");
+    dresser.apply(newLook());
+    const colour = (mesh: SkinnedMesh) => (mesh.material as MeshLambertMaterial).color;
+    for (const mesh of [cheek, nose]) expect(colour(mesh).getHex()).toBe(colour(face).getHex());
+    dresser.setExpression({ ...REST_FACE, blush: 1 });
+    for (const mesh of [cheek, nose]) {
+      expect(colour(mesh).r - colour(mesh).g).toBeGreaterThan(0.4);
+    }
+  });
+});
+
+describe("her face's extras", () => {
+  it("shows KP's extra layers only while her expression calls for them: hearts, wet eyes, tears, sweat", () => {
+    const { root, hips, thigh, shin, torso } = rig();
+    const patch = (name: string) => {
+      const geometry = new BufferGeometry();
+      geometry.setAttribute("position", new Float32BufferAttribute([0, 1.45, -0.08], 3));
+      geometry.setAttribute("skinIndex", new Uint16BufferAttribute([3, 0, 0, 0], 4));
+      geometry.setAttribute("skinWeight", new Float32BufferAttribute([1, 0, 0, 0], 4));
+      const mesh = new SkinnedMesh(geometry, new MeshLambertMaterial({ name }));
+      mesh.name = "Female_Body";
+      root.add(mesh);
+      mesh.bind(new Skeleton([hips, thigh, shin, torso]));
+      return mesh;
+    };
+    const [heart, wet, tear, sweat, more] = ["T_eye_heart", "T_eye_wet", "T_drop_tear", "T_drop_sweat", "T_drop_sweat_more"].map(patch);
+    const dresser = new Dresser(root.parent!, "Female");
+    dresser.apply(newLook());
+    for (const mesh of [heart, wet, tear, sweat, more]) expect(mesh.visible).toBe(false);
+    dresser.setExpression({ ...REST_FACE, heart: 1, wet: 1, tears: 1, sweat: 0.5 });
+    for (const mesh of [heart, wet, tear, sweat]) expect(mesh.visible).toBe(true);
+    // A few drops of sweat, not yet the rest.
+    expect(more.visible).toBe(false);
+    dresser.setExpression({ ...REST_FACE, sweat: 1 });
+    expect(more.visible).toBe(true);
+    expect(heart.visible).toBe(false);
   });
 });
 

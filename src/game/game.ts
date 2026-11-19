@@ -158,7 +158,7 @@ import { JOB_UNLOCK, STAFF_JOBS, type StaffJob } from "./staff";
 import { horny } from "./desire";
 import { FAINT_HOLD, FAINT_SECONDS } from "./barwork";
 import type { TouchShow } from "./touchcomic";
-import { BattleView, FoeColumn, type BattleMode, type BattleStat } from "./battleview";
+import { BattleView, FoeColumn, type BattleLust, type BattleMode, type BattleStat } from "./battleview";
 import { ScreenShake, shakePixels, type ShakeKind } from "./screenshake";
 import { fightFace } from "./fightface";
 import { restingPose, type BattlePoseName } from "./battlepose";
@@ -640,6 +640,21 @@ const DEV_FACE: Expression | null = (() => {
   return EXPRESSIONS_LIST.find((e) => e === asked) ?? null;
 })();
 
+/**
+ * Her blinks: how long one takes (seconds) and the share of it spent closing; how much her lower lid comes up with it;
+ * seconds between blinks (at least, at most), sooner when she's nervous, and how much slower (blinks and gaps) at her
+ * most drunk or worn out.
+ */
+const BLINK = { time: 0.16, down: 0.4, lower: 0.25, every: [2.5, 5.5] as const, nervousSooner: 0.5, heavySlower: 0.8 };
+/**
+ * Her glances: how likely a pause ends in one, how far her eyes go (lookX, lookY), how long she holds it and how long
+ * between, in seconds, and how fast her eyes get there.
+ */
+const GLANCE = { chance: 0.45, across: 0.6, up: 0.3, hold: [0.5, 1.4] as const, between: [2.5, 6] as const, speed: 18 };
+
+/** How long her face holds one variant of an expression before another is picked, in seconds: at least, at most. */
+const FACE_VARIANT_EVERY = [5, 9] as const;
+
 /** A held development pose's pull: her top, off the breast the pose bares. */
 function devPull(pose: ShowPose, top: ReturnType<typeof topPull>): { ids: string[]; dir: "down" | "up"; side?: "left" | "right" } | null {
   if (!pose.startsWith("chest") || !top) return null;
@@ -1017,6 +1032,8 @@ export class Game {
     const cobwebSpots = findCobwebSpots(world.colliders, ROOM);
     this.tavern = new Tavern(world.seats.length, world.seats.map((seat) => seat.table), dustSpots.length, cobwebSpots.length);
     this.tavern.touchSettings = readTouchSettings();
+    // The brawl screen draws the guard meter (fightpanels.ts), so their swings wait on her timing (brawlaim.ts).
+    this.tavern.guardMeter = true;
     this.messLayer = new MessLayer(world.seats, dustSpots, cobwebSpots);
     scene.add(this.messLayer.group);
     this.street = buildStreet(assets.streetKit ?? null);
@@ -2953,7 +2970,17 @@ export class Game {
       fightFace: this.fightFace,
       duel,
       moment: this.faceMoment?.kind ?? null,
+      variant: this.faceVariant,
     };
+    // Her face never holds still on one look: a close variant is picked as her expression changes and every few
+    // seconds while it holds, as KP re-rolls its pools (face.ts VARIANTS).
+    const leadingNow = DEV_FACE ?? expressionFor(cause);
+    this.faceVariantLeft -= dt;
+    if (leadingNow !== this.faceLeading || this.faceVariantLeft <= 0) {
+      this.faceVariant = Math.floor(Math.random() * 3);
+      this.faceVariantLeft = FACE_VARIANT_EVERY[0] + Math.random() * (FACE_VARIANT_EVERY[1] - FACE_VARIANT_EVERY[0]);
+      cause.variant = this.faceVariant;
+    }
     const target = DEV_FACE ? EXPRESSIONS[DEV_FACE] : faceFor(cause);
     // In a talk, a new expression comes on at once, so the portrait drawn for the next line has it.
     const leading = DEV_FACE ?? expressionFor(cause);
@@ -2963,7 +2990,63 @@ export class Game {
     this.faceShown = snap || this.fightFaceNew ? target : easeFace(this.faceShown, target, dt);
     this.fightFaceNew = false;
     if (snap) this.playerPortrait = null;
-    this.dressers.forEach((dresser, index) => dresser.setExpression(index === this.active ? this.faceShown : REST_FACE));
+    const alive = this.eyesAlive(dt, cause, leading);
+    this.dressers.forEach((dresser, index) => dresser.setExpression(index === this.active ? alive : REST_FACE));
+  }
+
+  /** Which close variant of her expression she wears (face.ts withVariant), and how long until it's picked again. */
+  private faceVariant = 0;
+  private faceVariantLeft = 0;
+  /** Her blinks: seconds to the next, and how far into the one she's in (null between blinks). */
+  private blinkIn = 2;
+  private blinkAt: number | null = null;
+  /** Her glances: where her eyes are off to (added to her expression's own look), where they're going, and for how long. */
+  private glance = { x: 0, y: 0 };
+  private glanceTo = { x: 0, y: 0 };
+  private glanceLeft = 3;
+
+  /**
+   * Her eyes alive over her face (face.ts's anime eyes): she blinks every few seconds, more often when she's nervous
+   * and slower when she's drunk or worn out; and now and then her eyes flick aside for a moment and back. Laid over the
+   * eased face each frame, not eased themselves, so a blink is quick.
+   */
+  private eyesAlive(dt: number, cause: FaceCause, leading: Expression): FaceShape {
+    const shape = { ...this.faceShown };
+    const nervous = ["shy", "bashful", "embarrassed", "surprised", "overwhelmed"].includes(leading) || (cause.exposed ?? 0) > 0.5;
+    const heavy = Math.max(cause.drunk, 1 - (cause.will ?? 1));
+    if (this.blinkAt === null) {
+      this.blinkIn -= dt;
+      if (this.blinkIn <= 0) this.blinkAt = 0;
+    }
+    if (this.blinkAt !== null) {
+      const length = BLINK.time * (1 + heavy * BLINK.heavySlower);
+      this.blinkAt += dt / length;
+      // Down fast, up a little slower.
+      const t = this.blinkAt;
+      const shut = t < BLINK.down ? t / BLINK.down : Math.max(0, 1 - (t - BLINK.down) / (1 - BLINK.down));
+      shape.lidUpper = Math.max(shape.lidUpper, shut);
+      shape.lidLower = Math.max(shape.lidLower, shut * BLINK.lower);
+      if (t >= 1) {
+        this.blinkAt = null;
+        const [lo, hi] = BLINK.every;
+        this.blinkIn = (lo + Math.random() * (hi - lo)) * (nervous ? BLINK.nervousSooner : 1) * (1 + heavy * BLINK.heavySlower);
+      }
+    }
+    this.glanceLeft -= dt;
+    if (this.glanceLeft <= 0) {
+      const away = this.glanceTo.x === 0 && this.glanceTo.y === 0 && Math.random() < GLANCE.chance;
+      this.glanceTo = away
+        ? { x: (Math.random() * 2 - 1) * GLANCE.across, y: (Math.random() * 2 - 1) * GLANCE.up }
+        : { x: 0, y: 0 };
+      const [lo, hi] = away ? GLANCE.hold : GLANCE.between;
+      this.glanceLeft = lo + Math.random() * (hi - lo);
+    }
+    const k = 1 - Math.exp(-GLANCE.speed * dt);
+    this.glance.x += (this.glanceTo.x - this.glance.x) * k;
+    this.glance.y += (this.glanceTo.y - this.glance.y) * k;
+    shape.lookX = Math.min(1, Math.max(-1, shape.lookX + this.glance.x));
+    shape.lookY = Math.min(1, Math.max(-1, shape.lookY + this.glance.y));
+    return shape;
   }
 
   /** How aroused the player shows, easing towards what the night has done to her. */
@@ -3815,7 +3898,8 @@ export class Game {
     heat: number,
     edge: boolean,
     status: readonly BattleStat[],
-    foes: readonly { guestId: number; kind: GuestKind; title: string; status: readonly BattleStat[] }[] = [],
+    foes: readonly { guestId: number; kind: GuestKind; title: string; status: readonly BattleStat[]; lust?: BattleLust | null }[] = [],
+    lust: BattleLust | null = null,
   ): void {
     this.syncStripped();
     this.syncCoat();
@@ -3830,9 +3914,10 @@ export class Game {
     }
     this.battleView.setHeat(heat, edge);
     this.battleView.setStatus(status);
+    this.battleView.setLust(lust);
     const shown = foes.flatMap((foe) => {
       const found = this.foeBody(foe.guestId, foe.kind);
-      return found ? [{ key: `${foe.guestId}:${foe.kind}`, body: found.root, name: found.name, title: foe.title, status: foe.status }] : [];
+      return found ? [{ key: `${foe.guestId}:${foe.kind}`, body: found.root, name: found.name, title: foe.title, status: foe.status, lust: foe.lust }] : [];
     });
     if (shown.length > 0) this.foeColumn.show(shown, mode);
     else this.foeColumn.hide();

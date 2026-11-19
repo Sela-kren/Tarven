@@ -362,6 +362,7 @@ import {
   type TouchSettings,
 } from "./touchsettings";
 import { Fight, MAX_FOES, TROUBLE_SHOUTS, type Foe, type FighterStats, type FightMove, type FightOutcome, type FoeSpec } from "./fight";
+import type { StrikeAim } from "./brawlaim";
 import { ROLE_PLAYS, type RolePlay } from "./duellines";
 import { coatStages, type CoatSection, type CumSpot } from "./cum";
 
@@ -1872,6 +1873,11 @@ export class Tavern {
   trouble: Trouble | null = null;
   /** A brawl in progress, or null. While set, the game shows the fight and the night waits. */
   fight: Fight | null = null;
+  /**
+   * The guard meter in a brawl (brawlaim.ts): their swings wait on her timing. The game turns it on (its brawl screen
+   * draws the meter); left off, as in the tests, their swings are rolled.
+   */
+  guardMeter = false;
   /** How the last brawl ended, for the game to show once. */
   lastFight: { outcome: FightOutcome; text: string; invasion?: boolean } | null = null;
   /**
@@ -5372,6 +5378,7 @@ export class Tavern {
   private fighterStats(): FighterStats {
     const e = this.effects;
     return {
+      guard: this.guardMeter,
       // KP's enemy prefixes (foeprefix.ts), and the difficulty.
       prefixOf: foePrefixFor,
       sceneEase: e.sceneEase,
@@ -5401,10 +5408,23 @@ export class Tavern {
   }
 
   /** She makes a move in the brawl; when it's over, the room sees how it went. */
-  fightMove(move: FightMove): void {
+  fightMove(move: FightMove, aim?: StrikeAim): void {
     const fight = this.fight;
     if (!fight) return;
-    fight.act(move);
+    fight.act(move, aim);
+    this.afterFightStep(fight);
+  }
+
+  /** She stops the needle on the guard meter (`pos`, 0 to 1 across it): their swing is dodged, blocked or lands. */
+  fightGuard(pos: number): void {
+    const fight = this.fight;
+    if (!fight?.incoming) return;
+    fight.guard(pos);
+    this.afterFightStep(fight);
+  }
+
+  /** After each step of a brawl: her clothes, a reach or a scene on offer to answer, and the end of it. */
+  private afterFightStep(fight: Fight): void {
     // Fix Clothes puts a piece back on her (7l).
     this.syncClothes(fight);
     if (fight.reaching) this.brawlReach(fight);

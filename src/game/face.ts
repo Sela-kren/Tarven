@@ -27,12 +27,16 @@ export interface FaceShape {
   browTip: number;
   /** Her brows drawn right down close over her eyes, 0 to 1, as in the moments she's lost in it or fighting it. */
   browNear: number;
+  /** The outer ends of her brows drawn out towards her temples (1) or in (-1), as they flare up in anger. */
+  browSpread: number;
   /** The upper edge of each eye come down, 0 open to 1 shut. */
   lidUpper: number;
   /** The lower edge come up, 0 to 1 shut. */
   lidLower: number;
   /** Her eyes opened wide, 0 to 1. */
   wide: number;
+  /** Her pupils widened (1, aroused, drunk) or tightened to points (-1, angry, startled). */
+  pupil: number;
   /** Where her eyes look: across (her own left -1, right 1) and up (1) or down (-1). */
   lookX: number;
   lookY: number;
@@ -63,34 +67,46 @@ export interface FaceShape {
   purse: number;
   /** Her lips pressed thin together into a line, as if drawn, 0 to 1: the mouth a touch wider, not smaller. */
   press: number;
+  /** Her whole mouth, lips, teeth, tongue and the skin right round it, raised (1) or lowered (-1). */
+  mouthUp: number;
   /** Her tongue out over her lower lip, 0 in to 1 as far as it goes. */
   tongue: number;
   /** Her cheeks flushed, 0 to 1. Deep enough (FACE_LINES.hatch), a blush's strokes show on her cheeks. */
   blush: number;
   /** Creases between her brows as she frowns or strains, 0 to 1: two lines from FACE_LINES.creases[0], three from [1]. */
   crease: number;
+  /**
+   * KP's extra layers (EXPRESSION_STUDY.md), each 0 to 1 and shown past FACE_EXTRAS: wet, glossy eyes (`uru`); tears
+   * (`namida`); heart pupils, for when she's fully gone; and sweat, a few drops then more (KP's sweat 1 and 2).
+   */
+  wet: number;
+  tears: number;
+  heart: number;
+  sweat: number;
 }
 
 /** When the lines an expression draws on her face show: two creases, three, and the strokes of a deep blush. */
 export const FACE_LINES = { creases: [0.35, 0.7] as const, hatch: 0.7 };
+/** When KP's extra layers show: wet eyes, tears, heart pupils, and a few drops of sweat then more. */
+export const FACE_EXTRAS = { wet: 0.5, tears: 0.5, heart: 0.5, sweat: [0.35, 0.75] as const };
 
 export const FACE_KEYS: readonly (keyof FaceShape)[] = [
-  "brow", "browInner", "browArch", "browOuter", "browTip", "browNear", "lidUpper", "lidLower", "wide", "lookX", "lookY", "smile", "smirk", "open", "round",
-  "bare", "lift", "cup", "purse", "press", "tongue", "blush", "crease",
+  "brow", "browInner", "browArch", "browOuter", "browTip", "browNear", "browSpread", "lidUpper", "lidLower", "wide", "pupil", "lookX", "lookY", "smile", "smirk", "open", "round",
+  "bare", "lift", "cup", "purse", "press", "mouthUp", "tongue", "blush", "crease", "wet", "tears", "heart", "sweat",
 ];
 
 export const REST_FACE: Readonly<FaceShape> = {
-  brow: 0, browInner: 0, browArch: 0, browOuter: 0, browTip: 0, browNear: 0, lidUpper: 0, lidLower: 0, wide: 0, lookX: 0, lookY: 0, smile: 0, smirk: 0,
-  open: 0, round: 0, bare: 0, lift: 0, cup: 0, purse: 0, press: 0, tongue: 0, blush: 0, crease: 0,
+  brow: 0, browInner: 0, browArch: 0, browOuter: 0, browTip: 0, browNear: 0, browSpread: 0, lidUpper: 0, lidLower: 0, wide: 0, pupil: 0, lookX: 0, lookY: 0, smile: 0, smirk: 0,
+  open: 0, round: 0, bare: 0, lift: 0, cup: 0, purse: 0, press: 0, mouthUp: 0, tongue: 0, blush: 0, crease: 0, wet: 0, tears: 0, heart: 0, sweat: 0,
 };
 
 export type Expression =
   | "neutral" | "stern" | "confident" | "smile" | "shy" | "sultry" | "embarrassed" | "tired" | "drunk" | "angry"
   | "surprised" | "overwhelmed" | "bashful" | "aroused" | "panting" | "strained" | "blissful" | "delighted" | "pleasure" | "edge"
-  | "lost" | "annoyed";
+  | "lost" | "annoyed" | "set" | "gritted" | "spent";
 export const EXPRESSIONS_LIST: readonly Expression[] = [
   "neutral", "stern", "confident", "smile", "shy", "sultry", "embarrassed", "tired", "drunk", "angry", "surprised", "overwhelmed",
-  "bashful", "aroused", "panting", "strained", "blissful", "delighted", "pleasure", "edge", "lost", "annoyed",
+  "bashful", "aroused", "panting", "strained", "blissful", "delighted", "pleasure", "edge", "lost", "annoyed", "set", "gritted", "spent",
 ];
 
 const face = (shape: Partial<FaceShape>): FaceShape => ({ ...REST_FACE, ...shape });
@@ -106,43 +122,103 @@ export const EXPRESSIONS: Readonly<Record<Expression, FaceShape>> = {
   // Brows up and worried, eyes down and away, a small nervous smile, flushed.
   shy: face({ brow: 0.2, browInner: 0.9, browOuter: -0.6, lidUpper: 0.15, lookX: 0.5, lookY: -0.8, smile: 0.25, blush: 0.85, crease: 0.4 }),
   // Heavy lids under low brows, lips just parted in a smirk, a little flushed.
-  sultry: face({ brow: -0.85, browArch: 0.3, browOuter: 0.3, lidUpper: 0.5, lidLower: 0.1, lookY: -0.1, smile: 0.25, smirk: 0.75, open: 0.12, blush: 0.5 }),
+  sultry: face({ brow: -0.85, browArch: 0.3, browOuter: 0.3, lidUpper: 0.5, lidLower: 0.1, lookY: -0.1, smile: 0.25, smirk: 0.75, open: 0.12, blush: 0.5, pupil: 0.3 }),
   // Caught with too little on: brows high and worried, eyes away, mouth tight, red to the ears.
   embarrassed: face({ brow: 0.4, browInner: 1, browOuter: -0.7, wide: 0.2, lookX: -0.6, lookY: -0.4, smile: -0.35, blush: 1, crease: 0.5 }),
   // Worn down: heavy lids, brows sagging up in the middle, mouth drooping a little open.
   tired: face({ brow: -0.3, browInner: 0.6, browOuter: -0.6, lidUpper: 0.55, lidLower: 0.1, lookY: -0.3, smile: -0.25, open: 0.1, crease: 0.4 }),
   // Drunk: lids heavy, brows lifted and loose, a lopsided smile, flushed.
-  drunk: face({ brow: 0.2, browInner: 0.4, browOuter: -0.4, lidUpper: 0.5, smile: 0.4, smirk: 0.3, open: 0.15, blush: 0.75 }),
-  // Squaring up to someone: brows hard down and knitted, eyes narrowed, teeth showing.
-  angry: face({ brow: -0.6, browNear: 0.4, browInner: -1, browOuter: 0.6, lidUpper: 0.3, lidLower: 0.25, smile: -0.6, open: 0.12, crease: 1 }),
+  drunk: face({ brow: 0.2, browInner: 0.4, browOuter: -0.4, lidUpper: 0.5, smile: 0.4, smirk: 0.3, open: 0.15, blush: 0.75, pupil: 0.3 }),
+  // Squaring up to someone: brows in a sharp V, knitted down by her nose and flaring up and out at the ends (as the
+  // user shaped it in art/face_expressions.blend), eyes narrowed, mouth set a little higher, teeth showing.
+  angry: face({
+    brow: -0.1, browNear: 0.5, browInner: -1.35, browArch: 0.55, browOuter: 1.55, browTip: 0.4, browSpread: 1.15,
+    lidUpper: 0.3, lidLower: 0.25, pupil: -0.4, smile: -0.6, open: 0.12, mouthUp: 0.45, crease: 1,
+  }),
   // Brows arched high, curving down at the ends, eyes wide, mouth open.
-  surprised: face({ brow: 0.8, browInner: 0.3, browArch: 1, browOuter: -0.5, browTip: 1, wide: 1, smile: -0.15, open: 0.7, blush: 0.2 }),
+  surprised: face({ brow: 0.8, browInner: 0.3, browArch: 1, browOuter: -0.5, browTip: 1, wide: 1, smile: -0.15, open: 0.7, blush: 0.2, pupil: -0.6 }),
   // Too much at once: brows up and pinched, eyes squeezed, mouth stretched wide on her teeth, red.
-  overwhelmed: face({ browNear: 0.9, browInner: 0.5, browArch: -0.4, browOuter: -0.5, browTip: 0.7, lidUpper: 0.8, lidLower: 0.5, smile: -0.5, open: 0.6, blush: 0.9, crease: 1 }),
+  overwhelmed: face({ browNear: 0.9, browInner: 0.5, browArch: -0.4, browOuter: -0.5, browTip: 0.7, lidUpper: 0.8, lidLower: 0.5, smile: -0.5, open: 0.6, blush: 0.9, crease: 1, pupil: -0.3, tears: 0.6 }),
   // Worked up: low brows lifting in the middle, lids low, lips parted, flushed.
-  aroused: face({ brow: -0.5, browInner: 0.6, browOuter: -0.4, browTip: 0.7, lidUpper: 0.45, lidLower: 0.1, smile: 0.1, open: 0.3, blush: 0.8 }),
+  aroused: face({ brow: -0.5, browInner: 0.6, browOuter: -0.4, browTip: 0.7, lidUpper: 0.45, lidLower: 0.1, smile: 0.1, open: 0.3, blush: 0.8, pupil: 0.4 }),
   // Barely able to: lips pressed thin into a line drawn across her face, brows sloping down to her nose with their
   // tips flicked up, eyes down, red all over.
   bashful: face({ browNear: 0.35, browInner: -0.75, browOuter: 0.2, browTip: 1, lidUpper: 0.35, lookY: -0.9, lookX: 0.3, smile: 0.2, press: 1, blush: 1, crease: 0.4 }),
   // Breathless: mouth soft and open, tongue out over her lip, lids heavy, brows worried, flushed.
   panting: face({ browNear: 0.8, browInner: 0.45, browArch: -0.3, browOuter: -0.4, browTip: 1, lidUpper: 0.6, lidLower: 0.15, lookY: 0.2, smile: 0.05, open: 1, round: 1, tongue: 1, blush: 1, crease: 0.4 }),
   // Fighting it: mouth stretched wide on both rows of teeth, corners down, eyes squeezed shut, brows pinched.
-  strained: face({ browNear: 1, browInner: 0.5, browArch: -0.4, browOuter: -0.5, browTip: 0.6, lidUpper: 1, lidLower: 0.6, smile: -0.3, open: 0.65, bare: 1, blush: 0.9, crease: 1 }),
+  strained: face({ browNear: 1, browInner: 0.5, browArch: -0.4, browOuter: -0.5, browTip: 0.6, lidUpper: 1, lidLower: 0.6, smile: -0.3, open: 0.65, bare: 1, blush: 0.9, crease: 1, tears: 0.7 }),
   // Melting: a wide, soft crescent of a smile on parted lips, its corners turned up to points, dreamy half shut eyes,
   // brows lifted and easy, flushed.
-  blissful: face({ brow: 0.25, browInner: 0.5, browArch: 0.3, browOuter: -0.3, browTip: 0.6, lidUpper: 0.65, lidLower: 0.2, smile: 1.2, open: 0.25, lift: 0.7, purse: -1, blush: 0.9 }),
+  blissful: face({ brow: 0.25, browInner: 0.5, browArch: 0.3, browOuter: -0.3, browTip: 0.6, lidUpper: 0.65, lidLower: 0.2, smile: 1.2, open: 0.25, lift: 0.7, purse: -1, blush: 0.9, pupil: 0.5 }),
   // Loving it: a big open D of a smile, its top flat on her teeth and its corners turned up, her lower lip dropped
   // round below it to her tongue, eyes crinkled from below, brows up and easy, flushed.
-  delighted: face({ brow: 0.3, browInner: 0.4, browArch: 0.5, browOuter: -0.3, lidUpper: 0.35, lidLower: 0.55, smile: 1.15, open: 0.8, round: 1, lift: 0.8, cup: 0.7, purse: -0.9, tongue: 0.4, blush: 0.8 }),
+  delighted: face({ brow: 0.3, browInner: 0.4, browArch: 0.5, browOuter: -0.3, lidUpper: 0.35, lidLower: 0.55, smile: 1.15, open: 0.8, round: 1, lift: 0.8, cup: 0.7, purse: -0.9, tongue: 0.4, blush: 0.8, pupil: 0.4 }),
   // Eyes nearly shut, brows up in the middle and down at the ends, mouth open on a moan, flushed.
-  pleasure: face({ browNear: 0.8, browInner: 0.5, browArch: -0.3, browOuter: -0.5, browTip: 0.9, lidUpper: 0.85, lidLower: 0.25, smile: 0.2, open: 0.55, blush: 1, crease: 0.6 }),
+  pleasure: face({ browNear: 0.8, browInner: 0.5, browArch: -0.3, browOuter: -0.5, browTip: 0.9, lidUpper: 0.85, lidLower: 0.25, smile: 0.2, open: 0.55, blush: 1, crease: 0.6, pupil: 0.5 }),
   // On the edge: eyes screwed shut, brows high and pinched, mouth wide open on her tongue, as red as she gets.
-  edge: face({ browNear: 0.9, browInner: 0.55, browArch: -0.4, browOuter: -0.5, browTip: 0.8, lidUpper: 1, lidLower: 0.4, smile: -0.1, open: 0.9, tongue: 0.6, blush: 1, crease: 1 }),
+  edge: face({ browNear: 0.9, browInner: 0.55, browArch: -0.4, browOuter: -0.5, browTip: 0.8, lidUpper: 1, lidLower: 0.4, smile: -0.1, open: 0.9, tongue: 0.6, blush: 1, crease: 1, pupil: 0.3 }),
   // Past it: eyes rolled up under heavy lids, brows high and helpless, mouth hanging open, tongue out.
-  lost: face({ browNear: 1, browInner: 0.45, browArch: -0.5, browOuter: -0.4, browTip: 0.9, lidUpper: 0.3, lidLower: 0.2, lookY: 1, smile: 0.15, open: 1, tongue: 1, blush: 1, crease: 0.6 }),
+  lost: face({ browNear: 1, browInner: 0.45, browArch: -0.5, browOuter: -0.4, browTip: 0.9, lidUpper: 0.3, lidLower: 0.2, lookY: 1, smile: 0.15, open: 1, tongue: 1, blush: 1, crease: 0.6, pupil: 0.6 }),
   // Brows knitted down, eyes narrowed, mouth turned down.
-  annoyed: face({ brow: -0.4, browInner: -1, browOuter: 0.3, lidUpper: 0.35, lidLower: 0.2, smile: -0.7, crease: 0.6 }),
+  annoyed: face({ brow: -0.4, browInner: -1, browOuter: 0.3, lidUpper: 0.35, lidLower: 0.2, smile: -0.7, crease: 0.6, pupil: -0.2 }),
+  // Her willpower wearing down, in KP's steps (STAMINA_STEPS, EXPRESSION_STUDY.md): first her mouth sets (KP's mu),
+  set: face({ brow: -0.2, browInner: -0.3, browOuter: 0.1, smile: -0.2, press: 0.35 }),
+  // then she grits her teeth through it, brows hard (ku, kiri/oko),
+  gritted: face({ brow: -0.3, browInner: -0.5, browOuter: 0.2, lidUpper: 0.15, smile: -0.45, open: 0.08, bare: 0.7, crease: 0.4 }),
+  // and at the end she's spent: brows up and troubled, eyes nearly closed, mouth hanging open on a breath (koma, toji, wa).
+  spent: face({ browNear: 0.3, browInner: 0.9, browOuter: -0.6, lidUpper: 0.7, lidLower: 0.15, lookY: -0.3, smile: -0.15, open: 0.4, crease: 0.4 }),
 };
+
+/**
+ * Close variants of each expression, as KP's random pools (EXPRESSION_STUDY.md §3.5): what each changes, added to the
+ * expression. One is picked (or none) whenever her face changes, so she never holds one fixed face. `angry`'s only touch
+ * her mouth, to keep the brows the user drew.
+ */
+export const VARIANTS: Readonly<Record<Expression, readonly Partial<FaceShape>[]>> = {
+  neutral: [{ smile: 0.15 }, { brow: -0.1, browInner: -0.15 }],
+  stern: [{ press: 0.4, smile: -0.1 }, { browInner: -0.3, browNear: 0.15 }],
+  confident: [{ smirk: -0.3, smile: 0.25, open: 0.12 }, { lidUpper: 0.15, lookX: 0.25 }],
+  smile: [{ open: -0.2, smile: -0.2 }, { lidLower: 0.25, smile: 0.15 }],
+  shy: [{ lookX: -1 }, { smile: -0.25, press: 0.4 }],
+  sultry: [{ lookX: 0.4 }, { smirk: -0.5, smile: 0.15, open: -0.08 }],
+  embarrassed: [{ lookX: 1.2 }, { smile: 0.15, press: 0.5 }],
+  tired: [{ open: 0.15, lidUpper: 0.15 }, { open: -0.1, bare: 0.5, smile: -0.1 }],
+  drunk: [{ smirk: -0.3, open: 0.1 }, { lookX: 0.3, lidUpper: 0.1 }],
+  angry: [{ open: -0.12, press: 0.4 }, { bare: 0.7 }],
+  surprised: [{ open: -0.3, round: 0.6 }, { wide: -0.3, browArch: -0.3 }],
+  overwhelmed: [{ lidUpper: 0.2, open: -0.2 }, { bare: 0.6 }],
+  bashful: [{ lookX: -0.6 }, { browInner: 0.6, browTip: -0.5 }],
+  aroused: [{ open: 0.15, round: 0.6 }, { lidUpper: 0.15, smile: 0.15 }],
+  panting: [{ tongue: -0.6, open: -0.2 }, { lookY: -0.4 }],
+  strained: [{ lidUpper: -0.4, lidLower: -0.2 }, { open: -0.3, bare: -0.3 }],
+  blissful: [{ open: 0.2 }, { lidUpper: 0.2 }],
+  delighted: [{ tongue: -0.4, open: -0.2 }, { lidUpper: 0.3 }],
+  pleasure: [{ open: 0.25, round: 0.5 }, { lidUpper: 0.15, lookY: 0.3 }],
+  edge: [{ tongue: -0.6 }, { lidUpper: -0.25, lookY: 0.6 }],
+  lost: [{ tongue: -0.5 }, { lookY: -0.4, lookX: 0.4 }],
+  annoyed: [{ lookX: 0.6 }, { press: 0.5, smile: 0.2 }],
+  set: [{ press: -0.25, smile: -0.1 }, { lookX: 0.3 }],
+  gritted: [{ bare: -0.3, open: 0.1 }, { lidUpper: 0.2 }],
+  spent: [{ open: -0.2, bare: 0.4 }, { lidUpper: 0.25, lookY: -0.2 }],
+};
+
+/** The controls that can't go below 0 (the rest go both ways). */
+const UNSIGNED: readonly (keyof FaceShape)[] = [
+  "browNear", "lidUpper", "lidLower", "open", "round", "bare", "lift", "cup", "press", "tongue", "blush", "crease", "wet",
+  "tears", "heart", "sweat",
+];
+
+/** An expression's face with its variant `variant` on it: 0 is the expression itself, then each of its VARIANTS in turn. */
+export function withVariant(shape: FaceShape, expression: Expression, variant: number): FaceShape {
+  const pool = VARIANTS[expression];
+  const pick = ((Math.floor(variant) % (pool.length + 1)) + pool.length + 1) % (pool.length + 1);
+  if (pick === 0) return shape;
+  const out = { ...shape };
+  for (const [key, add] of Object.entries(pool[pick - 1]) as [keyof FaceShape, number][]) out[key] += add;
+  for (const key of UNSIGNED) out[key] = Math.min(Math.max(out[key], 0), 1.25);
+  return out;
+}
 
 /** Partway from one face to another, `t` of the way (0 to 1). */
 export function blendFace(a: FaceShape, b: FaceShape, t: number): FaceShape {
@@ -203,6 +279,8 @@ export interface FaceCause {
   duel?: { state: "calm" | "aroused" | "edge"; pleasure: number } | null;
   /** Something that just happened. */
   moment?: FaceMoment | null;
+  /** Which close variant of her expression she wears (withVariant): re-picked by the game as her face changes. */
+  variant?: number;
 }
 
 /** Jolted by a touch while she's this aroused, she's overwhelmed rather than surprised. */
@@ -218,7 +296,44 @@ const REACTION_FACE: Readonly<Record<Reaction, Expression>> = { jolt: "surprised
  * Over it, as her state goes: tired as her willpower runs out (from `BEARING.tiredBelow` left), embarrassed as her
  * clothes come off (less the lewder she is: not at all by `BEARING.shameless`), drunk, and worked up.
  */
-export const BEARING = { easy: 2, confident: 5, tiredBelow: 0.5, shameless: 6 };
+export const BEARING = { easy: 2, confident: 5, shameless: 6 };
+
+/**
+ * How her face wears down as her willpower runs out, KP's stamina bands (EXPRESSION_STUDY.md §3.1): her bearing down to
+ * the first step, then from each step's face to the next's as her willpower falls between them. Lewd and sure of
+ * herself (`BEARING.confident`), she wears down only `confidentShare` of the way, keeping her smirk and half-lids.
+ */
+export const STAMINA_STEPS: readonly { will: number; face: Expression | null }[] = [
+  { will: 0.8, face: null },
+  { will: 0.6, face: "set" },
+  { will: 0.4, face: "gritted" },
+  { will: 0.2, face: "tired" },
+  { will: 0, face: "spent" },
+];
+export const STAMINA = { confidentShare: 0.7 };
+
+/** The step of wearing down she's nearest, for her variants; null while she's still fresh (above the first step). */
+function staminaStep(will: number): Expression | null {
+  if (will >= STAMINA_STEPS[0].will) return null;
+  let best = STAMINA_STEPS[1];
+  for (const step of STAMINA_STEPS) if (step.face && Math.abs(step.will - will) < Math.abs(best.will - will)) best = step;
+  return best.face;
+}
+
+/** Her bearing worn down by how much of her willpower is left (STAMINA_STEPS). */
+function wornDown(bearingFace: FaceShape, will: number, slut: number): FaceShape {
+  const faceAt = (step: (typeof STAMINA_STEPS)[number]) => (step.face ? EXPRESSIONS[step.face] : bearingFace);
+  let worn = bearingFace;
+  for (let i = 1; i < STAMINA_STEPS.length; i++) {
+    const hi = STAMINA_STEPS[i - 1];
+    const lo = STAMINA_STEPS[i];
+    if (will >= hi.will) break;
+    const t = Math.min(1, (hi.will - will) / (hi.will - lo.will));
+    worn = blendFace(faceAt(hi), faceAt(lo), t);
+  }
+  const share = slut >= BEARING.confident ? STAMINA.confidentShare : 1;
+  return blendFace(bearingFace, worn, share);
+}
 
 /**
  * The expression that leads her face: a reaction to a touch first, then a moment, then what she's in the middle of
@@ -262,6 +377,16 @@ function bearing(slut: number): { main: Expression; face: FaceShape } {
  */
 export const HEAVY_LIDS = { arousal: 0.3, drunk: 0.35 };
 export const FLUSH = { arousal: 0.7, drunk: 0.6 };
+/** Her pupils widen as she's aroused or drunk, by this much more at most, over her expression's own. */
+export const WIDE_PUPILS = { arousal: 0.6, drunk: 0.4 };
+/**
+ * KP's extras over any face (EXPRESSION_STUDY.md §3): she sweats as her willpower runs low (from `sweatFrom` left, all
+ * of it by `sweatFull`) and in a brawl or a game; her eyes go wet as she's aroused once she's at ease with it
+ * (Slut Level BEARING.easy: KP's lv2), from `wetFrom` arousal, all of it by `wetFull`; and her pupils turn to hearts
+ * only when she's fully gone: sure of herself (BEARING.confident: KP's lv3), this aroused, in one of HEART_FACES.
+ */
+export const EXTRAS = { sweatFrom: 0.65, sweatFull: 0.25, sweatFighting: 0.4, sweatGame: 0.6, wetFrom: 0.4, wetFull: 0.8, heartArousal: 0.8 };
+export const HEART_FACES: readonly Expression[] = ["blissful", "delighted", "pleasure", "edge", "lost"];
 
 /** Her face as it goes now (see `expressionFor` and `BEARING`). */
 export function faceFor(cause: FaceCause): FaceShape {
@@ -271,9 +396,7 @@ export function faceFor(cause: FaceCause): FaceShape {
   if (!main) {
     // Nothing in particular going on: her bearing, and her state over it.
     const slut = cause.slut ?? 0;
-    shape = bearing(slut).face;
-    const tired = clamp(1 - (cause.will ?? 1) / BEARING.tiredBelow);
-    shape = blendFace(shape, EXPRESSIONS.tired, tired);
+    shape = wornDown(bearing(slut).face, clamp(cause.will ?? 1), slut);
     const shame = clamp(cause.exposed ?? 0) * clamp(1 - slut / BEARING.shameless);
     shape = blendFace(shape, EXPRESSIONS.embarrassed, shame);
     shape = blendFace(shape, EXPRESSIONS.drunk, clamp(cause.drunk) * 0.8);
@@ -290,10 +413,23 @@ export function faceFor(cause: FaceCause): FaceShape {
     if (cause.duel && main === "strained") shape = blendFace(shape, EXPRESSIONS.pleasure, clamp(cause.duel.pleasure) * 0.5);
     if (cause.duel && main === "edge") shape = blendFace(shape, EXPRESSIONS.lost, clamp((cause.duel.pleasure - LOST_FROM) / (1 - LOST_FROM)));
   }
+  // One of her expression's close variants, as KP re-rolls its pools (not in a brawl: its faces have their own pools).
+  if (cause.variant && !(cause.fightFace && cause.fighting)) {
+    const slut = cause.slut ?? 0;
+    const pool = main ?? (slut < BEARING.confident ? staminaStep(clamp(cause.will ?? 1)) : null) ?? bearing(slut).main;
+    shape = withVariant(shape, pool, cause.variant);
+  }
   const a = clamp(cause.arousal);
   const d = clamp(cause.drunk);
   shape.lidUpper = Math.min(1, Math.max(shape.lidUpper, a * HEAVY_LIDS.arousal, d * HEAVY_LIDS.drunk));
   shape.blush = Math.min(1, Math.max(shape.blush, a * FLUSH.arousal, d * FLUSH.drunk));
+  shape.pupil = Math.min(1, Math.max(-1, shape.pupil + a * WIDE_PUPILS.arousal + d * WIDE_PUPILS.drunk));
+  const slut = cause.slut ?? 0;
+  const worn = clamp((EXTRAS.sweatFrom - (cause.will ?? 1)) / (EXTRAS.sweatFrom - EXTRAS.sweatFull));
+  const exertion = Math.max(cause.fighting ? EXTRAS.sweatFighting : 0, (cause.duel?.pleasure ?? 0) * EXTRAS.sweatGame);
+  shape.sweat = Math.min(1, Math.max(shape.sweat, worn, exertion));
+  if (slut >= BEARING.easy) shape.wet = Math.max(shape.wet, clamp((a - EXTRAS.wetFrom) / (EXTRAS.wetFull - EXTRAS.wetFrom)));
+  if (slut >= BEARING.confident && a >= EXTRAS.heartArousal && main && HEART_FACES.includes(main)) shape.heart = 1;
   return shape;
 }
 
@@ -301,9 +437,16 @@ export function faceFor(cause: FaceCause): FaceShape {
 // (`faceMove`), in the model's space as built: y up, forwards -z, metres.
 
 /** One eye: the middle of its dot and the dot's half width and half height. */
+/**
+ * One eye: the middle of its white and the white's half width and half height; the middle of its pupil; and how its
+ * plane slopes (z per x, z per y), so what slides across it stays on it: her eyes sit in a socket that turns back
+ * steeply towards her temple.
+ */
 export interface EyeRig {
   centre: [number, number, number];
   half: [number, number];
+  pupil: [number, number];
+  slope: [number, number];
 }
 
 export interface FaceRig {
@@ -323,7 +466,11 @@ export interface FaceRig {
  * What a point of her face is: her brows' and her upper teeth's move in their own ways; the rest by where it is, but
  * her lips draw back off her lower teeth and her tongue.
  */
-export type FacePart = "brow" | "teeth" | "lowerTeeth" | "tongue" | "skin";
+export type FacePart =
+  | "brow" | "teeth" | "lowerTeeth" | "tongue" | "skin"
+  // Her eyes (build_world.py add_anime_eyes): the white stays; her eyelids' edges and her lash lines close over it,
+  // upper and lower; her iris (with its darker top and the shines) looks about behind them; her pupil also grows.
+  | "eyeWhite" | "lid" | "lidLow" | "lash" | "lashLow" | "iris" | "pupil";
 
 /**
  * The front of her face, from its triangles (each nine numbers: three points' x, y, z), to keep her brows on it as
@@ -366,20 +513,31 @@ export const FACE_REACH = {
   browLow: 0.006,
   browForward: 0.5,
   browKnit: 0.003,
-  /** Eyes opened wide (share of their size) and looking aside (share of their half size). */
+  /** The outer ends of her brows drawn out this far (browSpread), less and less in towards her nose. */
+  browSpread: 0.005,
+  /** Eyes opened wide (share of their opening's height), and looking aside (share of the opening's half width and top). */
   wide: 0.22,
-  look: 0.45,
+  look: 0.3,
+  /** Pupils grown or shrunk by this share of their size (`pupil`). */
+  pupil: 0.35,
   /** The corners of her mouth up and out, and back into her face as they go up. */
   smileUp: 0.009,
   smileOut: 0.003,
   smileBack: 0.001,
   /** How far round each corner of her mouth the skin goes with it. */
   corner: 0.017,
-  /** How much past the edge of an eye's dot still counts as the eye. */
-  eyeEdge: 1.1,
+  /** Her whole mouth raised this far (mouthUp). */
+  mouthUp: 0.003,
   /** Her mouth wide open: how far her jaw drops, and swings back. */
   jaw: 0.019,
   jawBack: 0.004,
+  /**
+   * The drop is all her lower lip's (down to `jawLip` below her mouth line) and less and less below it, to `jawChinShare`
+   * of it at her chin: her mouth opens inside her face, as KP's does, instead of her whole chin dropping and her face
+   * growing long (EXPRESSION_STUDY.md).
+   */
+  jawLip: 0.006,
+  jawChinShare: 0.25,
   /**
    * Open wide, the corners of her mouth draw out to the sides this far; pressed small (`purseIn`), in. Her whole mouth
    * stretches with them, inside and all, so its corners stay clean: everything within `mouthHigh` of her mouth line,
@@ -461,6 +619,7 @@ export function faceRig(
   brows: readonly number[][],
   lips: readonly number[][],
   tongue: readonly number[][] = [],
+  pupils: readonly number[][] = [],
 ): FaceRig | null {
   if (!eyes.length || !brows.length || !lips.length) return null;
   const eye = (side: number): EyeRig | null => {
@@ -470,7 +629,15 @@ export function faceRig(
     const [x0, x1] = span(0);
     const [y0, y1] = span(1);
     const z = points.reduce((sum, p) => sum + p[2], 0) / points.length;
-    return { centre: [(x0 + x1) / 2, (y0 + y1) / 2, z], half: [(x1 - x0) / 2, (y1 - y0) / 2] };
+    const centre: [number, number, number] = [(x0 + x1) / 2, (y0 + y1) / 2, z];
+    const own = pupils.filter((p) => Math.sign(p[0]) === side);
+    const mean = (k: number) => own.reduce((sum, p) => sum + p[k], 0) / own.length;
+    return {
+      centre,
+      half: [(x1 - x0) / 2, (y1 - y0) / 2],
+      pupil: own.length ? [mean(0), mean(1)] : [centre[0], centre[1]],
+      slope: planeSlope(points, centre),
+    };
   };
   const left = eye(-1);
   const right = eye(1);
@@ -490,6 +657,24 @@ export function faceRig(
     line: (corners[0][1] + corners[1][1]) / 2,
     tongue: reach.length ? [Math.min(...reach), Math.max(...reach)] : null,
   };
+}
+
+/** How a set of points' plane slopes about a centre, by least squares: [z per x, z per y]; flat if they don't say. */
+function planeSlope(points: readonly number[][], centre: readonly number[]): [number, number] {
+  let xx = 0, xy = 0, yy = 0, xz = 0, yz = 0;
+  for (const [x, y, z] of points) {
+    const dx = x - centre[0];
+    const dy = y - centre[1];
+    const dz = z - centre[2];
+    xx += dx * dx;
+    xy += dx * dy;
+    yy += dy * dy;
+    xz += dx * dz;
+    yz += dy * dz;
+  }
+  const det = xx * yy - xy * xy;
+  if (Math.abs(det) < 1e-18) return [0, 0];
+  return [(xz * yy - yz * xy) / det, (yz * xx - xz * xy) / det];
 }
 
 const smooth = (s: number) => {
@@ -529,6 +714,12 @@ export function mouthWeight(rig: FaceRig, x: number, y: number, z: number): numb
   return across * high;
 }
 
+/** How much of the drop a point this far below her mouth line takes: all of it at her lip, `jawChinShare` at her chin. */
+export function jawDepthShare(below: number): number {
+  const s = smooth((below - FACE_REACH.jawLip) / (FACE_REACH.jawChin - FACE_REACH.jawLip));
+  return 1 - (1 - FACE_REACH.jawChinShare) * s;
+}
+
 /**
  * How much of her jaw's drop a point of her face below her mouth line takes, 0 to 1 (FACE_REACH.jaw*): along her
  * mouth line, out to how near her corners as her mouth rig shapes it (`round`, `bare`).
@@ -548,10 +739,113 @@ export function jawWeight(rig: FaceRig, x: number, y: number, z: number, shape?:
 }
 
 /**
+ * The opening of her eye, as build_world.py's EYE_SHAPE draws it (keep the two in step), in shares of the white's half
+ * width and half height (EYE_WHITE_HALF, 23 by 14 reference pixels): how wide it is, how high its top arches and how
+ * low its bottom dips (each times (1 - u^2) to its power), the corners' heights, inner and outer; and where her lids
+ * meet when they close, a share of the way up from the bottom.
+ */
+export const EYE_OPENING = {
+  half: 21 / 23, top: 12.5 / 14, topPow: 0.55, bottom: 10 / 14, bottomPow: 0.8, inner: -1 / 14, outer: 2.5 / 14, meet: 0.25,
+};
+/**
+ * Her eyeball, as build_world.py's EYE_DOME shapes it (keep the two in step): the eye stands out of its socket in a dome
+ * `depth` times the white's half width high at its middle, falling off as (1 - r^2) to the `power` out to an oval just
+ * round the opening (`across`, `up`, `down`: shares of the white's half size). What moves over the eye (her iris
+ * looking about, her lids closing) stays on it.
+ */
+export const EYE_DOME = { depth: 0.2, power: 0.6, across: 1.0, up: 0.98, down: 0.79 };
+
+/** How far the eyeball stands out at a point (shares of the white's half width and half height from its middle). */
+export function eyeDome(x: number, y: number): number {
+  const across = x / EYE_DOME.across;
+  const up = y / (y > 0 ? EYE_DOME.up : EYE_DOME.down);
+  return EYE_DOME.depth * Math.max(0, 1 - across * across - up * up) ** EYE_DOME.power;
+}
+
+/** How far past its edge a point of an eyelid still moves with it, in shares of the white's half height. */
+const LID_EDGE = 0.25;
+const EYE_PARTS: readonly FacePart[] = ["eyeWhite", "lid", "lidLow", "lash", "lashLow", "iris", "pupil"];
+
+/** The opening at u (-1 her inner corner, 1 her outer), in shares of the white's half height about its middle. */
+export function eyeOpening(u: number): { top: number; bottom: number; meet: number; tilt: number } {
+  const e = EYE_OPENING;
+  const c = Math.min(1, Math.max(-1, u));
+  const tilt = e.inner + ((e.outer - e.inner) * (c + 1)) / 2;
+  const across = Math.max(0, 1 - c * c);
+  const top = tilt + e.top * across ** e.topPow;
+  const bottom = tilt - e.bottom * across ** e.bottomPow;
+  return { top, bottom, meet: bottom + e.meet * (top - bottom), tilt };
+}
+
+/**
+ * How an expression moves a point of her eye: her eyelids' edges and lash lines close over it (lidUpper down to where
+ * the lids meet, lidLower up to it) or open it wide; her iris looks about behind them; her pupil grows or shrinks.
+ */
+function eyeMove(rig: FaceRig, shape: FaceShape, p: readonly number[], part: FacePart, out: number[]): boolean {
+  const eye = rig.eyes[p[0] < 0 ? 0 : 1];
+  const [cx, cy] = eye.centre;
+  const [hx, hy] = eye.half;
+  if (part === "eyeWhite") return false;
+  if (part === "iris" || part === "pupil") {
+    let x = p[0];
+    let y = p[1];
+    if (part === "pupil" && shape.pupil !== 0) {
+      const grow = 1 + shape.pupil * FACE_REACH.pupil;
+      x = eye.pupil[0] + (x - eye.pupil[0]) * grow;
+      y = eye.pupil[1] + (y - eye.pupil[1]) * grow;
+    }
+    out[0] = x + shape.lookX * FACE_REACH.look * hx * EYE_OPENING.half;
+    out[1] = y + shape.lookY * FACE_REACH.look * hy * EYE_OPENING.top;
+    out[2] = onEye(eye, p, out);
+    return out[0] !== p[0] || out[1] !== p[1];
+  }
+  const u = (Math.abs(p[0]) - Math.abs(cx)) / (hx * EYE_OPENING.half);
+  const at = eyeOpening(u);
+  const dy = (p[1] - cy) / hy;
+  const upper = part === "lid" || part === "lash";
+  // A lid's edge moves; its far side, out past the white, stays where it is, so the lid stretches over the eye.
+  const edge = upper ? dy - at.top : at.bottom - dy;
+  const w = part === "lash" || part === "lashLow" ? 1 : 1 - smooth(edge / LID_EDGE);
+  if (w <= 0) return false;
+  const move = upper
+    ? -shape.lidUpper * (at.top - at.meet) + shape.wide * FACE_REACH.wide * (at.top - at.tilt)
+    : shape.lidLower * (at.meet - at.bottom) - shape.wide * FACE_REACH.wide * (at.tilt - at.bottom);
+  if (move === 0) return false;
+  out[1] = p[1] + move * w * hy;
+  out[2] = onEye(eye, p, out);
+  return true;
+}
+
+/**
+ * Where a point of the eye moved across it (from p to out, x and y) sits in depth: along the eye's plane and over its
+ * dome, as far in front of them as it was, so it stays in front of the white wherever it goes (forwards is -z).
+ */
+function onEye(eye: EyeRig, p: readonly number[], out: readonly number[]): number {
+  const [cx, cy] = eye.centre;
+  const [hx, hy] = eye.half;
+  const dome = (x: number, y: number) => eyeDome((Math.abs(x) - Math.abs(cx)) / hx, (y - cy) / hy) * hx;
+  return p[2] + (out[0] - p[0]) * eye.slope[0] + (out[1] - p[1]) * eye.slope[1] - (dome(out[0], out[1]) - dome(p[0], p[1]));
+}
+
+/**
  * Where an expression takes a point of her face (`p`, as shaped), written into `out`; false if it doesn't move it.
  * `part` says what it is: her brows move on their own, her upper teeth stay with her skull, the rest moves by where it is.
  */
 export function faceMove(rig: FaceRig, shape: FaceShape, p: readonly number[], part: FacePart, out: number[]): boolean {
+  let moved = faceMoveParts(rig, shape, p, part, out);
+  // Her whole mouth raised or lowered, on top of everything else it does, by where each point was.
+  if (shape.mouthUp !== 0 && part !== "brow") {
+    const w = mouthWeight(rig, p[0], p[1], p[2]);
+    if (w > 0) {
+      out[1] += shape.mouthUp * FACE_REACH.mouthUp * w;
+      moved = true;
+    }
+  }
+  return moved;
+}
+
+/** faceMove but for raising her whole mouth: each part of her face moved its own way. */
+function faceMoveParts(rig: FaceRig, shape: FaceShape, p: readonly number[], part: FacePart, out: number[]): boolean {
   const [x, y, z] = p;
   out[0] = x;
   out[1] = y;
@@ -568,11 +862,13 @@ export function faceMove(rig: FaceRig, shape: FaceShape, p: readonly number[], p
     const up = Math.max(-FACE_REACH.browLow, raised);
     const near = shape.browNear * FACE_REACH.browNear;
     const knit = Math.max(0, -shape.browInner) * FACE_REACH.browKnit * (1 - t);
-    out[0] = x - Math.sign(x) * knit;
+    const spread = shape.browSpread * FACE_REACH.browSpread * t * t;
+    out[0] = x - Math.sign(x) * (knit - spread);
     out[1] = y + up - near;
     out[2] = z + Math.min(0, up) * FACE_REACH.browForward - shape.browNear * FACE_REACH.browNearForward;
-    return up !== 0 || knit !== 0 || near !== 0;
+    return up !== 0 || knit !== 0 || near !== 0 || spread !== 0;
   }
+  if (EYE_PARTS.includes(part)) return eyeMove(rig, shape, p, part, out);
   // Her mouth stretches wide or draws in as a whole, lips, teeth, tongue and the inside of it, from the middle out.
   let moved = false;
   const widen = FACE_REACH.mouthWiden * shape.open - FACE_REACH.purseIn * shape.purse + FACE_REACH.pressWiden * shape.press +
@@ -592,19 +888,6 @@ export function faceMove(rig: FaceRig, shape: FaceShape, p: readonly number[], p
     moved = true;
   }
   if (part === "teeth") return moved;
-  for (const eye of rig.eyes) {
-    const [cx, cy, cz] = eye.centre;
-    const [hw, hh] = eye.half;
-    const dx = x - cx;
-    const dy = y - cy;
-    if (Math.abs(dx) > hw * FACE_REACH.eyeEdge || Math.abs(dy) > hh * FACE_REACH.eyeEdge || z > cz + 0.01) continue;
-    const scale = 1 + shape.wide * FACE_REACH.wide;
-    // Each half of the dot closes in towards the middle like a lid, never quite to nothing: shut, a dark line.
-    const lid = Math.max(0.06, dy > 0 ? 1 - shape.lidUpper : 1 - shape.lidLower);
-    out[0] = cx + dx * scale + shape.lookX * hw * FACE_REACH.look;
-    out[1] = cy + dy * scale * lid + shape.lookY * hh * FACE_REACH.look;
-    return true;
-  }
   // Her lips pressed thin: both close in on her mouth line till they're a line drawn across her face.
   if (shape.press > 0) {
     const dy = y - rig.line;
@@ -675,7 +958,7 @@ export function faceMove(rig: FaceRig, shape: FaceShape, p: readonly number[], p
   }
   // Her jaw drops, and her lower lip, teeth and tongue with it.
   if (shape.open > 0) {
-    const w = jawWeight(rig, x, y, z, shape);
+    const w = jawWeight(rig, x, y, z, shape) * jawDepthShare(rig.line - y);
     if (w > 0) {
       out[1] -= FACE_REACH.jaw * shape.open * w;
       out[2] += FACE_REACH.jawBack * shape.open * w;

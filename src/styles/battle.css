@@ -40,7 +40,6 @@ body:has(#battle-view.open) {
 .battle-card canvas {
   width: 100%;
   height: 100%;
-  image-rendering: pixelated;
 }
 
 .battle-card .nameplate {
@@ -93,6 +92,148 @@ body:has(#battle-view.open) {
   text-shadow: 1px 1px 0 #000;
 }
 
+/* Hearts and a pleasure bar between the picture and the board, as on her status card (hud.css .heart-ui). */
+.battle-card .lust {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 6px 12px 7px;
+  background: var(--plum);
+  box-shadow: inset 0 0 0 2px var(--rose-dim);
+}
+
+.battle-card .lust[hidden] {
+  display: none;
+}
+
+.battle-card .lust .hearts {
+  display: flex;
+  justify-content: space-between;
+  gap: 2px;
+}
+
+/* A foe's single lust heart sits at the left of his pleasure bar's row, the bar filling the rest. */
+#battle-foes .battle-card .lust {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+#battle-foes .battle-card .lust .pleasure {
+  flex: 1;
+}
+
+.battle-card .lust:not([hidden]) + .status {
+  margin-top: 4px;
+}
+
+/* Stamina, willpower and energy as bars across the board: name, track, number. */
+.battle-card .status .row.barline {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 84px 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.battle-card .status .barline .track {
+  position: relative;
+  height: 9px;
+  background: #160c06;
+  border: 1px solid #000;
+  box-shadow: inset 0 0 0 1px #4a3418;
+}
+
+.battle-card .status .barline .fill {
+  position: absolute;
+  inset: 1px auto 1px 1px;
+  max-width: calc(100% - 2px);
+  background: linear-gradient(180deg, var(--bar-hi) 0, var(--bar) 55%, var(--bar-lo) 100%);
+  transition: width 0.3s ease-out;
+}
+
+.battle-card .status .barline.stamina {
+  --bar-hi: #8ef0a8;
+  --bar: #3cc068;
+  --bar-lo: #1e7a3c;
+}
+
+.battle-card .status .barline.foe {
+  --bar-hi: #ff9a8a;
+  --bar: #d8402e;
+  --bar-lo: #8a1e14;
+}
+
+.battle-card .status .barline.will {
+  --bar-hi: #a8d0ff;
+  --bar: #4a88e0;
+  --bar-lo: #24489a;
+}
+
+.battle-card .status .barline.energy {
+  --bar-hi: #fff0a0;
+  --bar: #e0b830;
+  --bar-lo: #8a6a10;
+}
+
+.battle-card .status .barline b {
+  min-width: 52px;
+  text-align: right;
+}
+
+/* How someone stands, as chips with little icons. */
+.battle-card .status .tagline {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.battle-card .status .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px 1px 3px;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--chip, #4a3a2a);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 1px 1px 0 #000;
+}
+
+.battle-card .status .chip .icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.battle-card .status .chip .icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.battle-card .status .chip.hot {
+  --chip: #a8285e;
+}
+
+.battle-card .status .chip.hurt {
+  --chip: #8a2a1a;
+}
+
+.battle-card .status .chip.calm {
+  --chip: #2e6a44;
+}
+
+.battle-card .status .chip.gold {
+  --chip: #8a5a14;
+}
+
 .battle-card .status .row {
   display: flex;
   justify-content: space-between;
@@ -129,12 +270,17 @@ body:has(#battle-view.open) {
   right: 16px;
 }
 
+/* In a brawl the picture windows are shorter, so the hearts, bars and chips fit under them, not over them. */
+body:has(#battle-foes.open) {
+  --battle-h: min(calc(100vh - 340px), 540px);
+}
+
 #battle-foes {
   position: fixed;
   top: 16px;
   left: 16px;
   width: var(--battle-w);
-  height: calc(var(--battle-h) + 84px);
+  height: min(calc(100vh - 32px), calc(var(--battle-h) + 210px));
   display: none;
   flex-direction: column;
   gap: 10px;
@@ -150,10 +296,15 @@ body:has(#battle-view.open) {
   position: relative;
   flex: 1 1 0;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
+/* The picture window takes what's left once the heart, bar and chips under it have their room. */
 #battle-foes .battle-card .frame {
-  height: 100%;
+  flex: 1 1 0;
+  min-height: 60px;
+  height: auto;
 }
 
 #battle-foes .battle-card canvas {
@@ -165,13 +316,19 @@ body:has(#battle-view.open) {
   color: #f0a090;
 }
 
-/* A foe's status sits inside the bottom of their picture, so the pictures can share the column evenly. */
+/* A foe's heart, pleasure and status sit under their picture, tight, so the pictures can share the column evenly. */
+#battle-foes .battle-card .dock {
+  flex: none;
+}
+
+#battle-foes .battle-card .lust {
+  margin-top: 6px;
+  padding: 4px 10px;
+}
+
 #battle-foes .battle-card .status {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 16px;
-  margin: 0;
+  margin-top: 4px;
+  padding: 6px 10px;
   grid-template-columns: 1fr;
 }
 

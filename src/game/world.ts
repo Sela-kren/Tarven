@@ -191,6 +191,9 @@ export function setupWorld(root: Object3D, whole: readonly string[] = []): World
       light.shadow.camera.near = 0.1;
       light.shadow.camera.far = style.distance;
       light.shadow.bias = -0.003;
+      // Looked up a little out along the surface's normal, so skin curving away from the lamp (the sides of her
+      // body, her cheek beside her nose) doesn't shadow itself in dark stripes and patches.
+      light.shadow.normalBias = 0.025;
     }
     anchor.add(light);
     flickers.push({ light, base: style.intensity, amount: style.flicker, phase: index * 1.7 });

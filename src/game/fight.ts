@@ -128,6 +128,24 @@ import {
 } from "./lewdtalk";
 import { experienceTier, HER_CLIMAX_LINES, HER_COME_LINES, HER_LINES, herVoice, SCENE_MOMENTS, type HerMoment, type HerVoice } from "./brawlher";
 import type { FightTier } from "./fightface";
+import {
+  AIMS,
+  DIZZY_AIM,
+  DIZZY_SLOW,
+  DRUNK_SLOW,
+  guardAt,
+  guardMeter,
+  LOW_ANGER,
+  LOW_ERECT,
+  rollWeakSpot,
+  toughness,
+  WEAK_DAMAGE,
+  weakSpotSeen,
+  WOBBLY_THROW,
+  type GuardMeter,
+  type GuardResult,
+  type StrikeAim,
+} from "./brawlaim";
 
 export type FightMove =
   | "strike"
@@ -408,6 +426,11 @@ export interface FighterStats {
    * question, and a grapple of theirs can too.
    */
   forceful?: boolean;
+  /**
+   * The guard meter (brawlaim.ts): each swing of theirs waits on her timing (`incoming`, then `guard`) instead of a
+   * roll. The brawl screen turns it on; left out (tests, the night run without a screen), their swings are rolled.
+   */
+  guard?: boolean;
 }
 
 /** Someone who may be in the brawl: who they are, their own numbers, the part of her they go for, worked up or not. */
@@ -451,6 +474,17 @@ export interface Foe {
   shaken: boolean;
   reaches: number;
   out: FoeOut | null;
+  /**
+   * Their weak spot for her aimed strike (brawlaim.ts), the other spot a middling foe shows with it, and whether she's
+   * found it. What her aimed strikes left them with: dizzy (their next swing slower), winded (their next blow half),
+   * wobbly on their knees (thrown out sooner).
+   */
+  weak: StrikeAim;
+  decoy: StrikeAim;
+  found: boolean;
+  dizzy: boolean;
+  winded: boolean;
+  wobbly: boolean;
 }
 
 /** At most this many in a brawl at once, the one who started it included. */
@@ -531,6 +565,8 @@ export class Fight {
   /** They've stopped swinging and reached for her: the fight waits for her answer (`afterReach`); who reached. */
   reaching = false;
   private reacher = 0;
+  /** One of them is swinging at her and the guard meter is up (FighterStats.guard): the fight waits for `guard`. */
+  incoming: GuardMeter | null = null;
   /** What just happened, newest last. */
   readonly log: string[] = [];
   /** The event behind each log line (see say), for the comic panel. */
@@ -683,6 +719,11 @@ export class Fight {
       shaken: false,
       reaches: 0,
       out: null,
+      ...rollWeakSpot(spec.guestId * 31 + this.foes.length, who.label),
+      found: false,
+      dizzy: false,
+      winded: false,
+      wobbly: false,
     };
   }
 
@@ -1044,7 +1085,7 @@ export class Fight {
       ];
     if (this.taken) return this.takenChoices();
     const c = this.chances();
-    const canThrow = this.foeStamina <= this.foeMax * THROW_AT;
+    const canThrow = this.foeStamina <= this.foeMax * this.throwAt;
     return [
       { move: "strike", label: "Strike", chance: c.strike, disabled: false },
       { move: "kick", label: "Kick", chance: c.kick, disabled: false },
@@ -1164,8 +1205,8 @@ export class Fight {
   ]);
 
   /** She makes her move; then, if it isn't over, they make theirs. */
-  act(move: FightMove): void {
-    if (this.outcome || this.reaching || this.offering) return;
+  act(move: FightMove, aim?: StrikeAim): void {
+    if (this.outcome || this.reaching || this.offering || this.incoming) return;
     if (this.dazed !== (move === "recover")) return;
     if (this.downed !== (move === "secondWind" || move === "stayDown")) return;
     if (this.taken ? !Fight.TAKEN_MOVES.has(move) : move === "struggle" || move === "goAlong") return;
@@ -1192,6 +1233,10 @@ export class Fight {
     if (move !== "headlock") this.holding = false;
     switch (move) {
       case "strike": {
+        if (aim) {
+          this.aimedStrike(aim, roll);
+          break;
+        }
         if (roll < c.strike) {
           const damage = this.blow(3 + (levels.strength - 1) + this.damageBonus);
           this.foeStamina = Math.max(0, this.foeStamina - damage);
@@ -1462,7 +1507,7 @@ export class Fight {
         break;
       }
       case "throw":
-        if (this.foeStamina > this.foeMax * THROW_AT) return;
+        if (this.foeStamina > this.foeMax * this.throwAt) return;
         this.say("throw", "You haul them up by the collar and throw them out into the snow.");
         this.gain("strength", 3);
         this.foeOut("thrown");
@@ -1475,12 +1520,131 @@ export class Fight {
     this.everyRound();
     if (this.outcome) return;
     this.theirTurns();
+    // One of them is swinging, waiting on her guard: the round ends once they've all gone (`guard`).
+    if (this.incoming) return;
+    this.endRound();
+  }
+
+  /** The round's over: edging and her stance tick down. */
+  private endRound(): void {
     if (this.edgeTurns > 0) this.edgeTurns--;
     this.stanceUsed = false;
     if (this.stance && --this.stanceTurns <= 0) {
       this.say("stance:end", `You drop out of your ${STANCE_NAMES[this.stance]}.`);
       this.stance = null;
     }
+  }
+
+  /**
+   * She stops the needle on the guard meter (`pos`, 0 to 1 across it): the swing is dodged, blocked or lands, and the
+   * rest of them go on with theirs (another may swing, and wait on her again).
+   */
+  guard(pos: number): void {
+    const m = this.incoming;
+    if (!m || this.outcome) return;
+    this.incoming = null;
+    this.actor = m.foe;
+    this.guarded(guardAt(m, pos));
+    this.theirTurns(m.foe + 1);
+    if (this.incoming || this.outcome) return;
+    this.endRound();
+  }
+
+  /** The guard meter for a swing of theirs (brawlaim.ts): how hard they are to read, and how ready she is. */
+  private guardFor(index: number): GuardMeter {
+    const foe = this.foes[index];
+    const { levels } = this.stats;
+    const p = this.penalties;
+    const cautious = this.stance === "cautious";
+    const dodgeBonus =
+      this.stats.dodge * 0.3 + (this.dodging ? 0.08 : 0) + (cautious ? 0.05 : 0) + (this.holding ? 0.04 : 0) - p.dodge * 0.3 - this.tired * 0.1;
+    const slow = (foe.dizzy ? DIZZY_SLOW : 0) + (foe.drunk ? DRUNK_SLOW : 0);
+    foe.dizzy = false;
+    return guardMeter(index, {
+      toughness: toughness(foe),
+      accuracy: foe.accuracy,
+      agility: levels.agility,
+      endurance: levels.endurance,
+      dodgeBonus,
+      blockBonus: this.stance === "defensive" ? 0.06 : 0,
+      slow,
+      center: 0.25 + this.random() * 0.5,
+    });
+  }
+
+  /** How her guard went against their swing: under it, on her arms, or square on her. */
+  private guarded(result: GuardResult): void {
+    this.dodging = false;
+    const who = foeTag(this.name);
+    if (result === "dodge") {
+      this.say("their:dodged", `[${who} · Attack · DODGED] You read the swing and duck under it.`);
+      this.dodges++;
+      this.gain("agility", 3);
+      if (this.stance === "counter") this.counterBlow();
+    } else if (result === "block") this.theirBlow(`[${who} · Attack · BLOCKED] `, true);
+    else this.theirBlow(`[${who} · Attack · HIT] `);
+    if (this.stamina <= 0) this.fallDown("You go down hard.");
+  }
+
+  /** The chance her strike lands, aimed there (brawlaim.ts): her strike's chance, give or take the spot. */
+  aimChance(aim: StrikeAim): number {
+    if (this.eyeOpen) return 1;
+    return Math.min(0.95, Math.max(0.05, this.chances().strike + AIMS[aim].hit));
+  }
+
+  /** What she can see of a foe's weak spot: the tougher they are, the less (brawlaim.ts weakSpotSeen). */
+  weakSeen(foe: Foe): StrikeAim[] {
+    return weakSpotSeen(foe);
+  }
+
+  /** Worn down to this share of their stamina, the one she's going for can be thrown out: sooner once they're wobbly. */
+  private get throwAt(): number {
+    return THROW_AT + (this.foe.wobbly ? WOBBLY_THROW : 0);
+  }
+
+  /** Her strike, aimed (brawlaim.ts): each spot does its own thing, and their weak spot takes more. */
+  private aimedStrike(aim: StrikeAim, roll: number): void {
+    const def = AIMS[aim];
+    const chance = this.aimChance(aim);
+    const tag = (ok: boolean) => this.rollTag("You", `Strike · ${def.name}`, chance, ok);
+    if (roll >= chance) {
+      this.say("strike:miss", tag(false) + (aim === "low" ? "They turn just in time; you hit thigh and nothing else." : "You swing and miss."));
+      return;
+    }
+    const foe = this.foe;
+    const weak = foe.weak === aim;
+    let damage = this.blow(3 + (this.stats.levels.strength - 1) + this.damageBonus) * def.damage;
+    const standing = erect(foe);
+    if (aim === "low" && standing) damage *= LOW_ERECT;
+    if (weak) damage *= WEAK_DAMAGE;
+    const n = Math.max(1, Math.round(damage));
+    this.foeStamina = Math.max(0, this.foeStamina - n);
+    let text: string;
+    switch (aim) {
+      case "face":
+        foe.dizzy = true;
+        text = "Your fist snaps their head back. They blink, seeing two of you.";
+        break;
+      case "gut":
+        foe.winded = true;
+        text = "You sink one into their gut, and the wind goes out of them.";
+        break;
+      case "low":
+        foe.angry = true;
+        foe.anger = Math.min(100, foe.anger + LOW_ANGER);
+        text = standing ? "Right below the belt, and they were standing to attention. The whole room winces." : "Right below the belt. The whole room winces.";
+        break;
+      case "knees":
+        foe.wobbly = true;
+        text = "You crack them across the knee. Their legs go wobbly.";
+        break;
+    }
+    if (weak) text += foe.found ? " Right on their weak spot!" : " That's their weak spot!";
+    foe.found ||= weak;
+    this.say("strike:hit", `${tag(true)}${text} (-${n})`);
+    this.crowdSays("hit");
+    this.mateSays("hit");
+    this.gain("strength", 2);
   }
 
   /** How much of her clothes are off, 0 to 1: by her clothes as they come off (7l), else what she came in with. */
@@ -1614,7 +1778,12 @@ export class Fight {
       }
       case "eye":
         this.eyeOpen = true;
-        this.say("eye", "You watch them, and see exactly where they'll be. (next blow can't miss, and hits harder)");
+        // And where they're soft (brawlaim.ts): the weak spot of the one she's going for, however tough they are.
+        this.say(
+          "eye",
+          `You watch them, and see exactly where they'll be. (next blow can't miss, and hits harder)${this.foe.found ? "" : ` Their weak spot: ${AIMS[this.foe.weak].name.toLowerCase()}.`}`,
+        );
+        this.foe.found = true;
         break;
       case "edge":
         this.edgeTurns = EDGE.turns;
@@ -1707,12 +1876,14 @@ export class Fight {
   }
 
   /** Each of them still in it takes a turn, unless one's stopped the fight to reach for her; then their table may pile in. */
-  private theirTurns(): void {
-    for (let i = 0; i < this.foes.length && !this.outcome; i++) {
+  private theirTurns(from = 0): void {
+    for (let i = from; i < this.foes.length && !this.outcome; i++) {
       if (this.foes[i].out) continue;
       if (this.reaching || this.offering || this.downed) break;
       this.actor = i;
       this.theirTurn();
+      // Swinging at her, the guard meter up: the rest wait for her guard, then go on from the next one.
+      if (this.incoming) return;
     }
     if (!this.outcome && !this.reaching && !this.offering && !this.downed) this.maybeJoinBrawl();
     this.actor = this.target;
@@ -1778,6 +1949,11 @@ export class Fight {
       this.say("their:reach", `The ${this.name} stops swinging and reaches for you instead.`);
       return;
     }
+    // The guard meter: her timing decides it, not a roll (brawlaim.ts).
+    if (this.stats.guard) {
+      this.incoming = this.guardFor(this.actor);
+      return;
+    }
     // Breasts desire makes her slow to twist away.
     // Cautious Stance: her dodges better, their aim worse. Tired, she's slower to get out of the way.
     const cautious = this.stance === "cautious";
@@ -1787,7 +1963,9 @@ export class Fight {
     const dodged = this.dodging;
     this.dodging = false;
     // Her hold on their arm throws their swing off; they shake loose as they swing.
-    const off = (this.holding ? HOLD_ACCURACY : 0) + (cautious ? CAUTIOUS.theirAim : 0);
+    // Dizzy from a blow to the face, their aim's off.
+    const off = (this.holding ? HOLD_ACCURACY : 0) + (cautious ? CAUTIOUS.theirAim : 0) + (this.foe.dizzy ? DIZZY_AIM : 0);
+    this.foe.dizzy = false;
     const aim = this.foeAccuracy - dodge - off;
     const hit = this.random() < aim;
     const tag = this.rollTag(foeTag(this.name), "Attack", aim, hit);
@@ -2408,10 +2586,14 @@ export class Fight {
   }
 
   /** A blow of theirs that lands: a fist, or now and then a grapple. Fighting, every one of them. */
-  private theirBlow(tag = ""): void {
+  private theirBlow(tag = "", blocked = false): void {
     // Defensive Stance: their blows take less out of her, body and will, and can't pin her.
     const defensive = this.stance === "defensive";
-    const hurt = (damage: number, will: number, event: string, text: string) => {
+    // Winded from a blow to the gut: their next one has half the weight behind it.
+    const winded = this.foe.winded;
+    this.foe.winded = false;
+    const hurt = (raw: number, will: number, event: string, text: string) => {
+      const damage = winded ? Math.ceil(raw / 2) : raw;
       // Target of Vulgar Gazes: every new one staring steadies her (Undone by Their Eyes: undoes her).
       const guard = Math.round(perTalker(this.starers.size, this.stats.lewdTalk?.guard ?? 0, SIGHT_GUARD_MAX));
       const n = Math.max(1, damage - (defensive ? DEFENSIVE.damage : 0) - guard);
@@ -2421,6 +2603,11 @@ export class Fight {
       this.gain("endurance", 1);
     };
     this.holding = false;
+    // Blocked on the guard meter: it glances off her arms for half, and nobody gets hold of her.
+    if (blocked) {
+      hurt(Math.ceil(this.foeAttack / 2), Math.floor(HIT_WILL / 2), "their:hit", "You get your arms up, and it glances off them.");
+      return;
+    }
     // Butt desire: they'd rather get their hands on her than punch.
     if (this.random() >= FOE_GRAPPLE + this.penalties.grapple) {
       hurt(this.foeAttack, HIT_WILL, "their:hit", "They catch you one.");

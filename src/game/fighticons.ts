@@ -352,3 +352,23 @@ export const MOVE_ICONS: Readonly<Record<FightMove, string>> = {
   secondWind: badge(BOLT, UP),
   stayDown: badge(SHIELD, DOWN),
 };
+
+/** The little icons on a fight card's tag chips (battleview.ts): how someone stands, at a glance. */
+export type TagIcon = "angry" | "drunk" | "horny" | "erect" | "spent" | "prefix" | "will" | "stance" | "clothes" | "calm" | "hot" | "weak" | "dazed";
+
+export const TAG_ICONS: Readonly<Record<TagIcon, string>> = {
+  angry: fist,
+  drunk: svg(recolor(DROP, "BF", "bf")),
+  horny: heart,
+  erect: svg(recolor(BOLT, "YP")),
+  spent: svg(recolor(DROP, "BC", "bc")),
+  prefix: svg(STAR),
+  will: svg(DROP),
+  stance: svg(BOLT),
+  clothes: svg(SHIRT),
+  calm: svg(GREEN_HEART),
+  hot: svg(recolor(HEART, "PR", "pR")),
+  // Their weak spot (brawlaim.ts), and what her aimed strikes left them with.
+  weak: svg(EYE),
+  dazed: svg(STAR),
+};

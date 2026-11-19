@@ -9,6 +9,7 @@ import { AREA_NAMES, DUEL_AREAS, MAX_PARTNERS, STATE_NAMES, type Duel, type Duel
 import { ROLE_PLAYS, type RolePlay } from "./duellines";
 import { GUEST_KIND_LIST, statsOf } from "./guestroles";
 import type { Button, Game } from "./game";
+import type { BattleLust, BattleStat, BattleTag } from "./battleview";
 import type { AdultScene, BrawlPlace, InviteScene } from "./tavern";
 
 /** Where the game after a lost brawl is played, said at the top of her rules. */
@@ -18,7 +19,6 @@ const PLACE_WORDS: Record<BrawlPlace, string> = {
   yard: "Out back, in the yard.",
 };
 import { willLabel } from "./willpower";
-import { DESIRE_STRONG } from "./desire";
 import { METER_NAMES, METERS } from "./passives";
 import type { Fight, FightChoice, FightMove, Foe } from "./fight";
 import { erect } from "./brawlai";
@@ -26,15 +26,29 @@ import { STANCE_NAMES } from "./herstate";
 import { restingPose } from "./battlepose";
 import { duelShake } from "./screenshake";
 import { GROUP_ICONS, MOVE_ICONS, type MoveGroup } from "./fighticons";
+import { AIMS, GUARD_SWEEPS, needleAt, STRIKE_AIMS, guardAt, type GuardMeter, type GuardResult, type StrikeAim } from "./brawlaim";
 
-/** Her desire in a brawl, in a line: horny or wet first, then each desire past 50 that's getting in her way. */
-function desireSummary(fight: Fight): string {
-  const desire = fight.desire;
-  if (!desire) return "";
-  const strong = METERS.filter((m) => desire[m] >= DESIRE_STRONG).map((m) => `${METER_NAMES[m]} ${Math.floor(desire[m])}`);
+/** How she feels in a brawl, in a word or two: horny, wet, both, or still cool-headed. */
+function feelingSummary(fight: Fight): string {
   const state = [fight.horny ? "Horny" : null, fight.wet ? "Wet" : null].filter(Boolean);
-  const parts = [...state, ...strong];
-  return parts.length ? parts.join(" · ") : `Cool-headed · Cock ${Math.floor(desire.cock)}`;
+  return state.length ? state.join(" · ") : "Cool-headed";
+}
+
+/** Her desire hearts and pleasure bar on her card, as on her status card in the room. */
+function herLust(fight: Fight): BattleLust | null {
+  const desire = fight.desire;
+  if (!desire) return null;
+  return { hearts: METERS.map((m) => ({ id: m, name: METER_NAMES[m], value: desire[m] })), pleasure: fight.pleasure };
+}
+
+/**
+ * A foe's heart and pleasure bar on his card. The heart is his lust: how likely he is to go for her body rather
+ * than his fists (brawlai.ts wantsHer), full once he's horny and not angry. The bar is his own pleasure.
+ */
+function foeLust(fight: Fight, foe: Foe): BattleLust | null {
+  if (!fight.desire) return null;
+  const lust = foe.horny && !foe.angry ? 100 : Math.max(0, Math.min(100, 100 - foe.anger + foe.pleasure));
+  return { hearts: [{ id: "lust", name: erect(foe) ? "Erect" : "Lust", value: lust, what: "Lust" }], pleasure: foe.pleasure };
 }
 
 /** One bar on a fight screen: who, a track filled to how much they have left, and the number. */
@@ -55,15 +69,14 @@ function statBar(who: string, now: number, max: number, tone: string): HTMLEleme
   return line;
 }
 
-/** The last few lines of a fight's log: what just happened. */
 /**
  * The brawl's log, Karryn's Prison style: the last few lines, hers, theirs and the room's each in their own colour
  * (brawlvoices.ts), newest at the bottom.
  */
-function fightLog(lines: readonly string[]): HTMLElement {
+function fightLog(lines: readonly string[], count = FIGHT_LOG_LINES): HTMLElement {
   const log = document.createElement("div");
   log.className = "fight-log";
-  for (const line of lines.slice(-FIGHT_LOG_LINES)) {
+  for (const line of lines.slice(-count)) {
     const p = document.createElement("p");
     // A rolled move (fight.ts rollTag): its "[who · what · chance · result]" tag as a badge, then what happened.
     const roll = /^\[([^\]]+)\] /.exec(line);
@@ -83,8 +96,10 @@ function fightLog(lines: readonly string[]): HTMLElement {
   return log;
 }
 
-/** How many lines of a brawl's log show: enough for a turn's moves, what's said, and the room. */
+/** How many lines of a fight's log show: enough for a turn's moves, what's said, and the room. */
 const FIGHT_LOG_LINES = 7;
+/** In a brawl the log has the middle to itself (everyone's numbers are on their cards), so it shows more. */
+const BRAWL_LOG_LINES = 14;
 
 /** Whose a log line is: hers ("You: ..."), the room's (someone at a table or across the room), or his words. */
 function logKind(line: string): "her" | "crowd" | "said" | null {
@@ -317,13 +332,115 @@ export function showBrawlOffer(game: Game, lost = ""): void {
   game.panelBack = stop;
 }
 
-/** How a foe is, on his card: drunk, horny or angry, and erect once he's worked up past half (brawlai.ts). */
-function foeState(fight: Fight, foe: Foe): string {
-  const mood = foe.drunk ? "Roaring drunk" : foe.horny ? "Horny" : "Angry";
-  // KP's enemy prefix, and how many more times he can come.
-  const pre = foe.prefix ? ` · ${FOE_PREFIXES[foe.prefix].note}` : "";
-  const more = fight.desire && foe.stock > 1 ? ` · ${foe.stock - 1} more in him` : "";
-  return `${fight.desire && erect(foe) ? `${mood} · erect` : mood}${pre}${more}`;
+/** How a foe is, on his card, as tag chips: drunk, horny or angry, erect once he's worked up past half (brawlai.ts), his prefix, and how many more times he can come. */
+function foeTags(fight: Fight, foe: Foe): BattleTag[] {
+  const tags: BattleTag[] = [
+    foe.drunk
+      ? { text: "Roaring drunk", icon: "drunk", tone: "gold" }
+      : foe.horny
+        ? { text: "Horny", icon: "horny", tone: "hot" }
+        : { text: "Angry", icon: "angry", tone: "hurt" },
+  ];
+  if (fight.desire && erect(foe)) tags.push({ text: "Erect", icon: "erect", tone: "hot" });
+  // KP's enemy prefix.
+  if (foe.prefix) tags.push({ text: FOE_PREFIXES[foe.prefix].note, icon: "prefix" });
+  if (fight.desire && foe.stock > 1) tags.push({ text: `${foe.stock - 1} more in him`, icon: "spent" });
+  // Their weak spot for her aimed strike (brawlaim.ts): plain, one of two, or not to be read yet.
+  const seen = fight.weakSeen(foe);
+  tags.push(
+    seen.length === 1
+      ? { text: `Weak: ${AIMS[seen[0]].name}`, icon: "weak", tone: "gold" }
+      : seen.length > 1
+        ? { text: `Weak: ${seen.map((a) => AIMS[a].name).join(" or ")}?`, icon: "weak" }
+        : { text: "Weak spot: ?", icon: "weak" },
+  );
+  if (foe.dizzy) tags.push({ text: "Dizzy", icon: "dazed", tone: "calm" });
+  if (foe.winded) tags.push({ text: "Winded", icon: "dazed", tone: "calm" });
+  if (foe.wobbly) tags.push({ text: "Wobbly", icon: "dazed", tone: "calm" });
+  return tags;
+}
+
+/** What the guard meter calls each result, flashed where the needle stopped. */
+const GUARD_WORDS: Readonly<Record<GuardResult, string>> = { dodge: "DODGE!", block: "BLOCK", full: "HIT" };
+/** The needle waits this long before it starts, so she sees the swing coming; and the result shows this long. */
+const GUARD_WINDUP = 0.45;
+const GUARD_SHOW_MS = 420;
+
+/**
+ * The guard meter (brawlaim.ts): one of them swings, a needle sweeps back and forth over a bar with a dodge zone in
+ * a block zone, and she stops it (Space, the button, or a click on the bar). Left alone too long, it lands.
+ * `onStop` gets where it stopped, 0 to 1, or -1 if she never did.
+ */
+function guardMeterEl(meter: GuardMeter, onStop: (pos: number) => void): { el: HTMLElement; stop: () => void } {
+  const el = document.createElement("div");
+  el.className = "guard-meter";
+  const track = document.createElement("div");
+  track.className = "guard-track";
+  const zone = (cls: string, [a, b]: readonly [number, number]) => {
+    const z = document.createElement("span");
+    z.className = `guard-zone ${cls}`;
+    z.style.left = `${a * 100}%`;
+    z.style.width = `${(b - a) * 100}%`;
+    return z;
+  };
+  const needle = document.createElement("span");
+  needle.className = "guard-needle";
+  const word = document.createElement("span");
+  word.className = "guard-word";
+  track.append(zone("block", meter.block), zone("dodge", meter.dodge), needle, word);
+  const legend = document.createElement("div");
+  legend.className = "guard-legend";
+  legend.innerHTML = '<span class="dodge">Dodge: no damage</span><span class="block">Block: half</span><span class="full">Anywhere else: full hit</span>';
+  el.append(track, legend);
+  const start = performance.now();
+  let pos = 0;
+  let done = false;
+  const finish = (at: number) => {
+    if (done) return;
+    done = true;
+    const result = at < 0 ? "full" : guardAt(meter, at);
+    word.textContent = GUARD_WORDS[result];
+    word.style.left = `${Math.max(0, at) * 100}%`;
+    el.classList.add("stopped", result);
+    window.setTimeout(() => onStop(at), GUARD_SHOW_MS);
+  };
+  const frame = (now: number) => {
+    if (done || !el.isConnected) return;
+    const t = (now - start) / 1000 - GUARD_WINDUP;
+    pos = needleAt(meter.speed, t);
+    needle.style.left = `${pos * 100}%`;
+    if (t * meter.speed >= GUARD_SWEEPS) {
+      finish(-1);
+      return;
+    }
+    requestAnimationFrame(frame);
+  };
+  needle.style.left = "0%";
+  requestAnimationFrame(frame);
+  // Before the needle's moving, a press doesn't count.
+  const stop = () => {
+    if ((performance.now() - start) / 1000 < GUARD_WINDUP) return;
+    finish(pos);
+  };
+  track.addEventListener("pointerdown", stop);
+  return { el, stop };
+}
+
+/** How she stands, as tag chips: her willpower in a word, her stance, her clothes, and how she feels. */
+function herTags(fight: Fight, off: number): BattleTag[] {
+  const tags: BattleTag[] = [{ text: willLabel(fight.will, fight.maxWill), icon: "will", tone: fight.will < fight.maxWill / 4 ? "hurt" : undefined }];
+  if (fight.stance) tags.push({ text: STANCE_NAMES[fight.stance], icon: "stance", tone: "gold" });
+  tags.push({ text: off === 0 ? "Dressed" : `${off} ${off === 1 ? "piece" : "pieces"} off`, icon: "clothes", tone: off > 0 ? "hot" : undefined });
+  if (fight.desire) {
+    const hot = fight.horny || fight.wet;
+    tags.push({ text: feelingSummary(fight), icon: hot ? "hot" : "calm", tone: hot ? "hot" : "calm" });
+  }
+  return tags;
+}
+
+/** A stamina, willpower or energy line on a fight card, drawn as a bar. */
+function cardBar(label: string, now: number, max: number, bar: BattleStat["bar"]): BattleStat {
+  return { label, value: `${now}/${max}`, share: max > 0 ? now / max : 0, bar, tone: now < max / 2 ? "hurt" : undefined };
 }
 
 /** Who's in it with her, for the brawl's title: the one who started it, and how many more piled in. */
@@ -352,6 +469,9 @@ const AIMED_MOVES: ReadonlySet<FightMove> = new Set<FightMove>([
 
 /** The move she's picked and is choosing who to aim it at, if she is. */
 let aiming: FightChoice | null = null;
+
+/** She's picked Strike and is choosing where to hit (brawlaim.ts). */
+let aimingStrike = false;
 
 /** The group of moves she has open in the brawl's menu, or null on the main menu. */
 let openGroup: MoveGroup | null = null;
@@ -421,6 +541,7 @@ export function showFight(game: Game): void {
   game.aimAtFoe(null);
   if (!fight) {
     aiming = null;
+    aimingStrike = false;
     openGroup = null;
   }
   if (!fight) {
@@ -463,6 +584,7 @@ export function showFight(game: Game): void {
     // Her coming shakes the screen, harder from the second time on (screenshake.ts).
     if (events.includes("her:come")) game.shakeScreen(fight.climaxes >= 2 ? "bigClimax" : "climax");
   };
+  const showBoard = () => showBrawlBoard(game, fight);
   // A foe starting a scene with her (GAME_PATH.MD 7i): hers to answer, like a reach. Pull away always works.
   const offerButtons: Button[] = fight.offering
     ? (["yes", "slap", "pull"] as const).map((answer) => ({
@@ -477,11 +599,8 @@ export function showFight(game: Game): void {
         },
       }))
     : [];
-  const makeMove = (choice: FightChoice) => {
-    aiming = null;
-    openGroup = null;
-    const before = fight.events.length;
-    tavern.fightMove(choice.move);
+  // After each step: the turn plays, and the screen moves on (to her answer on the touch screen if they reached).
+  const afterStep = (before: number) => {
     playTurn(before);
     game.audio.play(fight.outcome === "lost" ? "walkOut" : "cloth");
     // They reached for her instead of swinging: she's asked on the touch screen, and the fight waits.
@@ -491,6 +610,36 @@ export function showFight(game: Game): void {
     }
     showFight(game);
   };
+  const makeMove = (choice: FightChoice, aim?: StrikeAim) => {
+    aiming = null;
+    aimingStrike = false;
+    openGroup = null;
+    const before = fight.events.length;
+    tavern.fightMove(choice.move, aim);
+    afterStep(before);
+  };
+  // One of them is swinging at her: the guard meter, and nothing else till she's stopped it (brawlaim.ts).
+  const incoming = fight.incoming;
+  if (incoming) {
+    const swinger = fight.foes[incoming.foe];
+    const meter = guardMeterEl(incoming, (pos) => {
+      const before = fight.events.length;
+      tavern.fightGuard(pos);
+      afterStep(before);
+    });
+    game.openPanel(`The ${swinger?.name ?? "foe"} swings at you!`, [], [{ label: "Stop the needle! (Space, or click the bar)", icon: MOVE_ICONS.dodge, onPick: meter.stop }]);
+    game.panelEl.classList.add("fight-open", "battle-open");
+    showBoard();
+    const box = game.panelEl.querySelector(".box");
+    if (box) {
+      const log = fightLog(fight.log, BRAWL_LOG_LINES);
+      log.classList.add("brawl-activity");
+      box.insertBefore(log, box.querySelector(".menu"));
+      box.insertBefore(meter.el, box.querySelector(".menu"));
+    }
+    game.panelBack = () => undefined;
+    return;
+  }
   // More than one of them on their feet: a move that lands on one asks who, with a cursor over their picture
   // (KP's enemy select). Choosing costs no turn.
   const choosing = !fight.offering && !fight.taken && fight.standing.length > 1;
@@ -501,6 +650,13 @@ export function showFight(game: Game): void {
     const foe = standing[index];
     if (!choice || !foe) return;
     fight.setTarget(fight.foes.indexOf(foe));
+    // A strike: who first, then where.
+    if (choice.move === "strike") {
+      aiming = null;
+      aimingStrike = true;
+      showFight(game);
+      return;
+    }
     makeMove(choice);
   };
   const back = () => {
@@ -525,6 +681,12 @@ export function showFight(game: Game): void {
     onPick: () => {
       if (choosing && AIMED_MOVES.has(choice.move)) {
         aiming = choice;
+        showFight(game);
+        return;
+      }
+      // A strike asks where (brawlaim.ts).
+      if (choice.move === "strike") {
+        aimingStrike = true;
         showFight(game);
         return;
       }
@@ -562,48 +724,83 @@ export function showFight(game: Game): void {
     return fight.taken || fight.downed || fight.dazed ? [...rest, ...buttons] : [...buttons, ...rest];
   };
   const groupButtons = (group: MoveGroup): Button[] => [...inGroup(group).map(moveButton), { label: "Back", onPick: closeGroup }];
-  const buttons: Button[] = fight.offering ? offerButtons : aiming ? aimButtons() : openGroup ? groupButtons(openGroup) : mainButtons();
-  const title = aiming ? `${aiming.label.split(" · ")[0]}: who?` : openGroup && !fight.offering ? GROUP_LABELS[openGroup].split(" (")[0] : brawlTitle(fight);
+  // Where to strike (brawlaim.ts): each spot's chance and what it does, their weak spot marked as far as she can read it.
+  const strikeChoice = choices.find((c) => c.move === "strike");
+  if (!strikeChoice || fight.offering) aimingStrike = false;
+  const backFromStrike = () => {
+    aimingStrike = false;
+    showFight(game);
+  };
+  const strikeButtons = (): Button[] => {
+    const seen = fight.weakSeen(fight.targeted);
+    return [
+      ...STRIKE_AIMS.map((aim) => {
+        const mark = seen.length === 1 && seen[0] === aim ? " · ★ weak spot" : seen.includes(aim) ? " · weak spot?" : "";
+        return {
+          label: `${AIMS[aim].name} · ${Math.round(fight.aimChance(aim) * 100)}%${mark} · ${AIMS[aim].does}`,
+          icon: MOVE_ICONS.strike,
+          disabled: strikeChoice?.disabled ?? true,
+          onPick: () => strikeChoice && makeMove(strikeChoice, aim),
+        };
+      }),
+      { label: "Back", onPick: backFromStrike },
+    ];
+  };
+  const buttons: Button[] = fight.offering
+    ? offerButtons
+    : aiming
+      ? aimButtons()
+      : aimingStrike
+        ? strikeButtons()
+        : openGroup
+          ? groupButtons(openGroup)
+          : mainButtons();
+  const title = aiming
+    ? `${aiming.label.split(" · ")[0]}: who?`
+    : aimingStrike
+      ? `Strike the ${fight.targeted.name}: where?`
+      : openGroup && !fight.offering
+        ? GROUP_LABELS[openGroup].split(" (")[0]
+        : brawlTitle(fight);
   game.openPanel(title, [], buttons);
   game.panelEl.classList.add("fight-open", "battle-open");
+  showBoard();
+  const box = game.panelEl.querySelector(".box");
+  if (!box) return;
+  // The middle is only what's happening: the log, big, over her moves. Everyone's numbers are on their own cards.
+  const log = fightLog(fight.log, BRAWL_LOG_LINES);
+  log.classList.add("brawl-activity");
+  box.insertBefore(log, box.querySelector(".menu"));
+  // No running from it: Esc does nothing until it's settled, bar backing out of choosing who, or where.
+  game.panelBack = aiming ? back : aimingStrike ? backFromStrike : openGroup && !fight.offering ? closeGroup : () => undefined;
+  // Choosing: the cursor starts over the one she was going for, and follows the menu's cursor.
+  if (aiming) game.aimAtFoe(Math.max(0, standing.indexOf(fight.targeted)), aimAt);
+}
+
+/** Everyone's cards and the big picture in a brawl: her numbers and chips, and each of theirs. */
+function showBrawlBoard(game: Game, fight: Fight): void {
+  const { tavern } = game;
   const off = tavern.strippedPieces.length;
-  game.showBattle("brawl", "You · Brawl", 0, false, [
-    { label: "Stamina", value: `${fight.stamina}/${fight.maxStamina}`, tone: fight.stamina < fight.maxStamina / 2 ? "hurt" : undefined },
-    { label: "Willpower", value: `${fight.will}/${fight.maxWill} · ${willLabel(fight.will, fight.maxWill)}` },
-    // Her energy, and the stance she's in (7k).
-    ...(fight.maxEnergy > 0 ? [{ label: "Energy", value: `${fight.energy}/${fight.maxEnergy}${fight.stance ? ` · ${STANCE_NAMES[fight.stance]}` : ""}` }] : []),
-    { label: "Clothes", value: off === 0 ? "Dressed" : `${off} ${off === 1 ? "piece" : "pieces"} off` },
-    // Her desire, Karryn-style (desire.ts): the strongest ones, and whether she's horny or wet.
-    ...(fight.desire ? [{ label: "Desire", value: desireSummary(fight), tone: fight.horny ? ("hurt" as const) : undefined }] : []),
+  // Her pleasure drives the picture too: faster breath and pink cheeks as it climbs, a tremble near the top.
+  game.showBattle("brawl", "You · Brawl", fight.desire ? fight.pleasure / 100 : 0, fight.desire ? fight.pleasure >= 80 : false, [
+    cardBar("Stamina", fight.stamina, fight.maxStamina, "stamina"),
+    cardBar("Willpower", fight.will, fight.maxWill, "will"),
+    // Her energy (7k).
+    ...(fight.maxEnergy > 0 ? [cardBar("Energy", fight.energy, fight.maxEnergy, "energy")] : []),
+    // How she stands, as chips; her desire and pleasure are the hearts and bar over this board.
+    { label: "", value: "", tags: herTags(fight, off) },
   ], fight.standing.map((foe) => ({
     guestId: foe.guestId,
     kind: foe.kind,
     // The one she's going for is marked.
     title: foe === fight.targeted && fight.standing.length > 1 ? `▶ The ${foe.name}` : `The ${foe.name}`,
     status: [
-      { label: "Stamina", value: `${foe.stamina}/${foe.max}`, tone: foe.stamina < foe.max / 2 ? ("hurt" as const) : undefined },
-      { label: "State", value: foeState(fight, foe) },
-      // His own pleasure, Karryn's Prison style (brawlai.ts): erect past half, spent at the top.
-      ...(fight.desire ? [{ label: "Pleasure", value: `${Math.round(foe.pleasure)}%`, tone: foe.pleasure >= 50 ? ("hurt" as const) : undefined }] : []),
+      cardBar("Stamina", foe.stamina, foe.max, "foe"),
+      { label: "", value: "", tags: foeTags(fight, foe) },
     ],
-  })));
-  const box = game.panelEl.querySelector(".box");
-  if (!box) return;
-  const bars = document.createElement("div");
-  bars.className = "fight-bars";
-  bars.append(
-    statBar("You", fight.stamina, fight.maxStamina, "you"),
-    statBar("Willpower", fight.will, fight.maxWill, "will"),
-    ...(fight.maxEnergy > 0 ? [statBar("Energy", fight.energy, fight.maxEnergy, "energy")] : []),
-    ...fight.standing.map((foe) => statBar(`The ${foe.name}${foe.drunk ? " (drunk)" : ""}`, foe.stamina, foe.max, "foe")),
-  );
-  const log = fightLog(fight.log);
-  box.insertBefore(log, box.querySelector(".menu"));
-  box.insertBefore(bars, log);
-  // No running from it: Esc does nothing until it's settled, bar backing out of choosing who.
-  game.panelBack = aiming ? back : openGroup && !fight.offering ? closeGroup : () => undefined;
-  // Choosing: the cursor starts over the one she was going for, and follows the menu's cursor.
-  if (aiming) game.aimAtFoe(Math.max(0, standing.indexOf(fight.targeted)), aimAt);
+    // His lust and his own pleasure, Karryn's Prison style (brawlai.ts): erect past half, spent at the top.
+    lust: foeLust(fight, foe),
+  })), herLust(fight));
 }
 
 /**

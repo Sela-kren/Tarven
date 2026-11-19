@@ -23,6 +23,7 @@ Updated 18 Nov 2026. Read this first to find the right doc. Every doc stays in t
 | [REVEL_HOUSE.md](REVEL_HOUSE.md) | Revel nights (`revel.ts`) | The Revel Hall set and group poses |
 | [TOWN_DAY.md](TOWN_DAY.md) | The high street, market, flyers, town v1 (every place has things to do) | Steps 3 to 7: grass, rival visits, being seen, Warm House recruits, guild work |
 | [FEED_STAR.md](FEED_STAR.md) | Her side job on the town feed, as rules (`feedstar.ts`) | Wiring into the game; the art |
+| [EXPRESSION_STUDY.md](EXPRESSION_STUDY.md) | Her expressions (`face.ts`) against KP's face presets: how KP builds and picks faces, the part vocabulary, every preset | §5's proposals: stamina steps, pools, smaller mouths, eye art |
 | [POSES_TODO.md](POSES_TODO.md) | The list of art still owed to the built systems above: poses, props, models | That's the list |
 
 ## Plans (not built)

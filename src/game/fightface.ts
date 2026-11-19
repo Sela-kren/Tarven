@@ -16,9 +16,9 @@ import { BEARING, EXPRESSIONS, REST_FACE, type Expression, type FaceShape } from
 export type FacePart = "brows" | "eyes" | "mouth";
 
 export const PART_KEYS: Readonly<Record<FacePart, readonly (keyof FaceShape)[]>> = {
-  brows: ["brow", "browInner", "browArch", "browOuter", "browTip", "browNear", "crease"],
-  eyes: ["lidUpper", "lidLower", "wide", "lookX", "lookY"],
-  mouth: ["smile", "smirk", "open", "round", "bare", "lift", "cup", "purse", "press", "tongue"],
+  brows: ["brow", "browInner", "browArch", "browOuter", "browTip", "browNear", "browSpread", "crease"],
+  eyes: ["lidUpper", "lidLower", "wide", "pupil", "lookX", "lookY", "wet", "tears", "heart"],
+  mouth: ["smile", "smirk", "open", "round", "bare", "lift", "cup", "purse", "press", "mouthUp", "tongue"],
 };
 
 /** One of KP's face ids: a pool for each part. */
@@ -155,13 +155,14 @@ export interface FightFace {
   shape: FaceShape;
 }
 
-/** Her face out of its parts: each part's values from its own expression, and the deepest blush of the three. */
+/** Her face out of its parts: each part's values from its own expression, and the deepest blush and sweat of the three. */
 export function composeFace(parts: Readonly<Record<FacePart, Expression>>): FaceShape {
   const shape: FaceShape = { ...REST_FACE };
   for (const part of Object.keys(PART_KEYS) as FacePart[]) {
     for (const key of PART_KEYS[part]) shape[key] = EXPRESSIONS[parts[part]][key];
   }
   shape.blush = Math.max(...Object.values(parts).map((e) => EXPRESSIONS[e].blush));
+  shape.sweat = Math.max(...Object.values(parts).map((e) => EXPRESSIONS[e].sweat));
   return shape;
 }
 

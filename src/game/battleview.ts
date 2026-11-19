@@ -18,6 +18,8 @@ import {
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { applyPose, BATTLE_POSES, blendPose, NO_EXTRA, poseBones, type BattlePose, type BattlePoseName, type PoseBones, type PoseExtra } from "./battlepose";
 import { chestOverHips } from "./player";
+import { Heart, PleasureBar } from "./statuscard";
+import { TAG_ICONS, type TagIcon } from "./fighticons";
 import { cardFraming, facingTurn } from "./battleframe";
 import type { BrawlBeat } from "./brawlscene";
 import { makeProps, makeTable } from "./scenetable";
@@ -32,13 +34,14 @@ import { blendScene, placeBody, SCENE_JOINS, SCENE_POSES, sceneFraming, sizeForS
  * pop in over her for each moment. After hours, once she's with someone, the picture is the two of them together in
  * Karryn's Prison's held sex poses (sexpose.ts), swapped as the game moves on.
  *
- * It's drawn small and shown scaled up without smoothing, dithered to the game's 5-bit colour like the comics.
+ * Drawn at about the size it's shown, anti-aliased and in full colour, to match the game's painted look (the old
+ * low-res 5-bit dither was dropped with the retro look, 2026-11-16).
  */
 
-const WIDTH = 168;
-const HEIGHT = 280;
-const LEVELS = 31;
-const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+/** How many times the old 168 x 280 picture it's drawn at; pixel sizes (the streak, the blush) scale with it. */
+const RES = 2;
+const WIDTH = 168 * RES;
+const HEIGHT = 280 * RES;
 
 /** A brawl, or an after-hours game: the light, and how she stands. */
 export type BattleMode = "brawl" | "duel";
@@ -49,6 +52,64 @@ export interface BattleStat {
   value: string;
   /** A colour cue: "hot" for desire, "hurt" for a beating, "cum" for what's on her. */
   tone?: "hot" | "hurt" | "cum";
+  /** Drawn as a full-width bar filled to this share (0 to 1) instead of a line of text; `bar` is its colour. */
+  share?: number;
+  bar?: "stamina" | "foe" | "will" | "energy";
+  /** Drawn as a row of tag chips, each with a little icon, instead of a line of text (`label` and `value` unused). */
+  tags?: readonly BattleTag[];
+}
+
+/** One tag chip on a fight card: a word or two about how someone stands, with its icon. */
+export interface BattleTag {
+  text: string;
+  icon?: TagIcon;
+  tone?: "hot" | "hurt" | "calm" | "gold";
+}
+
+/**
+ * The desire part of a card, as on her status card in the room: a row of hearts (hers, one per desire; a foe's,
+ * his lust) over a pleasure bar.
+ */
+export interface BattleLust {
+  hearts: readonly { id: string; name: string; value: number; what?: string }[];
+  pleasure: number;
+}
+
+/** A stat as a full-width bar: its name, a track filled to the share, and the number. */
+function barRow(stat: BattleStat): HTMLElement {
+  const row = document.createElement("div");
+  row.className = `row barline ${stat.bar ?? "stamina"}${stat.tone ? ` ${stat.tone}` : ""}`;
+  const label = document.createElement("span");
+  label.textContent = stat.label;
+  const track = document.createElement("i");
+  track.className = "track";
+  const fill = document.createElement("i");
+  fill.className = "fill";
+  fill.style.width = `${Math.round(Math.max(0, Math.min(1, stat.share ?? 0)) * 100)}%`;
+  track.append(fill);
+  const value = document.createElement("b");
+  value.textContent = stat.value;
+  row.append(label, track, value);
+  return row;
+}
+
+/** A row of tag chips, each a little icon and a word or two. */
+function tagRow(tags: readonly BattleTag[]): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "tagline";
+  for (const t of tags) {
+    const chip = document.createElement("span");
+    chip.className = `chip${t.tone ? ` ${t.tone}` : ""}`;
+    if (t.icon) {
+      const icon = document.createElement("span");
+      icon.className = "icon";
+      icon.innerHTML = TAG_ICONS[t.icon];
+      chip.append(icon);
+    }
+    chip.append(t.text);
+    row.append(chip);
+  }
+  return row;
 }
 
 /** How long a new pose takes to snap in: Karryn's Prison swaps the whole picture; this is barely more than that. */
@@ -74,7 +135,7 @@ function linearToSrgb(c: number): number {
 export class BattleView {
   private readonly scene = new Scene();
   private readonly camera = new PerspectiveCamera(FOV, WIDTH / HEIGHT, 0.05, 30);
-  private readonly target = new WebGLRenderTarget(WIDTH, HEIGHT);
+  private readonly target = new WebGLRenderTarget(WIDTH, HEIGHT, { samples: 4 });
   private readonly pixels = new Uint8Array(WIDTH * HEIGHT * 4);
   private readonly canvas = document.createElement("canvas");
   private readonly ctx: CanvasRenderingContext2D;
@@ -122,6 +183,13 @@ export class BattleView {
   private heat = 0;
   private shownHeat = 0;
   private edge = false;
+  /** Her desire hearts and pleasure bar (or a foe's lust and pleasure), between the picture and the board. */
+  private readonly lust = document.createElement("div");
+  private readonly heartRow = document.createElement("div");
+  private readonly pleasureBar = new PleasureBar();
+  private hearts: Heart[] = [];
+  private heartKey = "";
+
   /** A flinch from a hit or a jolt, fading. */
   private flinch = 0;
   private flinchHard = false;
@@ -175,8 +243,16 @@ export class BattleView {
     flash.className = "flash";
     this.board = document.createElement("div");
     this.board.className = "status";
+    this.lust.className = "lust heart-ui";
+    this.lust.hidden = true;
+    this.lust.append(this.heartRow, this.pleasureBar.el);
+    this.heartRow.className = "hearts";
     frame.append(picture, flash, this.title);
-    this.root.append(frame, this.board);
+    // Under the picture (inside it, on a foe's card): the hearts and pleasure bar, then the status board.
+    const dock = document.createElement("div");
+    dock.className = "dock";
+    dock.append(this.lust, this.board);
+    this.root.append(frame, dock);
     (options.parent ?? document.body).append(this.root);
 
     this.scene.add(new AmbientLight(0x6a6480, 0.95));
@@ -318,10 +394,26 @@ export class BattleView {
     flash.classList.add("on", this.mode === "brawl" ? "hurt" : "hot");
   }
 
+  /** Hearts and a pleasure bar over the status board, or none (`null`). */
+  setLust(lust: BattleLust | null): void {
+    this.lust.hidden = !lust;
+    if (!lust) return;
+    const key = lust.hearts.map((h) => `${h.id}:${h.name}`).join("|");
+    if (key !== this.heartKey) {
+      this.heartKey = key;
+      this.hearts = lust.hearts.map((h) => new Heart(h.id, h.name, h.what));
+      this.heartRow.replaceChildren(...this.hearts.map((h) => h.el));
+    }
+    lust.hearts.forEach((h, i) => this.hearts[i]?.set(Math.floor(h.value)));
+    this.pleasureBar.set(lust.pleasure);
+  }
+
   /** The status board under her: how she stands, line by line. */
   setStatus(stats: readonly BattleStat[]): void {
     this.board.replaceChildren(
       ...stats.map((stat) => {
+        if (stat.tags) return tagRow(stat.tags);
+        if (stat.share !== undefined) return barRow(stat);
         const row = document.createElement("div");
         row.className = `row${stat.tone ? ` ${stat.tone}` : ""}`;
         const label = document.createElement("span");
@@ -687,7 +779,7 @@ export class BattleView {
     const heat = this.shownHeat;
     const brawl = this.mode === "brawl";
     const cheeks = heat > 0.05 ? this.cheeks.map((c) => this.onPicture(c)) : [];
-    const radius = Math.max(2, (0.03 * this.scale * HEIGHT) / (this.camera.position.z * Math.tan(MathUtils.degToRad(this.camera.fov) / 2) * 2));
+    const radius = Math.max(2 * RES, (0.03 * this.scale * HEIGHT) / (this.camera.position.z * Math.tan(MathUtils.degToRad(this.camera.fov) / 2) * 2));
     const glowX = WIDTH * 0.5;
     const glowY = HEIGHT * 0.38;
     const reach = Math.hypot(WIDTH, HEIGHT) * 0.55;
@@ -697,7 +789,6 @@ export class BattleView {
       for (let x = 0; x < WIDTH; x++) {
         const from = ((HEIGHT - 1 - y) * WIDTH + x) * 4;
         const to = (y * WIDTH + x) * 4;
-        const threshold = (BAYER4[(x & 3) + ((y & 3) << 2)] / 16 - 0.46875) / LEVELS;
         let r: number;
         let g: number;
         let b: number;
@@ -724,10 +815,9 @@ export class BattleView {
             b *= 0.7;
           }
         }
-        const dither = (c: number) => Math.round(MathUtils.clamp(Math.round((c + threshold) * LEVELS) / LEVELS, 0, 1) * 255);
-        data[to] = dither(r);
-        data[to + 1] = dither(g);
-        data[to + 2] = dither(b);
+        data[to] = Math.round(MathUtils.clamp(r, 0, 1) * 255);
+        data[to + 1] = Math.round(MathUtils.clamp(g, 0, 1) * 255);
+        data[to + 2] = Math.round(MathUtils.clamp(b, 0, 1) * 255);
         data[to + 3] = 255;
       }
     }
@@ -745,13 +835,13 @@ export class BattleView {
     const fade = 1 - MathUtils.smoothstep(life, STREAK_TIME * 0.35, STREAK_TIME);
     const { from, bend, to } = this.streakPath;
     const tint = [1, 0.93, 0.82];
-    const steps = 90;
+    const steps = 90 * RES;
     for (let i = 0; i <= steps * laid; i++) {
       const u = i / steps;
       // Along the curve: from behind her shoulder, bending over it, to her fist.
       const x = (1 - u) * (1 - u) * from.x + 2 * (1 - u) * u * bend.x + u * u * to.x;
       const y = (1 - u) * (1 - u) * from.y + 2 * (1 - u) * u * bend.y + u * u * to.y;
-      const width = 0.6 + 3.4 * u;
+      const width = (0.6 + 3.4 * u) * RES;
       const strength = (0.25 + 0.75 * u) * fade;
       for (let py = Math.floor(y - width); py <= Math.ceil(y + width); py++) {
         if (py < 0 || py >= HEIGHT) continue;
@@ -760,10 +850,9 @@ export class BattleView {
           const k = Math.max(0, 1 - Math.hypot(px - x, py - y) / width) * strength;
           if (k <= 0) continue;
           const at = (py * WIDTH + px) * 4;
-          const threshold = (BAYER4[(px & 3) + ((py & 3) << 2)] / 16 - 0.46875) / LEVELS;
           for (let c = 0; c < 3; c++) {
             const v = MathUtils.lerp(data[at + c] / 255, tint[c], Math.min(1, k * 1.4));
-            data[at + c] = Math.round(MathUtils.clamp(Math.round((v + threshold) * LEVELS) / LEVELS, 0, 1) * 255);
+            data[at + c] = Math.round(MathUtils.clamp(v, 0, 1) * 255);
           }
         }
       }
@@ -796,6 +885,7 @@ export interface FoeShow {
   name: string;
   title: string;
   status: readonly BattleStat[];
+  lust?: BattleLust | null;
 }
 
 /**
@@ -852,6 +942,7 @@ export class FoeColumn {
         view.show(foe.body, foe.name, mode, foe.title, "right");
       }
       view.setStatus(foe.status);
+      view.setLust(foe.lust ?? null);
     });
     this.root.dataset.count = String(foes.length);
     this.root.classList.toggle("open", foes.length > 0);

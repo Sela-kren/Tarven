@@ -14,8 +14,19 @@ import {
   BASHFUL_BELOW,
   DELIGHTED_PAST,
   BEARING,
+  EXPRESSIONS_LIST,
+  EYE_OPENING,
+  FACE_EXTRAS,
+  EXTRAS,
+  eyeOpening,
+  eyeDome,
+  FACE_REACH,
+  VARIANTS,
+  withVariant,
+  FACE_KEYS,
   type FaceCause,
   type FacePart,
+  type FaceShape,
 } from "../src/game/face";
 
 const calm: FaceCause = { showing: null, reaction: null, arousal: 0, drunk: 0 };
@@ -92,6 +103,45 @@ describe("her face", () => {
     expect(game(1).tongue).toBeGreaterThan(0.5);
   });
 
+  it("wears down in KP's steps as her willpower runs out: mouth set, teeth gritted, then spent", () => {
+    const at = (will: number, slut = 0) => faceFor({ ...calm, slut, will });
+    // (Her sweat comes on as she wears down too: see "brings on KP's extras".)
+    const same = (a: FaceShape, b: FaceShape) => { for (const key of FACE_KEYS) if (key !== "sweat") expect(a[key]).toBeCloseTo(b[key], 6); };
+    expect(at(0.85)).toEqual(EXPRESSIONS.stern);
+    same(at(0.6), EXPRESSIONS.set);
+    same(at(0.4), EXPRESSIONS.gritted);
+    same(at(0.2), EXPRESSIONS.tired);
+    same(at(0), EXPRESSIONS.spent);
+    // Between steps, partway from one to the next.
+    expect(at(0.5).bare).toBeCloseTo(EXPRESSIONS.gritted.bare / 2, 5);
+    // Spent, her eyes are nearly closed and her mouth hangs open; gritting, her teeth show and her mouth is shut.
+    expect(at(0).lidUpper).toBeGreaterThan(0.6);
+    expect(at(0).open).toBeGreaterThan(at(0.4).open);
+    // Lewd and sure of herself, she keeps some of her smirk to the end.
+    expect(at(0, BEARING.confident).smirk).toBeGreaterThan(0);
+  });
+
+  it("wears one of her expression's close variants, as KP's pools do", () => {
+    // Variant 0 is the expression itself; each other is a small change to it, and they come round again.
+    expect(withVariant(EXPRESSIONS.smile, "smile", 0)).toEqual(EXPRESSIONS.smile);
+    const closed = withVariant(EXPRESSIONS.smile, "smile", 1);
+    expect(closed.open).toBeLessThan(EXPRESSIONS.smile.open);
+    expect(withVariant(EXPRESSIONS.smile, "smile", 1 + VARIANTS.smile.length + 1)).toEqual(closed);
+    // Never below 0 where a control can't be.
+    for (const e of EXPRESSIONS_LIST) {
+      for (let v = 0; v <= VARIANTS[e].length; v++) {
+        const shape = withVariant(EXPRESSIONS[e], e, v);
+        for (const key of ["lidUpper", "open", "tongue", "bare", "press", "browNear"] as const) expect(shape[key]).toBeGreaterThanOrEqual(0);
+      }
+    }
+    // Angry's variants leave the brows the user drew alone.
+    for (const variant of VARIANTS.angry) for (const key of Object.keys(variant)) expect(key.startsWith("brow")).toBe(false);
+    // In her face: the variant is of what leads it, and none in a brawl's own face.
+    expect(faceFor({ ...calm, moment: "tipped", variant: 1 })).toEqual(closed);
+    const fightFace = { ...EXPRESSIONS.angry };
+    expect(faceFor({ ...calm, fighting: true, fightFace, variant: 1 })).toEqual({ ...fightFace, sweat: EXTRAS.sweatFighting });
+  });
+
   it("goes heavy-lidded and flushed as she's aroused or drunk", () => {
     expect(faceFor(calm)).toEqual(EXPRESSIONS.stern);
     const aroused = faceFor({ ...calm, arousal: 1 });
@@ -122,13 +172,88 @@ describe("her face", () => {
     expect(faceRig([], [], [])).toBeNull();
   });
 
-  it("moves her face: lids close in, brows rise, mouth turns up, and nothing moves at rest", () => {
+  it("closes her anime eyes with their lids, looks about behind them, and grows her pupils", () => {
+    // The test rig's eye: a white 8 mm about (0.035, 1.487). Its opening at the middle (u = 0), and her lid's edge there.
+    const [hx, hy] = rig.eyes[1].half;
+    const opening = eyeOpening(0);
+    const edge = [0.035, 1.487 + opening.top * hy, -0.071];
+    // At rest nothing moves.
+    expect(moved(REST_FACE, edge, "lid")).toEqual(edge);
+    // Shut, her upper lid's edge and her lash line come down to where her lids meet, a little below the middle.
+    const meet = 1.487 + opening.meet * hy;
+    expect(moved({ ...REST_FACE, lidUpper: 1 }, edge, "lid")[1]).toBeCloseTo(meet, 6);
+    expect(moved({ ...REST_FACE, lidUpper: 1 }, edge, "lash")[1]).toBeCloseTo(meet, 6);
+    // Her lower lid comes up to the same line.
+    const low = [edge[0], 1.487 + opening.bottom * hy, -0.071];
+    expect(moved({ ...REST_FACE, lidLower: 1 }, low, "lidLow")[1]).toBeCloseTo(meet, 6);
+    // The far side of her lid, out past the white, stays: the lid stretches over her eye.
+    const far = [edge[0], edge[1] + hy * 0.45, -0.071];
+    expect(moved({ ...REST_FACE, lidUpper: 1 }, far, "lid")).toEqual(far);
+    // Her corners never move.
+    const corner = [0.035 + hx * EYE_OPENING.half, 1.487 + eyeOpening(1).top * hy, -0.071];
+    expect(moved({ ...REST_FACE, lidUpper: 1 }, corner, "lid")[1]).toBeCloseTo(corner[1], 9);
+    // Wide, her upper lid goes up and her lower lid down.
+    expect(moved({ ...REST_FACE, wide: 1 }, edge, "lid")[1]).toBeGreaterThan(edge[1]);
+    expect(moved({ ...REST_FACE, wide: 1 }, low, "lidLow")[1]).toBeLessThan(low[1]);
+    // Her iris looks about behind her lids; the white stays.
+    const iris = [0.035, 1.487, -0.0706];
+    expect(moved({ ...REST_FACE, lookX: 1 }, iris, "iris")[0]).toBeGreaterThan(0.035);
+    expect(moved({ ...REST_FACE, lookY: -1 }, iris, "iris")[1]).toBeLessThan(1.487);
+    expect(moved({ ...REST_FACE, lookX: 1 }, iris, "eyeWhite")).toEqual(iris);
+    // Her pupil grows about its middle (the white's here, the rig having no pupils).
+    const rim = [0.035 + 0.002, 1.487, -0.0702];
+    expect(moved({ ...REST_FACE, pupil: 1 }, rim, "pupil")[0]).toBeCloseTo(0.035 + 0.002 * (1 + FACE_REACH.pupil), 6);
+    expect(moved({ ...REST_FACE, pupil: -1 }, rim, "pupil")[0]).toBeLessThan(0.037);
+    // And widens as she's aroused or drunk, over her expression's own.
+    expect(faceFor({ ...calm, arousal: 1 }).pupil).toBeGreaterThan(0.5);
+    expect(EXPRESSIONS.surprised.pupil).toBeLessThan(0);
+  });
+
+  it("brings on KP's extras: sweat as she wears down, wet eyes once she's at ease, hearts only when she's fully gone", () => {
+    // Sweat: none while she's fresh, a few drops partway, all of it near the end; and in a brawl.
+    expect(faceFor({ ...calm, will: 1 }).sweat).toBe(0);
+    expect(faceFor({ ...calm, will: 0.45 }).sweat).toBeGreaterThanOrEqual(FACE_EXTRAS.sweat[0]);
+    expect(faceFor({ ...calm, will: 0.2 }).sweat).toBeGreaterThanOrEqual(FACE_EXTRAS.sweat[1]);
+    expect(faceFor({ ...calm, fighting: true }).sweat).toBeGreaterThanOrEqual(FACE_EXTRAS.sweat[0]);
+    // Wet eyes as she's aroused, but not while she's still proper (KP's lv1 resists).
+    expect(faceFor({ ...calm, arousal: 1 }).wet).toBe(0);
+    expect(faceFor({ ...calm, slut: BEARING.easy, arousal: 1 }).wet).toBeGreaterThanOrEqual(FACE_EXTRAS.wet);
+    // Hearts only sure of herself, worked right up, in a face of pleasure.
+    const gone = { ...calm, slut: BEARING.confident, arousal: 0.9, reaction: "melt" as const };
+    expect(faceFor(gone).heart).toBe(1);
+    expect(faceFor({ ...gone, arousal: 0.5 }).heart).toBe(0);
+    expect(faceFor({ ...gone, slut: BEARING.easy }).heart).toBe(0);
+    expect(faceFor({ ...calm, slut: BEARING.confident, arousal: 0.9 }).heart).toBe(0);
+    // Tears where she's pushed too far.
+    expect(EXPRESSIONS.strained.tears).toBeGreaterThanOrEqual(FACE_EXTRAS.tears);
+    expect(EXPRESSIONS.neutral.tears).toBe(0);
+  });
+
+  it("keeps her iris on her eye's plane as it looks, however steeply her socket turns back", () => {
+    // Her eyes turn back towards her temples (forwards is -z): z rises 0.5 per metre out from each eye's middle.
+    const plane = (x: number, y: number) => -0.07 + 0.5 * (Math.abs(x) - 0.035) + 0.04 * (y - 1.487);
+    const tilted = (cx: number) => ring(cx, 1.487).map(([x, y]) => [x, y, plane(x, y)]);
+    const sloped = faceRig(
+      [...tilted(-0.035), ...tilted(0.035)],
+      [[-0.012, 1.505, -0.08], [-0.055, 1.502, -0.06], [0.012, 1.505, -0.08], [0.055, 1.502, -0.06]],
+      [[-0.016, 1.427, -0.08], [0, 1.428, -0.085], [0.016, 1.427, -0.08]],
+    )!;
+    expect(sloped.eyes[1].slope[0]).toBeCloseTo(0.5, 6);
+    // Her iris 0.2 mm in front of the eyeball (the plane and its dome, EYE_DOME) looks towards her nose and down: still
+    // 0.2 mm in front of it, the dome lower where it's gone (forwards is -z).
+    const [hx, hy] = sloped.eyes[1].half;
+    const ball = (x: number, y: number) => plane(x, y) - eyeDome((x - 0.035) / hx, (y - 1.487) / hy) * hx;
+    const iris = [0.035, 1.487, ball(0.035, 1.487) - 0.0002];
+    const out = [0, 0, 0];
+    faceMove(sloped, { ...REST_FACE, lookX: -1, lookY: -1 }, iris, "iris", out);
+    expect(out[0]).toBeLessThan(0.035);
+    expect(out[2] - ball(out[0], out[1])).toBeCloseTo(-0.0002, 7);
+    expect(out[2]).toBeGreaterThan(iris[2] + (out[0] - 0.035) * 0.5);
+  });
+
+  it("moves her face: brows rise, mouth turns up, and nothing moves at rest", () => {
     const top = [0.035, 1.495, -0.07];
     expect(moved(REST_FACE, top)).toEqual(top);
-    // Her upper lid down: the top of the dot comes down towards the middle, nearly to a line.
-    expect(moved({ ...REST_FACE, lidUpper: 1 }, top)[1]).toBeCloseTo(1.487, 3);
-    // Wide: further from the middle.
-    expect(moved({ ...REST_FACE, wide: 1 }, top)[1]).toBeGreaterThan(1.495);
     // The inner end of a brow rises more than the outer, worried.
     const inner = moved({ ...REST_FACE, browInner: 1 }, [0.012, 1.505, -0.08], "brow")[1] - 1.505;
     const outer = moved({ ...REST_FACE, browInner: 1 }, [0.055, 1.502, -0.06], "brow")[1] - 1.502;
@@ -172,6 +297,34 @@ describe("her face", () => {
     expect(moved(pressed, [0, 1.405, -0.08])).toEqual([0, 1.405, -0.08]);
     // Her chin, well away from the corners, stays put.
     expect(moved({ ...REST_FACE, smile: 1 }, [0, 1.4, -0.08])).toEqual([0, 1.4, -0.08]);
+  });
+
+  it("opens her mouth inside her face: her lower lip drops, her chin hardly at all", () => {
+    const open = { ...REST_FACE, open: 1 };
+    const lip = 1.4228 - moved(open, [0, 1.4228, -0.085])[1];
+    const chin = 1.4 - moved(open, [0, 1.4, -0.08])[1];
+    expect(lip).toBeGreaterThan(0.015);
+    expect(chin).toBeGreaterThan(0);
+    expect(chin).toBeLessThan(lip * 0.35);
+  });
+
+  it("spreads her brows' outer ends out to her temples, and raises her whole mouth", () => {
+    // Spread, a brow's outer end goes out, its inner end by her nose stays where it was, and neither goes up or down.
+    const spread = { ...REST_FACE, browSpread: 1 };
+    const outerEnd = moved(spread, [0.055, 1.502, -0.06], "brow");
+    expect(outerEnd[0]).toBeGreaterThan(0.059);
+    expect(outerEnd[1]).toBe(1.502);
+    expect(moved(spread, [-0.055, 1.502, -0.06], "brow")[0]).toBeLessThan(-0.059);
+    expect(moved(spread, [0.012, 1.505, -0.08], "brow")[0]).toBeCloseTo(0.012, 6);
+    // Raised, her lips, teeth and tongue all go up together; her brows and her chin well below stay put.
+    const up = { ...REST_FACE, mouthUp: 1 };
+    expect(moved(up, [0, 1.428, -0.085])[1]).toBeCloseTo(1.431, 4);
+    expect(moved(up, [0.006, 1.4235, -0.07], "teeth")[1]).toBeCloseTo(1.4265, 4);
+    expect(moved(up, [0, 1.4245, -0.081], "tongue")[1]).toBeCloseTo(1.4275, 4);
+    expect(moved(up, [0, 1.4, -0.08])).toEqual([0, 1.4, -0.08]);
+    expect(moved(up, [0.033, 1.506, -0.07], "brow")).toEqual([0.033, 1.506, -0.07]);
+    // Lowered, it goes down.
+    expect(moved({ ...REST_FACE, mouthUp: -1 }, [0, 1.428, -0.085])[1]).toBeCloseTo(1.425, 4);
   });
 
   it("finds the front of her face, for her brows to lie on", () => {

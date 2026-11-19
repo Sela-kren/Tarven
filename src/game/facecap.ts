@@ -124,13 +124,13 @@ function spacing(frames: readonly CapFrame[]): number {
  * open 0.4 may want to be more on hers to read the same. Tune these against a capture (tools/facecap).
  */
 export const CAP_GAIN: Readonly<Record<keyof FaceShape, number>> = {
-  brow: 1, browInner: 1, browArch: 1, browOuter: 1, browTip: 1, browNear: 1, lidUpper: 1, lidLower: 1, wide: 1, lookX: 1,
-  lookY: 1, smile: 1, smirk: 1, open: 1, round: 1, bare: 1, lift: 1, cup: 1, purse: 1, press: 1, tongue: 1, blush: 1,
-  crease: 1,
+  brow: 1, browInner: 1, browArch: 1, browOuter: 1, browTip: 1, browNear: 1, browSpread: 1, lidUpper: 1, lidLower: 1, wide: 1, pupil: 1, lookX: 1,
+  lookY: 1, smile: 1, smirk: 1, open: 1, round: 1, bare: 1, lift: 1, cup: 1, purse: 1, press: 1, mouthUp: 1, tongue: 1, blush: 1,
+  crease: 1, wet: 1, tears: 1, heart: 1, sweat: 1,
 };
 
 /** The controls that go both ways (-1 to 1); the rest run 0 to 1. Her smile goes a little past 1, as her presets do. */
-const SIGNED = new Set<keyof FaceShape>(["brow", "browInner", "browArch", "browOuter", "lookX", "lookY", "smile", "purse"]);
+const SIGNED = new Set<keyof FaceShape>(["brow", "browInner", "browArch", "browOuter", "browSpread", "pupil", "lookX", "lookY", "smile", "purse", "mouthUp"]);
 const TOP: Partial<Record<keyof FaceShape, number>> = { smile: 1.25 };
 
 export interface CapOptions {

@@ -37,12 +37,17 @@ body.dressing #status-card {
    A compact panel in the corner, so it never covers her in the middle of the room. Left to right: her face,
    desire as a row of hearts over the pleasure bar, then drink over willpower as slanted gauges with letter
    badges, and chips for how she stands. A chain runs along its bottom edge. */
-#status-card {
+/* The hearts and pleasure bar are shared with the fight cards (battleview.ts), so they're styled on .heart-ui. */
+#status-card,
+.heart-ui {
   --plum: rgba(30, 10, 28, 0.88);
   --plum-deep: #160612;
   --rose: #e0407e;
   --rose-dim: #7a1c48;
   --violet: #8a4ad0;
+}
+
+#status-card {
   position: fixed;
   left: 12px;
   bottom: 12px;
@@ -76,7 +81,9 @@ body:has(#talk.open) #status-card {
   z-index: 5;
 }
 
-/* Out of the way while a story beat, a panel or the house plans have the screen. */
+/* Out of the way while a story beat, a panel or the house plans have the screen, and in a fight, where her own
+   card (battleview.ts) shows the same hearts and pleasure bar. */
+body:has(#battle-view.open) #status-card,
 body:has(#story.open) #status-card,
 body:has(#panel.open) #status-card,
 body:has(#build.open) #status-card {
@@ -114,14 +121,14 @@ body:has(#build.open) #status-card {
   gap: 2px;
 }
 
-#status-card .heart {
+.heart-ui .heart {
   position: relative;
   width: 40px;
   height: 40px;
 }
 
 /* Three stacked hearts: the empty one, the filled one cut off at the level, and the rim on top. */
-#status-card .heart .shape {
+.heart-ui .heart .shape {
   position: relative;
   display: block;
   width: 40px;
@@ -129,8 +136,8 @@ body:has(#build.open) #status-card {
   filter: drop-shadow(1px 1px 0 #000);
 }
 
-#status-card .heart .shape svg,
-#status-card .heart .level {
+.heart-ui .heart .shape svg,
+.heart-ui .heart .level {
   position: absolute;
   inset: 0;
   display: block;
@@ -139,41 +146,41 @@ body:has(#build.open) #status-card {
   overflow: visible;
 }
 
-#status-card .heart .back path {
+.heart-ui .heart .back path {
   fill: #3a0f28;
 }
 
-#status-card .heart .level {
+.heart-ui .heart .level {
   clip-path: inset(100% 0 0 0);
   transition: clip-path 0.3s ease-out;
 }
 
-#status-card .heart .full path {
+.heart-ui .heart .full path {
   fill: #c02a66;
 }
 
-#status-card .heart.full .full path {
+.heart-ui .heart.full .full path {
   fill: #ff4a8a;
 }
 
-#status-card .heart .back .shine {
+.heart-ui .heart .back .shine {
   fill: none;
   stroke: rgba(255, 210, 230, 0.55);
   stroke-width: 1.6;
   stroke-linecap: round;
 }
 
-#status-card .heart .rim path {
+.heart-ui .heart .rim path {
   fill: none;
   stroke: #ff6aa2;
   stroke-width: 1.8;
 }
 
-#status-card .heart:not(.lit) .rim path {
+.heart-ui .heart:not(.lit) .rim path {
   stroke: #9a3a68;
 }
 
-#status-card .heart b {
+.heart-ui .heart b {
   position: absolute;
   top: 6px;
   left: 0;
@@ -183,11 +190,11 @@ body:has(#build.open) #status-card {
   color: #fff;
 }
 
-#status-card .heart:not(.lit) b {
+.heart-ui .heart:not(.lit) b {
   color: #d8a8c0;
 }
 
-#status-card .heart .label {
+.heart-ui .heart .label {
   position: absolute;
   left: -2px;
   right: -2px;
@@ -206,14 +213,14 @@ body:has(#build.open) #status-card {
     -1px 1px 0 #000;
 }
 
-#status-card .pleasure {
+.heart-ui .pleasure {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 6px;
 }
 
-#status-card .pleasure .label {
+.heart-ui .pleasure .label {
   font-size: 11px;
   font-weight: bold;
   font-style: italic;
@@ -222,7 +229,7 @@ body:has(#build.open) #status-card {
   color: var(--rose);
 }
 
-#status-card .pleasure .track {
+.heart-ui .pleasure .track {
   position: relative;
   height: 8px;
   background: var(--plum-deep);
@@ -231,7 +238,7 @@ body:has(#build.open) #status-card {
   clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
 }
 
-#status-card .pleasure .fill {
+.heart-ui .pleasure .fill {
   position: absolute;
   inset: 1px auto 1px 1px;
   max-width: calc(100% - 2px);
@@ -239,14 +246,14 @@ body:has(#build.open) #status-card {
   transition: width 0.3s ease-out;
 }
 
-#status-card .pleasure .num {
+.heart-ui .pleasure .num {
   min-width: 36px;
   text-align: right;
   font-size: 15px;
   color: #fff;
 }
 
-#status-card .pleasure.edge .num {
+.heart-ui .pleasure.edge .num {
   color: #ff6aa2;
   animation: strip-throb 0.9s ease-in-out infinite;
 }
@@ -457,7 +464,7 @@ body:has(#build.open) #status-card {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #status-card .pleasure.edge .num,
+  .heart-ui .pleasure.edge .num,
   #status-card .tag.feel.edge {
     animation: none;
   }

@@ -75,28 +75,35 @@ const HEART = "M17 29.5C7 21.5 1 15.5 1 9.2A8 8 0 0 1 17 6A8 8 0 0 1 33 9.2C33 1
 const HEART_TOP = 1;
 const HEART_BOTTOM = 29.5;
 
-/** One desire meter as a heart that fills from the point up, its number in the middle and its name underneath. */
-class Heart {
+/**
+ * One desire meter as a heart that fills from the point up, its number in the middle and its name underneath.
+ * Her card uses one per desire; a fight's cards use them too (battleview.ts), a foe's for his lust.
+ */
+export class Heart {
   readonly el = document.createElement("div");
   private readonly level: HTMLElement;
   private readonly value = document.createElement("b");
   private shown = -1;
 
-  constructor(private readonly meter: Meter) {
-    this.el.className = `heart ${meter}`;
+  constructor(
+    cls: string,
+    name: string,
+    private readonly what = `${name} desire`,
+  ) {
+    this.el.className = `heart ${cls}`;
     // The empty heart, then a filled copy in a box cut off from the top, so it shows only up to the level.
-    const svg = (cls: string) =>
-      `<svg class="${cls}" viewBox="0 0 34 31" aria-hidden="true"><path d="${HEART}"/>` +
-      (cls === "back" ? `<path class="shine" d="M6 9.5A5 5 0 0 1 11.5 4.5"/>` : "") +
+    const svg = (c: string) =>
+      `<svg class="${c}" viewBox="0 0 34 31" aria-hidden="true"><path d="${HEART}"/>` +
+      (c === "back" ? `<path class="shine" d="M6 9.5A5 5 0 0 1 11.5 4.5"/>` : "") +
       `</svg>`;
     const holder = document.createElement("span");
     holder.className = "shape";
     holder.innerHTML = `${svg("back")}<span class="level">${svg("full")}</span>${svg("rim")}`;
     this.level = holder.querySelector<HTMLElement>(".level")!;
-    const name = document.createElement("span");
-    name.className = "label";
-    name.textContent = METER_NAMES[meter];
-    this.el.append(holder, this.value, name);
+    const label = document.createElement("span");
+    label.className = "label";
+    label.textContent = name;
+    this.el.append(holder, this.value, label);
   }
 
   set(n: number): void {
@@ -109,7 +116,38 @@ class Heart {
     this.value.textContent = String(n);
     this.el.classList.toggle("lit", n > 0);
     this.el.classList.toggle("full", share >= 1);
-    this.el.title = `${METER_NAMES[this.meter]} desire: ${n}/${METER_MAX}`;
+    this.el.title = `${this.what}: ${n}/${METER_MAX}`;
+  }
+}
+
+/** A long pink pleasure bar, 0 to 100, with its number: pink past aroused, throbbing on the edge. */
+export class PleasureBar {
+  readonly el = document.createElement("div");
+  private readonly fill = document.createElement("span");
+  private readonly value = document.createElement("b");
+  private shown = -1;
+
+  constructor(name = "Pleasure") {
+    this.el.className = "pleasure";
+    const label = document.createElement("span");
+    label.className = "label";
+    label.textContent = name;
+    const track = document.createElement("span");
+    track.className = "track";
+    this.fill.className = "fill";
+    track.append(this.fill);
+    this.value.className = "num";
+    this.el.append(label, track, this.value);
+  }
+
+  set(n: number): void {
+    const pleasure = Math.max(0, Math.min(100, Math.floor(n)));
+    if (pleasure === this.shown) return;
+    this.shown = pleasure;
+    this.fill.style.width = `${pleasure}%`;
+    this.value.textContent = `${pleasure}%`;
+    this.el.classList.toggle("aroused", pleasure >= AROUSED_AT);
+    this.el.classList.toggle("edge", pleasure >= EDGE_AT);
   }
 }
 
@@ -156,9 +194,7 @@ export class StatusCard {
   private readonly face = document.createElement("canvas");
   private readonly feel = document.createElement("span");
   private readonly hearts = new Map<Meter, Heart>();
-  private readonly pleasure = document.createElement("div");
-  private readonly pleasureFill = document.createElement("span");
-  private readonly pleasureValue = document.createElement("b");
+  private readonly pleasure = new PleasureBar();
   private readonly stack = document.createElement("div");
   private readonly stackFill = document.createElement("span");
   private readonly stackValue = document.createElement("b");
@@ -168,11 +204,11 @@ export class StatusCard {
   private readonly tags = document.createElement("div");
   private portrait: HTMLCanvasElement | null = null;
   private shownText = "";
-  private shownPleasure = -1;
   private shownStack = -1;
 
   constructor(private readonly root: HTMLElement) {
     root.replaceChildren();
+    root.classList.add("heart-ui");
 
     // Her face in a ring.
     const who = document.createElement("div");
@@ -188,20 +224,10 @@ export class StatusCard {
     const hearts = document.createElement("div");
     hearts.className = "hearts";
     for (const m of METERS) {
-      const heart = new Heart(m);
+      const heart = new Heart(m, METER_NAMES[m]);
       this.hearts.set(m, heart);
       hearts.append(heart.el);
     }
-    this.pleasure.className = "pleasure";
-    const label = document.createElement("span");
-    label.className = "label";
-    label.textContent = "Pleasure";
-    const track = document.createElement("span");
-    track.className = "track";
-    this.pleasureFill.className = "fill";
-    track.append(this.pleasureFill);
-    this.pleasureValue.className = "num";
-    this.pleasure.append(label, track, this.pleasureValue);
     // How near the table is (adultplay.ts): open, an aroused guest can go for it.
     this.stack.className = "pleasure stack";
     this.stack.title = "The table: once you're drunk enough, or you've come enough times this shift, an aroused guest can ask to have you on a table in the taproom. Too drunk, and nobody asks.";
@@ -214,7 +240,7 @@ export class StatusCard {
     stackTrack.append(this.stackFill);
     this.stackValue.className = "num";
     this.stack.append(stackLabel, stackTrack, this.stackValue);
-    body.append(hearts, this.pleasure, this.stack);
+    body.append(hearts, this.pleasure.el, this.stack);
 
     // Drink over willpower as big slanted gauges, and how she stands as chips under them.
     const gauges = document.createElement("div");
@@ -271,14 +297,7 @@ export class StatusCard {
       );
     }
     for (const m of METERS) this.hearts.get(m)?.set(Math.floor(s.meters[m]));
-    const pleasure = Math.max(0, Math.min(100, Math.floor(s.pleasure)));
-    if (pleasure !== this.shownPleasure) {
-      this.shownPleasure = pleasure;
-      this.pleasureFill.style.width = `${pleasure}%`;
-      this.pleasureValue.textContent = `${pleasure}%`;
-      this.pleasure.classList.toggle("aroused", pleasure >= AROUSED_AT);
-      this.pleasure.classList.toggle("edge", pleasure >= EDGE_AT);
-    }
+    this.pleasure.set(s.pleasure);
     const stack = Math.max(0, Math.min(100, Math.floor(s.tableProgress)));
     if (stack !== this.shownStack) {
       this.shownStack = stack;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BATTLE_POSES, type BattlePoseName } from "../src/game/battlepose";
-import { BEARING, EXPRESSIONS, FACE_KEYS, faceFor, FLUSH, type FaceCause } from "../src/game/face";
+import { BEARING, EXPRESSIONS, EXTRAS, FACE_KEYS, faceFor, FLUSH, type FaceCause } from "../src/game/face";
 import {
   AROUSED_FROM,
   BAND_FROM,
@@ -30,8 +30,8 @@ function partsOf(cause: FightFaceCause) {
 }
 
 describe("her face, put together from parts", () => {
-  it("between them, the parts and her blush cover every point of her face, each once", () => {
-    const keys = [...PART_KEYS.brows, ...PART_KEYS.eyes, ...PART_KEYS.mouth, "blush"];
+  it("between them, the parts, her blush and her sweat cover every point of her face, each once", () => {
+    const keys = [...PART_KEYS.brows, ...PART_KEYS.eyes, ...PART_KEYS.mouth, "blush", "sweat"];
     expect(new Set(keys).size).toBe(keys.length);
     expect([...keys].sort()).toEqual([...FACE_KEYS].sort());
   });
@@ -142,9 +142,9 @@ describe("picking a face", () => {
 describe("her face in a brawl", () => {
   const fighting: FaceCause = { showing: null, reaction: null, arousal: 0, drunk: 0, fighting: true };
 
-  it("is the moment's face, with her flush and heavy lids over it as ever", () => {
+  it("is the moment's face, with her flush, heavy lids and a brawl's sweat over it as ever", () => {
     const face = composeFace({ brows: "strained", eyes: "strained", mouth: "strained" });
-    expect(faceFor({ ...fighting, fightFace: face })).toEqual(face);
+    expect(faceFor({ ...fighting, fightFace: face })).toEqual({ ...face, sweat: EXTRAS.sweatFighting });
     const calm = composeFace({ brows: "angry", eyes: "angry", mouth: "angry" });
     expect(faceFor({ ...fighting, fightFace: calm, arousal: 1 }).blush).toBe(FLUSH.arousal);
   });
@@ -153,6 +153,6 @@ describe("her face in a brawl", () => {
     const face = composeFace({ brows: "confident", eyes: "confident", mouth: "smile" });
     expect(faceFor({ ...fighting, fightFace: face, reaction: "jolt" })).toEqual(faceFor({ ...fighting, reaction: "jolt" }));
     expect(faceFor({ ...fighting, fightFace: face, moment: "refused" }).smile).toBe(EXPRESSIONS.angry.smile);
-    expect(faceFor(fighting)).toEqual(EXPRESSIONS.angry);
+    expect(faceFor(fighting)).toEqual({ ...EXPRESSIONS.angry, sweat: EXTRAS.sweatFighting });
   });
 });
