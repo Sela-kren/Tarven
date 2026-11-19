@@ -72,6 +72,16 @@ PALETTE = {
     "shoe_white": ((0.86, 0.85, 0.82), 0.0, 0.35),
     "enamel": ((0.1, 0.12, 0.16), 0.3, 0.3),
     "white": ((0.85, 0.84, 0.8), 0.0, 0.8),
+    # The office look's.
+    "knit_navy": ((0.045, 0.05, 0.16), 0.0, 0.75),
+    "knit_navy_in": ((0.03, 0.032, 0.1), 0.0, 0.8),
+    "wool_grey": ((0.25, 0.24, 0.235), 0.0, 0.85),
+    "wool_grey_in": ((0.16, 0.155, 0.15), 0.0, 0.9),
+    "seam_grey": ((0.12, 0.115, 0.11), 0.0, 0.85),
+    "strap_white": ((0.86, 0.86, 0.84), 0.0, 0.6),
+    "holder_grey": ((0.5, 0.51, 0.53), 0.0, 0.4),
+    "card_white": ((0.92, 0.92, 0.9), 0.0, 0.5),
+    "frame_red": ((0.55, 0.05, 0.06), 0.0, 0.3),
 }
 
 
@@ -944,9 +954,192 @@ def gown(b):
     gloves(b, "Glove", "glove", GOWN["glove_top"], trim="metal")
 
 
+# ---------------------------------------------------------------- the office look
+
+# The user's ref (2026-11-19, a photo; the clothes only): a navy knit top, sleeveless, cut to the shoulder, with a high
+# rolled turtleneck, fitted over the bust and easing a little below it, tucked into a grey high-waisted pencil skirt
+# with a wide waistband and two curved seams down the front, short (adult cut, mid-thigh) with a kick slit at the back.
+# A white lanyard round her neck over the turtleneck, its two ends meeting at a clip above her waist, a grey badge
+# holder with a white card hanging from it over the waistband. Red under-rim glasses (the frame only under the
+# lenses), sitting low on her nose, and black pumps.
+OFFICE = {
+    "top": (0.99, 1.338),  # tucked in under the waistband, up to the turtleneck
+    "collar": (1.33, 1.372),
+    "waist": (1.0, 1.04),  # the waistband
+    "hem": 0.6,
+    "slit": (0.68, 3.0),  # the back kick slit's top, and half its opening at the hem (degrees)
+    "seam": [(1.0, 0.044), (0.93, 0.052), (0.82, 0.06), (0.7, 0.062), (0.6, 0.06)],  # the front seams, x by height
+    "clip": 1.055,
+    "badge": (0.058, 0.088),  # its holder's width and height
+    "armhole": (1.16, 1.21, 1.27, 1.31),  # opening from under her arm, full width, closing, closed over her shoulder
+    "armhole_width": 13.0,  # degrees either side of her side
+}
+
+
+def office(b):
+    body = b.body
+    # The top: fitted, spanning her cleavage, easing back in only slowly below her bust.
+    s = Section(body, NECK, 0.95, 1.40, bridge=True, drape=1.1)
+    pad = 0.0035
+    z0, z1 = OFFICE["top"]
+    zs = [z0 + (z1 - z0) * i / 70 for i in range(71)]
+    cols = 24
+    # The armhole: a window cut out of her side from under her arm up to her shoulder, closing over its top.
+    def armhole(z):
+        a0, a1, a2, a3 = OFFICE["armhole"]
+        if z <= a0 or z >= a3:
+            return 0.0
+        rise = ease((z - a0) / (a1 - a0)) if z < a1 else 1.0
+        fall = ease((a3 - z) / (a3 - a2)) if z > a2 else 1.0
+        return deg(OFFICE["armhole_width"]) * min(rise, fall)
+    front = [[s.point(armhole(z) + (FRONT - armhole(z)) * k / cols, z, pad) for k in range(cols + 1)] for z in zs]
+    back = [[s.point(BACK + (-armhole(z) - BACK) * k / cols, z, pad) for k in range(cols + 1)] for z in zs]
+    b.add("Top", mirror(merge(grid(front), grid(back))), "knit", ("fit", TRUNK), thickness=0.0022, inner="knit_inside")
+    # The turtleneck: a high collar and its turned-down roll over it.
+    c0, c1 = OFFICE["collar"]
+    stand_collar(b, s, "Turtleneck", "knit", c0, c1, 0.006, taper=0.85)
+    stand_collar(b, s, "TurtleneckRoll", "knit", c0 + 0.014, c1 - 0.006, 0.0095, taper=1.0, rows=3)
+
+    # The skirt: her waist and hips' own curve at the top, then the hull of both legs, hanging slowly back in.
+    fit = Section(body, TRUNK, 0.84, 1.06, bridge=True)
+    hang = Section(body, LEGS + TRUNK, 0.5, 0.95, mode="hull", step=0.01, cols=180, drape=0.05, band=0.025, smooth=4)
+    w0, w1 = OFFICE["waist"]
+
+    def skirt_r(a, z):
+        top = fit.r(a, min(max(z, 0.84), 1.06)) + 0.0075
+        low = hang.r(a, min(z, 0.95)) + 0.006
+        share = ease((0.93 - z) / 0.08)
+        return max(top * (1 - share) + low * share, low if z < 0.86 else 0.0)
+
+    def skirt_point(a, z, extra=0.0):
+        r = skirt_r(a, z) + extra
+        return Vector((math.cos(a) * r, math.sin(a) * r, z))
+
+    hem = OFFICE["hem"]
+    slit_top, slit_open = OFFICE["slit"]
+    n_rows, cols = 48, 48
+    rows = []
+    for i in range(n_rows + 1):
+        z = hem + (w0 + 0.004 - hem) * i / n_rows
+        gap = deg(slit_open) * ease((slit_top - z) / (slit_top - hem)) if z < slit_top else 0.0
+        lo = -math.pi / 2 + gap
+        rows.append([skirt_point(lo + (math.pi / 2 - lo) * k / cols, z) for k in range(cols + 1)])
+    b.add("Skirt", mirror(grid(rows)), "skirt", ("hang", TRUNK), thickness=0.0028, inner="skirt_inside")
+    band = [[skirt_point(-math.pi / 2 + math.pi * k / cols, z, 0.0015) for k in range(cols + 1)]
+            for z in (w0, (w0 + w1) / 2, w1)]
+    b.add("Waistband", mirror(grid(band)), "skirt", ("fit", TRUNK), thickness=0.003, inner="skirt_inside")
+
+    # The two curved seams down the front of the skirt, from the waistband to the hem.
+    def angle_at(x, z):
+        lo, hi = 0.0, FRONT
+        for _ in range(40):
+            mid = (lo + hi) / 2
+            lo, hi = (mid, hi) if math.cos(mid) * skirt_r(mid, z) > x else (lo, mid)
+        return (lo + hi) / 2
+
+    seam = [skirt_point(angle_at(table(OFFICE["seam"], z), z), z, 0.0028)
+            for z in [w0 - (w0 - hem) * j / 30 for j in range(31)]]
+    b.add("SkirtSeams", mirror(ribbon(seam, 0.0022, radial)), "seam", ("hang", TRUNK), thickness=0.0006)
+
+    # The lanyard: round her neck over the turtleneck's base, then down her front over her bust to the clip.
+    clip_z = OFFICE["clip"]
+    # Round the base of the turtleneck's roll, at a height where her outline is her neck (not her shoulders).
+    ring_z = c0 + 0.016
+    neck = [s.point(deg(38) - (deg(38) - BACK) * j / 24, ring_z, 0.0165) for j in range(25)]  # from the sides of her neck
+    b.add("LanyardNeck", mirror(ribbon(neck, 0.011, radial)), "lanyard", ("fit", NECK), thickness=0.001)
+    top = neck[0]
+    end = Vector((0.006, 0.0, clip_z))
+    end.y = s.point(s.angle_at_x(end.x, clip_z), clip_z, pad + 0.004).y
+    path = []
+    for j in range(31):
+        t = j / 30
+        x, z = top.x + (end.x - top.x) * t, top.z + (end.z - top.z) * t
+        # On the top, not her skin: the knit spans her cleavage and stands off her.
+        y_top = s.point(s.angle_at_x(x, z), z, pad + 0.004).y if z < z1 else top.y
+        y_chord = top.y * (1 - t) + end.y * t
+        path.append(Vector((x, max(y_top, y_chord - 0.01), z)))  # taut over her bust, lying on her chest above it
+    b.add("Lanyard", mirror(ribbon(path, 0.012, lambda p: Vector((0, 1, 0)))), "lanyard", ("fit", TRUNK),
+          thickness=0.001)
+    # The clip where the two ends meet, and the badge holder hanging from it over the waistband, a card in it.
+    up, across = Vector((0, 0, 1)), Vector((1, 0, 0))
+    clip = Vector((0.0, end.y + 0.002, clip_z - 0.006))
+    b.add("LanyardClip", slab([(-0.007, -0.009), (0.007, -0.009), (0.007, 0.009), (-0.007, 0.009)], clip, across, up,
+                              0.006), "lanyard", ("fit", TRUNK))
+    hw, hh = OFFICE["badge"][0] / 2, OFFICE["badge"][1] / 2
+    centre_z = clip_z - 0.018 - hh
+    front = max(skirt_r(FRONT, centre_z) + 0.002, (body.front_y(0.0, centre_z) or 0.0) + 0.012)
+    holder = Vector((0.0, front + 0.004, centre_z))
+    b.add("BadgeHolder", slab([(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)], holder, across, up, 0.004), "badge",
+          ("fit", TRUNK))
+    b.add("BadgeCard", slab([(-hw + 0.005, -hh + 0.005), (hw - 0.005, -hh + 0.005), (hw - 0.005, hh - 0.012),
+                             (-hw + 0.005, hh - 0.012)], holder + Vector((0, 0.0025, 0)), across, up, 0.001),
+          "card", ("fit", TRUNK))
+    b.add("BadgeLoop", tube([clip + Vector((0, 0, -0.008)), holder + Vector((0, 0, hh - 0.002))], 0.0018, n=6),
+          "lanyard", ("fit", TRUNK))
+
+    glasses(b, "Glasses", "frame")
+
+
+def iris_centres():
+    """The middle of each iris (left, right) in the rig root's space, measured on her face as built."""
+    root = bpy.data.objects[RIG]
+    obj = bpy.data.objects[f"{RIG}_Body"]
+    to_root = root.matrix_world.inverted() @ obj.matrix_world
+    mesh = obj.data
+    iris = {i for i, m in enumerate(mesh.materials) if m and m.name == "T_eye_iris"}
+    sides = {-1: [], 1: []}
+    for poly in mesh.polygons:
+        if poly.material_index in iris:
+            c = to_root @ poly.center
+            sides[1 if c.x > 0 else -1].append(c)
+    return [sum(sides[s], Vector()) / len(sides[s]) for s in (-1, 1)]
+
+
+def glasses(b, label, mat):
+    """
+    Under-rim glasses, low on her nose: the frame runs under each lens and up its sides to the top corners, a bridge
+    over her nose between the inner corners, and the arms from the outer corners back over her ears.
+    """
+    body = b.body
+    left, right = iris_centres()
+    eye = right
+    hw = min(0.021, eye.x * 0.62)  # each lens's half width
+    hh = hw * 0.55
+    lens = Vector((eye.x, 0.0, eye.z - 0.004))  # low: the lenses' flat tops just under her irises' middles
+    face = max((body.front_y(lens.x + dx, lens.z + dz, ("Head",)) or eye.y)
+               for dx in (-hw, -hw / 2, 0, hw / 2, hw) for dz in (-hh, 0, hh))
+    lens.y = face + 0.006
+    rig = ("bone", "Head")
+
+    def outline(t):
+        """The lens's edge, t from 0 at its top inner corner, down and under, to 1 at its top outer corner."""
+        a = math.pi * (1 + t)  # half an ellipse, its flat side up
+        x = math.cos(a) * hw
+        z = math.sin(a) * hh * (1.0 if t > 0.5 else 0.92)
+        curve = 0.006 * (x / hw) ** 2  # the lens wraps back a little at its outer edge
+        return Vector((lens.x - x, lens.y - curve * (1 if x < 0 else 0.3), lens.z + z))
+
+    rim = [outline(j / 24) for j in range(25)]
+    # The bridge from the inner corner over her nose, a shallow U, to the middle.
+    inner = rim[0]
+    nose = (body.front_y(0.0, inner.z - 0.004, ("Head",)) or inner.y) + 0.004
+    bridge = smooth_path([inner, Vector((inner.x * 0.6, max(inner.y, nose), inner.z - 0.008)),
+                          Vector((0.0, max(inner.y, nose), inner.z - 0.011))], 6)  # dipping onto her nose
+    # The arm from the outer corner back along the side of her head to behind her ear.
+    outer = rim[-1]
+    side = body.bvh(("Head",)).ray_cast(Vector((0.4, eye.y - 0.04, outer.z)), Vector((-1, 0, 0)), 0.6)[0]
+    side_x = (side.x if side else outer.x + 0.02) + 0.005
+    arm_path = smooth_path([outer, Vector((side_x, outer.y - 0.02, outer.z)), Vector((side_x, eye.y - 0.075, outer.z - 0.002)),
+                            Vector((side_x - 0.006, eye.y - 0.095, outer.z - 0.02))], 6)
+    b.add(label + "Rims", mirror(merge(tube(rim, 0.0013, n=6), tube(bridge, 0.0011, n=6))), mat, rig)
+    b.add(label + "Arms", mirror(tube(arm_path, 0.0011, n=6)), mat, rig)
+    # Hinges: a small block at each outer corner.
+    b.add(label + "Hinges", mirror(slab(circle(0.0022, n=8), outer, Vector((0, 1, 0)), Vector((0, 0, 1)), 0.003)), mat, rig)
+
+
 # ---------------------------------------------------------------- the ladies
 
-DRESSES = {"slit": slit_dress, "gown": gown}
+DRESSES = {"slit": slit_dress, "gown": gown, "office": office}
 
 LADIES = [
     {"name": "White Gown", "dress": "gown", "hair": "HairBun", "shoes": "Pump", "shoe_colour": "shoe_white",
@@ -956,6 +1149,10 @@ LADIES = [
      "colours": {"main": "satin_black", "lining": "lining_black", "metal": "silver"}},
     {"name": "Veyra Red", "dress": "slit", "hair": "HairPonytail", "shoes": "Stiletto", "shoe_colour": "shoe_black",
      "colours": {"main": "satin_red", "lining": "lining_red", "metal": "gold"}},
+    {"name": "Office", "dress": "office", "hair": "HairPixie", "shoes": "Pump", "shoe_colour": "shoe_black",
+     "colours": {"knit": "knit_navy", "knit_inside": "knit_navy_in", "skirt": "wool_grey", "skirt_inside": "wool_grey_in",
+                 "seam": "seam_grey", "lanyard": "strap_white", "badge": "holder_grey", "card": "card_white",
+                 "frame": "frame_red"}},
 ]
 
 # The painted underwear on her skin comes off under the dresses (the slit dress leaves her hips bare).

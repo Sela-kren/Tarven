@@ -3,7 +3,7 @@ import { ADULT_MAX, adultPlayChance, lewdnessEase, TABLE_DRUNK, tableOpen, type 
 import { BARE_DESIRE, BARE_SLUT, INSIDE_DESIRE, INSIDE_SLUT, LAYER_BONUS, layersOpen, pickLayer } from "../src/game/touch";
 import { defaultRole, statsOf } from "../src/game/guestroles";
 import { FANS_DELIGHTED, FANS_HAPPY } from "../src/game/ledger";
-import { INVITE_ASKS, JOIN_ASKS, TABLE_OPEN_LINES, TAPROOM_END, TAPROOM_START } from "../src/game/invitetalk";
+import { INVITE_ASKS, JOIN_ASKS, JOIN_ASKS_WOMEN, TABLE_OPEN_LINES, TAPROOM_END, TAPROOM_START } from "../src/game/invitetalk";
 import type { Mood } from "../src/game/mood";
 import { earned, effectsOf, PASSIVE_BY_ID, readProgress } from "../src/game/passives";
 import { isBaron, roomReaction, taproomResult, wantsToJoin, willingJoiners, type RoomGuest } from "../src/game/taproom";
@@ -378,6 +378,13 @@ describe("who joins", () => {
     const host = guest(1, "bandit", 9);
     const t = night([host, guest(2, "noble", 8)]);
     expect(JOIN_ASKS.noble.map((l) => `"${l}"`)).toContain(t.joinAsk(2));
+  });
+
+  it("a woman who wants in asks in her own words, never a man's", () => {
+    for (const kind of KINDS) expect(JOIN_ASKS_WOMEN[kind].length, kind).toBeGreaterThan(1);
+    const host = guest(1, "bandit", 9);
+    const t = night([host, guest(2, "noble", 8, "calm", "waiting", true)]);
+    expect(JOIN_ASKS_WOMEN.noble.map((l) => `"${l}"`)).toContain(t.joinAsk(2));
   });
 });
 

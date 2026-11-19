@@ -77,7 +77,17 @@ export function newLook(): Look {
  */
 export function startLook(body: BodyName): Look {
   const own = LOOK_OPTIONS[body].defaultOutfit;
-  return own ? wearOutfit(body, newLook(), own) : newLook();
+  const look = own ? wearOutfit(body, newLook(), own) : newLook();
+  if (body === "Female") Object.assign(look.sliders, startSliders());
+  return look;
+}
+
+/**
+ * Her body as she starts (the user, 2026-11-19): a J cup, with nipples and areolae bigger than as built. A save
+ * from before this picks it up too, except where she set them herself (readLooks).
+ */
+export function startSliders(): Record<string, number> {
+  return { bust: stopValue(CUPS, CUPS.labels.indexOf("J")), nippleSize: 0.5, areolaSize: 0.5 };
 }
 
 /** Both siblings' looks as they start (startLook). */
@@ -513,6 +523,8 @@ function factionColors(): ColorDef[] {
     dye("jerkin", "Jerkin", "T_jerkin"), dye("bracers", "Bracers", "T_bracer"), dye("cloak", "Cloak", "T_cloak"),
     dye("mail", "Mail", "T_mail"), dye("plate", "Plate", "T_plate"), dye("tabard", "Tabard", "T_tabard"),
     dye("robe", "Robe", "T_robe"),
+    // The guests' modern clothes: the top (hoodie, tee, tank) and the bottoms (joggers, jeans, shorts).
+    dye("knit", "Top", "T_knit"), dye("denim", "Bottoms", "T_denim"),
   ];
 }
 
@@ -1213,6 +1225,23 @@ const FEMALE_OUTFITS: OutfitDef[] = [
     },
     legwear: "kneehigh",
   },
+  // The guests' modern clothes (WORLD.md, section 2b), cut short on her: a cropped grey hoodie over low black joggers,
+  // a cropped white tee over low-rise jeans, and a black sports top over bike shorts.
+  {
+    id: "hoodie", label: "Hoodie", mesh: "Hoodie", guestOnly: true,
+    colors: ["knit", "denim", "shoes", "bra", "smalls"],
+    preset: { knit: "#7d7f86", denim: "#1c1c22", shoes: "#e8e4dc" },
+  },
+  {
+    id: "casual", label: "Tee and jeans", mesh: "Casual", guestOnly: true,
+    colors: ["knit", "denim", "shoes", "bra", "smalls"],
+    preset: { knit: "#ece6d8", denim: "#2f4f7f", shoes: "#e8e4dc" },
+  },
+  {
+    id: "sporty", label: "Sportswear", mesh: "Sporty", guestOnly: true,
+    colors: ["knit", "denim", "shoes", "bra", "smalls"],
+    preset: { knit: "#1c1c22", denim: "#1c1c22", shoes: "#e8e4dc" },
+  },
 ];
 
 const MALE_COLORS: ColorDef[] = [
@@ -1365,6 +1394,23 @@ export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
           hat: "#1c1716", braid: "#c99a3a", feather: "#efebe2", cloak: "#24345a", jewels: "#c99a3a", gems: "#8c2020",
           shirt: "#f1ece0", doublet: "#5b1430", breeches: "#2b2b2b", boots: "#221a15",
         },
+      },
+      // The guests' modern clothes (WORLD.md, section 2b): a grey hoodie with a front pocket over black joggers, a
+      // white tee tucked into belted jeans, and a tank top over shorts.
+      {
+        id: "hoodie", label: "Hoodie", mesh: "Hoodie", guestOnly: true,
+        colors: ["knit", "denim", "boots", "smalls"],
+        preset: { knit: "#7d7f86", denim: "#1c1c22", boots: "#2b2b2b" },
+      },
+      {
+        id: "casual", label: "Tee and jeans", mesh: "Casual", guestOnly: true,
+        colors: ["knit", "denim", "belt", "boots", "smalls"],
+        preset: { knit: "#ece6d8", denim: "#2f4f7f", belt: "#3d2314", boots: "#3d2314" },
+      },
+      {
+        id: "sporty", label: "Sportswear", mesh: "Sporty", guestOnly: true,
+        colors: ["knit", "denim", "boots", "smalls"],
+        preset: { knit: "#e8e4dc", denim: "#2b2b2b", boots: "#2b2b2b" },
       },
     ],
     legwear: [],
@@ -1731,7 +1777,9 @@ export function playerOutfits(body: BodyName): OutfitDef[] {
 }
 
 /** The outfits only guests wear. */
-export type GuestOutfit = "pirate" | "archer" | "warrior" | "mage" | "cleric" | "noble" | "servant" | "rogue" | "brute";
+export type GuestOutfit =
+  | "pirate" | "archer" | "warrior" | "mage" | "cleric" | "noble" | "servant" | "rogue" | "brute"
+  | "hoodie" | "casual" | "sporty";
 
 /** An adventuring party's callings, each in its own kit: the archer, the warrior who shields the rest, the mage and the healer. */
 export const ADVENTURER_OUTFITS: readonly GuestOutfit[] = ["archer", "warrior", "mage", "cleric"];
@@ -1739,6 +1787,23 @@ export const ADVENTURER_OUTFITS: readonly GuestOutfit[] = ["archer", "warrior", 
 export const NOBLE_OUTFITS: readonly GuestOutfit[] = ["noble", "servant"];
 /** The bandit gang: rogues and brutes, every one in the gang's red. */
 export const BANDIT_OUTFITS: readonly GuestOutfit[] = ["rogue", "brute"];
+/** Modern clothes, which most guests come in now (WORLD.md, section 2b): the medieval kit is the exception. */
+export const MODERN_OUTFITS: readonly GuestOutfit[] = ["hoodie", "casual", "sporty"];
+
+/**
+ * The modern clothes a guest comes in instead of their type's own, from the look they rolled walking in (Guest.look):
+ * `share` of a type's guests do, each in one of `styles`; the rest keep the old kit (or plain clothes). The same look
+ * always comes out the same (a regular keeps theirs); 0, their kind's plain look, never does. Mixed apart from what
+ * picks their hairstyle and colours, so the two don't move together.
+ */
+export function guestModernOutfit(look: number, share: number, styles: readonly GuestOutfit[] = MODERN_OUTFITS): GuestOutfit | null {
+  if (look <= 0 || share <= 0 || styles.length === 0) return null;
+  let h = Math.imul(look ^ (look >>> 16), 0x7feb352d);
+  h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
+  h = (h ^ (h >>> 16)) >>> 0;
+  if ((h % 1000) / 1000 >= share) return null;
+  return styles[Math.floor(h / 1000) % styles.length];
+}
 
 /** How many ways a guest's outfit can be coloured. */
 export const GUEST_LOOKS = 4;
@@ -1863,6 +1928,49 @@ const GUEST_VARIANTS: Record<GuestOutfit, Record<BodyName, Record<string, string
       { bodice: "#16223f", skirt: "#16223f", stockings: "#16223f" },
       { bodice: "#4f4f52", skirt: "#4f4f52", stockings: "#f1ece0" },
       { bodice: "#3d2314", skirt: "#3d2314", apron: "#e3cf9c", blouse: "#e3cf9c" },
+    ],
+  },
+  // Modern clothes in everyday colours: greys, black, navy, a bright one; jeans from light to black.
+  hoodie: {
+    Male: [
+      {},
+      { knit: "#24345a", denim: "#4f4f52" },
+      { knit: "#8c2020", denim: "#1c1c22", boots: "#e8e4dc" },
+      { knit: "#2b3d23", denim: "#7d6c55" },
+    ],
+    Female: [
+      {},
+      { knit: "#e8a0b8", denim: "#e8e4dc" },
+      { knit: "#1c1c22", denim: "#4f4f52", shoes: "#1c1c22" },
+      { knit: "#6a4a8a", denim: "#1c1c22" },
+    ],
+  },
+  casual: {
+    Male: [
+      {},
+      { knit: "#1c1c22", denim: "#16223f" },
+      { knit: "#2f5590", denim: "#7d7f86", boots: "#e8e4dc" },
+      { knit: "#8a7a3e", denim: "#1c1c22", belt: "#1c1716" },
+    ],
+    Female: [
+      {},
+      { knit: "#1c1c22", denim: "#7aa0c8" },
+      { knit: "#e8a0b8", denim: "#16223f" },
+      { knit: "#8c2020", denim: "#1c1c22", shoes: "#1c1c22" },
+    ],
+  },
+  sporty: {
+    Male: [
+      {},
+      { knit: "#1c1c22", denim: "#4f4f52" },
+      { knit: "#2f5590", denim: "#1c1c22", boots: "#e8e4dc" },
+      { knit: "#8c2020", denim: "#24345a" },
+    ],
+    Female: [
+      {},
+      { knit: "#e8a0b8", denim: "#e8a0b8" },
+      { knit: "#2f5590", denim: "#1c1c22" },
+      { knit: "#ece6d8", denim: "#4f4f52", shoes: "#1c1c22" },
     ],
   },
   // House colours: wine, midnight blue, forest green and black, always with gold.
@@ -2403,6 +2511,13 @@ const CLEAR_RINGS = 3;
 /** Her arms' bones: her skin there isn't what her tops are kept out of. */
 const CLEAR_NOT_SKIN = /Arm|Hand|Finger|Thumb|Elbow|Wrist|Forearm/;
 
+/** How high a piece of clothing reaches up her, as built (its highest point's y). */
+function reach(points: Float32Array): number {
+  let top = -Infinity;
+  for (let v = 1; v < points.length; v += 3) top = Math.max(top, points[v]);
+  return top;
+}
+
 function inClearRegion(points: Float32Array, v: number): boolean {
   const x = points[v * 3], y = points[v * 3 + 1], z = points[v * 3 + 2];
   return Math.abs(x) < CLEAR_HALF_WIDTH && y > CLEAR_HEIGHT[0] && y < CLEAR_HEIGHT[1] && Number.isFinite(z);
@@ -2670,7 +2785,7 @@ export function smoothTopGap(bust: number): number {
  */
 const HANG_TOPS: readonly string[] = ["T_tee"];
 export const HANG = {
-  cups: ["C", "G"] as const, slope: 0.2, bins: 72, band: 0.005, ways: [55, 80] as const, top: 1.32,
+  cups: ["C", "G"] as const, slope: 0.2, bins: 72, band: 0.005, ways: [75, 95] as const, top: 1.32,
   /** The turned-under strip's points: on the tee's open edge, this close to the fold they turn at. */
   turned: 0.005,
   /** Passes the push out is eased by (see smoothMoves). */
@@ -2692,8 +2807,12 @@ export const HANG = {
    * below.
    */
   fold: 0.06,
-  depth: 0.01,
+  depth: 0,
   grow: 0.03,
+  /** A band spans a dip in itself (see bridgeBands) only where that's this much further out than the cloth there. */
+  bridgeOver: 0.001,
+  /** The bands either side of a band its outline is taken over (see bridgeBands). */
+  bridgeBands: 2,
 };
 
 /** How much of the hang (see HANG) her T-shirt takes at this Cup size slider value. */
@@ -2749,6 +2868,68 @@ export interface HangField {
   apex: Float32Array;
 }
 
+/**
+ * Per band (HangField's layout: bin * bands + band), how far out the cloth lies over what's there when pulled taut
+ * round it, like a towel over her bust: the convex outline, seen from above, of the furthest out per way round (and her
+ * upright line), so it spans the dip between her breasts instead of following into it. -Infinity where nothing is.
+ */
+function bridgeBands(most: Float32Array, bands: number): Float32Array {
+  const bridged = new Float32Array(most.length).fill(-Infinity);
+  const angle = (bin: number) => ((bin + 0.5) / HANG.bins - 0.5) * Math.PI;
+  const xs: number[] = [], zs: number[] = [];
+  for (let band = 0; band < bands; band++) {
+    // Her upright line, then the furthest out per way round, in order round her (x across, z forwards).
+    // Taken over the bands round it too: one band alone caught only some of the breast's rows, and the outline came out
+    // smaller there than in the bands either side, in stripes across.
+    xs.length = zs.length = 0;
+    xs.push(0);
+    zs.push(0);
+    for (let bin = 0; bin < HANG.bins; bin++) {
+      let r = -Infinity;
+      for (let b = Math.max(0, band - HANG.bridgeBands); b <= Math.min(bands - 1, band + HANG.bridgeBands); b++) {
+        r = Math.max(r, most[bin * bands + b]);
+      }
+      if (r === -Infinity) continue;
+      xs.push(r * Math.sin(angle(bin)));
+      zs.push(r * Math.cos(angle(bin)));
+    }
+    if (xs.length < 3) {
+      for (let bin = 0; bin < HANG.bins; bin++) bridged[bin * bands + band] = most[bin * bands + band];
+      continue;
+    }
+    // The outline: the points round from the first, keeping only those it turns outwards at (a convex chain).
+    const hull: number[] = [];
+    for (let i = 1; i < xs.length; i++) {
+      while (hull.length >= 2) {
+        const a = hull[hull.length - 2], b = hull[hull.length - 1];
+        const cross = (xs[b] - xs[a]) * (zs[i] - zs[a]) - (zs[b] - zs[a]) * (xs[i] - xs[a]);
+        // Going round from her right to her left (x rising): an inward dent turns the other way.
+        if (cross < 0) break;
+        hull.pop();
+      }
+      hull.push(i);
+    }
+    // Each way round where there's cloth: how far out along it the outline lies.
+    for (let bin = 0; bin < HANG.bins; bin++) {
+      const r = most[bin * bands + band];
+      if (r === -Infinity) continue;
+      const dx = Math.sin(angle(bin)), dz = Math.cos(angle(bin));
+      let best = r;
+      for (let k = 0; k + 1 < hull.length; k++) {
+        const a = hull[k], b = hull[k + 1];
+        const ex = xs[b] - xs[a], ez = zs[b] - zs[a];
+        const det = dx * ez - dz * ex;
+        if (Math.abs(det) < 1e-9) continue;
+        const t = (xs[a] * ez - zs[a] * ex) / det;
+        const s = (xs[a] * dz - zs[a] * dx) / det;
+        if (s >= 0 && s <= 1 && t > best) best = t;
+      }
+      bridged[bin * bands + band] = best;
+    }
+  }
+  return bridged;
+}
+
 /** Which way round her upright line a point is (0 her front, to ±π/2 her sides; x across, z backwards). */
 function hangWay(x: number, z: number, centre: number): number {
   return Math.atan2(x, centre - z);
@@ -2772,17 +2953,27 @@ export function hangField(shaped: Float32Array, verts: ArrayLike<number>, centre
     const at = bin * bands + band;
     most[at] = Math.max(most[at], Math.hypot(x, centre - z));
   }
-  // Each band takes what hangs from every band above it (not its own: a point never hangs from itself).
+  const bridged = bridgeBands(most, bands);
+  // Each band takes what hangs from every band above it (not its own: a point never hangs from itself), and what its
+  // own band bridges across (a dip between her breasts, spanned).
   const out = new Float32Array(HANG.bins * bands).fill(-Infinity);
   const from = new Float32Array(HANG.bins * bands);
   const drop = HANG.slope * HANG.band;
   for (let bin = 0; bin < HANG.bins; bin++) {
-    let hang = -Infinity, at = HANG.top;
+    let hang = -Infinity, at = HANG.top, spanTop = NaN;
     for (let band = bands - 1; band >= 0; band--) {
-      out[bin * bands + band] = hang;
-      from[bin * bands + band] = at;
-      if (most[bin * bands + band] >= hang - drop) at = bottom + (band + 0.5) * HANG.band;
-      hang = Math.max(hang - drop, most[bin * bands + band]);
+      const height = bottom + (band + 0.5) * HANG.band;
+      const span = bridged[bin * bands + band];
+      const spans = span > most[bin * bands + band] + HANG.bridgeOver && span > hang;
+      // A span hangs from where it starts (so the cloth spanning down her cleavage hangs free, and is ironed with the
+      // rest), and the cloth under it hangs from it: hung from the dip instead, it fell back in under the span.
+      if (!spans) spanTop = NaN;
+      else if (Number.isNaN(spanTop)) spanTop = height;
+      out[bin * bands + band] = spans ? span : hang;
+      from[bin * bands + band] = spans ? spanTop : at;
+      const own = spans ? span : most[bin * bands + band];
+      if (own >= hang - drop) at = spans ? spanTop : height;
+      hang = Math.max(hang - drop, own);
     }
   }
   const apex = new Float32Array(HANG.bins).fill(NaN);
@@ -3503,6 +3694,9 @@ export class Dresser {
       const spans = new Map<MeshSlot, ClothSpan>();
       for (const slot of this.slots) {
         if (!slot.follow || !(slot.part === "Cloth" || (slot.part === "Cum" && stainMeshOf(slot.mesh, body)))) continue;
+        // Only pieces that reach her chest, as in clearing (CLEAR_GARMENT_TOP): a breast hanging to her waist took
+        // the span down with it, and pulled her leggings' waistband out to it in a wedge under her bust.
+        if (reach(slot.bind) < CLEAR_GARMENT_TOP) continue;
         const span = clothSpan(hold, slot.bind);
         if (span) spans.set(slot, span);
       }
@@ -3557,9 +3751,7 @@ export class Dresser {
         if (!slot.follow || !(slot.part === "Cloth" || (slot.part === "Cum" && stainMeshOf(slot.mesh, body)))) continue;
         // Each piece (material) by its own reach: an outfit's leggings are pieces of the same mesh as its top, and
         // pushed out over a breast hanging to her waist, their waistband stood out from her belly.
-        let top = -Infinity;
-        for (let v = 1; v < slot.bind.length; v += 3) top = Math.max(top, slot.bind[v]);
-        if (top < CLEAR_GARMENT_TOP) continue;
+        if (reach(slot.bind) < CLEAR_GARMENT_TOP) continue;
         const verts: number[] = [];
         for (let v = 0; v < slot.bind.length / 3; v++) if (inClearRegion(slot.bind, v)) verts.push(v);
         if (verts.length) cloths.set(slot, Int32Array.from(verts));
@@ -4833,11 +5025,16 @@ export class Dresser {
     return paint(slot.original, averageColor(slot.worn).clone().lerp(FLUSHED, 0.22 * flush));
   }
 
-  /** Whether her outfit's top is on and hides her bra (OutfitDef.hidesBra): dressed, and that top not stripped. */
+  /**
+   * Whether her outfit's top is on and hides her bra (OutfitDef.hidesBra): dressed, and that top neither stripped nor
+   * lifted up over her breasts or pulled down off them as she shows (setPull). Pulled, the bra shows where it was,
+   * as it must: hidden, her nipple discs would still wear its colour (discMaterial) as two bare patches.
+   */
   private braHiddenByTop(): boolean {
     if (this.undressed || this.underwear) return false;
     const materials = outfitOf(this.body, this.look).hidesBra ?? [];
-    return materials.some((name) => !covers(this.stripped, "Cloth", name));
+    const pulled = new Set(this.pullSlots().map((slot) => slot.original.name));
+    return materials.some((name) => !covers(this.stripped, "Cloth", name) && !pulled.has(name));
   }
 
   /**
@@ -5381,7 +5578,21 @@ export type Looks = Record<BodyName, Look>;
 export function readLooks(raw: unknown): Looks | null {
   if (!raw || typeof raw !== "object") return null;
   const data = raw as Partial<Record<BodyName, unknown>>;
-  return { Male: readLook(data.Male, "Male") ?? startLook("Male"), Female: readLook(data.Female, "Female") ?? startLook("Female") };
+  const her = readLook(data.Female, "Female");
+  if (her) startHerSave(her, (data.Female as Partial<Look>).sliders);
+  return { Male: readLook(data.Male, "Male") ?? startLook("Male"), Female: her ?? startLook("Female") };
+}
+
+/**
+ * Brings a save of hers made before she started bigger (startSliders) up to it: any of those she never set comes
+ * in at the start value. One she set herself stays, even as built (stored as 0, which is kept so it reads back).
+ */
+function startHerSave(look: Look, saved: unknown): void {
+  const set = saved && typeof saved === "object" ? (saved as Record<string, unknown>) : {};
+  for (const [id, start] of Object.entries(startSliders())) {
+    if (!(id in set)) look.sliders[id] = start;
+    else look.sliders[id] ??= 0;
+  }
 }
 
 const LOOKS_KEY = "tarven.looks";

@@ -1,5 +1,6 @@
 import {
-  copyLook, jewelleryOf, legwearOf, LOOK_OPTIONS, nearestStop, outfitOf, playerOutfits, stopValue, underOf, wearOutfit,
+  copyLook, jewelleryOf, legwearOf, LOOK_OPTIONS, nearestStop, outfitOf, playerOutfits, startSliders, stopValue, underOf,
+  wearOutfit,
   type BodyName, type Look, type LookTab, type SliderStops,
 } from "./appearance";
 
@@ -153,10 +154,21 @@ export class Customizer {
     this.el.classList.remove("open");
   }
 
-  /** Sets the settings on one tab, or on every tab with null, back to the model as built. */
+  /**
+   * Puts a slider at the model as built. Her start sliders keep the 0, so a save knows she chose it and doesn't
+   * bring her back up to how she starts (readLooks).
+   */
+  private clearSlider(id: string): void {
+    if (this.body === "Female" && id in startSliders()) this.look.sliders[id] = 0;
+    else delete this.look.sliders[id];
+  }
+
+  /** Sets the settings on one tab, or on every tab with null, back to how the character starts. */
   private reset(tab: LookTab | null): void {
     const options = LOOK_OPTIONS[this.body];
     for (const def of options.sliders) if (tab === null || def.tab === tab) delete this.look.sliders[def.id];
+    // She starts bigger than as built (startSliders): back to that.
+    if (this.body === "Female" && (tab === null || tab === "body")) Object.assign(this.look.sliders, startSliders());
     for (const def of options.colors) if (tab === null || def.tab === tab) delete this.look.colors[def.id];
     if (tab === null || tab === "clothes") {
       this.look.hidden = [];
@@ -472,7 +484,7 @@ export class Customizer {
     const set = (steps: number) => {
       input.value = String(steps);
       value.textContent = steps > 0 ? `+${steps}` : String(steps);
-      if (steps === 0) delete this.look.sliders[id];
+      if (steps === 0) this.clearSlider(id);
       else this.look.sliders[id] = steps / SLIDER_STEPS;
     };
     set(Math.round((this.look.sliders[id] ?? 0) * SLIDER_STEPS));
@@ -503,7 +515,7 @@ export class Customizer {
     const set = (index: number) => {
       input.value = String(index);
       value.textContent = stops.labels[index];
-      if (index === stops.zero) delete this.look.sliders[id];
+      if (index === stops.zero) this.clearSlider(id);
       else this.look.sliders[id] = stopValue(stops, index);
     };
     set(nearestStop(stops, this.look.sliders[id] ?? 0));

@@ -776,8 +776,131 @@ export function fightChance(party: number, foe: number): number {
   return Math.max(0.05, Math.min(0.95, 0.5 + (party - foe) * 0.04));
 }
 
-function best(party: readonly Companion[], role: PartyRole): Companion | undefined {
+/** The best companion of a role in the party, if any. */
+export function bestOfRole(party: readonly Companion[], role: PartyRole): Companion | undefined {
   return party.filter((c) => c.role === role).sort((a, b) => b.skill - a.skill)[0];
+}
+
+/** How much a healer cuts every injury chance (1 with no healer). */
+export function healerGuard(party: readonly Companion[]): number {
+  return Math.max(0, 1 - (bestOfRole(party, "healer")?.skill ?? 0) * HEALER_GUARD);
+}
+
+/**
+ * Whether someone is hurt (`chance` before the healer's guard), and how. Mirri's Nine Lives keeps her whole.
+ * Low is lucky: no injury.
+ */
+export function rollInjury(who: string, chance: number, party: readonly Companion[], rng: GuildRng): Injury | null {
+  if (who !== "her" && party.find((c) => c.id === who)?.trait === "nineLives") return null;
+  if (rng() >= 1 - chance * healerGuard(party)) {
+    const def = INJURIES[INJURY_IDS[Math.floor(rng() * INJURY_IDS.length)]];
+    return { who, id: def.id, days: def.days };
+  }
+  return null;
+}
+
+/** A check: her stat, twice the best companion of the role's skill, and a d10 (low roll = 10, lucky) against `dc`. */
+export function rollQuestCheck(
+  levels: Readonly<Record<StatId, number>>,
+  party: readonly Companion[],
+  stat: StatId,
+  role: PartyRole,
+  dc: number,
+  rng: GuildRng,
+): { passed: boolean; score: number; dc: number } {
+  const helper = bestOfRole(party, role);
+  const score = levels[stat] + (helper ? helper.skill * 2 : 0) + 10 - Math.floor(rng() * 10);
+  return { passed: score >= dc, score, dc };
+}
+
+/** What a quest has come to by its end, played out on the road (`runExpedition`) or on the quest's map. */
+export interface ExpeditionTally {
+  results: EncounterResult[];
+  injuries: Injury[];
+  /** Loot the fights dropped. */
+  loot: string[];
+  /** From choices taken. */
+  gold: number;
+  points: number;
+  fans: number;
+  corruption: number;
+  stamina: number;
+  collapsed: boolean;
+  /** The quest's last stand was lost, or never won. */
+  bossFailed: boolean;
+  /** Lost to people at the end: they have her. */
+  captured: ExpeditionResult["captured"];
+  rival: boolean;
+}
+
+/**
+ * The end of a quest: the outcome (the boss lost or never reached is a fail; one slip is still a success; more is
+ * partial), the reward's share, points (a fail costs `FAIL_PENALTY`), loot, fans, fees, guests tonight, a healer's
+ * patching, and each companion's loyalty.
+ */
+export function settleExpedition(quest: QuestTemplate, party: readonly Companion[], t: ExpeditionTally): ExpeditionResult {
+  const loot = [...t.loot];
+  let { gold, points, fans } = t;
+  const fails = t.results.filter((r) => !r.passed).length;
+  const outcome: ExpeditionOutcome = t.bossFailed || t.collapsed ? "fail" : fails <= 1 ? "success" : "partial";
+  const share = outcome === "success" ? 1 : outcome === "partial" ? 0.5 : 0;
+  gold += Math.round(quest.gold * share);
+  points += outcome === "fail" ? -Math.round(quest.points * FAIL_PENALTY) : Math.round(quest.points * share);
+  if (outcome === "success") loot.push(...quest.loot);
+  const captured = outcome === "fail" ? t.captured : null;
+  if (captured) loot.length = 0;
+  if (outcome !== "fail") {
+    fans += (rankIndex(quest.rank) + 1) * (outcome === "success" ? 3 : 1);
+    if (party.some((c) => c.trait === "songs")) fans += 5;
+  }
+  const fees = party.reduce((s, c) => s + c.fee, 0);
+  gold -= fees;
+  const guestsTonight = outcome === "success" ? 1 + Math.min(3, Math.floor(rankIndex(quest.rank) / 2)) : outcome === "partial" ? 1 : 0;
+
+  // A healer patches everyone up on the road home: a day off every injury, never under one.
+  const injuries = t.injuries.map((i) => ({ ...i }));
+  if (bestOfRole(party, "healer")) for (const i of injuries) i.days = Math.max(1, i.days - 1);
+  const hurt = new Set(injuries.map((i) => i.who));
+
+  const loyalty: Record<string, number> = {};
+  const leaves: string[] = [];
+  for (const c of party) {
+    const d = QUEST_LOYALTY[outcome] + (hurt.has(c.id) ? QUEST_LOYALTY.injured : 0);
+    loyalty[c.id] = d;
+    if (c.loyalty + d < LEAVE_LOYALTY) leaves.push(c.id);
+  }
+
+  return {
+    quest: quest.id,
+    outcome,
+    encounters: t.results,
+    gold,
+    fees,
+    points,
+    loot,
+    fans,
+    guestsTonight,
+    corruption: t.corruption,
+    injuries,
+    loyalty,
+    leaves,
+    staminaLeft: Math.max(0, t.stamina),
+    collapsed: t.collapsed,
+    captured,
+    deed: outcome === "success" && !!quest.deed,
+    rival: t.rival,
+  };
+}
+
+/** A quest's encounters as she'll meet them: a rival party may cut in before the last (E rank and up). */
+export function questEncounters(quest: QuestTemplate, rng: GuildRng): { encounters: Encounter[]; rival: boolean } {
+  const encounters: Encounter[] = [...quest.encounters];
+  let rival = false;
+  if (rankIndex(quest.rank) >= rankIndex("E") && rng() >= 1 - RIVAL_CHANCE) {
+    rival = true;
+    encounters.splice(encounters.length - 1, 0, rivalEncounter(quest.rank));
+  }
+  return { encounters, rival };
 }
 
 /**
@@ -792,15 +915,9 @@ export function runExpedition(
   rng: GuildRng,
   opts: { choices?: Readonly<Record<string, string>> } = {},
 ): ExpeditionResult {
-  const encounters: Encounter[] = [...quest.encounters];
-  let rival = false;
-  if (rankIndex(quest.rank) >= rankIndex("E") && rng() >= 1 - RIVAL_CHANCE) {
-    rival = true;
-    encounters.splice(encounters.length - 1, 0, rivalEncounter(quest.rank));
-  }
+  const { encounters, rival } = questEncounters(quest, rng);
   const dcBase = RANK_DC[quest.rank];
-  const healer = best(party, "healer");
-  const guard = Math.max(0, 1 - (healer?.skill ?? 0) * HEALER_GUARD);
+  const healer = bestOfRole(party, "healer");
   let luck = party.some((c) => c.trait === "heroLuck");
   let stamina = her.stamina;
   const results: EncounterResult[] = [];
@@ -814,16 +931,12 @@ export function runExpedition(
   // Kept in an object so the fight helper can set it (closures and narrowing don't mix).
   const taken: { by: ExpeditionResult["captured"]; lastLostTo: ExpeditionResult["captured"] } = { by: null, lastLostTo: null };
   let bossFailed = false;
-  const hurt = new Set<string>();
 
   const injure = (who: string, chance: number, into: Injury[]): void => {
-    if (who !== "her" && party.find((c) => c.id === who)?.trait === "nineLives") return;
-    if (rng() >= 1 - chance * guard) {
-      const def = INJURIES[INJURY_IDS[Math.floor(rng() * INJURY_IDS.length)]];
-      const inj = { who, id: def.id, days: def.days };
+    const inj = rollInjury(who, chance, party, rng);
+    if (inj) {
       into.push(inj);
       allInjuries.push(inj);
-      hurt.add(who);
     }
   };
 
@@ -855,18 +968,14 @@ export function runExpedition(
   };
 
   const check = (stat: StatId, role: PartyRole, dcMod: number): { passed: boolean; score: number; dc: number; lucky: boolean } => {
-    const helper = best(party, role);
-    const base = her.levels[stat] + (helper ? helper.skill * 2 : 0);
-    const dc = dcBase + dcMod;
-    const d10 = (): number => 10 - Math.floor(rng() * 10);
-    let score = base + d10();
+    let c = rollQuestCheck(her.levels, party, stat, role, dcBase + dcMod, rng);
     let lucky = false;
-    if (score < dc && luck) {
+    if (!c.passed && luck) {
       luck = false;
-      score = base + d10();
-      lucky = score >= dc;
+      c = rollQuestCheck(her.levels, party, stat, role, dcBase + dcMod, rng);
+      lucky = c.passed;
     }
-    return { passed: score >= dc, score, dc, lucky };
+    return { ...c, lucky };
   };
 
   for (const e of encounters) {
@@ -914,52 +1023,7 @@ export function runExpedition(
     if (!taken.by && taken.lastLostTo) taken.by = taken.lastLostTo;
   }
 
-  const fails = results.filter((r) => !r.passed).length;
-  const outcome: ExpeditionOutcome = bossFailed ? "fail" : fails <= 1 ? "success" : "partial";
-  const share = outcome === "success" ? 1 : outcome === "partial" ? 0.5 : 0;
-  gold += Math.round(quest.gold * share);
-  points += outcome === "fail" ? -Math.round(quest.points * FAIL_PENALTY) : Math.round(quest.points * share);
-  if (outcome === "success") loot.push(...quest.loot);
-  if (outcome === "fail" && taken.by) loot.length = 0;
-  if (outcome !== "fail") {
-    fans += (rankIndex(quest.rank) + 1) * (outcome === "success" ? 3 : 1);
-    if (party.some((c) => c.trait === "songs")) fans += 5;
-  }
-  const fees = party.reduce((s, c) => s + c.fee, 0);
-  gold -= fees;
-  const guestsTonight = outcome === "success" ? 1 + Math.min(3, Math.floor(rankIndex(quest.rank) / 2)) : outcome === "partial" ? 1 : 0;
-
-  // A healer patches everyone up on the road home: a day off every injury, never under one.
-  if (healer) for (const i of allInjuries) i.days = Math.max(1, i.days - 1);
-
-  const loyalty: Record<string, number> = {};
-  const leaves: string[] = [];
-  for (const c of party) {
-    const d = QUEST_LOYALTY[outcome] + (hurt.has(c.id) ? QUEST_LOYALTY.injured : 0);
-    loyalty[c.id] = d;
-    if (c.loyalty + d < LEAVE_LOYALTY) leaves.push(c.id);
-  }
-
-  return {
-    quest: quest.id,
-    outcome,
-    encounters: results,
-    gold,
-    fees,
-    points,
-    loot,
-    fans,
-    guestsTonight,
-    corruption,
-    injuries: allInjuries,
-    loyalty,
-    leaves,
-    staminaLeft: Math.max(0, stamina),
-    collapsed,
-    captured: outcome === "fail" ? taken.by : null,
-    deed: outcome === "success" && !!quest.deed,
-    rival,
-  };
+  return settleExpedition(quest, party, { results, injuries: allInjuries, loot, gold, points, fans, corruption, stamina, collapsed, bossFailed, captured: taken.by, rival });
 }
 
 /** Why a companion won't go on this quest (Ash and the garrison's jobs), or null. */

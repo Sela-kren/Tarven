@@ -8,6 +8,8 @@ import {
   readOf,
   rollWeakSpot,
   STRIKE_AIMS,
+  strikeAt,
+  strikeMeter,
   toughness,
   weakSpotSeen,
   type GuardInput,
@@ -147,5 +149,43 @@ describe("an aimed strike", () => {
   it("is harder to land on the face than the knees", () => {
     const f = new Fight(1, "farmer", false, BASE, dice());
     expect(f.aimChance("face")).toBeLessThan(f.aimChance("knees"));
+  });
+});
+
+describe("the strike meter", () => {
+  const STRIKE = { toughness: 20, chance: 0.7, agility: 1, center: 0.5 };
+
+  it("has the crit zone inside the hit zone, on the bar", () => {
+    for (const center of [0, 0.3, 0.7, 1]) {
+      const m = strikeMeter("gut", { ...STRIKE, center });
+      expect(m.hit[0]).toBeGreaterThanOrEqual(0);
+      expect(m.hit[1]).toBeLessThanOrEqual(1);
+      expect(m.crit[0]).toBeGreaterThanOrEqual(m.hit[0]);
+      expect(m.crit[1]).toBeLessThanOrEqual(m.hit[1]);
+      expect(strikeAt(m, (m.crit[0] + m.crit[1]) / 2)).toBe("crit");
+      expect(strikeAt(m, (m.hit[0] + m.crit[0]) / 2)).toBe("hit");
+      expect(strikeAt(m, -1)).toBe("miss");
+    }
+  });
+
+  it("has a wider hit zone the better her chance, and a faster needle on a tougher foe", () => {
+    const easy = strikeMeter("knees", { ...STRIKE, chance: 0.9 });
+    const hard = strikeMeter("face", { ...STRIKE, chance: 0.4 });
+    expect(easy.hit[1] - easy.hit[0]).toBeGreaterThan(hard.hit[1] - hard.hit[0]);
+    expect(strikeMeter("gut", { ...STRIKE, toughness: 50 }).speed).toBeGreaterThan(strikeMeter("gut", STRIKE).speed);
+  });
+
+  it("decides her strike by timing: a crit hits harder than a hit, a miss does nothing", () => {
+    const dealt = (timed: "crit" | "hit" | "miss") => {
+      const f = new Fight(1, "bandit", false, BASE, dice(0.99, 0.99), statsOf("bandit", "brute"));
+      f.lead.weak = "knees";
+      const before = f.lead.stamina;
+      // The roll says miss (0.99): the timing overrides it.
+      f.act("strike", "gut", timed);
+      return before - f.lead.stamina;
+    };
+    expect(dealt("miss")).toBe(0);
+    expect(dealt("hit")).toBeGreaterThan(0);
+    expect(dealt("crit")).toBeGreaterThan(dealt("hit"));
   });
 });

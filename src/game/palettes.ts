@@ -78,7 +78,8 @@ export function nearestInPalette(palette: readonly string[], srgb: readonly numb
  * The town's look (street.ts): its palette, and its lines on screen (null = the game's usual size; fewer = bigger
  * pixels). In development "?palette=resurrect|endesga|off" and "?lines=360" try others without changing these.
  */
-export const TOWN_LOOK: { palette: PaletteName | null; lines: number | null } = { palette: "endesga", lines: null };
+// Off since 2026-11-19: snapped to Endesga 64 the town read as another game next to the tavern, which isn't snapped.
+export const TOWN_LOOK: { palette: PaletteName | null; lines: number | null } = { palette: null, lines: null };
 
 /** The town's look with any development overrides from the address. */
 export function townLook(search: string, dev: boolean): { palette: readonly string[] | null; lines: number | null } {

@@ -5,7 +5,7 @@ import { LEER_SHARE, talkGain } from "./lewdtalk";
 const DENY_UNLOCK = 10;
 import { growthOf, rentRooms, RIOT_AFTER, RIOT_PUT_DOWN, RIOT_TROUBLE, runShow, type Growth } from "./sidejobs";
 import { TRINKET_BY_ID, TRINKET_SLOTS, TRINKETS, trinketsOwned } from "./trinkets";
-import { crowdFactor, defeatFor, defeatLine, defeatPlay, DEFEATS, type DefeatId } from "./defeat";
+import { crowdFactor, defeatFor, defeatLine, defeatPlay, DEFEATS, defeatWords, type DefeatId } from "./defeat";
 import type { ScenePoseName } from "./sexpose";
 import { foePrefixFor } from "./foeprefix";
 import { barVoice, HER_BAR_LINES, type BarMoment } from "./barher";
@@ -286,9 +286,9 @@ import {
   CENTREPIECE_MAX,
   centrepieceCrowd,
   DEFAULT_REVEL,
-  REVEL_GROUP_LINE,
+  REVEL_GROUP_LINES,
   REVEL_OPEN_LINES,
-  REVEL_STOP_LINE,
+  REVEL_STOP_LINES,
   REVEL_UNLOCK,
   revelDawn,
   revelGuests,
@@ -302,6 +302,7 @@ import {
 import * as Feed from "./feedstar";
 import * as Knight from "./knight";
 import * as Guild from "./guild";
+import * as Field from "./questfield";
 
 // ---------- Feed Star, the Knight path and the Guild (feedstar.ts, knight.ts, guild.ts) ----------
 
@@ -320,9 +321,19 @@ const FEED_DARES: Readonly<Record<Feed.Boldness, readonly string[]>> = {
 /** Who she fights when a patrol choice comes to blows. */
 const PATROL_FOES: Readonly<Record<string, GuestKind>> = { thief: "fugitive", fight: "farmer", soldier: "soldier", escort: "bandit", cart: "smuggler" };
 /** A brawl outside the taproom, and what it's for. */
-type SideFight = { kind: "tourney" } | { kind: "commander" } | { kind: "patrol"; eventId: string; choiceId: string };
+type SideFight =
+  | { kind: "tourney" }
+  | { kind: "commander" }
+  | { kind: "patrol"; eventId: string; choiceId: string }
+  | { kind: "quest"; encounter: number; optionId?: string; monsters?: readonly Field.MonsterSpec[] };
 /** Her stamina going out on a quest (guild.ts, fight.ts's scale), before what her Level adds. */
 const GUILD_STAMINA = 20;
+/** The guest kind a monster brawls as (its voice, if it ever speaks); its name and numbers are its own. */
+const MONSTER_BRAWL_KIND: GuestKind = "adventurer";
+/** A monster's id in a brawl: its place in the pack, below zero and clear of every guest's and the -1 of side fights. */
+export const questMonsterId = (index: number): number => -100 - index;
+/** A foe's name to start a line: "the rat king" → "The rat king". */
+const capitalize = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 /** The guild counter in her taproom, the guild master's first step (A rank). */
 export const GUILD_COUNTER_COST = 100;
 
@@ -340,6 +351,36 @@ export interface GuildCard {
   cut: Guild.QuestCutId;
   mood: number;
   members: number;
+  /** The quest she's taken off the board and not yet walked (questfield.ts), or null. */
+  accepted: string | null;
+}
+
+/**
+ * A quest she's out walking (questfield.ts, questmap.ts): its encounters in order, the map, and what's come of each
+ * so far. Not saved: a save made out there loads at home, with the quest still accepted.
+ */
+export interface QuestRun {
+  quest: Guild.QuestTemplate;
+  encounters: Guild.Encounter[];
+  rival: boolean;
+  plan: Field.FieldPlan;
+  /** Each encounter's result once it's settled, null until then. */
+  results: (Guild.EncounterResult | null)[];
+  stamina: number;
+  maxStamina: number;
+  injuries: Guild.Injury[];
+  loot: string[];
+  gold: number;
+  points: number;
+  fans: number;
+  corruption: number;
+  /** Hikari's Hero's Luck, unspent. */
+  luck: boolean;
+  collapsed: boolean;
+  captured: Guild.ExpeditionResult["captured"];
+  /** Monsters she's put down, and the experience it's earned her. */
+  kills: number;
+  xp: number;
 }
 /** How much less guests wait on a night she keeps checking her phone (Feed Star's Refresh, Refresh). */
 const PHONE_PATIENCE = 0.05;
@@ -362,11 +403,11 @@ import {
   type TouchSettings,
 } from "./touchsettings";
 import { Fight, MAX_FOES, TROUBLE_SHOUTS, type Foe, type FighterStats, type FightMove, type FightOutcome, type FoeSpec } from "./fight";
-import type { StrikeAim } from "./brawlaim";
+import type { StrikeAim, StrikeResult } from "./brawlaim";
 import { ROLE_PLAYS, type RolePlay } from "./duellines";
 import { coatStages, type CoatSection, type CumSpot } from "./cum";
 
-import { BRAWL_HERE_CREW, BRAWL_HERE_ONE, BRAWL_ROOM_CREW, BRAWL_ROOM_ONE, BRAWL_YARD_CREW, BRAWL_YARD_ONE, INVITE_ASKS, INVITE_CHOICE, INVITE_CHOICE_ROOM, INVITE_HUSH, INVITE_ROOM_YES, JOIN_ASKS, pickLine as storyLine, FORCED_HERE_CREW, FORCED_HERE_ONE, TABLE_OPEN_LINES, TAPROOM_END, TAPROOM_MORNING, TAPROOM_START } from "./invitetalk";
+import { BRAWL_HERE_CREW, BRAWL_HERE_ONE, BRAWL_ROOM_CREW, BRAWL_ROOM_ONE, BRAWL_YARD_CREW, BRAWL_YARD_ONE, INVITE_ASKS, INVITE_CHOICE, INVITE_CHOICE_ROOM, INVITE_HUSH, INVITE_ROOM_YES, JOIN_ASKS, JOIN_ASKS_WOMEN, pickLine as storyLine, FORCED_HERE_CREW, FORCED_HERE_ONE, TABLE_OPEN_LINES, TAPROOM_END, TAPROOM_MORNING, TAPROOM_START } from "./invitetalk";
 import {
   isBaron,
   isLocal,
@@ -426,6 +467,40 @@ import {
 import { GUEST_KIND_LIST, ROLES, ROLES_OF, roleLabel, rollStats, statsOf, type GuestRole, type RoleStats } from "./guestroles";
 import { ALLOW_WILL, DRINK_WILL, LEAN_WILL, maxWillpower, NAP_RESTORE, refuseCost, STEADY_WILL } from "./willpower";
 import { applyFields, captureFields } from "./moment";
+import {
+  BRAWL_HERE_LOG,
+  crowdOf,
+  type Crowd,
+  BRAWL_ROOM_LOG,
+  BRAWL_YARD_LOG,
+  CLOSE_LOG,
+  DESIRE_STRONG_LOG,
+  EDGE_LOG,
+  FORCED_FLOOR_LOG,
+  GAME_LOST_LINE,
+  GAME_LOST_LOG,
+  GAME_STOPPED_LOG,
+  GAME_WON_LINE,
+  GAME_WON_LOG,
+  GRAB_GOLD_LOG,
+  GRAB_LOG,
+  HEARD_YOU_LOG,
+  HORNY_LOG,
+  INVADED_DOWN_LOG,
+  MORE_OFF_LOG,
+  PIECE_OFF_LOG,
+  REVEL_ASK_LOG,
+  REVEL_CENTRE_FORCED_LOG,
+  REVEL_MISSED_LOG,
+  REVEL_TOO_DRUNK_LOG,
+  SHOWED_LOG,
+  SHOW_OFFER_LOG,
+  TABLE_END_LOG,
+  TABLE_START_LOG,
+  TABLE_STOP_LOG,
+  fillLog,
+  pickLog,
+} from "./loglines";
 import {
   BOTTLE_MARKUP,
   bottlesDearer,
@@ -2773,14 +2848,17 @@ export class Tavern {
     }
   }
 
-  /** A brawl that isn't a tavern brawl: nobody in the room, a foe of this kind. */
-  private startSideFight(kind: GuestKind, purpose: SideFight): boolean {
+  /** A brawl that isn't a tavern brawl: nobody in the room, a foe of this kind (rolled, unless `rolled` says who). */
+  private startSideFight(kind: GuestKind, purpose: SideFight, rolled?: RoleStats): boolean {
     if (this.fight || this.duel) return false;
     const roster = ROLES_OF[kind];
     this.sideFight = purpose;
-    this.fight = new Fight(-1, kind, false, this.fighterStats(), this.random, rollStats(roster[Math.floor(this.random() * roster.length) % roster.length], this.rollRandom));
+    this.sideFightFoe = rolled ?? rollStats(roster[Math.floor(this.random() * roster.length) % roster.length], this.rollRandom);
+    this.fight = new Fight(-1, kind, false, this.fighterStats(), this.random, this.sideFightFoe);
     return true;
   }
+  /** Who she's brawling in a side brawl, for the offer after a quest's (the one who won asks, as in the taproom). */
+  private sideFightFoe: RoleStats | null = null;
 
   /** A side brawl's end: counted like any brawl (no till taken, no offer: it was in the lists or on patrol), then its purpose. */
   private finishSideFight(fight: Fight, purpose: SideFight): void {
@@ -2806,6 +2884,15 @@ export class Tavern {
         const res = Knight.resolvePatrol(event, purpose.choiceId, this.knight.rank, () => this.random(), outcome);
         this.knightPatrolDone({ ...res, line: "" });
         text = res.line;
+      }
+    } else if (purpose.kind === "quest") {
+      text = this.questBrawlDone(outcome, purpose.encounter, purpose.optionId, purpose.monsters);
+      // Lost to people on the road: the brawl-loss rule, as in the taproom (GAME_PATH.MD). Consent on, the one who
+      // won asks, and it's hers to say yes or no to; Consent off, KP's defeat, right where she fell. Never monsters.
+      const foe = this.sideFightFoe;
+      if (outcome === "lost" && !purpose.monsters && foe && this.playerBody === "Female") {
+        this.brawlOffer = { kind: foe.kind, stats: foe, female: false, drunk: false, crew: [] };
+        if (this.consentOff) this.forceBrawlDuel();
       }
     } else if (this.knight && purpose.kind === "commander") {
       const c = Knight.commanderDuel(this.knight, outcome);
@@ -2837,7 +2924,7 @@ export class Tavern {
 
   joinGuild(): boolean {
     if (this.guild || !this.guildOpen || this.phase !== "day") return false;
-    this.guild = { rank: "F", points: 0, quests: 0, failed: 0, deed: false, party: [], injuries: [], counter: false, master: false, cut: "fair", mood: 0, members: 0 };
+    this.guild = { rank: "F", points: 0, quests: 0, failed: 0, deed: false, party: [], injuries: [], counter: false, master: false, cut: "fair", mood: 0, members: 0, accepted: null };
     this.records.guildRankBest = Math.max(this.records.guildRankBest, 1);
     this.say("Kestrel Vey slides a guild card across the counter. \"F rank. Everyone starts somewhere, barmaid.\"");
     return true;
@@ -2916,7 +3003,7 @@ export class Tavern {
     if (this.guildQuestToday) return "one quest a day";
     if (this.fight || this.duel) return "busy";
     const quest = Guild.QUEST_BY_ID[questId];
-    if (!quest || !this.guildBoard.includes(questId)) return "not on today's board";
+    if (!quest || (!this.guildBoard.includes(questId) && g.accepted !== questId)) return "not on today's board";
     const problem = Guild.partyProblem(g.rank, g.party);
     if (problem) return problem;
     for (const c of g.party) {
@@ -2938,6 +3025,14 @@ export class Tavern {
     this.guildQuestToday = true;
     const res = Guild.runExpedition(quest, g.party, { levels: this.statLevels(), stamina: GUILD_STAMINA + this.levelStamina }, () => this.random(), { choices });
     for (const e of res.encounters) this.say(`${e.text}${e.kind === "fight" ? (e.passed ? " (won)" : " (lost)") : ""}`);
+    this.applyExpedition(quest, res);
+    return res;
+  }
+
+  /** What a quest's end does to her, her card, her friends and the tavern (gold, points, fans, injuries, loyalty). */
+  private applyExpedition(quest: Guild.QuestTemplate, res: Guild.ExpeditionResult): void {
+    const g = this.guild;
+    if (!g) return;
     this.adjust(res.gold, 0, 0);
     g.points = Math.max(0, g.points + res.points);
     if (res.outcome === "fail") {
@@ -2977,6 +3072,306 @@ export class Tavern {
     const outcome = { success: "Quest done", partial: "Half done", fail: "Failed" }[res.outcome];
     this.say(`${outcome}: ${quest.title}. (${res.gold >= 0 ? "+" : ""}${res.gold} gold, ${res.points >= 0 ? "+" : ""}${res.points} points, +${res.fans} fans${res.loot.length ? `, ${res.loot.join(", ")}` : ""})`);
     this.refreshEffects();
+  }
+
+  // ---------- A quest walked on its map (questfield.ts, questmap.ts) ----------
+
+  /** The quest she's out walking, or null. */
+  questRun: QuestRun | null = null;
+
+  /** Why she can't take this quest off the board now, or null. */
+  guildAcceptBlocked(questId: string): string | null {
+    const g = this.guild;
+    if (!g) return "no guild card";
+    if (g.accepted === questId) return "taken";
+    if (g.accepted) return "you've a quest already";
+    if (this.guildQuestToday) return "one quest a day";
+    const quest = Guild.QUEST_BY_ID[questId];
+    if (!quest || !this.guildBoard.includes(questId)) return "not on today's board";
+    return null;
+  }
+
+  /** Takes a quest off the board: hers until she walks it or gives it up. */
+  guildAccept(questId: string): boolean {
+    const g = this.guild;
+    if (!g || this.guildAcceptBlocked(questId)) return false;
+    g.accepted = questId;
+    const quest = Guild.QUEST_BY_ID[questId];
+    this.say(`You pull "${quest.title}" off the board. The clerk stamps it: ${quest.place}, ${quest.rank} rank.`);
+    return true;
+  }
+
+  /** Hands an accepted quest back to the clerk, unwalked. No harm done, but no reward either. */
+  guildGiveUp(): boolean {
+    const g = this.guild;
+    if (!g?.accepted || this.questRun) return false;
+    const quest = Guild.QUEST_BY_ID[g.accepted];
+    g.accepted = null;
+    this.say(`You hand "${quest?.title ?? "the quest"}" back. The clerk pins it up again without a word.`);
+    return true;
+  }
+
+  /** The quest she's accepted, if any. */
+  get acceptedQuest(): Guild.QuestTemplate | null {
+    const id = this.guild?.accepted;
+    return id ? (Guild.QUEST_BY_ID[id] ?? null) : null;
+  }
+
+  /** Why she can't set out on her accepted quest now, or null. */
+  guildSetOutBlocked(): string | null {
+    const g = this.guild;
+    if (!g?.accepted) return "no quest accepted";
+    if (this.questRun) return "already out";
+    return this.guildBlocked(g.accepted);
+  }
+
+  /** Sets out on the accepted quest: its encounters (a rival party may cut in) on a fresh map. */
+  guildSetOut(): QuestRun | null {
+    const g = this.guild;
+    if (!g?.accepted || this.guildSetOutBlocked()) return null;
+    const quest = Guild.QUEST_BY_ID[g.accepted];
+    const { encounters, rival } = Guild.questEncounters(quest, () => this.random());
+    const plan = Field.planField(quest, encounters, Field.fieldRng(Field.fieldSeed(quest.id, this.nightIndex)));
+    const stamina = GUILD_STAMINA + this.levelStamina;
+    this.guildQuestToday = true;
+    this.questRun = {
+      quest,
+      encounters,
+      rival,
+      plan,
+      results: encounters.map(() => null),
+      stamina,
+      maxStamina: stamina,
+      injuries: [],
+      loot: [],
+      gold: 0,
+      points: 0,
+      fans: 0,
+      corruption: 0,
+      luck: g.party.some((c) => c.trait === "heroLuck"),
+      collapsed: false,
+      captured: null,
+      kills: 0,
+      xp: 0,
+    };
+    const party = g.party.length ? ` with ${g.party.map((c) => c.name).join(", ")}` : " alone";
+    this.say(`You set out for ${quest.place}${party}: ${quest.title}.`);
+    return this.questRun;
+  }
+
+  /**
+   * Monsters reached her on the map: the brawl, the taproom's own, against the first that got to her, the rest of
+   * its pack piling in as it goes. Each has a tavern brawler's numbers (questfield.ts `MonsterSpec.fight`) under its
+   * own name, and no prefix (a "horny" wolf is not a thing). Their ids are their places in the pack, below zero.
+   */
+  questMonsterBrawl(encounter: number, pack: readonly Field.MonsterSpec[]): boolean {
+    const run = this.questRun;
+    const e = run?.encounters[encounter];
+    if (!run || !e || e.kind !== "fight" || run.results[encounter] || pack.length === 0 || this.fight || this.duel) return false;
+    const rolled = (m: Field.MonsterSpec): RoleStats => ({ ...statsOf(MONSTER_BRAWL_KIND), label: Field.brawlLabel(m), fight: { ...m.fight } });
+    const joiners: FoeSpec[] = pack.slice(1).map((m, i) => ({ guestId: questMonsterId(i + 1), kind: MONSTER_BRAWL_KIND, drunk: false, rolled: rolled(m) }));
+    this.sideFight = { kind: "quest", encounter, monsters: [...pack] };
+    this.fight = new Fight(questMonsterId(0), MONSTER_BRAWL_KIND, false, { ...this.fighterStats(), prefixOf: () => undefined, joiners }, this.random, rolled(pack[0]));
+    return true;
+  }
+
+  /** A monster she put down: experience for her Strength and Agility, on top of the brawl's own. */
+  private questKill(m: Field.MonsterSpec): void {
+    const run = this.questRun;
+    if (!run) return;
+    run.kills++;
+    for (const [stat, n] of Object.entries(Field.killXp(m))) {
+      this.gainXp(stat as StatId, n ?? 0);
+      run.xp += n ?? 0;
+    }
+  }
+
+  /**
+   * A check, or a choice's option that isn't a fight, settled where she stands: rolled (Hikari's luck rerolls the
+   * first that fails), its gold, points, fans and corruption. Returns what came of it.
+   */
+  questDecide(encounter: number, optionId?: string): Guild.EncounterResult | null {
+    const run = this.questRun;
+    const g = this.guild;
+    const e = run?.encounters[encounter];
+    if (!run || !g || !e || run.results[encounter] || e.kind === "fight") return null;
+    const dcBase = Guild.RANK_DC[run.quest.rank];
+    const roll = (stat: StatId, role: Guild.PartyRole, dcMod: number) => {
+      let c = Guild.rollQuestCheck(this.statLevels(), g.party, stat, role, dcBase + dcMod, () => this.random());
+      let lucky = false;
+      if (!c.passed && run.luck) {
+        run.luck = false;
+        c = Guild.rollQuestCheck(this.statLevels(), g.party, stat, role, dcBase + dcMod, () => this.random());
+        lucky = c.passed;
+      }
+      return { ...c, lucky };
+    };
+    let r: Guild.EncounterResult;
+    if (e.kind === "check") {
+      const c = roll(e.stat, e.role, e.dcMod ?? 0);
+      r = { id: e.id, kind: "check", text: c.passed ? e.pass : e.fail, passed: c.passed, score: c.score, dc: c.dc, staminaLost: c.passed ? 0 : 2, injuries: [] };
+      if (c.lucky) r.lucky = true;
+    } else {
+      const o = e.options.find((x) => x.id === optionId) ?? e.options[0];
+      if (o.fight) return null;
+      if (o.stat) {
+        const c = roll(o.stat, o.role ?? "scout", o.dcMod ?? 0);
+        r = { id: e.id, kind: "choice", text: c.passed ? o.text : `${o.label}: it doesn't work.`, passed: c.passed, score: c.score, dc: c.dc, staminaLost: c.passed ? 0 : 2, injuries: [] };
+        if (c.lucky) r.lucky = true;
+      } else r = { id: e.id, kind: "choice", text: o.text, passed: true, staminaLost: 0, injuries: [] };
+      r.chose = o.id;
+      if (r.passed) {
+        run.gold += o.gold ?? 0;
+        run.points += o.points ?? 0;
+        run.fans += o.fans ?? 0;
+      }
+      run.corruption += o.corruption ?? 0;
+    }
+    if (r.staminaLost) {
+      run.stamina = Math.max(0, run.stamina - r.staminaLost);
+      if (run.stamina <= 0) run.collapsed = true;
+    }
+    run.results[encounter] = r;
+    this.say(`${r.text}${r.lucky ? " (Hero's Luck!)" : ""}`);
+    return r;
+  }
+
+  /** People to fight on the road (bandits, smugglers, a rival party): a real brawl, its end settled into the quest. */
+  questBrawl(encounter: number, optionId?: string): boolean {
+    const run = this.questRun;
+    const e = run?.encounters[encounter];
+    if (!run || !e || run.results[encounter]) return false;
+    const f = e.kind === "fight" ? e : e.kind === "choice" ? e.options.find((o) => o.id === optionId)?.fight : undefined;
+    if (!f?.people) return false;
+    // Rolled as one of their kind, under the quest's own name for them ("the outrider captain").
+    const kind = f.brawlKind ?? "bandit";
+    const roster = ROLES_OF[kind];
+    const rolled = { ...rollStats(roster[Math.floor(this.random() * roster.length) % roster.length], this.rollRandom), label: f.foe.replace(/^(an?|the) /i, "") };
+    return this.startSideFight(kind, { kind: "quest", encounter, ...(optionId ? { optionId } : {}) }, rolled);
+  }
+
+  /** A quest's brawl is over: won or talked down passes it; lost costs her stamina, and at the last stand, her. */
+  private questBrawlDone(outcome: "won" | "lost" | "talked", encounter: number, optionId?: string, monsters?: readonly Field.MonsterSpec[]): string {
+    const run = this.questRun;
+    const e = run?.encounters[encounter];
+    if (!run || !e) return outcome === "won" ? "You win." : outcome === "talked" ? "You talk it down." : "You're beaten.";
+    if (monsters && e.kind === "fight") return this.questMonstersDone(outcome !== "lost", e, encounter, monsters);
+    const option = e.kind === "choice" ? e.options.find((o) => o.id === optionId) : undefined;
+    const f = e.kind === "fight" ? e : option?.fight;
+    const power = f?.power ?? 10;
+    const passed = outcome !== "lost";
+    const lost = Math.max(1, Math.round(power / (passed ? 3 : 2)));
+    run.stamina = Math.max(0, run.stamina - lost);
+    const text = passed ? (option?.text ?? `${capitalize(f?.foe ?? "They")}: beaten.`) : `${capitalize(f?.foe ?? "They")} beat you.`;
+    const r: Guild.EncounterResult = { id: e.id, kind: e.kind === "fight" ? "fight" : "choice", text, passed, useBrawl: true, foe: f?.foe, foePower: power, staminaLost: lost, injuries: [] };
+    if (option) r.chose = option.id;
+    if (f?.brawlKind) r.brawlKind = f.brawlKind;
+    if (passed) {
+      if (f?.loot) run.loot.push(f.loot);
+      run.gold += option?.gold ?? 0;
+      run.points += option?.points ?? 0;
+      run.fans += option?.fans ?? 0;
+    } else {
+      const g = this.guild;
+      const inj = g ? Guild.rollInjury("her", Guild.INJURY_CHANCE.lost, g.party, () => this.random()) : null;
+      if (inj) {
+        r.injuries.push(inj);
+        run.injuries.push(inj);
+      }
+      // Beaten on the road, the quest's over: they have her (the defeat plays first, brawlOffer), then home to Tarven.
+      if (f) run.captured = { by: f.foe, brawlKind: f.brawlKind };
+      run.collapsed = true;
+    }
+    run.corruption += option?.corruption ?? 0;
+    if (run.stamina <= 0) {
+      run.collapsed = true;
+      if (!passed && f && !run.captured) run.captured = { by: f.foe, brawlKind: f.brawlKind };
+    }
+    run.results[encounter] = r;
+    return text;
+  }
+
+  /**
+   * A monster brawl's end. Won (or, somehow, talked down): the pack's put down, each one experience for her, the
+   * fight's loot, and a healer patches her up. Lost: she's hurt, the quest's over, and her party drags her home
+   * to Tarven (monsters never take her).
+   */
+  private questMonstersDone(passed: boolean, e: Guild.FightEncounter, encounter: number, monsters: readonly Field.MonsterSpec[]): string {
+    const run = this.questRun!;
+    const g = this.guild;
+    const lost = Math.max(1, Math.round(e.power / (passed ? 3 : 2)));
+    run.stamina = Math.max(0, run.stamina - lost);
+    const r: Guild.EncounterResult = { id: e.id, kind: "fight", text: e.text, passed, useBrawl: true, foe: e.foe, foePower: e.power, staminaLost: lost, injuries: [] };
+    let text: string;
+    if (passed) {
+      for (const m of monsters) this.questKill(m);
+      if (e.loot) run.loot.push(e.loot);
+      const xp = monsters.reduce((sum, m) => sum + m.xp + Math.max(1, Math.round(m.xp / 2)), 0);
+      text = `${capitalize(e.foe)}: beaten. (+${xp} XP${e.loot ? `, ${e.loot}` : ""})`;
+      const mend = g && run.stamina > 0 ? Math.min(Field.healerMend(g.party), run.maxStamina - run.stamina) : 0;
+      if (mend > 0) {
+        run.stamina += mend;
+        text += ` Your healer patches you up (+${mend} stamina).`;
+      }
+    } else {
+      const inj = g ? Guild.rollInjury("her", Guild.INJURY_CHANCE.lost, g.party, () => this.random()) : null;
+      if (inj) {
+        r.injuries.push(inj);
+        run.injuries.push(inj);
+      }
+      // Beaten, the quest's over: her party drags her clear and home to Tarven (monsters never take her).
+      run.collapsed = true;
+      text = `${capitalize(e.foe)} beats you. You're done: your party drags you clear.`;
+    }
+    if (run.stamina <= 0) run.collapsed = true;
+    run.results[encounter] = r;
+    return text;
+  }
+
+  /** Every encounter on the map settled. */
+  get questAllDone(): boolean {
+    return !!this.questRun && this.questRun.results.every((r) => r !== null);
+  }
+
+  /**
+   * Home from the quest: settled like any expedition. Anything she left unwalked counts as failed, and the last
+   * stand not won is a failed quest. Gone down out there, her party drags her home hurt (monsters never take her).
+   */
+  questFinish(): Guild.ExpeditionResult | null {
+    const run = this.questRun;
+    const g = this.guild;
+    if (!run || !g) return null;
+    if (run.collapsed) {
+      const into = (inj: Guild.Injury | null) => inj && run.injuries.push(inj);
+      into(Guild.rollInjury("her", Guild.INJURY_CHANCE.lost, g.party, () => this.random()));
+      for (const c of g.party) into(Guild.rollInjury(c.id, Guild.INJURY_CHANCE.companion, g.party, () => this.random()));
+      if (!run.captured) this.say("You go down. Your party drags you home between them.");
+    }
+    const results = run.encounters.map(
+      (e, i): Guild.EncounterResult => run.results[i] ?? { id: e.id, kind: e.kind, text: `${e.text} (left undone)`, passed: false, staminaLost: 0, injuries: [] },
+    );
+    const bossFailed = run.encounters.some((e, i) => {
+      const boss = e.boss || (e.kind === "choice" && e.options.some((o) => o.fight?.boss));
+      return boss && !results[i].passed;
+    });
+    const res = Guild.settleExpedition(run.quest, g.party, {
+      results,
+      injuries: run.injuries,
+      loot: run.loot,
+      gold: run.gold,
+      points: run.points,
+      fans: run.fans,
+      corruption: run.corruption,
+      stamina: run.stamina,
+      collapsed: run.collapsed,
+      bossFailed,
+      captured: run.captured,
+      rival: run.rival,
+    });
+    g.accepted = null;
+    this.questRun = null;
+    this.applyExpedition(run.quest, res);
+    if (run.kills) this.say(`Out there you put down ${run.kills} monster${run.kills === 1 ? "" : "s"} (+${Math.round(run.xp)} XP).`);
     return res;
   }
 
@@ -3124,9 +3519,9 @@ export class Tavern {
     mix.shareFemale = mix.guests.length ? mix.women / mix.guests.length : 0;
     const night = revelNight(s, mix, this.random);
     if (s.who !== "men" && e.revelWomen > 0) night.wantHer.women = Math.min(mix.women, night.wantHer.women + e.revelWomen);
-    this.say(REVEL_OPEN_LINES[s.who]);
-    for (const g of night.groups.slice(0, 3)) this.say(REVEL_GROUP_LINE.replace("{n}", String(g.members.length)));
-    if (night.stops > 0) this.say(REVEL_STOP_LINE);
+    this.say(this.logLine(REVEL_OPEN_LINES[s.who]));
+    for (const g of night.groups.slice(0, 3)) this.say(this.logLine(REVEL_GROUP_LINES, { n: g.members.length }));
+    if (night.stops > 0) this.say(this.logLine(REVEL_STOP_LINES));
 
     let herPartners = 0;
     if ((s.herPart === "join" || s.herPart === "centrepiece") && this.playerBody === "Female") {
@@ -3140,13 +3535,13 @@ export class Tavern {
       const females = mix.guests.filter((g) => g.female).slice(0, women);
       const partners = [...males, ...females].map((g) => ({ kind: g.kind, female: g.female, stats: statsOf(g.kind) }));
       if (partners.length > 0 && !withScene) {
-        this.morningAfter.push(`${partners.length} of them wanted you at the revel, but you'd gone up to bed.`);
+        this.morningAfter.push(this.logLine(REVEL_MISSED_LOG, { n: partners.length }));
       } else if (partners.length > 0 && this.consentOff) {
         this.forceDuel(partners, "here", partners.length > 1 ? FORCED_HERE_CREW : FORCED_HERE_ONE);
         herPartners = partners.length;
-        this.say(`The hall makes room in the middle, and you're at the heart of it: ${partners.length > 1 ? `${partners.length} of them` : "one of them"}.`);
+        this.say(this.logLine(REVEL_CENTRE_FORCED_LOG, { n: partners.length > 1 ? `${partners.length} of them` : "one of them" }));
       } else if (partners.length > 0 && this.drunk >= SLOPPY_DRUNK) {
-        this.say("They want you in the middle of it, but you've had too much to drink. The room carries on without you.");
+        this.say(this.logLine(REVEL_TOO_DRUNK_LOG));
       } else if (partners.length > 0) {
         const [lead, ...rest] = partners;
         this.brawlOffer = {
@@ -3157,7 +3552,7 @@ export class Tavern {
           crew: rest.map((p, i) => ({ id: REVEL_CREW_ID + i, kind: p.kind, female: p.female, stats: p.stats, label: p.stats.label ?? p.kind, ask: "\"Make room for me too?\"" })),
         };
         this.revelScene = true;
-        this.say(`${partners.length > 1 ? `${partners.length} of them want` : "One of them wants"} you in the middle of it. Yours to say yes or no to, at bedtime.`);
+        this.say(this.logLine(REVEL_ASK_LOG[crowdOf(partners)], { n: partners.length > 1 ? `${partners.length} of them want` : "One of them wants" }));
       }
     }
     const dawn = revelDawn({ settings: s, mix, night, herPartners, records: { revelNights: r.revelNights, revelPartnersMost: r.revelPartnersMost, mixedNights: r.mixedNights } });
@@ -4912,7 +5307,7 @@ export class Tavern {
     this.invading = true;
     this.fightsTonight++;
     this.records.invaded++;
-    this.say(`Someone heard you. ${who.length > 1 ? `${who.length} of them` : `The ${name}`} came back in.`);
+    this.say(this.logLine(HEARD_YOU_LOG, { who: who.length > 1 ? `${who.length} of them` : `The ${name}` }));
     return true;
   }
 
@@ -4956,11 +5351,11 @@ export class Tavern {
     const delta = this.meters[meter] - prev;
     if (delta >= 1) {
       const name = METER_NAMES[meter];
-      this.say(wildSensitivity(name, delta, this.lewdness, this.houseMode.current === "brothel"));
+      this.say(wildSensitivity(name, delta, this.lewdness, this.houseMode.current === "brothel", this.logRoll()));
       // Both true now (desire.ts): from 50 it gets in her way in a brawl, from 80 twice as much.
       if (this.meters[meter] >= DESIRE_STRONG && prev < DESIRE_STRONG)
-        this.say(`${name} desire is getting strong: bolder touches there are on the table, and it'll get in your way in a brawl`);
-      if (this.meters[meter] >= HORNY_AT && prev < HORNY_AT) this.say(`${name} desire is burning. You're horny.`);
+        this.say(this.logLine(DESIRE_STRONG_LOG, { Part: name }));
+      if (this.meters[meter] >= HORNY_AT && prev < HORNY_AT) this.say(this.logLine(HORNY_LOG, { Part: name }));
     }
   }
 
@@ -5408,10 +5803,10 @@ export class Tavern {
   }
 
   /** She makes a move in the brawl; when it's over, the room sees how it went. */
-  fightMove(move: FightMove, aim?: StrikeAim): void {
+  fightMove(move: FightMove, aim?: StrikeAim, timed?: StrikeResult): void {
     const fight = this.fight;
     if (!fight) return;
-    fight.act(move, aim);
+    fight.act(move, aim, timed);
     this.afterFightStep(fight);
   }
 
@@ -5598,7 +5993,7 @@ export class Tavern {
     } else {
       r.fightsLost++;
       this.addDebuff("bruised");
-      text = "You're down on your own floor, and they're standing over you.";
+      text = this.logLine(INVADED_DOWN_LOG);
       const partners = fight.foes.filter((f) => f.out !== "spent").map((f) => ({ kind: f.kind, female: false }));
       if (partners.length > 0) {
         const play = defeatPlay(defeatFor({ place: "upstairs", kind: partners[0].kind, heat: this.heat, invasion: true }));
@@ -5665,14 +6060,15 @@ export class Tavern {
     this.say("That's the last of them. The riot's put down, and the room drinks to you.");
   }
 
-  private beginDefeat(place: BrawlPlace, kind: GuestKind, n: number, invasion = false): void {
+  private beginDefeat(place: BrawlPlace, kind: GuestKind, n: number, invasion = false, crowd: Crowd = "men"): void {
     const id = defeatFor({ place, kind, heat: this.heat, invasion });
     const r = this.records;
     r.defeats[id] = (r.defeats[id] ?? 0) + 1;
     r.defeatMost = Math.max(r.defeatMost, n);
     this.defeatTonight = id;
     const def = DEFEATS[id];
-    this.duel?.note(defeatLine(def.start, this.storyRoll(this.nightIndex, 13), n));
+    const words = defeatWords(id, crowd);
+    this.duel?.note(defeatLine(words.start, this.storyRoll(this.nightIndex, 13), n));
     // Its slots: what of her is theirs, how many stand round her, and how many at once (KP's defeat battles).
     const play = this.duel?.defeat;
     if (play) {
@@ -5680,7 +6076,7 @@ export class Tavern {
       const round = play.others > 0 ? `, and up to ${play.others} standing round you` : "";
       this.duel?.note(`${def.name}: ${parts.join(", ")}${round}. ${play.atOnce} at a time; the rest wait.`);
     }
-    this.morningAfter.push(defeatLine(def.morning, this.storyRoll(this.nightIndex, 14), n));
+    this.morningAfter.push(defeatLine(words.morning, this.storyRoll(this.nightIndex, 14), n));
   }
 
   private brawlCrew(winner: Guest): BrawlCrewMate[] {
@@ -5749,6 +6145,21 @@ export class Tavern {
    * A roll from 0 to 1 for picking a line of the invitation's story, fixed by who and which night, so the words
    * vary from guest to guest without drawing on `random` (which decides everything else about the night).
    */
+  /** How many log lines have been picked (loglines.ts): the log's own roll sequence. */
+  private logRolls = 0;
+
+  /** A roll for picking a log line: its own sequence, so it never draws on `random` (the seeded rolls stay as they were). */
+  private logRoll(): number {
+    this.logRolls++;
+    const x = Math.sin(this.logRolls * 12.9898 + this.nightIndex * 78.233) * 43758.5453;
+    return x - Math.floor(x);
+  }
+
+  /** One line from a log pool (loglines.ts), its tokens filled. */
+  private logLine(pool: readonly string[], tokens: Readonly<Record<string, string | number>> = {}): string {
+    return fillLog(pickLog(pool, this.logRoll()), tokens);
+  }
+
   private storyRoll(guestId: number, salt: number): number {
     const x = Math.sin(guestId * 12.9898 + salt * 78.233 + this.nightIndex * 37.719) * 43758.5453;
     return x - Math.floor(x);
@@ -5783,7 +6194,7 @@ export class Tavern {
   /** What a guest who wants in says to ask: every one asks, and she chooses. */
   joinAsk(guestId: number): string {
     const guest = this.guests.find((g) => g.id === guestId);
-    return guest ? `"${storyLine(JOIN_ASKS[guest.kind], this.storyRoll(guestId, 3))}"` : "";
+    return guest ? `"${storyLine((guest.female ? JOIN_ASKS_WOMEN : JOIN_ASKS)[guest.kind], this.storyRoll(guestId, 3))}"` : "";
   }
 
   /**
@@ -5857,7 +6268,7 @@ export class Tavern {
     const room = [cheered > 0 ? `${cheered} stay to watch` : "", left.length > 0 ? `${left.length} get up and leave` : ""].filter(Boolean).join("; ");
     if (open) duel.note("You leave the room open: anyone watching who wants in can join the line.");
     const who = partners.length === 1 ? `the ${(partners[0].stats.label ?? partners[0].kind).toLowerCase()}` : `${partners.length} of them`;
-    this.say(`On a table in the taproom, with ${who}.${room ? ` ${room[0].toUpperCase()}${room.slice(1)}.` : ""}`);
+    this.say(`${this.logLine(TABLE_START_LOG[crowdOf(setups)], { who })}${room ? ` ${room[0].toUpperCase()}${room.slice(1)}.` : ""}`);
     return true;
   }
 
@@ -5926,8 +6337,8 @@ export class Tavern {
     const heat = result.heat ? ` +${result.heat} heat: the keep will hear of it.` : "";
     const trust = result.trust ? ` ${result.trust} trust: the village heard who walked out.` : "";
     const text = played
-      ? `The taproom's yours again. +${gold} gold from them, fame +${result.fame}, respect ${result.respect}.${heat}${trust}`
-      : "You called it off, and they stepped back at once. The room goes back to its drink.";
+      ? this.logLine(TABLE_END_LOG[crowdOf(duel.partners)], { gold, fame: result.fame, respect: result.respect, heat, trust })
+      : this.logLine(TABLE_STOP_LOG);
     return { text, line, gold };
   }
 
@@ -6015,6 +6426,13 @@ export class Tavern {
   brawlPlaces(): { id: BrawlPlace; label: string; blocked: string | null }[] {
     const r = this.records;
     const first = r.invitations + r.taproomScenes + r.duelsWon + r.duelsLost === 0;
+    // Out on a quest there's no room upstairs: the road where she fell, or somewhere off it.
+    if (this.questRun) {
+      return [
+        { id: "here", label: "Right here on the road, where you fell", blocked: first ? "your first time shouldn't be in the dirt" : null },
+        { id: "yard", label: "Off the road, out of sight", blocked: null },
+      ];
+    }
     return [
       { id: "here", label: "Right here, where you fell (the room watches)", blocked: first ? "your first time should be behind a closed door" : null },
       { id: "upstairs", label: "Upstairs, in your room", blocked: null },
@@ -6055,14 +6473,14 @@ export class Tavern {
       this.duel.note(storyLine(words, this.storyRoll(this.nightIndex, 11)).replaceAll("{n}", String(partners.length)));
       // The revel's scene is chosen, not lost: no defeat, but it counts toward her most at a revel.
       if (revel) this.records.revelPartnersMost = Math.max(this.records.revelPartnersMost, partners.length);
-      else this.beginDefeat(place, kind, partners.length);
+      else this.beginDefeat(place, kind, partners.length, false, crowdOf(partners));
       const them = many ? `${partners.length} of them` : "them";
       this.say(
         place === "here"
-          ? `Right there on the taproom floor, with ${them}, and the room watching.`
+          ? this.logLine(BRAWL_HERE_LOG[crowdOf(partners)], { them })
           : place === "yard"
-            ? `You take ${them} out back into the yard.`
-            : `You take ${them} up to your room.`,
+            ? this.logLine(BRAWL_YARD_LOG, { them })
+            : this.logLine(BRAWL_ROOM_LOG, { them }),
       );
     }
     return true;
@@ -6080,8 +6498,8 @@ export class Tavern {
     this.brawlOffer = null;
     const play = defeatPlay(defeatFor({ place: "here", kind: offer.kind, heat: this.heat }));
     this.forceDuel(partners, "here", partners.length > 1 ? FORCED_HERE_CREW : FORCED_HERE_ONE, play);
-    this.beginDefeat("here", offer.kind, partners.length);
-    this.say(`Right there on the taproom floor where you fell, ${partners.length > 1 ? `${partners.length} of them` : "they"} take you, and the room watches.`);
+    this.beginDefeat("here", offer.kind, partners.length, false, crowdOf(partners));
+    this.say(this.logLine(FORCED_FLOOR_LOG, { they: partners.length > 1 ? `${partners.length} of them` : "they" }));
   }
 
   /**
@@ -6197,8 +6615,8 @@ export class Tavern {
       this.adjust(gold, 0, 0);
       this.earned += gold;
       this.shift({ fame: 2, flirt: 1 });
-      text = `You won the game. +${gold} gold.`;
-      line = "They give in first. You win, and the candle burns down on the two of you.";
+      text = this.logLine(GAME_WON_LOG, { gold });
+      line = this.logLine(GAME_WON_LINE);
     } else if (duel.outcome === "lost") {
       r.duelsLost++;
       r.overwhelmed++;
@@ -6206,11 +6624,11 @@ export class Tavern {
       change = -paid;
       this.adjust(-paid, 0, 0);
       this.shift({ fame: 1, flirt: 1 });
-      text = `You lost the game. -${paid} gold.`;
-      line = "It's too much, and you go first. Neither of you minds losing much.";
+      text = this.logLine(GAME_LOST_LOG, { paid });
+      line = this.logLine(GAME_LOST_LINE);
     } else {
       r.duelsStopped++;
-      text = "You called it off. Nothing lost; they kiss your hand goodnight and go.";
+      text = this.logLine(GAME_STOPPED_LOG);
       line = "";
     }
     // Played to the end, she's spent, and sleeps easy.
@@ -6505,7 +6923,7 @@ export class Tavern {
     const grab: TalkLine = { ...narrate(pick(moves).replaceAll("{item}", guest.order)), guestId: guest.id };
     const said = this.guestSays(guest, pick(GRAB_SAYS[guest.kind]));
     this.records.grabbed++;
-    this.say(`A ${this.nameOf(guest).toLowerCase()} grabs you as you ${when === "order" ? "take their order" : "serve them"}.`);
+    this.say(this.logLine(GRAB_LOG, { guest: this.nameOf(guest).toLowerCase(), when: when === "order" ? "take their order" : "serve them" }));
     const s = this.touchSettings;
     if (s.autoTouch && s.agreed) {
       // Consent off: caught before she can answer. What they go on to try is weighed, their grip on their side.
@@ -6534,7 +6952,7 @@ export class Tavern {
     const offer = this.showGold(part, part);
     const ask = this.guestSays(guest, pick(SHOW_ASKS[part]).replaceAll("{gold}", String(offer)));
     this.showChat = { guestId: guest.id, part, lines: [ask, you(pick(SHOW_THOUGHTS))], answered: false, reply: [] };
-    this.say(`A ${this.nameOf(guest).toLowerCase()} offers gold for a look at your ${PART_WORDS[part]}.`);
+    this.say(this.logLine(SHOW_OFFER_LOG, { guest: this.nameOf(guest).toLowerCase(), part: PART_WORDS[part] }));
     return true;
   }
 
@@ -6637,7 +7055,7 @@ export class Tavern {
     const told = (one ? pick(SHOW_TOLD_ONE).replaceAll("{side}", one) : pick(SHOW_TOLD[part])).replaceAll("{top}", this.topPullDir);
     const after = part === chat.part ? SHOW_AFTER[how] : SHOW_AFTER.other;
     chat.reply = [you(this.herBar("lookYes")), narrate(`${told} (+${gold} gold)`), this.guestSays(guest, pick(after))];
-    this.say(`You showed them your ${this.showUnder(part) || PART_WORDS[part]}. +${gold} gold.`);
+    this.say(this.logLine(SHOWED_LOG, { part: this.showUnder(part) || PART_WORDS[part], gold }));
     this.cue("tip");
   }
 
@@ -6694,7 +7112,7 @@ export class Tavern {
             if (this.effects.grabGold > 0) {
               this.gold += this.effects.grabGold;
               this.earned += this.effects.grabGold;
-              this.say(`+${this.effects.grabGold} gold: they like a girl who doesn't pull away.`);
+              this.say(this.logLine(GRAB_GOLD_LOG, { gold: this.effects.grabGold }));
             }
             // Holding her makes them hornier, and bolder.
             this.stirGuest(guest, 1, 1);
@@ -6834,8 +7252,8 @@ export class Tavern {
       const kinds = (r.kinds[touch.region] ??= []);
       if (guest && !kinds.includes(guest.kind)) kinds.push(guest.kind);
       this.pleasure += touch.level * PLEASURE_PER_LEVEL * (answer === "lean" ? LEAN_DESIRE : 1) * (1 + e.pleasure);
-      if (this.pleasure >= 70 && this.pleasure < PLEASURE_MAX) this.say("You're getting close...");
-      else if (this.pleasure >= PLEASURE_MAX - 10) this.say("So close—");
+      if (this.pleasure >= 70 && this.pleasure < PLEASURE_MAX) this.say(this.logLine(CLOSE_LOG));
+      else if (this.pleasure >= PLEASURE_MAX - 10) this.say(this.logLine(EDGE_LOG));
     } else if (answer === "slap") {
       r.slapped++;
       this.gainXp("mind", 1);
@@ -6886,7 +7304,7 @@ export class Tavern {
       if (after) chat.reply.push(you(after.text));
       if (touch.strip) {
         this.loseClothing();
-        this.say(this.stripped >= 2 ? "More clothes gone. You're really exposed." : "A piece comes off.");
+        this.say(this.logLine(this.stripped >= 2 ? MORE_OFF_LOG : PIECE_OFF_LOG));
       }
       else this.cue("tip");
       if (touch.region === "invite" && guest) {
@@ -8487,6 +8905,7 @@ export class Tavern {
     for (const d of Array.isArray(k?.done) ? k.done : []) if (typeof d === "string") this.knightDoneToday.add(d);
     this.knightPatrolId = typeof k?.patrol === "string" && Knight.PATROL_EVENTS.some((e) => e.id === k.patrol) ? k.patrol : null;
     this.sideFight = null;
+    this.questRun = null;
     // The Guild: a card with a rank, or none.
     const g = save.guild;
     const card = g?.card;
@@ -8504,6 +8923,7 @@ export class Tavern {
         cut: card.cut in Guild.QUEST_CUTS ? card.cut : "fair",
         mood: n(card.mood),
         members: Math.max(0, Math.floor(n(card.members))),
+        accepted: typeof card.accepted === "string" && card.accepted in Guild.QUEST_BY_ID ? card.accepted : null,
       };
     } else this.guild = null;
     this.guildBoard = Array.isArray(g?.board) ? g.board.filter((id): id is string => typeof id === "string" && id in Guild.QUEST_BY_ID) : [];

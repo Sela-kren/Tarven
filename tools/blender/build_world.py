@@ -8298,6 +8298,94 @@ def build_servant_extra(spec, m, skin, normals, surface, fit):
     return extra
 
 
+# ---------------------------------------------------------------- the guests' modern clothes
+# Life in Tarven is modern (WORLD.md, section 2b): most guests come in modern clothes, and the medieval kit is the
+# exception that says who someone is. Three modern sets, each on both bodies under one outfit, guest-only for now:
+#   the hoodie: a hoodie with its hood down, sleeves to the wrist, and joggers; his falls over his hips with a front
+#     pocket, hers is cropped above her navel over low joggers;
+#   the casual: a short-sleeved T-shirt and jeans; his tucked at a belt, hers cropped over low-rise jeans;
+#   the sporty: his tank top and shorts above the knee; her sports crop top and bike shorts.
+# Each is two cloths, the top (`knit`) and the bottoms (`denim`), which the game dyes per guest.
+MODERN_OUTFITS = ("Hoodie", "Casual", "Sporty")
+MODERN_COLOURS = (("knit", (0.42, 0.43, 0.45)), ("denim", (0.18, 0.24, 0.38)))
+# Heights by body: the crew neck at the front and back, the top's hem (hoodie, tee), the bottoms' waistband, the
+# shorts' hem, and the sporty top's bottom edge (hers under her bust; his tank reaches the waistband).
+MODERN_CUT = {
+    "Male": {"neck": (1.565, 1.59), "hoodie_hem": 0.98, "tee_hem": 1.09, "waist": 1.09, "shorts": 0.71,
+             "sport_hem": 1.09, "sport_neck": (1.5, 1.57), "belt": (1.075, 1.105)},
+    "Female": {"neck": (1.285, 1.33), "hoodie_hem": TEE_HEM, "tee_hem": TEE_HEM, "waist": TEE_LEGGINGS_TOP, "shorts": 0.63,
+               "sport_hem": 1.05, "sport_neck": (1.235, 1.29), "belt": None},
+}
+
+
+def modern_cloth(spec, m, skin, style):
+    """The worn skin's faces a modern set covers (MODERN_OUTFITS), as its top and its bottoms."""
+    cut = MODERN_CUT[spec["name"]]
+    female = not spec.get("plated", False)
+    shoulder_z = spec["shoulder"][1]
+    wrist = spec["wrist_z"] + 0.02
+    top, bottoms = m["knit"], m["denim"]
+    hem = {"hoodie": cut["hoodie_hem"], "casual": cut["tee_hem"], "sporty": cut["sport_hem"]}[style]
+    neck_front, neck_back = cut["sport_neck"] if style == "sporty" else cut["neck"]
+    # Hers ride low, dipping in a V under her navel, as her leggings do.
+    waist = lambda cx, cy: (TEE_LEGGINGS_DIP[1] if female and cy > 0 and abs(cx) < TEE_LEGGINGS_DIP[0] else cut["waist"])
+    faces = []
+    for f, mat in skin.faces:
+        if mat is m["stripe"] or len(f) > 4:
+            continue
+        bone, (cx, cy, cz) = face_bone(skin, f)
+        if bone.startswith(("UpperArm", "ForeArm")):
+            if style == "hoodie" and cz > wrist:
+                faces.append((f, top))
+            elif style == "casual" and bone.startswith("UpperArm") and cz > shoulder_z - TEE_SLEEVE * (shoulder_z - spec["elbow_z"]):
+                faces.append((f, top))
+        elif bone.startswith(("Thigh", "Shin")):
+            if style != "sporty" or cz > cut["shorts"]:
+                faces.append((f, bottoms))
+        elif bone not in ("Hips", "Torso"):
+            continue
+        elif face_leans(skin, f, "UpperArm"):
+            if style != "sporty":
+                faces.append((f, top))  # the shoulder caps: sleeved, except the tank and the sports top
+        elif cz < waist(cx, cy):
+            faces.append((f, bottoms))
+        elif hem <= cz < (neck_front if cy > 0 else neck_back) + (0.4 * abs(cx) if style == "sporty" and cy > 0 else 0.0):
+            faces.append((f, top))
+        elif not female and style != "hoodie" and cz < hem:
+            faces.append((f, bottoms))  # his tee and tank are tucked in: the jeans or shorts reach up to them
+    return faces
+
+
+def modern_lift(spec, style):
+    """How far each part stands off the worn skin: a baggy hoodie and joggers, a fitted tee and jeans, tight sportswear."""
+    arm, trunk, legs = {"hoodie": (0.016, 0.014, 0.009), "casual": (0.008, 0.006, 0.004), "sporty": (0.0, 0.003, 0.003)}[style]
+
+    def lift(bone, z):
+        if bone.startswith(("UpperArm", "ForeArm")):
+            return arm
+        if bone.startswith(("Thigh", "Shin")):
+            return legs
+        return trunk if z >= MODERN_CUT[spec["name"]]["waist"] else legs
+    return lift
+
+
+def build_modern_extra(spec, m, style):
+    """The hoodie's hood worn down and his front pocket; the belt on his jeans."""
+    extra = Skin()
+    female = not spec.get("plated", False)
+    cut = MODERN_CUT[spec["name"]]
+    if style == "hoodie":
+        cowl(extra, spec, "hood", m["knit"], gap=0.026)
+        if not female:
+            z = cut["hoodie_hem"] + 0.08
+            _, front, _ = profile_at(spec, z)
+            facing(extra, "pocket", (0.0, front + 0.02, z), (0.085, 0.045), (0.0, 1.0), lambda co: {"Hips": 1.0},
+                   m["knit"], depth=0.004)
+    elif style == "casual" and cut["belt"]:
+        waist_band(extra, spec, "belt", cut["belt"], 0.012, m["leather"])
+    return extra
+
+
 def more_outfits(spec, m, skin, normals, fit):
     """
     {outfit: (worn skin faces, where each corner sits, extra pieces)} for the outfits after the character's own:
@@ -8344,6 +8432,8 @@ def more_outfits(spec, m, skin, normals, fit):
         "Servant": (*servant, build_servant_extra(spec, m, skin, normals, ClothSurface(skin, *servant), fit)),
         "Rogue": (*rogue, build_bandit_extra(spec, m, skin, normals, ClothSurface(skin, *rogue), fit, "rogue")),
         "Brute": (*brute, build_bandit_extra(spec, m, skin, normals, ClothSurface(skin, *brute), fit, "brute")),
+        **{outfit: (modern_cloth(spec, m, skin, outfit.lower()), lifted(modern_lift(spec, outfit.lower())),
+                    build_modern_extra(spec, m, outfit.lower())) for outfit in MODERN_OUTFITS},
     }
     if spec.get("outfit") != "medieval":
         return guests
@@ -8969,7 +9059,7 @@ def skin_character(c, m, spec, root):
         outfits.append(join(obj, [pieces.link(c, more, more_kept, name, f"{name}_Cloth{outfit}Pieces")]))
     # Every dress she can wear has the leg warmers and garter belt too, for the legwear styles that show them.
     # Not the outfits whose breeches or mail cover her legs, nor the plunge and halter dresses, which have no legwear.
-    covered = {label(f"Cloth{outfit}") for outfit in ("Pirate", "Archer", "Warrior", "Rogue", "Brute", "Plunge", "Halter")}
+    covered = {label(f"Cloth{outfit}") for outfit in ("Pirate", "Archer", "Warrior", "Rogue", "Brute", "Plunge", "Halter", *MODERN_OUTFITS)}
     dresses = [cloth_obj] + [obj for obj in outfits if obj.name not in covered] if medieval else []
     for dress in dresses:
         join(dress, [build_warmers(c, m, name, skin, normals)])
@@ -9077,7 +9167,7 @@ def skin_character(c, m, spec, root):
     if spec.get("jiggle"):
         # Built on the finished body, so it lies on the refined bust and takes the springs' weights too. Not on the
         # factions' outfits, which only guests wear, and guests never show what's on them.
-        worn = [obj for obj in outfits if obj.name not in {label(f"Cloth{o}") for o in FACTION_OUTFITS}]
+        worn = [obj for obj in outfits if obj.name not in {label(f"Cloth{o}") for o in FACTION_OUTFITS + MODERN_OUTFITS}]
         coat = build_coat(c, m, name, body_obj, (cloth_obj, *worn))
     else:
         coat = []
@@ -11433,6 +11523,11 @@ def main():
     # The adventurer's kit and the noble's clothes, the same way.
     random_state = rng.bit_generator.state
     for key, colour in GUEST_COLOURS:
+        mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
+    rng.bit_generator.state = random_state
+    # The guests' modern clothes, the same way.
+    random_state = rng.bit_generator.state
+    for key, colour in MODERN_COLOURS:
         mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
     rng.bit_generator.state = random_state
     # Her bunny set, the same way.

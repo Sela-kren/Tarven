@@ -77,6 +77,9 @@ const ADVENTURER_GARMENTS: readonly Garment[] = [
   { id: "jerkin", label: "jerkin", layer: "outer", region: "top" },
   { id: "mail", label: "mail shirt", layer: "outer", region: "top" },
   { id: "robe", label: "robe", layer: "outer", region: "top" },
+  // The guests' modern clothes: the hoodie, tee or tank, and the joggers, jeans or shorts.
+  { id: "knit", label: "top", layer: "outer", region: "top" },
+  { id: "denim", label: "trousers", layer: "outer", region: "bottom" },
 ];
 
 export const WARDROBE: Record<WardrobeBody, readonly Garment[]> = {
@@ -150,10 +153,11 @@ export const WARDROBE: Record<WardrobeBody, readonly Garment[]> = {
  * How each top comes off her breasts when she shows them (GAME_PATH.MD 7e), pulled on her model rather than taken
  * off: a chemise and a bodice are dragged down under them, and the laces up the bodice's front with them (the belt's
  * leather, the dirndl's ribbons; only what's over her breasts moves, so a belt round her waist stays put, and arm
- * ribbons on her arms); the priestess's short gold top and her T-shirt are lifted up over them.
+ * ribbons on her arms); the priestess's short gold top is lifted up over them. Her T-shirt's scoop neck is dragged
+ * down under them too (the user, 2026-11-19): lifted over a big bust it tore into shreds.
  */
 export const TOP_PULL: Readonly<Record<string, "down" | "up">> = {
-  blouse: "down", bodice: "down", belt: "down", ribbons: "down", top: "up", tee: "up",
+  blouse: "down", bodice: "down", belt: "down", ribbons: "down", top: "up", tee: "down",
 };
 
 /** Tops that sit under her breasts in an outfit, leaving them bare: the bunny set's, corset gown's and frilled set's. */

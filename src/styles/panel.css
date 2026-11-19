@@ -920,6 +920,8 @@
   position: absolute;
   top: -2px;
   bottom: -2px;
+  left: 0;
+  will-change: transform;
   width: 4px;
   margin-left: -2px;
   background: #fff;
@@ -972,6 +974,38 @@
 
 #panel .guard-legend .full {
   color: #ff9a8a;
+}
+
+/*
+ * The strike meter (brawlaim.ts): her own swing. Grey is a miss, the gold hit zone lands, the hot middle is a crit.
+ */
+#panel .guard-meter.strike .guard-track {
+  background: linear-gradient(#5a5248, #2e2924);
+  box-shadow: inset 0 0 0 2px #14110e;
+}
+
+#panel .guard-zone.hit {
+  background: linear-gradient(#f0c848, #a07a14);
+}
+
+#panel .guard-zone.crit {
+  background: linear-gradient(#ff8a4a, #c8301a);
+  box-shadow: 0 0 8px #ff8a4a;
+}
+
+#panel .guard-meter.stopped.crit .guard-word,
+#panel .guard-legend .crit {
+  color: #ffa070;
+}
+
+#panel .guard-meter.stopped.hit .guard-word,
+#panel .guard-legend .hit {
+  color: #f0c848;
+}
+
+#panel .guard-meter.stopped.miss .guard-word,
+#panel .guard-legend .miss {
+  color: #c8c0b4;
 }
 
 #panel .fight-log p {

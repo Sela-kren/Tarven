@@ -266,8 +266,39 @@ export function showDevPanel(game: Game, back: () => void): void {
       { label: consentOff ? "Consent is Off: switch On (always ask)" : "Consent is On: switch Off (stop asking)", onPick: flip },
       { label: "Cut-in tester", onPick: () => showCutInTester(game, back) },
       { label: "Scene pose tester", onPick: () => showScenePoseTester(game, back) },
+      { label: "Quest map tester", onPick: () => showQuestTester(game, back) },
       { label: "Refresh", onPick: () => showDevPanel(game, back) },
     ],
+    back,
+  );
+}
+
+/**
+ * In development, from the ] panel: any quest's map, straight away. It gives her a guild card if she has none, puts
+ * the quest on today's board, takes it and sets out (a quest already taken today is let go first).
+ */
+function showQuestTester(game: Game, back: () => void): void {
+  const tavern = game.tavern;
+  game.openMenu(
+    "Dev: Quest map tester",
+    ["Pick a quest to walk its map now. Space or F strikes."],
+    Guild.QUEST_TEMPLATES.map((q) => ({
+      label: `[${q.rank}] ${q.title} · ${q.place}`,
+      onPick: () => {
+        if (!tavern.guild) {
+          tavern.fans = Math.max(tavern.fans, Guild.JOIN_FANS);
+          tavern.joinGuild();
+        }
+        const g = tavern.guild;
+        if (!g) return;
+        tavern.guildQuests();
+        if (!tavern.guildBoard.includes(q.id)) tavern.guildBoard.push(q.id);
+        g.accepted = null;
+        tavern.guildQuestToday = false;
+        tavern.guildAccept(q.id);
+        if (!game.startQuestField()) showDevPanel(game, back);
+      },
+    })),
     back,
   );
 }
@@ -935,14 +966,25 @@ export function showGuild(game: Game, back: () => void, note?: string): void {
     missing.length ? `Next rank: ${missing.join("; ")}.` : g.rank === "S" ? "The top of the guild." : "Ready for the next rank.",
     `Party (${g.party.length}/${rank.maxCompanions}): ${g.party.length ? g.party.map((c) => `${c.name} (${c.role}${c.fee ? `, fee ${c.fee}` : ""})`).join(", ") : "nobody"}.`,
     g.injuries.length ? `Hurt: ${g.injuries.map((i) => `${i.who === "her" ? "you" : i.who}: ${Guild.INJURIES[i.id].name} (${i.days} days)`).join("; ")}.` : "Nobody's hurt.",
-    "The hall, the board and the expedition screens are still to be drawn; fights are rolled for now.",
   ];
+  const accepted = tavern.acceptedQuest;
+  if (accepted) {
+    paragraphs.push(`Your quest: [${accepted.rank}] ${accepted.title} · ${accepted.place} · ${accepted.gold} gold, ${accepted.points} points. ${accepted.blurb}`);
+  }
   if (note) paragraphs.push(note);
-  const buttons: Button[] = [
+  const setOut = tavern.guildSetOutBlocked();
+  const buttons: Button[] = [];
+  if (accepted) {
+    buttons.push(
+      { label: `Set out: ${accepted.title}${setOut ? ` (${setOut})` : ""}`, disabled: setOut !== null, onPick: () => game.startQuestField() },
+      { label: "Give the quest back", onPick: click(() => tavern.guildGiveUp()) },
+    );
+  }
+  buttons.push(
     { label: "The quest board", disabled: tavern.phase !== "day", onPick: () => showQuestBoard(game, () => again()) },
     { label: "Your party", onPick: () => showParty(game, () => again()) },
     { label: "Ask the clerk to rank you up", disabled: missing.length > 0, onPick: click(() => tavern.guildPromote()) },
-  ];
+  );
   if (Guild.rankIndex(g.rank) >= Guild.rankIndex("A") && !g.counter) {
     buttons.push({ label: `Put up a guild counter at your bar (${GUILD_COUNTER_COST} gold)`, disabled: tavern.gold < GUILD_COUNTER_COST || tavern.phase !== "day", onPick: click(() => tavern.buildGuildCounter()) });
   }
@@ -958,22 +1000,24 @@ export function showGuild(game: Game, back: () => void, note?: string): void {
   game.openMenu("Guild", paragraphs, buttons, back);
 }
 
-/** Today's board: each quest, and whether she can take it with this party. */
+/** Today's board: each quest, and whether she can take it. Accepting one makes it hers to walk (questfield.ts). */
 function showQuestBoard(game: Game, back: () => void): void {
   const tavern = game.tavern;
   const quests = tavern.guildQuests();
   game.openMenu(
     "The quest board",
-    quests.length ? ["One quest a day. Choices on the road take their first option for now."] : ["Nothing for you today."],
+    quests.length
+      ? ["Take one quest a day off the board, then set out from the guild page: you walk it, and fight what's on the road yourself. Every monster you put down makes you stronger."]
+      : ["Nothing for you today."],
     quests.map((q) => {
-      const blocked = tavern.guildBlocked(q.id);
+      const blocked = tavern.guildAcceptBlocked(q.id);
       return {
-        label: `[${q.rank}] ${q.title} · ${q.place} · ${q.gold} gold, ${q.points} points${blocked ? ` (${blocked})` : ""}`,
+        label: `Accept [${q.rank}] ${q.title} · ${q.place} · ${q.gold} gold, ${q.points} points${blocked ? ` (${blocked})` : ""}`,
         disabled: blocked !== null,
         onPick: () => {
-          const res = tavern.guildRun(q.id);
+          const ok = tavern.guildAccept(q.id);
           game.audio.play("click");
-          showGuild(game, guildBack, res ? `${q.title}: ${res.outcome} (${res.gold} gold, ${res.points} points, ${res.fans} fans).` : undefined);
+          showGuild(game, guildBack, ok ? `You took "${q.title}". Set out when your party's ready.` : undefined);
         },
       };
     }),

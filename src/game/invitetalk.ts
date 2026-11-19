@@ -92,9 +92,15 @@ export const INVITE_CHOICE_ROOM: readonly string[] = [
 
 /** As the table opens up: drunk enough, or she's come enough this shift (adultplay.ts). */
 export const TABLE_OPEN_LINES: readonly string[] = [
-  "The room's gone warm and blurry at the edges. The way they're looking at you, any one of them could get you down on a table now.",
-  "You can't stop thinking about the tables, and what could happen on one. Neither can they.",
-  "Your legs feel loose and your head's swimming. If a guest pulled you down onto a table now, you're not sure you'd stop them.",
+  "The taproom's gone warm and hazy. Their stares have you wet and aching; any of them could pull you onto a table and fuck you now.",
+  "Heat fills the room and their eyes make your cunt throb. One more look and any of them could have you on a table, legs spread.",
+  "Everything softens at the edges. They watch you like they might drag you onto a table and take you hard any moment.",
+  "You cannot stop thinking about the tables and getting fucked on one until you come. Neither can they.",
+  "Your thoughts keep returning to the tables and what it would feel like to be taken on them. Theirs do the same.",
+  "You and they both keep glancing at the tables, picturing you spread and filled on one.",
+  "Legs like water, head swimming. If one of them pulled you onto a table now, you'd probably spread for them.",
+  "You're that far gone. A hand on your hip and you'd be on your back on the nearest table.",
+  "Loose and warm and not sure you'd say no if they pushed you down on a table right now.",
 ];
 
 /** On the table, as it starts: the room makes space, and the door gets barred. */
@@ -114,6 +120,17 @@ export const JOIN_ASKS: Record<GuestKind, readonly string[]> = {
   adventurer: ["A party's a party! Room on the table for me?", "Never leave a comrade out. Can I join in?", "Saving the best for last. Me next?"],
   bandit: ["Got a hole free for me, girl? I'm asking. This once.", "Move over, mate. If she says I can.", "Open that pretty mouth for me too?"],
   noble: ["How delightfully improper. May I partake?", "I've never shared before. May I begin tonight?", "Your other hand looks idle, my dear. May I?"],
+};
+
+/** The same, from a woman who wants in: her own words, nothing she hasn't got. */
+export const JOIN_ASKS_WOMEN: Record<GuestKind, readonly string[]> = {
+  farmer: ["Room for one more on that table, missus? I've a quick tongue.", "Let me have a go too? I've milked enough cows to know what to do with my hands.", "Cor. Can I kiss you while they're at you?"],
+  soldier: ["Permission to join, ma'am? I'll hold you steady.", "Make room, private. If she'll have a woman, that is.", "Second in line, ma'am. Gauntlets off. Say the word."],
+  smuggler: ["Mind if I deal myself in, sweet? Plenty of you to go round.", "I could watch. I'd rather taste. Your call.", "Two girls for the price of one? Let me in."],
+  fugitive: ["Me too? Please. I just want to touch you.", "Could I... could I kiss you down there? You can say no.", "I'll wait my turn. Just let me have one."],
+  adventurer: ["A party's a party! Room on the table for a girl?", "Never leave a comrade out. Can I join in? I'm good with my hands.", "Saving the best for last. Me next, love?"],
+  bandit: ["Shift over, lads. Let a woman show you how it's done. If she says I can.", "Got room for me, girl? I'm asking. This once.", "Open those pretty thighs for me too?"],
+  noble: ["How delightfully improper. May a lady partake?", "I've never shared a girl before. May I begin tonight?", "Your mouth looks idle, my dear. May I sit?"],
 };
 
 /** After a lost brawl, she's said yes to the one who won: up the stairs to her room, just the two of them. */
@@ -179,7 +196,13 @@ export const TAPROOM_END = {
 
 /** The morning after a night in the taproom. */
 export const TAPROOM_MORNING: readonly string[] = [
-  "Morning. The taproom smells of spilt ale and candle smoke. Someone's scratched a tally on the bar, and you scrub it off before anyone sees.",
-  "Morning. You find a stranger's belt under a bench, and more coin in the tip jar than you remember.",
-  "Morning. The village is talking. You hear your own name twice before you've opened the shutters.",
+  "Morning. Taproom reeks of ale and sex. Someone scratched a tally on the bar. You scrub it off before the cook sees.",
+  "Morning. The tables still smell of last night. A mark on the bar gets wiped clean quick.",
+  "Morning. Candle smoke and spilt ale. You scrub the fresh scratches off the bar before anyone else is down.",
+  "Morning. A belt under the bench that isn't yours. Tip jar heavier than it should be.",
+  "Morning. Someone left a belt behind. More coin in the jar than the night's orders explain.",
+  "Morning. A stranger's belt by the bench and the tip jar fuller than you left it.",
+  "Morning. Village is already talking. You hear your name twice before the shutters are open.",
+  "Morning. Gossip's flying. Your name's in it before you've even swept the floor.",
+  "Morning. They're talking about last night. You catch your own name twice.",
 ];

@@ -202,6 +202,12 @@ rebuild, export again and measure: after the refit, 95% of points were within 0.
      the breast as a line above a roll);
   2. the hem's turned-under strip moves with the fold above it (`turnedPartners`), or the edge loses its depth.
 
+  2026-11-19, the user's call: a towel over her bust, no folds. `HANG.depth` is 0 (the fold ridges were "unnecessary
+  folds"), `ways` is [75, 95] so her sides hang straight down too, and each height spans the dip between her
+  breasts (`bridgeBands`: the convex outline seen from above, over ±`bridgeBands` bands so it doesn't stripe). The
+  cloth under a span hangs from the span, not from the dip, or it fell back in under it in an X crease and a V at
+  the hem.
+
   Check it with `tools/posepreview/teeexport.preview.ts` (body + tee OBJ per cup; `HANG='{"cups":["Y","Z"]}'`
   turns it off for a before/after) and side views.
 - **Folds made in the build survive the game's reshaping**: `smoothMoves` eases the *moves*, not the shape,

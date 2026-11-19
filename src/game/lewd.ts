@@ -1,5 +1,6 @@
 import type { TouchRegion } from "./touchtalk";
 import { cardLines, type FallBeat, type StageCard, type TropeId } from "./tropes";
+import { pickLog } from "./loglines";
 
 /**
  * Her mind stage, Karryn-style, from her Lewdness alone (STORY.md section 15, fix 1): corruption is what she does to
@@ -526,13 +527,44 @@ export function flavorLine(text: string, stage: ArcStage, region: TouchRegion, i
   return addAside(text, pickBy(TOUCH_ASIDES[stage][isThought ? "thought" : "said"], roll), isThought);
 }
 
-export function wildSensitivity(name: string, delta: number, lewdness: number, brothel: boolean): string {
+/** The note after a sensitivity gain in the log, by how far gone she is: any part, either body, so no part named. */
+export const SENSITIVITY_NOTES = {
+  filthy: [
+    "(soaked and desperate for more)",
+    "(filthy and still craving)",
+    "(dirty and far from done)",
+  ],
+  wanton: [
+    "(the shameless ache thrives)",
+    "(you love being this used)",
+    "(your wanton side loves it)",
+  ],
+  warming: [
+    "(starting to drip and burn)",
+    "(warming and getting wet)",
+    "(heat building nicely)",
+  ],
+  sensitive: [
+    "(growing tender and swollen)",
+    "(getting raw and sensitive)",
+  ],
+} as const;
+
+/** `roll` (0 to 1) picks which way the note is put. */
+export function wildSensitivity(name: string, delta: number, lewdness: number, brothel: boolean, roll = 0): string {
   const stage = mindStage(lewdness);
-  let note = "";
-  if (stage >= 3) note = " (filthy — you need more)";
-  else if (stage >= 2) note = " (the wanton in you loves it)";
-  else if (stage >= 1) note = " (warming up)";
-  else if (delta >= 8) note = " (getting sensitive)";
-  else if (delta >= 4) note = " (warming up)";
+  const pool =
+    stage >= 3
+      ? SENSITIVITY_NOTES.filthy
+      : stage >= 2
+        ? SENSITIVITY_NOTES.wanton
+        : stage >= 1
+          ? SENSITIVITY_NOTES.warming
+          : delta >= 8
+            ? SENSITIVITY_NOTES.sensitive
+            : delta >= 4
+              ? SENSITIVITY_NOTES.warming
+              : null;
+  const note = pool ? ` ${pickLog(pool, roll)}` : "";
   return `${name} sensitivity +${Math.round(delta)}${note}${brothel ? " [Brothel]" : ""}`;
 }

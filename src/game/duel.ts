@@ -627,7 +627,7 @@ export class Duel {
         const stare = group ? "They all stare." : "They stare.";
         text = this.undressed === 1 ? `You let your dress fall, slowly. ${stare}` : "You slip out of the rest.";
       } else {
-        // On a group it's said to all of them; on one partner, in their own words.
+        // On a group it's said to all of them (its "they" lines fit men, women or both); on one partner, in their own words.
         const lines = this.lines();
         text = this.pick(lines && !group ? (partner.female ? lines.herOnWoman : lines.her)[move] : lines?.her[move], group ? base.line : (this.moveFor(move, partner) ?? base).line);
       }

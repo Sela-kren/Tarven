@@ -130,6 +130,7 @@ import { experienceTier, HER_CLIMAX_LINES, HER_COME_LINES, HER_LINES, herVoice, 
 import type { FightTier } from "./fightface";
 import {
   AIMS,
+  CRIT_DAMAGE,
   DIZZY_AIM,
   DIZZY_SLOW,
   DRUNK_SLOW,
@@ -138,6 +139,7 @@ import {
   LOW_ANGER,
   LOW_ERECT,
   rollWeakSpot,
+  strikeMeter,
   toughness,
   WEAK_DAMAGE,
   weakSpotSeen,
@@ -145,6 +147,8 @@ import {
   type GuardMeter,
   type GuardResult,
   type StrikeAim,
+  type StrikeMeter,
+  type StrikeResult,
 } from "./brawlaim";
 
 export type FightMove =
@@ -1205,7 +1209,7 @@ export class Fight {
   ]);
 
   /** She makes her move; then, if it isn't over, they make theirs. */
-  act(move: FightMove, aim?: StrikeAim): void {
+  act(move: FightMove, aim?: StrikeAim, timed?: StrikeResult): void {
     if (this.outcome || this.reaching || this.offering || this.incoming) return;
     if (this.dazed !== (move === "recover")) return;
     if (this.downed !== (move === "secondWind" || move === "stayDown")) return;
@@ -1234,7 +1238,7 @@ export class Fight {
     switch (move) {
       case "strike": {
         if (aim) {
-          this.aimedStrike(aim, roll);
+          this.aimedStrike(aim, roll, timed);
           break;
         }
         if (roll < c.strike) {
@@ -1602,12 +1606,30 @@ export class Fight {
     return THROW_AT + (this.foe.wobbly ? WOBBLY_THROW : 0);
   }
 
-  /** Her strike, aimed (brawlaim.ts): each spot does its own thing, and their weak spot takes more. */
-  private aimedStrike(aim: StrikeAim, roll: number): void {
+  /**
+   * The strike meter for her strike aimed there (brawlaim.ts): the better her chance, the wider the hit zone; the
+   * tougher the one she's going for, the faster the needle.
+   */
+  strikeMeterFor(aim: StrikeAim): StrikeMeter {
+    return strikeMeter(aim, {
+      toughness: toughness(this.foe),
+      chance: this.aimChance(aim),
+      agility: this.stats.levels.agility,
+      center: 0.25 + this.random() * 0.5,
+    });
+  }
+
+  /**
+   * Her strike, aimed (brawlaim.ts): each spot does its own thing, and their weak spot takes more. Swung on the strike
+   * meter (`timed`), her timing decides it, not the roll, and a crit hits harder.
+   */
+  private aimedStrike(aim: StrikeAim, roll: number, timed?: StrikeResult): void {
     const def = AIMS[aim];
     const chance = this.aimChance(aim);
-    const tag = (ok: boolean) => this.rollTag("You", `Strike · ${def.name}`, chance, ok);
-    if (roll >= chance) {
+    const crit = timed === "crit";
+    const tag = (ok: boolean) =>
+      timed ? `[You · Strike · ${def.name} · ${crit ? "CRIT" : ok ? "HIT" : "MISS"}] ` : this.rollTag("You", `Strike · ${def.name}`, chance, ok);
+    if (timed ? timed === "miss" : roll >= chance) {
       this.say("strike:miss", tag(false) + (aim === "low" ? "They turn just in time; you hit thigh and nothing else." : "You swing and miss."));
       return;
     }
@@ -1617,6 +1639,7 @@ export class Fight {
     const standing = erect(foe);
     if (aim === "low" && standing) damage *= LOW_ERECT;
     if (weak) damage *= WEAK_DAMAGE;
+    if (crit) damage *= CRIT_DAMAGE;
     const n = Math.max(1, Math.round(damage));
     this.foeStamina = Math.max(0, this.foeStamina - n);
     let text: string;
@@ -1640,6 +1663,7 @@ export class Fight {
         break;
     }
     if (weak) text += foe.found ? " Right on their weak spot!" : " That's their weak spot!";
+    if (crit) text += " A perfect hit!";
     foe.found ||= weak;
     this.say("strike:hit", `${tag(true)}${text} (-${n})`);
     this.crowdSays("hit");

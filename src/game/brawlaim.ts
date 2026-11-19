@@ -143,7 +143,7 @@ function clamp(n: number, lo: number, hi: number): number {
 /** The meter for one swing of theirs. */
 export function guardMeter(foe: number, g: GuardInput): GuardMeter {
   const t = clamp((g.toughness - 14) / 36, 0, 1);
-  const speed = (0.8 + t * 1.2) * (1 - clamp(g.slow, 0, 0.7));
+  const speed = (1.4 + t * 1.4) * (1 - clamp(g.slow, 0, 0.7));
   const dodge = clamp(0.14 - t * 0.07 - (g.accuracy - 0.6) * 0.1 + (g.agility - 1) * 0.01 + g.dodgeBonus, 0.03, 0.3);
   const block = clamp(0.14 - t * 0.05 + (g.endurance - 1) * 0.01 + g.blockBonus, 0.04, 0.25);
   const half = dodge / 2;
@@ -165,4 +165,53 @@ export function needleAt(speed: number, seconds: number): number {
 }
 
 /** Left alone this many crossings, the swing lands. */
-export const GUARD_SWEEPS = 4;
+export const GUARD_SWEEPS = 6;
+
+/**
+ * The strike meter, 2026-11-19: her own Strike works the same way the other way round. She's picked where to hit, a
+ * needle sweeps, and she swings with Space: in the hit zone it lands, in the bright middle of it it's a crit, anywhere
+ * else she misses. The better her chance (the % on the button), the wider the hit zone; the tougher the foe, the
+ * faster the needle.
+ */
+export interface StrikeMeter {
+  /** Where she's aiming. */
+  aim: StrikeAim;
+  /** How many times a second the needle crosses the meter. */
+  speed: number;
+  /** The crit zone, sitting in the middle of the hit zone. */
+  crit: readonly [number, number];
+  hit: readonly [number, number];
+}
+
+export type StrikeResult = "crit" | "hit" | "miss";
+
+/** A crit hits this much harder. */
+export const CRIT_DAMAGE = 1.5;
+
+export interface StrikeInput {
+  toughness: number;
+  /** Her chance to land it there (Fight.aimChance, 0 to 1). */
+  chance: number;
+  /** Her Agility level: a little more room for the crit. */
+  agility: number;
+  /** Where the zones sit, 0 to 1 (rolled each strike). */
+  center: number;
+}
+
+/** The meter for one strike of hers. */
+export function strikeMeter(aim: StrikeAim, s: StrikeInput): StrikeMeter {
+  const t = clamp((s.toughness - 14) / 36, 0, 1);
+  const speed = 1.3 + t * 1.2;
+  const hit = clamp(s.chance * 0.55, 0.06, 0.6);
+  const crit = clamp(0.05 + (s.agility - 1) * 0.008 - t * 0.02, 0.025, Math.min(0.12, hit));
+  const half = hit / 2;
+  const c = clamp(s.center, half, 1 - half);
+  return { aim, speed, crit: [c - crit / 2, c + crit / 2], hit: [c - half, c + half] };
+}
+
+/** Where she stopped the needle, and what that makes of her strike. */
+export function strikeAt(m: StrikeMeter, pos: number): StrikeResult {
+  if (pos >= m.crit[0] && pos <= m.crit[1]) return "crit";
+  if (pos >= m.hit[0] && pos <= m.hit[1]) return "hit";
+  return "miss";
+}

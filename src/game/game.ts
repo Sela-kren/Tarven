@@ -28,6 +28,7 @@ import {
   GUEST_PERSON_LOOKS,
   guestHairstyle,
   guestOutfitColors,
+  guestModernOutfit,
   guestPersonColors,
   OUTFIT_COLORS,
   randomLook,
@@ -139,6 +140,7 @@ import { AiNarrator } from "./ainarrator";
 import { setFlavorSource } from "./flavor";
 import { SpeechBubbles, type Speaker } from "./speech";
 import { buildStreet, type Street } from "./street";
+import { questMonsterId } from "./tavern";
 import { Townsfolk } from "./townsfolk";
 import { StreetTalk } from "./streettalk";
 import { dressOf, outfitStyleOf, type HeatMoment, type TownFacts, type Townsperson } from "./towntalk";
@@ -172,6 +174,7 @@ import { Body, Sibling, SHOW_POSES, WALK_STYLE_NAMES, type Reaction, type ShowPo
 import { cutInPieces, stripLadder, topPull } from "./wardrobe";
 import { COAT_SECTIONS, COAT_STAGES, type CoatSection } from "./cum";
 import { applyRetroLook, solidRetroMaterial } from "./retro";
+import { QuestMap } from "./questmap";
 import {
   BOTTLE_KINDS,
   BOTTLES,
@@ -448,6 +451,35 @@ const isPlayable = (index: number): boolean => PLAYABLE.includes(index);
 const BRAWL_INTRO_SECONDS = 1.5;
 
 /** The "Brawl!" card: a word that slams in, and who it's against under it. Hidden until a brawl starts. */
+/** The bar along the top while she walks a quest's map. */
+function makeQuestHud(): HTMLElement {
+  const root = document.createElement("div");
+  root.id = "quest-hud";
+  root.setAttribute("aria-live", "polite");
+  Object.assign(root.style, {
+    position: "fixed",
+    top: "10px",
+    left: "50%",
+    transform: "translateX(-50%)",
+    padding: "6px 14px",
+    background: "rgba(20, 16, 12, 0.78)",
+    color: "#f2e6cf",
+    font: "14px/1.4 Georgia, serif",
+    borderRadius: "6px",
+    border: "1px solid rgba(242, 230, 207, 0.35)",
+    pointerEvents: "none",
+    zIndex: "20",
+    display: "none",
+    maxWidth: "calc(100vw - 32px)",
+    textAlign: "center",
+  });
+  const style = document.createElement("style");
+  style.textContent = "#quest-hud.on { display: block !important; }";
+  document.head.append(style);
+  document.body.append(root);
+  return root;
+}
+
 function makeBrawlIntro(): HTMLElement {
   const root = document.createElement("div");
   root.id = "brawl-intro";
@@ -835,6 +867,19 @@ export class Game {
   private streetTalk: StreetTalk | null = null;
   private readonly townLayer = new Group();
   outdoors = false;
+  /**
+   * A quest's map she's out walking (questmap.ts), its monsters' layer, the people waiting to brawl her there, and
+   * where she set out from. Out there `outdoors` is true too, so the room isn't heard and a save loads her at home.
+   */
+  private questMap: QuestMap | null = null;
+  private questMonsters: Group | null = null;
+  private questFoes: { walker: Walker; encounter: number }[] = [];
+  private questFrom: "street" | "inside" = "inside";
+  /** The monsters in the brawl she's in out there, by their brawl ids, as the brawl's pictures show them. */
+  private questBrawlers = new Map<number, Object3D>();
+  /** The quest's done and she's been told so. */
+  private questToldDone = false;
+  private readonly questHud = makeQuestHud();
   /** The reminders to head home she's had today out in the street: 1 at four, 2 at five. */
   private streetReminders = 0;
   private readonly roomShot = { eye: new Vector3(), target: new Vector3() };
@@ -1247,6 +1292,7 @@ export class Game {
 
   /** How far the follow camera may go, so all of a bigger house can be seen. */
   get cameraLimits(): Rect {
+    if (this.questMap) return this.questMap.cameraLimits;
     if (this.outdoors) return this.street.cameraLimits;
     const { minX, maxX, minZ, maxZ } = this.plan.bounds();
     return {
@@ -1373,7 +1419,9 @@ export class Game {
       // Only the siblings cast shadows, to keep the frame rate up.
       if (object instanceof Mesh) object.castShadow = false;
     });
-    const own = kind === "visitor" ? null : statsOf(kind, role).outfit;
+    // Most come in modern clothes now (WORLD.md, section 2b); some keep their type's kit or their plain clothes.
+    const stats = kind === "visitor" ? null : statsOf(kind, role);
+    const own = stats ? guestModernOutfit(look, stats.modern.share, stats.modern.styles) ?? stats.outfit : null;
     // Their own skin, hair and eyes, when they rolled a look; their kind's hair when they didn't.
     const person = look > 0 ? guestPersonColors(look) : { [slots.hair]: hex(outfit.hair) };
     // Their own hairstyle too, from the same look.
@@ -1647,6 +1695,18 @@ export class Game {
       if (!best || score < best.score) best = { target, at, height, prompt, score };
     };
 
+    if (this.questMap) {
+      const run = this.tavern.questRun;
+      const map = this.questMap;
+      consider({ kind: "street", place: "quest:exit", label: this.tavern.questAllDone ? "Head home with the job done" : "Give up and head home" }, map.exit, STATION_ARROW_HEIGHT, 1.8);
+      run?.encounters.forEach((e, i) => {
+        if (run.results[i]) return;
+        const spawn = map.plan.spawns[i];
+        if (spawn.kind === "spot") consider({ kind: "street", place: `quest:${i}`, label: e.kind === "check" ? `Look: ${e.text}` : `Decide: ${e.text}` }, map.spotOf(i), STATION_ARROW_HEIGHT, 2.2);
+        if (spawn.kind === "people" && e.kind === "fight") consider({ kind: "street", place: `quest:${i}`, label: `Fight ${e.foe}` }, map.spotOf(i), GUEST_ARROW_HEIGHT, 2.6);
+      });
+      return best;
+    }
     if (this.outdoors) {
       for (const spot of this.street.spots) {
         consider({ kind: "street", place: spot.place, label: spot.label }, spot.at, STATION_ARROW_HEIGHT, spot.range);
@@ -2307,6 +2367,11 @@ export class Game {
   /** Fades to black, runs `next` while the screen is dark, then fades back in. */
   /** A place on the high street, or the front door between it and the tavern (street.ts, TOWN_DAY.md). */
   private useStreet(place: string): void {
+    if (place.startsWith("quest:")) {
+      this.clearTarget();
+      this.useQuestSpot(place.slice(6));
+      return;
+    }
     if (place === "out") {
       this.goOutside();
       return;
@@ -2510,6 +2575,261 @@ export class Game {
     }
     this.log.add(moment.summary);
     // moment.offer ("kiss" | "touch" | "tonight" | "alley" | "upstairs") is the hook for a scene later.
+  }
+
+  // ---------- A quest's map (questfield.ts, questmap.ts, ADVENTURERS_GUILD.md) ----------
+
+  /** Sets out on her accepted quest (from the guild's menu): a fresh map for it, and her at its start. */
+  startQuestField(): boolean {
+    const run = this.tavern.guildSetOut();
+    if (!run) return false;
+    this.closePanel();
+    this.clearTarget();
+    this.audio.play("doorOpen");
+    this.fadeTo(() => {
+      this.questFrom = this.outdoors ? "street" : "inside";
+      const map = new QuestMap(run.plan);
+      this.questMap = map;
+      this.questMonsters = map.monsterLayer();
+      this.townLayer.add(map.root, this.questMonsters);
+      // People waiting on the road for a brawl: standing in their clearing, facing the way she'll come.
+      this.questFoes = [];
+      run.plan.spawns.forEach((spawn) => {
+        if (spawn.kind !== "people") return;
+        const e = run.encounters[spawn.encounter];
+        if (e.kind !== "fight") return;
+        const kind = e.brawlKind ?? "bandit";
+        const walker = new Walker(this.makeGuestBody(kind, false, 7 + spawn.encounter * 5));
+        walker.group.position.copy(map.spotOf(spawn.encounter));
+        walker.face(Math.PI);
+        this.questMonsters?.add(walker.group);
+        this.questFoes.push({ walker, encounter: spawn.encounter });
+      });
+      this.outdoors = true;
+      this.questToldDone = false;
+      this.questBrawlers.clear();
+      const { colliders } = this.world;
+      colliders.length = 0;
+      colliders.push(...map.colliders);
+      const player = this.siblings[this.active];
+      player.position.setX(map.start.x).setZ(map.start.z);
+      player.face(map.startHeading);
+      this.questHud.classList.add("on");
+      this.screen = "play";
+      this.log.add(`${run.quest.title}: ${run.quest.blurb} Whatever reaches you, you brawl. The signpost behind you is the way home.`);
+    });
+    return true;
+  }
+
+  /**
+   * A frame out on the quest's map: the monsters (one that reaches her starts the brawl with its pack), brawls
+   * settled (beaten packs go down, a pack that beat her leaves her be), the people waiting turned toward her, and
+   * the bar. True when it's taken the screen (she's gone down, or the job's done and she's asked about going home).
+   */
+  private updateQuestField(dt: number): boolean {
+    const map = this.questMap;
+    const tavern = this.tavern;
+    const run = tavern.questRun;
+    if (!map || !run) return false;
+    const her = this.siblings[this.active].position;
+
+    // How each brawl came out, on the map.
+    run.plan.spawns.forEach((spawn) => {
+      const r = run.results[spawn.encounter];
+      if (spawn.kind !== "monsters" || !r) return;
+      for (const m of map.monsters) {
+        if (m.encounter !== spawn.encounter) continue;
+        if (r.passed) m.defeat();
+        else m.calm();
+      }
+    });
+
+    // A monster's reached her: the brawl, it and its pack.
+    const reached = tavern.fight ? null : map.update(dt, her);
+    if (reached && !run.collapsed) {
+      const pack = map.pack(reached.encounter, reached);
+      if (tavern.questMonsterBrawl(reached.encounter, pack.map((m) => m.spec))) {
+        this.questBrawlers.clear();
+        pack.forEach((m, i) => this.questBrawlers.set(questMonsterId(i), m.portrait()));
+        this.clearTarget();
+        return false;
+      }
+    }
+    for (const foe of this.questFoes) {
+      const at = foe.walker.group.position;
+      foe.walker.turnTo(Math.atan2(-(her.x - at.x), -(her.z - at.z)), dt);
+      foe.walker.settle(dt);
+      // Beaten people leave the road.
+      if (run.results[foe.encounter]) foe.walker.group.visible = false;
+    }
+
+    // A clearing with nothing left standing in it is won.
+    for (let i = 0; i < run.results.length; i++) if (run.results[i]) map.markDone(i);
+    this.drawQuestHud();
+
+    if (run.collapsed) {
+      this.clearTarget();
+      const taken = run.captured;
+      this.openPanel(
+        taken ? "Left on the road" : "Out on your feet",
+        [
+          taken
+            ? `${taken.by.charAt(0).toUpperCase()}${taken.by.slice(1)} leave you where you lie, and take the loot with them. Your party finds you and gets you home to Tarven.`
+            : "Everything goes grey. The last thing you see is the sky, and then your party's boots. They carry you home to Tarven.",
+        ],
+        [{ label: "Home to Tarven", onPick: () => this.endQuestField() }],
+      );
+      this.panelBack = () => this.endQuestField();
+      return true;
+    }
+    if (tavern.questAllDone && !this.questToldDone) {
+      this.questToldDone = true;
+      this.clearTarget();
+      const stay = () => {
+        this.closePanel();
+        this.screen = "play";
+        this.log.add("The job's done. The signpost where you came in is the way home.");
+      };
+      this.openPanel("The job's done", [`${run.quest.title}: everything here is settled.`, `Stamina ${run.stamina}/${run.maxStamina}. ${run.kills} monster${run.kills === 1 ? "" : "s"} down (+${Math.round(run.xp)} XP).`], [
+        { label: "Head home and collect", onPick: () => this.endQuestField() },
+        { label: "Stay a while", onPick: stay },
+      ]);
+      this.panelBack = stay;
+      return true;
+    }
+    return false;
+  }
+
+  /** The quest's bar: the quest, her stamina, monsters left, and the last one she hit. */
+  private drawQuestHud(): void {
+    const run = this.tavern.questRun;
+    if (!run || !this.questMap) return;
+    const left = this.questMap.monsters.filter((m) => m.alive && m.state !== "calm").length;
+    const parts = [
+      `<b>${run.quest.title}</b>`,
+      `Stamina ${run.stamina}/${run.maxStamina}`,
+      `Monsters ${left}`,
+      `Done ${run.results.filter((r) => r).length}/${run.results.length}`,
+    ];
+    parts.push("<i>Shift to run from them</i>");
+    this.questHud.innerHTML = parts.join(" · ");
+  }
+
+  /** Something in a clearing she walked up to: a check, a choice, people to brawl, or the way home. */
+  private useQuestSpot(what: string): void {
+    const tavern = this.tavern;
+    const run = tavern.questRun;
+    if (!run) return;
+    const back = () => {
+      this.closePanel();
+      this.screen = "play";
+    };
+    if (what === "exit") {
+      const done = tavern.questAllDone;
+      this.openPanel(
+        done ? "Home" : "Give up?",
+        [done ? "The job's done. Back to Tarven to collect." : "Head home now and the quest counts as failed where it isn't done."],
+        [
+          { label: done ? "Head home" : "Give up and head home", onPick: () => this.endQuestField() },
+          { label: "Stay", onPick: back },
+        ],
+      );
+      this.panelBack = back;
+      return;
+    }
+    const i = Number(what);
+    const e = run.encounters[i];
+    if (!e || run.results[i]) return;
+    const settled = (r: { text: string } | null) => {
+      if (!r) return back();
+      this.questMap?.markDone(i);
+      this.openPanel(e.kind === "check" ? "Done" : "Decided", [r.text], [{ label: "On", onPick: back }]);
+      this.panelBack = back;
+    };
+    const brawl = (optionId?: string) => {
+      if (tavern.questBrawl(i, optionId)) {
+        this.closePanel();
+        this.screen = "play";
+      } else back();
+    };
+    if (e.kind === "fight") {
+      brawl();
+      return;
+    }
+    const roleHelp = (role: string) => {
+      const g = tavern.guild;
+      const c = g?.party.filter((p) => p.role === role).sort((a, b) => b.skill - a.skill)[0];
+      return c ? ` + ${c.name}` : "";
+    };
+    if (e.kind === "check") {
+      this.openPanel(run.quest.title, [e.text], [
+        { label: `Try it (${e.stat}${roleHelp(e.role)})`, onPick: () => settled(tavern.questDecide(i)) },
+        { label: "Not yet", onPick: back },
+      ]);
+      this.panelBack = back;
+      return;
+    }
+    this.openPanel(
+      run.quest.title,
+      [e.text],
+      [
+        ...e.options.map((o) => ({
+          label: `${o.label}${o.fight ? " (a brawl)" : o.stat ? ` (${o.stat}${roleHelp(o.role ?? "scout")})` : ""}${o.gold ? ` (${o.gold > 0 ? "+" : ""}${o.gold} gold)` : ""}`,
+          onPick: () => (o.fight ? brawl(o.id) : settled(tavern.questDecide(i, o.id))),
+        })),
+        { label: "Not yet", onPick: back },
+      ],
+    );
+    this.panelBack = back;
+  }
+
+  /** Home from the quest: settled with the guild, the map taken down, the hours gone, and what came of it. */
+  private endQuestField(): void {
+    const quest = this.tavern.questRun?.quest;
+    const res = this.tavern.questFinish();
+    this.closePanel();
+    this.fadeTo(() => {
+      if (this.questMap) this.townLayer.remove(this.questMap.root);
+      if (this.questMonsters) this.townLayer.remove(this.questMonsters);
+      this.questMap = null;
+      this.questMonsters = null;
+      this.questFoes = [];
+      this.questBrawlers.clear();
+      this.questHud.classList.remove("on");
+      const player = this.siblings[this.active];
+      // Beaten, she's carried home through her own door; otherwise she walks back the way she went out.
+      if (this.questFrom === "street" && res?.outcome !== "fail") {
+        const { colliders } = this.world;
+        colliders.length = 0;
+        colliders.push(...this.street.colliders);
+        player.position.setX(this.street.spawn.x).setZ(this.street.spawn.z);
+        player.face(this.street.spawnHeading);
+      } else {
+        this.outdoors = false;
+        this.nav = this.applyPlan();
+        const clear = resolveCircle(BACK_INSIDE, SIBLING_RADIUS, this.world.colliders, 8);
+        player.position.setX(clear.x).setZ(clear.z);
+        player.face(Math.PI);
+      }
+      if (quest) this.spendHours(quest.hours);
+      if (!res) {
+        this.screen = "play";
+        return;
+      }
+      const title = { success: "Quest done", partial: "Half done", fail: "Quest failed" }[res.outcome];
+      const lines = [
+        `${quest?.title ?? ""}: ${res.gold >= 0 ? "+" : ""}${res.gold} gold, ${res.points >= 0 ? "+" : ""}${res.points} guild points, +${res.fans} fans.`,
+        ...(res.loot.length ? [`Loot: ${res.loot.join(", ")}.`] : []),
+        ...(res.injuries.length ? [`Hurt: ${res.injuries.map((i) => i.who === "her" ? "you" : i.who).join(", ")}.`] : []),
+        ...(res.captured ? [`${res.captured.by} took you. Your party got you out by morning, without the loot.`] : []),
+      ];
+      const back = () => {
+        this.closePanel();
+        this.screen = "play";
+      };
+      this.openPanel(title, lines, [{ label: "On", onPick: back }]);
+      this.panelBack = back;
+    });
   }
 
   /** Out of the front door onto the high street, for the rest of the day. */
@@ -3606,7 +3926,9 @@ export class Game {
     }
 
     this.remindToHeadHome();
-    if (this.outdoors && this.townsfolk) {
+    if (this.questMap) {
+      if (this.updateQuestField(dt)) return;
+    } else if (this.outdoors && this.townsfolk) {
       this.townsfolk.update(dt);
       const her = this.siblings[this.active].position;
       this.streetTalk?.update(dt, this.townsfolk.people(), her, this.townFacts());
@@ -3925,6 +4247,8 @@ export class Game {
 
   /** A foe's body to picture: the guest as they stand in the room, or one made up for a test brawl. */
   private foeBody(guestId: number, kind: GuestKind): { root: Object3D; name: string } | null {
+    const monster = this.questBrawlers.get(guestId);
+    if (monster) return { root: monster, name: "Monster" };
     const actor = this.actors.get(guestId);
     const female = this.tavern.guests.find((g) => g.id === guestId)?.female ?? false;
     if (actor) return { root: actor.bodyRoot, name: female ? "Female" : "Male" };

@@ -3,6 +3,8 @@ import {
   BufferGeometry,
   Camera,
   HalfFloatType,
+  LinearFilter,
+  LinearMipmapLinearFilter,
   Material,
   Mesh,
   MeshLambertMaterial,
@@ -47,17 +49,24 @@ const AFFINE_VARYINGS = /* glsl */ `
   #endif
 `;
 
-function makeTextureRetro(texture: Texture | null): void {
+/**
+ * Skin whose texture is a tiny (32 px) tile of soft colour noise. Drawn blocky, each of its pixels showed as a hard
+ * square on her skin up close (the user, 2026-11-19): these are filtered smooth instead, so the noise reads as a
+ * soft mottle. Every other texture stays blocky.
+ */
+const SMOOTH_SKIN_NAMES = /^(T_skin|T_skin_f|T_face_skin|T_areola|T_anus_skin|T_penis|T_glans|T_scrotum)$/;
+
+function makeTextureRetro(texture: Texture | null, smooth = false): void {
   if (!texture) return;
-  texture.magFilter = NearestFilter;
-  texture.minFilter = NearestFilter;
-  texture.generateMipmaps = false;
+  texture.magFilter = smooth ? LinearFilter : NearestFilter;
+  texture.minFilter = smooth ? LinearMipmapLinearFilter : NearestFilter;
+  texture.generateMipmaps = smooth;
   texture.anisotropy = 1;
   texture.needsUpdate = true;
 }
 
 function toRetroMaterial(source: MeshStandardMaterial): MeshLambertMaterial {
-  makeTextureRetro(source.map);
+  makeTextureRetro(source.map, SMOOTH_SKIN_NAMES.test(source.name));
   makeTextureRetro(source.emissiveMap);
   return withPs1Rasterizer(new MeshLambertMaterial({
     name: source.name,

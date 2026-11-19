@@ -26,7 +26,7 @@ import { STANCE_NAMES } from "./herstate";
 import { restingPose } from "./battlepose";
 import { duelShake } from "./screenshake";
 import { GROUP_ICONS, MOVE_ICONS, type MoveGroup } from "./fighticons";
-import { AIMS, GUARD_SWEEPS, needleAt, STRIKE_AIMS, guardAt, type GuardMeter, type GuardResult, type StrikeAim } from "./brawlaim";
+import { AIMS, CRIT_DAMAGE, GUARD_SWEEPS, needleAt, STRIKE_AIMS, guardAt, strikeAt, type GuardMeter, type GuardResult, type StrikeAim, type StrikeMeter, type StrikeResult } from "./brawlaim";
 
 /** How she feels in a brawl, in a word or two: horny, wet, both, or still cool-headed. */
 function feelingSummary(fight: Fight): string {
@@ -280,10 +280,14 @@ function showTaproomRules(game: Game, scene: InviteScene, picked: Set<number>, a
  */
 const HURTS_THEM = new Set(["strike:hit", "shove:hit", "grab:hit", "headlock:hit", "hairpull:hit", "tackle:hit", "throw"]);
 
-/** Ends the night straight from the brawl: everyone gone, and to bed. */
+/** Ends the night straight from the brawl: everyone gone, and to bed. Out on a quest, back to the road instead. */
 function closeTheNight(game: Game): void {
   game.panelEl.classList.remove("adult-open");
   game.closePanel();
+  if (game.tavern.questRun) {
+    game.screen = "play";
+    return;
+  }
   game.dismissGuests();
   game.tavern.sleep();
   game.goToSleep();
@@ -316,7 +320,9 @@ export function showBrawlOffer(game: Game, lost = ""): void {
   const crew = offer.crew;
   const ask = crew.length > 0
     ? `"No hard feelings. Take us up to your room? All of us, if you'll have us." Behind them, ${crewWords(crew.map((c) => c.label))} ${crew.length === 1 ? "waits" : "wait"} on your answer.`
-    : `"No hard feelings. Take me up to your room?"`;
+    : tavern.questRun
+      ? `"No hard feelings. Nobody's watching out here, barmaid..."`
+      : `"No hard feelings. Take me up to your room?"`;
   const line = `${lost ? `${lost} ` : ""}The fight's gone out of the ${who}. They offer you a hand up and hold your eye a moment too long. ${ask}`;
   // Adult play, wherever she chooses: right where she fell, upstairs, or out back.
   const asking = crew.length > 0 ? `${crew.length + 1} of them asking; ` : "";
@@ -328,7 +334,7 @@ export function showBrawlOffer(game: Game, lost = ""): void {
       onPick: () => showDuelRules(game, new Set(), 0, "plain", new Set(crew.map((c) => c.id)), place.id),
     };
   });
-  showAdultCard(game, "Knocked down", line, "door", [...places, { label: "Stop: send them off, and end the night", onPick: stop }]);
+  showAdultCard(game, "Knocked down", line, "door", [...places, { label: tavern.questRun ? "Stop: send them on their way" : "Stop: send them off, and end the night", onPick: stop }]);
   game.panelBack = stop;
 }
 
@@ -362,35 +368,48 @@ function foeTags(fight: Fight, foe: Foe): BattleTag[] {
 
 /** What the guard meter calls each result, flashed where the needle stopped. */
 const GUARD_WORDS: Readonly<Record<GuardResult, string>> = { dodge: "DODGE!", block: "BLOCK", full: "HIT" };
-/** The needle waits this long before it starts, so she sees the swing coming; and the result shows this long. */
-const GUARD_WINDUP = 0.45;
-const GUARD_SHOW_MS = 420;
+/** What the strike meter calls each result. */
+const STRIKE_WORDS: Readonly<Record<StrikeResult, string>> = { crit: "CRIT!", hit: "HIT", miss: "MISS" };
+/** The needle waits this long before it starts, so she sees it coming; and the result shows this long. */
+const GUARD_WINDUP = 0.25;
+const GUARD_SHOW_MS = 380;
+
+/** A zone on a needle meter: its class (for its colour) and where it sits, 0 to 1. Later ones draw over earlier. */
+type MeterZone = readonly [cls: string, span: readonly [number, number]];
 
 /**
- * The guard meter (brawlaim.ts): one of them swings, a needle sweeps back and forth over a bar with a dodge zone in
- * a block zone, and she stops it (Space, the button, or a click on the bar). Left alone too long, it lands.
- * `onStop` gets where it stopped, 0 to 1, or -1 if she never did.
+ * A needle sweeping back and forth over a bar of zones, stopped with Space, the button, or a click on the bar. Left
+ * alone for `sweeps` crossings, it stops itself (`at` -1). `word` names where it stopped (its class and the word
+ * flashed there); `onStop` gets where, 0 to 1, or -1 if she never stopped it.
  */
-function guardMeterEl(meter: GuardMeter, onStop: (pos: number) => void): { el: HTMLElement; stop: () => void } {
+function needleMeterEl(opts: {
+  cls: string;
+  speed: number;
+  zones: readonly MeterZone[];
+  legend: string;
+  sweeps: number;
+  word: (at: number) => { cls: string; text: string };
+  onStop: (at: number) => void;
+}): { el: HTMLElement; stop: () => void } {
   const el = document.createElement("div");
-  el.className = "guard-meter";
+  el.className = `guard-meter ${opts.cls}`;
   const track = document.createElement("div");
   track.className = "guard-track";
-  const zone = (cls: string, [a, b]: readonly [number, number]) => {
+  for (const [cls, [a, b]] of opts.zones) {
     const z = document.createElement("span");
     z.className = `guard-zone ${cls}`;
     z.style.left = `${a * 100}%`;
     z.style.width = `${(b - a) * 100}%`;
-    return z;
-  };
+    track.append(z);
+  }
   const needle = document.createElement("span");
   needle.className = "guard-needle";
   const word = document.createElement("span");
   word.className = "guard-word";
-  track.append(zone("block", meter.block), zone("dodge", meter.dodge), needle, word);
+  track.append(needle, word);
   const legend = document.createElement("div");
   legend.className = "guard-legend";
-  legend.innerHTML = '<span class="dodge">Dodge: no damage</span><span class="block">Block: half</span><span class="full">Anywhere else: full hit</span>';
+  legend.innerHTML = opts.legend;
   el.append(track, legend);
   const start = performance.now();
   let pos = 0;
@@ -398,24 +417,27 @@ function guardMeterEl(meter: GuardMeter, onStop: (pos: number) => void): { el: H
   const finish = (at: number) => {
     if (done) return;
     done = true;
-    const result = at < 0 ? "full" : guardAt(meter, at);
-    word.textContent = GUARD_WORDS[result];
+    const said = opts.word(at);
+    word.textContent = said.text;
     word.style.left = `${Math.max(0, at) * 100}%`;
-    el.classList.add("stopped", result);
-    window.setTimeout(() => onStop(at), GUARD_SHOW_MS);
+    el.classList.add("stopped", said.cls);
+    window.setTimeout(() => opts.onStop(at), GUARD_SHOW_MS);
+  };
+  // The needle moves with transform (no layout each frame), so it stays smooth while the scene draws behind it.
+  const place = (at: number) => {
+    needle.style.transform = `translateX(${at * track.clientWidth}px)`;
   };
   const frame = (now: number) => {
     if (done || !el.isConnected) return;
     const t = (now - start) / 1000 - GUARD_WINDUP;
-    pos = needleAt(meter.speed, t);
-    needle.style.left = `${pos * 100}%`;
-    if (t * meter.speed >= GUARD_SWEEPS) {
+    pos = needleAt(opts.speed, t);
+    place(pos);
+    if (t * opts.speed >= opts.sweeps) {
       finish(-1);
       return;
     }
     requestAnimationFrame(frame);
   };
-  needle.style.left = "0%";
   requestAnimationFrame(frame);
   // Before the needle's moving, a press doesn't count.
   const stop = () => {
@@ -424,6 +446,51 @@ function guardMeterEl(meter: GuardMeter, onStop: (pos: number) => void): { el: H
   };
   track.addEventListener("pointerdown", stop);
   return { el, stop };
+}
+
+/**
+ * The guard meter (brawlaim.ts): one of them swings, and she stops the needle in the dodge zone (no damage), the
+ * block zone round it (half), or anywhere else (full hit).
+ */
+function guardMeterEl(meter: GuardMeter, onStop: (pos: number) => void): { el: HTMLElement; stop: () => void } {
+  return needleMeterEl({
+    cls: "guard",
+    speed: meter.speed,
+    zones: [
+      ["block", meter.block],
+      ["dodge", meter.dodge],
+    ],
+    legend: '<span class="dodge">Dodge: no damage</span><span class="block">Block: half</span><span class="full">Anywhere else: full hit</span>',
+    sweeps: GUARD_SWEEPS,
+    word: (at) => {
+      const result = at < 0 ? "full" : guardAt(meter, at);
+      return { cls: result, text: GUARD_WORDS[result] };
+    },
+    onStop,
+  });
+}
+
+/**
+ * The strike meter (brawlaim.ts): she's picked where to hit, and swings when the needle's in the hit zone (it lands)
+ * or its bright middle (a crit, harder). Anywhere else, or too slow, she misses.
+ */
+function strikeMeterEl(meter: StrikeMeter, onStop: (result: StrikeResult) => void): { el: HTMLElement; stop: () => void } {
+  const resultAt = (at: number): StrikeResult => (at < 0 ? "miss" : strikeAt(meter, at));
+  return needleMeterEl({
+    cls: "strike",
+    speed: meter.speed,
+    zones: [
+      ["hit", meter.hit],
+      ["crit", meter.crit],
+    ],
+    legend: `<span class="crit">Crit: ×${CRIT_DAMAGE} damage</span><span class="hit">Hit: lands</span><span class="miss">Anywhere else: miss</span>`,
+    sweeps: GUARD_SWEEPS,
+    word: (at) => {
+      const result = resultAt(at);
+      return { cls: result, text: STRIKE_WORDS[result] };
+    },
+    onStop: (at) => onStop(resultAt(at)),
+  });
 }
 
 /** How she stands, as tag chips: her willpower in a word, her stance, her clothes, and how she feels. */
@@ -472,6 +539,9 @@ let aiming: FightChoice | null = null;
 
 /** She's picked Strike and is choosing where to hit (brawlaim.ts). */
 let aimingStrike = false;
+
+/** She's picked where to strike and the strike meter is up: she swings with Space (brawlaim.ts). */
+let swinging: { choice: FightChoice; meter: StrikeMeter } | null = null;
 
 /** The group of moves she has open in the brawl's menu, or null on the main menu. */
 let openGroup: MoveGroup | null = null;
@@ -542,6 +612,7 @@ export function showFight(game: Game): void {
   if (!fight) {
     aiming = null;
     aimingStrike = false;
+    swinging = null;
     openGroup = null;
   }
   if (!fight) {
@@ -610,14 +681,45 @@ export function showFight(game: Game): void {
     }
     showFight(game);
   };
-  const makeMove = (choice: FightChoice, aim?: StrikeAim) => {
+  const makeMove = (choice: FightChoice, aim?: StrikeAim, timed?: StrikeResult) => {
     aiming = null;
     aimingStrike = false;
+    swinging = null;
     openGroup = null;
     const before = fight.events.length;
-    tavern.fightMove(choice.move, aim);
+    tavern.fightMove(choice.move, aim, timed);
     afterStep(before);
   };
+  // The meter screens: the log and the board, and the meter over the one button that stops it (Space).
+  const meterScreen = (title: string, el: HTMLElement, button: Button) => {
+    game.openPanel(title, [], [button]);
+    game.panelEl.classList.add("fight-open", "battle-open");
+    showBoard();
+    const box = game.panelEl.querySelector(".box");
+    if (box) {
+      const log = fightLog(fight.log, BRAWL_LOG_LINES);
+      log.classList.add("brawl-activity");
+      box.insertBefore(log, box.querySelector(".menu"));
+      box.insertBefore(el, box.querySelector(".menu"));
+    }
+  };
+  // She's picked where to strike: the strike meter, and she swings with Space (brawlaim.ts).
+  if (swinging && !fight.incoming && !fight.offering && !fight.outcome) {
+    const { choice, meter: m } = swinging;
+    const meter = strikeMeterEl(m, (result) => makeMove(choice, m.aim, result));
+    meterScreen(`Strike the ${fight.targeted.name} · ${AIMS[m.aim].name}`, meter.el, {
+      label: "Swing! (Space, or click the bar)",
+      icon: MOVE_ICONS.strike,
+      onPick: meter.stop,
+    });
+    game.panelBack = () => {
+      swinging = null;
+      aimingStrike = true;
+      showFight(game);
+    };
+    return;
+  }
+  swinging = null;
   // One of them is swinging at her: the guard meter, and nothing else till she's stopped it (brawlaim.ts).
   const incoming = fight.incoming;
   if (incoming) {
@@ -627,16 +729,7 @@ export function showFight(game: Game): void {
       tavern.fightGuard(pos);
       afterStep(before);
     });
-    game.openPanel(`The ${swinger?.name ?? "foe"} swings at you!`, [], [{ label: "Stop the needle! (Space, or click the bar)", icon: MOVE_ICONS.dodge, onPick: meter.stop }]);
-    game.panelEl.classList.add("fight-open", "battle-open");
-    showBoard();
-    const box = game.panelEl.querySelector(".box");
-    if (box) {
-      const log = fightLog(fight.log, BRAWL_LOG_LINES);
-      log.classList.add("brawl-activity");
-      box.insertBefore(log, box.querySelector(".menu"));
-      box.insertBefore(meter.el, box.querySelector(".menu"));
-    }
+    meterScreen(`The ${swinger?.name ?? "foe"} swings at you!`, meter.el, { label: "Stop the needle! (Space, or click the bar)", icon: MOVE_ICONS.dodge, onPick: meter.stop });
     game.panelBack = () => undefined;
     return;
   }
@@ -740,7 +833,13 @@ export function showFight(game: Game): void {
           label: `${AIMS[aim].name} · ${Math.round(fight.aimChance(aim) * 100)}%${mark} · ${AIMS[aim].does}`,
           icon: MOVE_ICONS.strike,
           disabled: strikeChoice?.disabled ?? true,
-          onPick: () => strikeChoice && makeMove(strikeChoice, aim),
+          // Picked: the strike meter comes up, and she swings with Space.
+          onPick: () => {
+            if (!strikeChoice || strikeChoice.disabled) return;
+            aimingStrike = false;
+            swinging = { choice: strikeChoice, meter: fight.strikeMeterFor(aim) };
+            showFight(game);
+          },
         };
       }),
       { label: "Back", onPick: backFromStrike },
@@ -1073,7 +1172,10 @@ export function showDuel(game: Game): void {
     // After a lost brawl the night is over, however the game went.
     if (result?.brawl && result.outcome === "stopped") {
       const toBed = () => closeTheNight(game);
-      game.openPanel("Called off", [result.text, "The night's over. You bar the door behind them."], [{ label: "Go to bed", onPick: toBed }]);
+      const road = Boolean(tavern.questRun);
+      game.openPanel("Called off", [result.text, road ? "They go on their way. You pick yourself up and dust off." : "The night's over. You bar the door behind them."], [
+        { label: road ? "Back to the quest" : "Go to bed", onPick: toBed },
+      ]);
       game.panelBack = toBed;
       return;
     }
@@ -1095,7 +1197,7 @@ export function showDuel(game: Game): void {
           game.goToSleep();
         };
     showAdultCard(game, result.outcome === "won" ? `You win · +${result.gold} gold` : `You lose · ${result.gold} gold`, result.line, "bed", [
-      { label: "Sleep", onPick: sleep },
+      { label: tavern.questRun ? "Back to the quest" : "Sleep", onPick: sleep },
     ]);
     game.panelBack = sleep;
     return;

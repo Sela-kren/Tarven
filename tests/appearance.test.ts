@@ -64,6 +64,7 @@ import {
   nearestStop,
   newLook,
   startLook,
+  startSliders,
   outfitOf,
   ADVENTURER_OUTFITS,
   BANDIT_OUTFITS,
@@ -273,7 +274,7 @@ describe("smoothing a fitted top", () => {
     expect(half[5]).toBeCloseTo(moves[5] / 2, 5);
   });
 
-  it("folds the cloth hanging from her bust: a valley under her cleavage, a ridge a half fold round", () => {
+  it("hangs the cloth from her bust smooth, without folds (the user, 2026-11-19: a towel, not pleats)", () => {
     // The front of a breast 20 cm out at 1.2 m with cloth 10 cm out under it at 1.1 m: under her cleavage, and half
     // a fold round (HANG.fold / 2 at 20 cm out).
     const way = HANG.fold / 2 / 0.2;
@@ -284,7 +285,22 @@ describe("smoothing a fitted top", () => {
     hangTop(hangField(shaped, verts, 0)!, shaped, verts, moves, 1);
     const out = (v: number) => Math.hypot(shaped[v * 3] + moves[v * 3], shaped[v * 3 + 2] + moves[v * 3 + 2]);
     expect(out(1)).toBeCloseTo(0.2 - HANG.slope * 0.1, 2);
-    expect(out(3) - out(1)).toBeCloseTo(HANG.depth, 2);
+    expect(out(3)).toBeCloseTo(out(1), 4);
+  });
+
+  it("spans the dip between her breasts like a towel, at their own height", () => {
+    // Two breast fronts 20 cm out, 30 degrees either side of her front, and the cleavage between them 8 cm out, all
+    // at 1.2 m: the cloth there comes out to the straight line between the breasts' fronts.
+    const way = Math.PI / 6;
+    const at = (r: number, round: number) => [r * Math.sin(round), 1.2, -r * Math.cos(round)];
+    const shaped = Float32Array.from([...at(0.2, -way), ...at(0.08, 0), ...at(0.2, way)]);
+    const verts = [0, 1, 2];
+    const moves = new Float32Array(shaped.length);
+    hangTop(hangField(shaped, verts, 0)!, shaped, verts, moves, 1);
+    expect(-(shaped[5] + moves[5])).toBeCloseTo(0.2 * Math.cos(way), 2);
+    expect(shaped[3] + moves[3]).toBeCloseTo(0, 5);
+    // The breasts stay.
+    for (const k of [0, 1, 2, 6, 7, 8]) expect(moves[k]).toBe(0);
   });
 
   it("turns a hem's turned-under strip with the fold it turns under at", () => {
@@ -575,6 +591,16 @@ describe("keeping looks", () => {
     });
     // He has no other to start in: nothing stored for his.
     expect(readLook({ sliders: {}, colors: {}, hidden: [] }, "Male")).toEqual(newLook());
+  });
+
+  it("starts her J cup with bigger nipples, in a new game and in an old save she never shaped", () => {
+    const start = startSliders();
+    expect(startLook("Female").sliders).toMatchObject(start);
+    expect(readLooks({ Female: { sliders: {}, colors: {}, hidden: [] } })!.Female.sliders).toMatchObject(start);
+    // What she set herself stays, even as built, and reads back the same.
+    const own = readLooks({ Female: { sliders: { bust: 0, nippleSize: -0.3 }, colors: {}, hidden: [] } })!.Female;
+    expect(own.sliders).toMatchObject({ bust: 0, nippleSize: -0.3, areolaSize: start.areolaSize });
+    expect(readLooks(JSON.parse(JSON.stringify({ Female: own })))!.Female.sliders).toEqual(own.sliders);
   });
 
   it("moves an old save's sexy everyday set over to the plain one, but keeps a set she picked herself", () => {

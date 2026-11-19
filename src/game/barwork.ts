@@ -148,7 +148,13 @@ export const FAINT_HOLD = 1.2;
 export const REDRESS_PATIENCE = 0.15;
 
 export const REDRESS_LINES: readonly string[] = [
-  "You duck behind the bar and put your {piece} back on, fast.",
-  "Behind the bar, out of sight, you get your {piece} back where it belongs.",
-  "You crouch behind the bar and wriggle back into your {piece}. Someone groans in disappointment.",
+  "You duck behind the bar and put your {piece} back on, fast. Heart still racing.",
+  "Behind the bar you get your {piece} back on quick.",
+  "You crouch behind the bar and get your {piece} back where it belongs.",
+  "Behind the bar you quietly put your {piece} back on, body aching and slick.",
+  "Out of sight behind the bar you slip your {piece} back into place.",
+  "You duck behind the bar and settle your {piece} where it belongs again.",
+  "You drop low behind the bar and pull your {piece} into place, still throbbing. A groan of disappointment follows.",
+  "You crouch behind the bar and ease back into your {piece}. Someone groans in disappointment.",
+  "Behind the bar you wriggle your {piece} on again while someone sighs with regret.",
 ];

@@ -86,8 +86,8 @@ describe("the wardrobe", () => {
     // Thigh-highs with it are stockings again, and come off.
     expect(stripLadder("Female", "tee", "thighhigh")[1]).toMatchObject({ id: "stockings", label: "stockings" });
     expect(stripLadder("Female", "tee", "thighhigh")[1].lines).toBeUndefined();
-    // Shown off, the tee lifts up over her breasts; once it's off there's nothing to pull.
-    expect(topPull("Female", "tee", [])).toEqual({ ids: ["tee"], dir: "up" });
+    // Shown off, the tee's neck is dragged down under her breasts; once it's off there's nothing to pull.
+    expect(topPull("Female", "tee", [])).toEqual({ ids: ["tee"], dir: "down" });
     expect(topPull("Female", "tee", ["tee"])).toBeNull();
     // A cut-in lifts the tee and brings the leggings down, with her smallclothes off.
     expect(cutInPieces("Female", "tee", undefined, undefined, [])).toEqual(["stockings", "bra", "smalls"]);

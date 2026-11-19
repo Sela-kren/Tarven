@@ -89,6 +89,13 @@ const MOUTH = new Vector3(0, 0.075, -0.1);
 /** Where the mug's middle sits from the mouth, in the head's space, at the lips and tipped right up. */
 const MUG_AT_LIPS = new Vector3(0, -0.04, -0.13);
 const MUG_BOTTOMS_UP = new Vector3(0, 0.03, -0.12);
+/**
+ * How the drinking arm should look, in model units: the elbow at least this far out past the shoulder and this
+ * far below the hand, and how hard `reach` pushes for that against getting the mug exactly to the mouth.
+ */
+const ELBOW_OUT = 0.02;
+const ELBOW_BELOW_HAND = 0.05;
+const ARM_LOOK = 3;
 
 function mix(a: Pose, b: Pose, t: number): Pose {
   const k = MathUtils.smootherstep(t, 0, 1);
@@ -355,12 +362,26 @@ export class DrinkComic {
     model.updateMatrixWorld(true);
     const goal = bones.head.localToWorld(MOUTH.clone().add(offset));
     const hand = new Vector3();
+    const elbow = new Vector3();
+    // Which way is out from the body for this arm, in the model's own space.
+    const shoulder = model.worldToLocal(bones.upper.getWorldPosition(new Vector3()));
+    const middle = model.worldToLocal(bones.torso.getWorldPosition(new Vector3()));
+    const outwards = Math.sign(shoulder.x - middle.x) || 1;
+    const scale = model.getWorldScale(new Vector3()).y;
     type Arm = Pick<Pose, "upper" | "across" | "twist" | "elbow">;
     const miss = (arm: Arm) => {
       bones.upper.rotation.set(arm.upper, arm.twist, arm.across);
       bones.fore.rotation.set(arm.elbow, 0, 0);
       bones.upper.updateMatrixWorld(true);
-      return bones.fore.localToWorld(hand.copy(this.hand)).distanceTo(goal);
+      const at = bones.fore.localToWorld(hand.copy(this.hand));
+      const off = at.distanceTo(goal);
+      // Many arm angles put the hand at the mouth; only some look like someone drinking. Keep the elbow out at
+      // the shoulder (not folded in across the chest) and below the hand, so the forearm comes up to the face.
+      model.worldToLocal(at);
+      model.worldToLocal(bones.fore.getWorldPosition(elbow));
+      const tucked = Math.max(0, ELBOW_OUT - (elbow.x - shoulder.x) * outwards);
+      const raised = Math.max(0, elbow.y - at.y + ELBOW_BELOW_HAND);
+      return off + (tucked + raised) * ARM_LOOK * scale;
     };
     const { clamp } = MathUtils;
     let best: Arm = { upper: pose.upper, across: pose.across, twist: pose.twist, elbow: pose.elbow };

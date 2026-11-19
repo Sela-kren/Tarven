@@ -33,6 +33,11 @@ export interface RoleStats {
   label: string;
   /** The guest-only outfit they wear, or null for the group's plain clothes. */
   outfit: GuestOutfit | null;
+  /**
+   * The share of them who come in modern clothes instead (WORLD.md, section 2b: life is modern, power is medieval),
+   * and which; the rest keep the outfit above. Working kit (plate, robes, a maid's uniform) mostly stays on.
+   */
+  modern: { share: number; styles?: readonly GuestOutfit[] };
 
   // Service.
   /** Seconds they'll wait for their order, before cushions, mess and charm. */
@@ -77,28 +82,28 @@ export interface RoleStats {
 
 export const ROLES: Record<GuestRole, RoleStats> = {
   farmer: {
-    kind: "farmer", label: "Farmer", outfit: null,
+    kind: "farmer", label: "Farmer", outfit: null, modern: { share: 0.6 },
     patience: 55, pay: 4, tip: 2, trust: 1, walkoutHeat: 0, favourite: "mead", stay: 1, lightweight: 1, fussy: 1, fame: 0,
     leanings: { happy: 14, gloomy: 20, drunk: 6, angry: 4 }, lustCeiling: 4, desireCeiling: 8, nerve: 1,
     fight: { stamina: 14, attack: 3, accuracy: 0.55 },
     partner: { resist: 1.15, skill: 0.85, stamina: 22 }, prefers: "hands", load: 9,
   },
   soldier: {
-    kind: "soldier", label: "Soldier", outfit: null,
+    kind: "soldier", label: "Soldier", outfit: null, modern: { share: 0.7, styles: ["hoodie", "sporty", "casual"] },
     patience: 30, pay: 6, tip: 1, trust: 0, walkoutHeat: 2, favourite: "vodka", stay: 1, lightweight: 1, fussy: 0.6, fame: 0,
     leanings: { happy: 6, drunk: 22, angry: 10, lust: 4 }, lustCeiling: 7, desireCeiling: 7, nerve: 3,
     fight: { stamina: 24, attack: 6, accuracy: 0.7 },
     partner: { resist: 0.8, skill: 1.25, stamina: 30 }, prefers: "pussy", load: 12,
   },
   smuggler: {
-    kind: "smuggler", label: "Smuggler", outfit: "pirate",
+    kind: "smuggler", label: "Smuggler", outfit: "pirate", modern: { share: 0.6, styles: ["hoodie", "casual"] },
     patience: 40, pay: 9, tip: 4, trust: 0, walkoutHeat: 0, favourite: "wine", stay: 1, lightweight: 0.9, fussy: 1, fame: 0,
     leanings: { scheming: 32, happy: 4, drunk: 4, lust: 3 }, lustCeiling: 6, desireCeiling: 9, nerve: 2,
     fight: { stamina: 18, attack: 4, accuracy: 0.65 },
     partner: { resist: 0.9, skill: 1.1, stamina: 25 }, prefers: "butt", load: 8,
   },
   fugitive: {
-    kind: "fugitive", label: "Stranger", outfit: null,
+    kind: "fugitive", label: "Stranger", outfit: null, modern: { share: 0.7, styles: ["hoodie", "casual"] },
     patience: 45, pay: 5, tip: 3, trust: 1, walkoutHeat: 0, favourite: "vodka", stay: 0.9, lightweight: 1.1, fussy: 0.5, fame: 0,
     leanings: { scared: 42, gloomy: 12, happy: 2 }, lustCeiling: 3, desireCeiling: 10, nerve: 1,
     fight: { stamina: 16, attack: 4, accuracy: 0.6 },
@@ -107,28 +112,28 @@ export const ROLES: Record<GuestRole, RoleStats> = {
 
   // The adventurers: loud, spend fast, and spread her name on the road.
   archer: {
-    kind: "adventurer", label: "Archer", outfit: "archer",
+    kind: "adventurer", label: "Archer", outfit: "archer", modern: { share: 0.4 },
     patience: 35, pay: 7, tip: 3, trust: 0, walkoutHeat: 0, favourite: "mead", stay: 1, lightweight: 0.9, fussy: 0.8, fame: 1,
     leanings: { happy: 22, drunk: 10, lust: 6 }, lustCeiling: 6, desireCeiling: 7, nerve: 2,
     fight: { stamina: 18, attack: 5, accuracy: 0.85 },
     partner: { resist: 1, skill: 1.15, stamina: 24 }, prefers: "butt", load: 9,
   },
   warrior: {
-    kind: "adventurer", label: "Warrior", outfit: "warrior",
+    kind: "adventurer", label: "Warrior", outfit: "warrior", modern: { share: 0.2, styles: ["sporty", "hoodie"] },
     patience: 30, pay: 8, tip: 2, trust: 0, walkoutHeat: 1, favourite: "vodka", stay: 1.25, lightweight: 0.5, fussy: 0.4, fame: 1,
     leanings: { drunk: 22, happy: 14, angry: 6, lust: 4 }, lustCeiling: 7, desireCeiling: 6, nerve: 3,
     fight: { stamina: 32, attack: 6, accuracy: 0.6 },
     partner: { resist: 0.8, skill: 1.15, stamina: 34 }, prefers: "pussy", load: 12,
   },
   mage: {
-    kind: "adventurer", label: "Mage", outfit: "mage",
+    kind: "adventurer", label: "Mage", outfit: "mage", modern: { share: 0.2, styles: ["hoodie", "casual"] },
     patience: 50, pay: 10, tip: 4, trust: 0, walkoutHeat: 0, favourite: "wine", stay: 1.3, lightweight: 1.4, fussy: 1.3, fame: 2,
     leanings: { happy: 10, scheming: 10, gloomy: 6, lust: 4 }, lustCeiling: 4, desireCeiling: 9, nerve: 1,
     fight: { stamina: 12, attack: 7, accuracy: 0.75 },
     partner: { resist: 1.2, skill: 1, stamina: 18 }, prefers: "mouth", load: 7,
   },
   cleric: {
-    kind: "adventurer", label: "Cleric", outfit: "cleric",
+    kind: "adventurer", label: "Cleric", outfit: "cleric", modern: { share: 0.1, styles: ["casual"] },
     patience: 65, pay: 6, tip: 5, trust: 2, walkoutHeat: 0, favourite: "mead", stay: 1.1, lightweight: 1, fussy: 1.1, fame: 1,
     leanings: { happy: 24, gloomy: 4 }, lustCeiling: 2, desireCeiling: 8, nerve: 0,
     fight: { stamina: 22, attack: 2, accuracy: 0.5 },
@@ -137,14 +142,14 @@ export const ROLES: Record<GuestRole, RoleStats> = {
 
   // The bandits: they bring trouble, and the Baron's heat when they're crossed.
   rogue: {
-    kind: "bandit", label: "Rogue", outfit: "rogue",
+    kind: "bandit", label: "Rogue", outfit: "rogue", modern: { share: 0.4, styles: ["hoodie", "casual"] },
     patience: 35, pay: 7, tip: 3, trust: 0, walkoutHeat: 1, favourite: "wine", stay: 0.9, lightweight: 0.8, fussy: 0.5, fame: 0,
     leanings: { scheming: 30, angry: 6, lust: 6 }, lustCeiling: 6, desireCeiling: 7, nerve: 4,
     fight: { stamina: 16, attack: 5, accuracy: 0.85 },
     partner: { resist: 0.9, skill: 1.3, stamina: 22 }, prefers: "butt", load: 8,
   },
   brute: {
-    kind: "bandit", label: "Brute", outfit: "brute",
+    kind: "bandit", label: "Brute", outfit: "brute", modern: { share: 0.3, styles: ["sporty", "hoodie"] },
     patience: 25, pay: 6, tip: 1, trust: 0, walkoutHeat: 3, favourite: "vodka", stay: 1.1, lightweight: 0.6, fussy: 0, fame: 0,
     leanings: { angry: 26, drunk: 16, lust: 6 }, lustCeiling: 8, desireCeiling: 5, nerve: 5,
     fight: { stamina: 34, attack: 8, accuracy: 0.55 },
@@ -153,14 +158,14 @@ export const ROLES: Record<GuestRole, RoleStats> = {
 
   // The nobles: the richest purses, and the shortest patience with a dirty room.
   noble: {
-    kind: "noble", label: "Noble", outfit: "noble",
+    kind: "noble", label: "Noble", outfit: "noble", modern: { share: 0 },
     patience: 40, pay: 16, tip: 8, trust: 0, walkoutHeat: 1, favourite: "wine", stay: 1.2, lightweight: 1.2, fussy: 2.5, fame: 3,
     leanings: { scheming: 12, happy: 6, lust: 6, angry: 6 }, lustCeiling: 5, desireCeiling: 9, nerve: 2,
     fight: { stamina: 10, attack: 2, accuracy: 0.45 },
     partner: { resist: 1.25, skill: 1, stamina: 20 }, prefers: "mouth", load: 7,
   },
   servant: {
-    kind: "noble", label: "Servant", outfit: "servant",
+    kind: "noble", label: "Servant", outfit: "servant", modern: { share: 0 },
     patience: 70, pay: 3, tip: 2, trust: 1, walkoutHeat: 0, favourite: "mead", stay: 0.8, lightweight: 1.1, fussy: 1.5, fame: 0,
     leanings: { gloomy: 14, scared: 10, happy: 8 }, lustCeiling: 3, desireCeiling: 9, nerve: 0,
     fight: { stamina: 12, attack: 2, accuracy: 0.5 },

@@ -21,6 +21,7 @@
  *
  * Ids are the group's prefix and the line's place in it: they only stop repeats, nothing saves them.
  */
+import { fillLog, pickLog, seedRoll } from "./loglines";
 import type { DebuffId } from "./debuffs";
 import type { ArcStage } from "./lewd";
 import type { Mood } from "./mood";
@@ -2667,22 +2668,76 @@ function pickPiece(pool: readonly HeatPiece[], f: TownFacts, who: Townsperson, r
   return piece;
 }
 
-const OFFER_WORDS: Record<HeatOffer, string> = {
-  kiss: "a kiss",
-  touch: "a touch",
-  tonight: "a night after close",
-  alley: "a quick one behind the bakehouse",
-  upstairs: "a bed",
+const OFFER_WORDS: Record<HeatOffer, readonly string[]> = {
+  kiss: [
+    "a deep kiss and more",
+    "a proper fuck",
+  ],
+  touch: [
+    "a hand between the legs",
+    "a bold grope",
+  ],
+  tonight: [
+    "a night of hard fucking after close",
+    "a night of being filled once shut",
+  ],
+  alley: [
+    "a quick fuck behind the bakehouse",
+    "a fast shag round the bakehouse",
+    "a hurried rut behind the bakehouse",
+  ],
+  upstairs: [
+    "a proper hard fuck in bed",
+    "the use of a bed all night",
+  ],
 };
 
-const REACTION_WORDS: Record<HeatReaction, string> = {
-  delighted: "They said yes, delighted.",
-  flustered: "They stammered a yes.",
-  takesUp: "They took her up on it.",
-  callsFriends: "They called their friends over.",
-  flees: "They fled.",
-  declines: "{She} was too drunk: they told {her} to ask again sober.",
+const REACTION_WORDS: Record<HeatReaction, readonly string[]> = {
+  delighted: [
+    "They said yes and dragged {her} off at once.",
+    "They agreed, grinning, and started undressing.",
+    "They accepted with delight and pulled {her} close.",
+  ],
+  flustered: [
+    "They managed a stammered yes and a hard stare at {hers} body.",
+    "They stuttered out a yes, already reaching.",
+    "They stammered their agreement and stepped nearer.",
+  ],
+  takesUp: [
+    "They took {her} up on it and started fucking.",
+    "They accepted what {she} offered and used it.",
+    "They went with the offer and took {her} hard.",
+  ],
+  callsFriends: [
+    "They called their mates over to join the fucking.",
+    "They beckoned their friends across to share.",
+    "They fetched their friends to take turns.",
+  ],
+  flees: [
+    "They fled and nothing more happened.",
+    "They turned and fled at once; it stopped there.",
+    "They bolted, and that was the end of it.",
+  ],
+  declines: [
+    "{She} was too far gone with drink: they said to ask again when sober, and nothing happened.",
+    "{She} had drunk too much; they told {her} to try again sober, so it stopped.",
+    "{She} was too drunk, so they told {her} to ask again when clear-headed and left it.",
+  ],
 };
+
+/** The log's summary of a heat moment: she gave in, or she caught herself. {kind}, {offered}, {reaction}, {effects}. */
+const HEAT_SUMMARY = {
+  gaveIn: [
+    "{Hers} need won out and {she} offered the {kind} {offered}, ready to fuck. {reaction}{effects}",
+    "{Hers} heat took hold: {she} offered the {kind} {offered}. {reaction}{effects}",
+    "{Hers} need won out and {she} offered the {kind} {offered}. {reaction}{effects}",
+  ],
+  resisted: [
+    "{Hers} heat nearly took over while talking to the {kind}, making {her} ache to be filled. {She} caught {herself}.{effects}",
+    "Talking to the {kind} nearly let {hers} heat win and {her} offer more. {She} caught {herself}.{effects}",
+    "{Hers} heat almost took over with the {kind}, body wet and ready. {She} caught {herself} in time.{effects}",
+  ],
+} as const;
 
 function effectWords(e: HeatMoment["effects"]): string {
   const parts = [
@@ -2741,13 +2796,15 @@ export function pickHeatMoment(
   let offer: HeatOffer | null = null;
   const effects: HeatMoment["effects"] = {};
   let summary: string;
+  // Which way the log puts it: from the lines said, so it never draws on `random` (the seeded rolls stay as they were).
+  const roll = seedRoll(...[...parts.map((p) => p.id).join("+")].map((ch) => ch.charCodeAt(0)));
   if (resisted) {
     her(HEAT.caughtThoughts, true);
     her(HEAT.caughtSay);
     them(HEAT.caughtBack[reaction]);
     effects.respect = -1;
     effects.desire = 5;
-    summary = fillFor(`{Hers} heat nearly took over, talking to the ${who.kind}. {She} caught {herself}.${effectWords(effects)}`, f);
+    summary = fillFor(fillLog(pickLog(HEAT_SUMMARY.resisted, roll), { kind: who.kind, effects: effectWords(effects) }), f);
   } else {
     const made = her(HEAT.offers);
     them(HEAT.taken[reaction]);
@@ -2756,8 +2813,9 @@ export function pickHeatMoment(
     effects.fame = reaction === "callsFriends" ? 2 : 1;
     effects.lust = 1;
     effects.desire = 10;
-    const offered = made?.offer ? OFFER_WORDS[made.offer] : "{herself}";
-    summary = fillFor(`{Hers} heat took over: {she} offered the ${who.kind} ${offered}. ${REACTION_WORDS[reaction]}${effectWords(effects)}`, f);
+    const offered = made?.offer ? pickLog(OFFER_WORDS[made.offer], seedRoll(roll, 1)) : "{herself}";
+    const reacted = pickLog(REACTION_WORDS[reaction], seedRoll(roll, 2));
+    summary = fillFor(fillLog(pickLog(HEAT_SUMMARY.gaveIn, roll), { kind: who.kind, offered, reaction: reacted, effects: effectWords(effects) }), f);
   }
   return {
     id: parts.map((p) => p.id).join("+"),

@@ -20,6 +20,7 @@
 import { crowdFactor, type DefeatId } from "./defeat";
 import { GUEST_KIND_LIST } from "./guestroles";
 import { MIND_AT } from "./lewd";
+import { pickLog, seedRoll } from "./loglines";
 import type { GuestKind } from "./tavern";
 
 /** A roll 0 to 1, as `Math.random` gives. */
@@ -368,8 +369,16 @@ export interface RevelDawn {
 }
 
 export const REVEL_DAWN_LINES = {
-  quiet: "Dawn finds the hall quiet, the cushions scattered and the door already barred.",
-  wild: "Dawn finds the hall wrecked, and the whole pass already talking about last night.",
+  quiet: [
+    "Dawn finds the hall quiet, cushions scattered, door barred. Smells of sex and ale.",
+    "Dawn. Hall's quiet. Cushions everywhere. Door already barred.",
+    "Morning. Hall quiet, cushions scattered, door barred. Quiet after the night.",
+  ],
+  wild: [
+    "Dawn finds the hall wrecked. Whole pass already talking about last night.",
+    "Dawn. Hall's a mess. The pass is already talking about what happened.",
+    "Morning finds the hall wrecked. Word's already out about last night.",
+  ],
 } as const;
 
 /**
@@ -400,23 +409,43 @@ export function revelDawn(d: RevelDawnInput): RevelDawn {
     heat,
     fans: { tag: REVEL_FAN_TAG, count: fans },
     records,
-    line: d.night.heat >= 60 ? REVEL_DAWN_LINES.wild : REVEL_DAWN_LINES.quiet,
+    line: pickLog(d.night.heat >= 60 ? REVEL_DAWN_LINES.wild : REVEL_DAWN_LINES.quiet, seedRoll(d.night.heat, d.night.groups.length, d.mix.guests.length)),
   };
 }
 
 // ---------- Lines (placeholders until the house voice writes them) ----------
 
 /** The night's opening in the log, by who's invited. */
-export const REVEL_OPEN_LINES: Record<RevelWho, string> = {
-  men: "The door opens on a revel night, and the hall fills with men who know why they came.",
-  mixed: "The door opens on a revel night, and men and women alike fill the cushions.",
-  women: "The door opens on a revel night, and the hall fills with women who know why they came.",
+export const REVEL_OPEN_LINES: Record<RevelWho, readonly string[]> = {
+  men: [
+    "Door opens on a revel night. Hall fills with men who know why they came. Already hard.",
+    "Revel night. Men fill the hall, cocks already out or half out, knowing what the night is for.",
+    "The door opens. Men pour in who know exactly why they're here tonight.",
+  ],
+  mixed: [
+    "Door opens on a revel night. Men and women fill the cushions, already touching.",
+    "Revel night. Men and women on the cushions, hands already under skirts and in trousers.",
+    "The hall fills with men and women who came for the same thing. Cushions are already occupied.",
+  ],
+  women: [
+    "Door opens on a revel night. Hall fills with women who know why they came. Already wet.",
+    "Revel night. Women fill the hall, skirts up or off, knowing what the night is for.",
+    "The door opens. Women pour in who came for this. Hands already between legs.",
+  ],
 };
 
 /** A group forming, in the log. `{n}` is how many. */
-export const REVEL_GROUP_LINE = "Across the hall, {n} of them find each other on the cushions.";
+export const REVEL_GROUP_LINES: readonly string[] = [
+  "Across the hall, {n} of them find each other on the cushions, already fucking.",
+  "Across the hall {n} of them pair off on the cushions. You can hear them.",
+  "{n} of them find each other across the hall. Cushions rocking under them.",
+];
 /** Someone stopping, or walking out: it ends for them, and the room lets them go. */
-export const REVEL_STOP_LINE = "One of them says no, and that's the end of it for them.";
+export const REVEL_STOP_LINES: readonly string[] = [
+  "One of them says no. That's the end of it for them. No one pushes.",
+  "Someone says no and it stops for them. That's it.",
+  "One says no. It ends for them right there. No more.",
+];
 
 // ---------- Passives and titles (ideas, as data) ----------
 
