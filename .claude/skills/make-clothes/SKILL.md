@@ -176,9 +176,23 @@ rebuild, export again and measure: after the refit, 95% of points were within 0.
   pleat line, bridges the under-bust crease, and evens the point spacing, all in about 12 s. Then
   `copy_skin_weights` (Data Transfer: weights from the skin face under each point) and the stains carried along
   (`anchor_stains` / `replace_stains`). The cloth sim on top of it crumpled the hem band and sleeves again, so the
-  drape stays off. `TARVEN_CLEAN=0` gives back the copied-skin tee. Still open: J cup and up (torn under the bust,
-  and a thin crack down the cleavage where the bridged midline is pulled apart), and a couple of skin specks at
-  the back of a sleeve.
+  drape stays off. `TARVEN_CLEAN=0` gives back the copied-skin tee.
+- **Skin poking through after the build's later steps** (specks at the back of the sleeves, after the neck
+  root moved her): `cover_skin` / `TEE_COVER` runs last, before the armature. Wherever a skin point lies outside the
+  tee, it pushes the tee face over it out. It only counts skin the tee covers: the spot on the tee must be 15 mm
+  from the tee's edges, measured from that spot, because measured from the skin it pushed the hem and neckline out
+  into flaps. Pushes are capped at 8 mm in all.
+- **Big cups (J and up), in the game** (appearance.ts): fitted tops (`SMOOTH_TOPS`) now
+  1. follow 12 skin points with soft weights (`TOP_FOLLOW`), not 4;
+  2. skip the cleavage span, whose line cut across the lower inner breast and folded the cloth into flaps;
+  3. are smoothed plainly up to F, blending into Taubin smoothing by J (`smoothTopSteps`), then put on the shell
+     again;
+  4. are kept 2 mm off the skin up to F, rising to 8 mm by M (`smoothTopGap`). Stretched faces on a big breast
+     dip into it between their corners, so skin showed through in patches.
+
+  No crack, tear or skin windows at J, M or Q. At M and up the tee hangs from the breasts' fronts with a flat panel
+  under the middle. Diagnose such things by switching one game step off at a time (follow, span, smoothing, shell,
+  clear, nipple riders) and rendering the cups as the game shapes them.
 - **Folds made in the build survive the game's reshaping**: `smoothMoves` eases the *moves*, not the shape,
   so a built fold rides along as the bust changes.
 - **Rebuilding is safe and quick**: an unchanged `build_world.py` reproduces `public/models/female.glb`

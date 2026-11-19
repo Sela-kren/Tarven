@@ -80,7 +80,7 @@ import {
   shapeAmount,
   smoothMoves,
   smoothTable,
-  smoothTopPasses,
+  smoothTopGap,
   weldNormals,
   stopValue,
   toneColor,
@@ -235,13 +235,14 @@ describe("smoothing a fitted top", () => {
     }
   });
 
-  it("smooths fully up to an F cup and not at all from a J", () => {
+  it("keeps fitted tops further off her skin the bigger her bust, from an F cup to an M", () => {
     const cup = (letter: string) => stopValue(CUPS, CUPS.labels.indexOf(letter));
-    expect(smoothTopPasses(cup("A"))).toBe(100);
-    expect(smoothTopPasses(cup("F"))).toBe(100);
-    expect(smoothTopPasses(cup("J"))).toBe(0);
-    expect(smoothTopPasses(cup("H"))).toBeGreaterThan(0);
-    expect(smoothTopPasses(cup("H"))).toBeLessThan(100);
+    expect(smoothTopGap(cup("A"))).toBeCloseTo(0.002);
+    expect(smoothTopGap(cup("F"))).toBeCloseTo(0.002);
+    expect(smoothTopGap(cup("J"))).toBeGreaterThan(0.002);
+    expect(smoothTopGap(cup("J"))).toBeLessThan(0.008);
+    expect(smoothTopGap(cup("M"))).toBeCloseTo(0.008);
+    expect(smoothTopGap(cup("Z"))).toBeCloseTo(0.008);
   });
 });
 

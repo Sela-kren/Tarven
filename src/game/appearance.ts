@@ -2202,7 +2202,7 @@ interface BoneRest {
   restJoint: Vector3;
 }
 
-/** How many body points each clothing point follows. */
+/** How many body points each clothing point follows, and how softly the nearer ones count over the further. */
 const FOLLOW_POINTS = 4;
 /**
  * Cloth within the first distance of the body follows it fully; by the second it keeps to its own bones,
@@ -2225,6 +2225,14 @@ const RIDE = 0.04;
 
 /**
  * Clothes don't sink into the cleavage: fabric pulled over two breasts stretches straight from one to the other.
+const FOLLOW_SOFT = 0.005;
+/**
+ * Fitted tops (SMOOTH_TOPS) follow more of her skin, more evenly: over the crease under a big bust the four
+ * nearest points of a tee bridging it were split between the breast's underside and her ribs, and as the breast
+ * grew and dropped they parted and tore the cloth between them. Following the skin round it as a whole, the cloth
+ * moves smoothly with the breast and hangs from its front, as a tight shirt does.
+ */
+const TOP_FOLLOW = { k: 12, soft: 0.015 };
  * The body points that can hold it out: the front of the chest, from just off the middle to past the breasts.
  * Model space: x across, y up, z backwards.
  */
@@ -2543,7 +2551,9 @@ export function clearGrid(skin: ClearSkin[], shaped: Float32Array[]): ClearGrid 
  * Puts the points of a top (`clothVerts`, `bind` + `moves`, `moves` changed in place) inside her skin out over it.
  * Returns the points it moved.
  */
-export function clearOfSkin(skin: ClearGrid, clothVerts: Int32Array, bind: Float32Array, moves: Float32Array): Int32Array {
+export function clearOfSkin(
+  skin: ClearGrid, clothVerts: Int32Array, bind: Float32Array, moves: Float32Array, gap = CLEAR_GAP,
+): Int32Array {
   const { at, out, cells: grid } = skin;
   const moved: number[] = [];
   for (const c of clothVerts) {
@@ -2570,10 +2580,10 @@ export function clearOfSkin(skin: ClearGrid, clothVerts: Int32Array, bind: Float
     if (best < 0) continue;
     const nx = out[best * 3], ny = out[best * 3 + 1], nz = out[best * 3 + 2];
     const over = (x - at[best * 3]) * nx + (y - at[best * 3 + 1]) * ny + (z - at[best * 3 + 2]) * nz;
-    if (over >= CLEAR_GAP) continue;
-    moves[v] += nx * (CLEAR_GAP - over);
-    moves[v + 1] += ny * (CLEAR_GAP - over);
-    moves[v + 2] += nz * (CLEAR_GAP - over);
+    if (over >= gap) continue;
+    moves[v] += nx * (gap - over);
+    moves[v + 1] += ny * (gap - over);
+    moves[v + 2] += nz * (gap - over);
     moved.push(c);
   }
   return Int32Array.from(moved);
@@ -2586,19 +2596,34 @@ export function clearOfSkin(skin: ClearGrid, clothVerts: Int32Array, bind: Float
  * over a C cup bunched into ridges over a smaller one, a few centimetres apart, and tore under a bigger one. Its moves
  * are eased towards their neighbours' (not its points: its built shape stays as it was), enough passes to reach across
  * those ridges; the edges (hem, neck, sleeve ends) are eased only along themselves. Only these materials.
- * Past SMOOTH_TOPS_FADE[0] it fades out, gone by [1]: over a bust that big the eased cloth lagged behind its growth
- * and her skin and nipples showed through it.
+ * Up to SMOOTH_TOPS_TAUBIN[0] plainly, which irons out the gentle ridges of a small bust; by [1] in Taubin's two steps
+ * (in, then back out a little): plain easing pulled the cloth's large-scale moves together too, and over a big bust
+ * it lagged behind the breast's growth and her skin showed through, while the two steps take out only the
+ * small-scale tears and keep the stretch. Between, the step back out grows, so there's no jump on the slider.
  */
-const SMOOTH_TOPS: readonly string[] = ["T_tee"];
+const SMOOTH_TOPS: readonly string[] = ["T_tee", "T_halter", "T_lace"];
 const SMOOTH_TOPS_PASSES = 100;
 const SMOOTH_TOPS_EASE: readonly number[] = [0.5];
-const SMOOTH_TOPS_FADE: readonly [string, string] = ["F", "J"];
+const SMOOTH_TOPS_TAUBIN = { cups: ["F", "J"] as const, back: -0.53 };
 
-/** How many passes her tops are smoothed by at this Cup size slider value (see SMOOTH_TOPS). */
-export function smoothTopPasses(bust: number): number {
-  const [from, to] = SMOOTH_TOPS_FADE.map((letter) => stopValue(CUPS, CUPS.labels.indexOf(letter)));
+/** The easing steps her tops are smoothed with at this Cup size slider value, each pair one pass (see SMOOTH_TOPS). */
+export function smoothTopSteps(bust: number): [number, number] {
+  const [from, to] = SMOOTH_TOPS_TAUBIN.cups.map((letter) => stopValue(CUPS, CUPS.labels.indexOf(letter)));
   const t = Math.min(1, Math.max(0, (bust - from) / (to - from)));
-  return Math.round(SMOOTH_TOPS_PASSES * (1 - t));
+  return [0.5, SMOOTH_TOPS_TAUBIN.back * t];
+}
+/**
+ * How far her fitted tops are kept off her skin, by her cup size: CLEAR_GAP up to the first, rising to the second gap
+ * by the second cup. Over a big bust the cloth's faces are stretched centimetres across, and a flat face that wide on
+ * the breast's curve dips into it between its corners: with only CLEAR_GAP her skin showed through in patches.
+ */
+const SMOOTH_TOPS_GAP = { cups: ["F", "M"] as const, gaps: [CLEAR_GAP, 0.008] as const };
+
+/** How far her fitted tops are kept off her skin at this Cup size slider value (see SMOOTH_TOPS_GAP). */
+export function smoothTopGap(bust: number): number {
+  const [from, to] = SMOOTH_TOPS_GAP.cups.map((letter) => stopValue(CUPS, CUPS.labels.indexOf(letter)));
+  const t = Math.min(1, Math.max(0, (bust - from) / (to - from)));
+  return SMOOTH_TOPS_GAP.gaps[0] + (SMOOTH_TOPS_GAP.gaps[1] - SMOOTH_TOPS_GAP.gaps[0]) * t;
 }
 /** Points of a top this close together, as built, are one point (glTF splits them at seams). */
 const SMOOTH_WELD = 1e-5;
@@ -2839,6 +2864,8 @@ const unbind = new Matrix4();
  */
 const PUBIC_OVER_VULVA = 0.0004;
 /** How near his penis's root a piece of clothing has to come to cover his groin. */
+  /** How many body points each point follows (FOLLOW_POINTS, or TOP_FOLLOW for fitted tops). */
+  k: number;
 const GROIN_REACH = 0.035;
 /** Her vulva's and anus's meshes, and his penis's, which only show while bare there; guests never show them. */
 const PRIVATE_MATERIALS: readonly string[] = [
@@ -3112,7 +3139,11 @@ export class Dresser {
       slot.mesh.castShadow = false;
     }
     for (const slot of this.slots) {
-      if (FOLLOWING_PARTS.includes(slot.part) && bodyCount >= FOLLOW_POINTS) slot.follow = nearestBody(slot.bind, bodyPoints);
+      if (!FOLLOWING_PARTS.includes(slot.part) || bodyCount < FOLLOW_POINTS) continue;
+      // Fitted tops, and the stains made on them, follow her skin more widely (see TOP_FOLLOW).
+      const top = (slot.part === "Cloth" && SMOOTH_TOPS.includes(slot.original.name))
+        || (slot.part === "Cum" && SMOOTH_TOPS.some((name) => slot.mesh.name.includes(`_${name}_`)));
+      slot.follow = nearestBody(slot.bind, bodyPoints, top && bodyCount >= TOP_FOLLOW.k ? TOP_FOLLOW : undefined);
     }
     // Her clothes, and what landed on them, stretch across her cleavage instead of following the skin into it.
     const hold = cleavageHold(bodyPoints);
@@ -3488,15 +3519,24 @@ export class Dresser {
       const shell = shellOf(this.clear.skin, shaped, this.clear.centre);
       // Only the outfit she has on: there are hundreds of pieces in her wardrobe, and each was a few milliseconds.
       const outfit = outfitOf(this.body, look).mesh;
-      const smoothPasses = smoothTopPasses(look.sliders.bust ?? 0);
+      const topGap = smoothTopGap(look.sliders.bust ?? 0);
+      const topSteps = smoothTopSteps(look.sliders.bust ?? 0);
       for (const [slot, verts] of this.clear.cloths) {
         if (slot.part === "Cloth" && outfitMeshOf(slot.mesh, this.body) !== outfit) continue;
         const { total } = moves[this.slots.indexOf(slot)];
         onShell(shell, verts, slot.bind, total);
-        // Smoothed once out on her shell (smoothed before, the shell put its own steps back), then kept out of her skin.
+        // Not her fitted tops (SMOOTH_TOPS): they bridge her cleavage as built and are kept out on her shell; over a
+        // big bust the span's line from breast to breast cut across their lower insides and folded them into flaps.
+        if (this.smoothTops.has(slot)) continue;
+        // A fitted top: smoothed once out on her shell, out on it again (smoothing pulls it in a little over her
+        // curves), then kept out of her skin by more the bigger her bust (see SMOOTH_TOPS_GAP).
         const table = this.smoothTops.get(slot);
-        if (table && smoothPasses > 0) smoothMoves(table, total, smoothPasses);
-        clearOfSkin(skin, clearOfSkin(skin, verts, slot.bind, total), slot.bind, total);
+        if (table) {
+          smoothMoves(table, total, SMOOTH_TOPS_PASSES * 2, topSteps);
+          onShell(shell, verts, slot.bind, total);
+        }
+        const gap = table ? topGap : CLEAR_GAP;
+        clearOfSkin(skin, clearOfSkin(skin, verts, slot.bind, total, gap), slot.bind, total, gap);
       }
     }
 
@@ -4252,9 +4292,9 @@ export class Dresser {
   private follow(follow: FollowTable, own: Float32Array, total: Float32Array, bodyMoves: Float32Array): void {
     for (let v = 0; v < total.length / 3; v++) {
       let x = 0, y = 0, z = 0;
-      for (let k = 0; k < FOLLOW_POINTS; k++) {
-        const at = follow.points[v * FOLLOW_POINTS + k] * 3;
-        const weight = follow.weights[v * FOLLOW_POINTS + k];
+      for (let k = 0; k < follow.k; k++) {
+        const at = follow.points[v * follow.k + k] * 3;
+        const weight = follow.weights[v * follow.k + k];
         x += bodyMoves[at] * weight;
         y += bodyMoves[at + 1] * weight;
         z += bodyMoves[at + 2] * weight;
@@ -4626,7 +4666,7 @@ const MAX_CELLS = 1 << 21;
  * lower index, so the result is the same whatever order the points are looked at in.
  */
 function considerNearest(best: Float64Array, bestAt: Int32Array, d: number, b: number): void {
-  const last = FOLLOW_POINTS - 1;
+  const last = best.length - 1;
   if (d > best[last] || (d === best[last] && b >= bestAt[last])) return;
   let k = last;
   while (k > 0 && (best[k - 1] > d || (best[k - 1] === d && bestAt[k - 1] > b))) {
@@ -4741,7 +4781,7 @@ function gridNearest(grid: BodyGrid, body: Float32Array, x: number, y: number, z
         y - (min[1] + (cy - r) * size), min[1] + (cy + r + 1) * size - y,
         z - (min[2] + (cz - r) * size), min[2] + (cz + r + 1) * size - z,
       ) - 1e-6;
-    if (reach > 0 && best[FOLLOW_POINTS - 1] < reach * reach) return;
+    if (reach > 0 && best[best.length - 1] < reach * reach) return;
   }
 }
 
@@ -4750,14 +4790,17 @@ function gridNearest(grid: BodyGrid, body: Float32Array, x: number, y: number, z
  * The body points go into a grid first, so each point only searches near itself rather than the whole body: the
  * same nearest points as checking every one (ties to the lower index), in a fraction of the time.
  */
-export function nearestBody(points: Float32Array, body: Float32Array): FollowTable {
+export function nearestBody(
+  points: Float32Array, body: Float32Array, follow: { k: number; soft: number } = { k: FOLLOW_POINTS, soft: FOLLOW_SOFT },
+): FollowTable {
   const count = points.length / 3;
   const bodyCount = body.length / 3;
-  const found = new Int32Array(count * FOLLOW_POINTS);
-  const weights = new Float32Array(count * FOLLOW_POINTS);
+  const K = follow.k;
+  const found = new Int32Array(count * K);
+  const weights = new Float32Array(count * K);
   const own = new Float32Array(count);
-  const best = new Float64Array(FOLLOW_POINTS);
-  const bestAt = new Int32Array(FOLLOW_POINTS);
+  const best = new Float64Array(K);
+  const bestAt = new Int32Array(K);
   const grid = bodyGrid(body);
   for (let v = 0; v < count; v++) {
     const x = points[v * 3], y = points[v * 3 + 1], z = points[v * 3 + 2];
@@ -4772,17 +4815,17 @@ export function nearestBody(points: Float32Array, body: Float32Array): FollowTab
       }
     }
     let sum = 0;
-    for (let k = 0; k < FOLLOW_POINTS; k++) {
-      const weight = 1 / (Math.sqrt(best[k]) + 0.005) ** 2;
-      found[v * FOLLOW_POINTS + k] = bestAt[k];
-      weights[v * FOLLOW_POINTS + k] = weight;
+    for (let k = 0; k < K; k++) {
+      const weight = 1 / (Math.sqrt(best[k]) + follow.soft) ** 2;
+      found[v * K + k] = bestAt[k];
+      weights[v * K + k] = weight;
       sum += weight;
     }
-    for (let k = 0; k < FOLLOW_POINTS; k++) weights[v * FOLLOW_POINTS + k] /= sum;
+    for (let k = 0; k < K; k++) weights[v * K + k] /= sum;
     const nearest = Math.sqrt(best[0]);
     own[v] = Math.min(1, Math.max(0, (nearest - FOLLOW_NEAR) / (FOLLOW_FAR - FOLLOW_NEAR)));
   }
-  return { points: found, weights, own };
+  return { points: found, weights, own, k: K };
 }
 
 /**

@@ -7633,6 +7633,12 @@ def skin_character(c, m, spec, root):
             else:
                 finish_tee(body_obj, tee)
 
+    # Last of all on her shape: her skin kept inside her T-shirt (see TEE_COVER).
+    tee = bpy.data.objects.get(f"{name}_ClothTee")
+    if tee is not None and spec.get("jiggle"):
+        cover_anchors = anchor_stains(tee, [o for o in c.objects if o.type == "MESH" and "_CumOnTee_T_tee_" in o.name])
+        cover_skin(body_obj, tee)
+        replace_stains(tee, cover_anchors)
     armature = bpy.data.armatures.new(f"{name}_Bones")
     rig = bpy.data.objects.new(f"{name}_Armature", armature)
     c.objects.link(rig)
@@ -7907,6 +7913,69 @@ def clean_tee(body_obj, obj, material="T_tee", cfg=TEE_CLEAN):
     moved = np.linalg.norm(co - start, axis=1)
     print(f"clean tee: {len(free)} points relaxed, {time.time() - t0:.0f} s, median {np.median(moved[free]) * 1000:.1f} mm, "
           f"most {moved.max() * 1000:.0f} mm")
+
+
+# Her skin kept inside the tee after everything that moves her (the neck root, the sculpt fixes): clean_tee keeps the
+# tee's points off her skin, but her skin could still bulge out between them, and steps after it move skin and tee a
+# little differently (specks of skin showed through the backs of the sleeves). Wherever a point of her skin lies
+# outside the tee, or nearer than `gap` under it, the corners of the tee's face over it go out until it clears;
+# `rounds` times, as one push can uncover the next. Only skin the tee covers: the spot on the tee nearest it must be
+# further than `edge` from the tee's edges (measured from that spot, not from her skin: her chest above the neckline
+# and her belly below the hem lie outside the tee by design, and pushed the edges out into flaps). No point goes out
+# more than `most` in all.
+TEE_COVER = {"gap": 0.0025, "rounds": 4, "reach": 0.012, "edge": 0.015, "most": 0.008}
+
+
+def cover_skin(body_obj, obj, material="T_tee", cfg=TEE_COVER):
+    names = [m.name if m else "" for m in obj.data.materials]
+    if material not in names:
+        return
+    shirt = names.index(material)
+    mesh = obj.data
+    world, local = obj.matrix_world.copy(), obj.matrix_world.inverted()
+    co = [world @ v.co for v in mesh.vertices]
+    polys = [p for p in mesh.polygons if p.material_index == shirt]
+    edge_count = {}
+    for p in polys:
+        for key in p.edge_keys:
+            edge_count[key] = edge_count.get(key, 0) + 1
+    edge_points = sorted({i for key, n in edge_count.items() if n == 1 for i in key})
+    body_names = [m.name if m else "" for m in body_obj.data.materials]
+    skin = sorted({i for p in body_obj.data.polygons if body_names[p.material_index] not in CLEAR["skip"]
+                   for i in p.vertices})
+    bw = body_obj.matrix_world
+    skin_co = [bw @ body_obj.data.vertices[i].co for i in skin]
+    pushed = {}
+    for _ in range(cfg["rounds"]):
+        tree = BVHTree.FromPolygons(co, [p.vertices[:] for p in polys])
+        edges = KDTree(len(edge_points))
+        for k, i in enumerate(edge_points):
+            edges.insert(co[i], k)
+        edges.balance()
+        push = {}
+        for p in skin_co:
+            hit, normal, face, dist = tree.find_nearest(p, cfg["reach"])
+            if hit is None:
+                continue
+            need = (p - hit).dot(normal) + cfg["gap"]
+            if need <= 0:
+                continue
+            if edge_points and edges.find(hit)[2] < cfg["edge"]:
+                continue
+            for c in polys[face].vertices:
+                need_here = min(need, cfg["most"] - pushed.get(c, 0.0))
+                if need_here > 0 and push.get(c, (0.0, None))[0] < need_here:
+                    push[c] = (need_here, normal.copy())
+        if not push:
+            break
+        for c, (need, normal) in push.items():
+            co[c] = co[c] + normal * need
+            pushed[c] = pushed.get(c, 0.0) + need
+    for c in pushed:
+        mesh.vertices[c].co = local @ co[c]
+    mesh.update()
+    most = max(pushed.values(), default=0.0)
+    print(f"cover skin: {obj.name}, {len(pushed)} tee points pushed out, most {most * 1000:.1f} mm")
 
 
 def copy_skin_weights(body_obj, obj, material="T_tee"):
