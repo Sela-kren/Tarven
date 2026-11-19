@@ -7611,6 +7611,8 @@ def skin_character(c, m, spec, root):
     if spec.get("jiggle"):
         # The user's sculpting, last of all on the finished skin and everything on it (see SCULPT_FIXES).
         apply_sculpt_fixes(name, body_obj, [o for o in c.objects if o.type == "MESH"])
+        # Then her fitted tops smoothed into fabric over all of that (see SMOOTH_TOPS).
+        smooth_tops(body_obj, [o for o in c.objects if o.type == "MESH" and "_Cloth" in o.name])
 
     armature = bpy.data.armatures.new(f"{name}_Bones")
     rig = bpy.data.objects.new(f"{name}_Armature", armature)
@@ -7707,6 +7709,72 @@ def keep_slider_rest(rig, meshes):
         attr.data.foreach_set("vector", yup)
     for bone in rig.data.bones:
         bone["slider_rest"] = list(bone.head_local)
+
+
+# A fitted top made from her skin's faces lifted off it copied every crease of her skin: the muscle pressed into
+# both, the sculpting carried onto both. Fabric lies smooth over that, bridging the hollows and running over the
+# bumps: its points are eased towards their neighbours' average again and again, each time put back CLEAR's gap
+# over the skin where easing took them under it. Only these materials (whole tops, not their trim or anything
+# modelled on them); the edges where they meet anything else (hem, neck, sleeve ends, other materials) stay put.
+SMOOTH_TOPS = ("T_tee",)
+SMOOTH_TOPS_PASSES = 24
+SMOOTH_TOPS_EASE = 0.5
+
+
+def smooth_tops(body_obj, meshes):
+    names = [m.name if m else "" for m in body_obj.data.materials]
+    world = body_obj.matrix_world
+    skin = [p.vertices[:] for p in body_obj.data.polygons if names[p.material_index] not in CLEAR["skip"]]
+    tree = BVHTree.FromPolygons([world @ v.co for v in body_obj.data.vertices], skin)
+    for obj in meshes:
+        mesh = obj.data
+        mats = [m.name if m else "" for m in mesh.materials]
+        if not any(mat in SMOOTH_TOPS for mat in mats):
+            continue
+        count = len(mesh.vertices)
+        top_faces = np.zeros(count, dtype=np.int32)
+        other_faces = np.zeros(count, dtype=np.int32)
+        neighbours = [set() for _ in range(count)]
+        for p in mesh.polygons:
+            ids = p.vertices[:]
+            mine = mats[p.material_index] in SMOOTH_TOPS
+            for k, i in enumerate(ids):
+                (top_faces if mine else other_faces)[i] += 1
+                if mine:
+                    neighbours[i].add(ids[k - 1])
+                    neighbours[i].add(ids[(k + 1) % len(ids)])
+        # Edge points: on an edge only one of the top's faces has (an open border), or on another material's faces.
+        border = set()
+        edge_faces = {}
+        for p in mesh.polygons:
+            if mats[p.material_index] in SMOOTH_TOPS:
+                for e in p.edge_keys:
+                    edge_faces[e] = edge_faces.get(e, 0) + 1
+        for (a, b), n in edge_faces.items():
+            if n == 1:
+                border.update((a, b))
+        free = [i for i in range(count) if top_faces[i] and not other_faces[i] and i not in border and neighbours[i]]
+        if not free:
+            continue
+        to_world, to_local = obj.matrix_world, obj.matrix_world.inverted()
+        co = np.array([tuple(to_world @ v.co) for v in mesh.vertices])
+        free_idx = np.array(free)
+        rings = [np.array(sorted(neighbours[i])) for i in free]
+        for _ in range(SMOOTH_TOPS_PASSES):
+            mean = np.array([co[r].mean(axis=0) for r in rings])
+            co[free_idx] += (mean - co[free_idx]) * SMOOTH_TOPS_EASE
+            for k, i in enumerate(free):
+                spot = Vector(co[i])
+                near, normal, _, _ = tree.find_nearest(spot, CLEAR["near"])
+                if near is None:
+                    continue
+                height = (spot - near).dot(normal)
+                if height < CLEAR["gap"]:
+                    co[i] = tuple(spot + normal * (CLEAR["gap"] - height))
+        for i in free:
+            mesh.vertices[i].co = to_local @ Vector(co[i])
+        mesh.update()
+        print(f"smooth tops: {obj.name} ({len(free)} points)")
 
 
 def apply_sculpt_fixes(name, body_obj, meshes):

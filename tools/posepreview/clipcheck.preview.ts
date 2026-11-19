@@ -10,6 +10,8 @@ import { Mesh, SkinnedMesh, Vector3, type Object3D } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { CUPS, Dresser, newLook, stopValue } from "../../src/game/appearance";
 import { stripImages } from "./raster";
+import { Body } from "../../src/game/player";
+import { softHeft } from "../../src/game/heft";
 
 const NAME = "Female";
 const under = (o: Object3D, name: string) => { for (let p: Object3D | null = o; p; p = p.parent) if (p.name === name) return true; return false; };
@@ -48,7 +50,18 @@ test("cloth inside skin per cup", async () => {
     const look = newLook();
     look.outfit = process.env.OUTFIT_ID ?? "tee";
     look.sliders.bust = stopValue(CUPS, CUPS.labels.indexOf(cup));
-    new Dresser(root, NAME).apply(look);
+    // POSED=1: as the game stands her, the body posed by the walk code standing still (arms spread for her bust).
+    const posing = process.env.POSED ? new Body(model, NAME) : null;
+    const dresser = new Dresser(root, NAME);
+    dresser.apply(look);
+    if (posing) {
+      model.updateMatrixWorld(true);
+      posing.refreshRest(dresser.legSize(), dresser.armSpread(), dresser.posture(), softHeft(look.sliders));
+      for (let f = 0; f < 30; f++) {
+        posing.advance(1 / 60);
+        posing.pose(0, 0, 0, 0, 0);
+      }
+    }
     model.updateMatrixWorld(true);
     const skin: { co: Float32Array; n: Float32Array }[] = [];
     const cloth: { name: string; co: Float32Array }[] = [];
@@ -77,7 +90,8 @@ test("cloth inside skin per cup", async () => {
         const [x, y, z] = [c.co[i], c.co[i + 1], c.co[i + 2]];
         let best = -1, bd = 1e9;
         const gx = Math.floor(x / cell), gy = Math.floor(y / cell), gz = Math.floor(z / cell);
-        for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+        const R = 5;
+        for (let dx = -R; dx <= R; dx++) for (let dy = -R; dy <= R; dy++) for (let dz = -R; dz <= R; dz++) {
           for (const j of grid.get(`${gx + dx},${gy + dy},${gz + dz}`) ?? []) {
             const d = (sc[j] - x) ** 2 + (sc[j + 1] - y) ** 2 + (sc[j + 2] - z) ** 2;
             if (d < bd) { bd = d; best = j; }
@@ -88,7 +102,7 @@ test("cloth inside skin per cup", async () => {
         const s = ((x - sc[best]) * sn[best] + (y - sc[best + 1]) * sn[best + 1] + (z - sc[best + 2]) * sn[best + 2]) / nl;
         if (s < -0.0005) {
           inside++; deep = Math.max(deep, -s);
-          const band = `${(Math.floor(y * 10) / 10).toFixed(1)}${z < sc[best + 2] ? "" : ""}${z < -0.0 ? "f" : "b"}`;
+          const band = `${(Math.floor(y * 10) / 10).toFixed(1)}${z < 0 ? "f" : "b"}${Math.abs(x) > 0.3 ? "W" : ""}`;
           bands[band] = (bands[band] ?? 0) + 1;
         }
       }

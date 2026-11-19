@@ -2348,14 +2348,17 @@ export function spanCleavage(
  * does. Model space, as built: x across, y up, z backwards. Only this part of her, and only tops and dresses (clothes
  * reaching CLEAR_GARMENT_TOP), take part. Twice over, for points in a crease, put out of one side into the other.
  */
-const CLEAR_HALF_WIDTH = 0.3;
+const CLEAR_HALF_WIDTH = 0.45;
 const CLEAR_HEIGHT: readonly [number, number] = [0.7, 1.5];
 const CLEAR_GARMENT_TOP = 1.15;
 const CLEAR_GAP = 0.002;
 /** Further inside than this, the nearest skin no longer tells which way is out: such points are left. */
 const CLEAR_DEPTH = 0.06;
-/** The skin is searched in cells this big, the cell a point is in and those round it. */
+/** The skin is searched in cells this big, ring by ring round the cell a point is in, out to CLEAR_DEPTH. */
 const CLEAR_CELL = 0.02;
+const CLEAR_RINGS = 3;
+/** Her arms' bones: her skin there isn't what her tops are kept out of. */
+const CLEAR_NOT_SKIN = /Arm|Hand|Finger|Thumb|Elbow|Wrist|Forearm/;
 
 function inClearRegion(points: Float32Array, v: number): boolean {
   const x = points[v * 3], y = points[v * 3 + 1], z = points[v * 3 + 2];
@@ -2367,6 +2370,8 @@ interface ClearSkin {
   slot: number;
   verts: Int32Array;
   tris: ArrayLike<number>;
+  /** Per point, 1 where it is her arm's (left out of her shell). */
+  arm: Uint8Array;
 }
 
 /** Each point's outward direction (not normalised) from the triangles round it. */
@@ -2386,6 +2391,121 @@ function pointNormals(points: Float32Array, tris: ArrayLike<number>): Float32Arr
   return n;
 }
 
+/**
+ * Fabric over her lies on her outermost skin, never in a hollow behind it: round her middle, a top's cloth can't
+ * be nearer her than any of her skin out from it in the same direction (her arms aside), less SHELL_SLOPE for every
+ * metre along her between them. So it bridges from a breast to her ribs instead of following the skin in under it
+ * (a full breast hanging past where the top was built to lie trapped the cloth under it, and showed bare from
+ * behind), and hangs off the front of a heavy bust, hollow under it. Measured round an upright line through the
+ * middle of her chest, in bands of height and turns round it; only skin and cloth in SHELL_HEIGHT take part (not her
+ * shoulders and neck, which the shell would hold the neckline up off).
+ */
+const SHELL_SLOPE = 0.9;
+const SHELL_HEIGHT: readonly [number, number] = [0.75, 1.38];
+const SHELL_BAND = 0.01;
+const SHELL_TURNS = 180;
+/** How far along her skin any one point holds the cloth out (beyond, it lies too far below to). */
+const SHELL_REACH = 0.06;
+const SHELL_BANDS = Math.ceil((SHELL_HEIGHT[1] - SHELL_HEIGHT[0]) / SHELL_BAND);
+
+/**
+ * Her skin round her middle as shaped now: each point's turn, height and distance out, sorted by cell of band and
+ * turn (`start[cell]` to `start[cell + 1]`).
+ */
+interface Shell {
+  centre: number;
+  turn: Float32Array;
+  height: Float32Array;
+  out: Float32Array;
+  start: Int32Array;
+  /** Per cell, the furthest out of its points, so cells that can't hold the cloth out are passed over. */
+  most: Float32Array;
+}
+
+const shellTurn = (x: number, z: number, centre: number) => Math.atan2(x, centre - z);
+const shellTurnCell = (a: number) => Math.min(SHELL_TURNS - 1, Math.floor(((a + Math.PI) / (2 * Math.PI)) * SHELL_TURNS));
+
+/** Her skin (`skin`, by her points as shaped now, not her arms) round the upright line at depth `centre`. */
+export function shellOf(skin: ClearSkin[], shaped: Float32Array[], centre: number): Shell {
+  const turn: number[] = [], height: number[] = [], out: number[] = [], cell: number[] = [];
+  for (const piece of skin) {
+    const points = shaped[piece.slot];
+    for (let n = 0; n < piece.verts.length; n++) {
+      if (piece.arm[n]) continue;
+      const v = piece.verts[n];
+      const x = points[v * 3], y = points[v * 3 + 1], z = points[v * 3 + 2];
+      if (y < SHELL_HEIGHT[0] || y >= SHELL_HEIGHT[1]) continue;
+      const a = shellTurn(x, z, centre);
+      turn.push(a);
+      height.push(y);
+      out.push(Math.hypot(x, z - centre));
+      cell.push(Math.floor((y - SHELL_HEIGHT[0]) / SHELL_BAND) * SHELL_TURNS + shellTurnCell(a));
+    }
+  }
+  const cells = SHELL_BANDS * SHELL_TURNS;
+  const start = new Int32Array(cells + 1);
+  for (const c of cell) start[c + 1]++;
+  for (let c = 0; c < cells; c++) start[c + 1] += start[c];
+  const fill = start.slice(0, cells);
+  const shell: Shell = {
+    centre, turn: new Float32Array(turn.length), height: new Float32Array(turn.length), out: new Float32Array(turn.length), start,
+    most: new Float32Array(cells).fill(-Infinity),
+  };
+  for (let i = 0; i < cell.length; i++) {
+    const k = fill[cell[i]]++;
+    shell.turn[k] = turn[i];
+    shell.height[k] = height[i];
+    shell.out[k] = out[i];
+    shell.most[cell[i]] = Math.max(shell.most[cell[i]], out[i]);
+  }
+  return shell;
+}
+
+/** Puts a top's points (`clothVerts`, `bind` + `moves`, `moves` changed in place) out onto her shell. */
+export function onShell(shell: Shell, clothVerts: Int32Array, bind: Float32Array, moves: Float32Array): void {
+  const { centre, turn, height, out, start, most } = shell;
+  const bands = Math.ceil(SHELL_REACH / SHELL_BAND);
+  const reach2 = SHELL_REACH * SHELL_REACH;
+  for (const c of clothVerts) {
+    const v = c * 3;
+    const x = bind[v] + moves[v], y = bind[v + 1] + moves[v + 1], z = bind[v + 2] + moves[v + 2];
+    if (y < SHELL_HEIGHT[0] || y >= SHELL_HEIGHT[1]) continue;
+    const r = Math.hypot(x, z - centre);
+    if (!(r > 0)) continue;
+    const a = shellTurn(x, z, centre);
+    const band = Math.floor((y - SHELL_HEIGHT[0]) / SHELL_BAND);
+    const at = shellTurnCell(a);
+    const turns = Math.min(SHELL_TURNS >> 1, Math.ceil((SHELL_REACH / Math.max(r, 0.05)) / ((2 * Math.PI) / SHELL_TURNS)));
+    // Nothing nearer than the cloth already lies can hold it out: only skin further out than it, less the slope.
+    let need = r - CLEAR_GAP;
+    for (let b = Math.max(0, band - bands); b <= Math.min(SHELL_BANDS - 1, band + bands); b++) {
+      const row = b * SHELL_TURNS;
+      const below = SHELL_SLOPE * Math.max(0, Math.abs(b - band) - 1) * SHELL_BAND;
+      for (let dt = -turns; dt <= turns; dt++) {
+        const t = (((at + dt) % SHELL_TURNS) + SHELL_TURNS) % SHELL_TURNS;
+        if (most[row + t] - below <= need) continue;
+        for (let i = start[row + t], end = start[row + t + 1]; i < end; i++) {
+          const o = out[i];
+          if (o <= need) continue;
+          let da = turn[i] - a;
+          if (da > Math.PI) da -= 2 * Math.PI;
+          else if (da < -Math.PI) da += 2 * Math.PI;
+          const across = da * o, up = height[i] - y;
+          const along2 = across * across + up * up;
+          if (along2 > reach2) continue;
+          const held = o - SHELL_SLOPE * Math.sqrt(along2);
+          if (held > need) need = held;
+        }
+      }
+    }
+    need += CLEAR_GAP;
+    if (need <= r) continue;
+    const scale = need / r;
+    moves[v] = x * scale - bind[v];
+    moves[v + 2] = centre + (z - centre) * scale - bind[v + 2];
+  }
+}
+
 const clearKey = (gx: number, gy: number, gz: number) => (gx + 512) * 1048576 + (gy + 512) * 1024 + (gz + 512);
 
 /** Her skin as shaped now, for keeping her tops out of: its points, which way is out at each, and cells of them. */
@@ -2402,7 +2522,8 @@ export function clearGrid(skin: ClearSkin[], shaped: Float32Array[]): ClearGrid 
   for (const piece of skin) {
     const points = shaped[piece.slot];
     const normals = pointNormals(points, piece.tris);
-    for (const v of piece.verts) {
+    for (let n = 0; n < piece.verts.length; n++) {
+      const v = piece.verts[n];
       const len = Math.hypot(normals[v * 3], normals[v * 3 + 1], normals[v * 3 + 2]);
       if (!(len > 0)) continue;
       const i = at.length / 3;
@@ -2430,14 +2551,19 @@ export function clearOfSkin(skin: ClearGrid, clothVerts: Int32Array, bind: Float
     const x = bind[v] + moves[v], y = bind[v + 1] + moves[v + 1], z = bind[v + 2] + moves[v + 2];
     let best = -1, bestD = CLEAR_DEPTH * CLEAR_DEPTH;
     const gx = Math.floor(x / CLEAR_CELL), gy = Math.floor(y / CLEAR_CELL), gz = Math.floor(z / CLEAR_CELL);
-    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
-      const list = grid.get(clearKey(gx + dx, gy + dy, gz + dz));
-      if (!list) continue;
-      for (const i of list) {
-        const d = (at[i * 3] - x) ** 2 + (at[i * 3 + 1] - y) ** 2 + (at[i * 3 + 2] - z) ** 2;
-        if (d < bestD) {
-          bestD = d;
-          best = i;
+    // Ring by ring out from its own cell, until the nearest found is nearer than the next ring could be.
+    for (let r = 0; r <= CLEAR_RINGS; r++) {
+      if (best >= 0 && bestD <= ((r - 1) * CLEAR_CELL) ** 2) break;
+      for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)) !== r) continue;
+        const list = grid.get(clearKey(gx + dx, gy + dy, gz + dz));
+        if (!list) continue;
+        for (const i of list) {
+          const d = (at[i * 3] - x) ** 2 + (at[i * 3 + 1] - y) ** 2 + (at[i * 3 + 2] - z) ** 2;
+          if (d < bestD) {
+            bestD = d;
+            best = i;
+          }
         }
       }
     }
@@ -2645,7 +2771,7 @@ export class Dresser {
   /** The body points holding the clothes out over her cleavage, and each clothing mesh's points stretched across. */
   private readonly cleavage: { hold: CleavageHold; spans: Map<MeshSlot, ClothSpan> } | null = null;
   /** Her skin round her chest and the points of her tops kept out of it (see clearOfSkin). */
-  private readonly clear: { skin: ClearSkin[]; cloths: Map<MeshSlot, Int32Array> } | null = null;
+  private readonly clear: { skin: ClearSkin[]; cloths: Map<MeshSlot, Int32Array>; centre: number } | null = null;
   /** How aroused her vulva shows, from 0 to 1; a state of the night, never part of the look. */
   private vulvaArousal = 0;
   /**
@@ -2835,8 +2961,22 @@ export class Dresser {
     this.slots.forEach((slot, s) => {
       const index = slot.mesh.geometry.index;
       if (slot.part !== "Body" || !index) return;
-      const verts: number[] = [];
-      for (let v = 0; v < slot.bind.length / 3; v++) if (inClearRegion(slot.bind, v)) verts.push(v);
+      // Her arms are told apart: a sleeve is kept out of them like anything else, but they don't hold her tops out
+      // round her middle (see onShell).
+      const skinIndex = slot.mesh.geometry.getAttribute("skinIndex");
+      const skinWeight = slot.mesh.geometry.getAttribute("skinWeight");
+      const arm = new Set<number>();
+      slot.mesh.skeleton.bones.forEach((bone, i) => {
+        if (CLEAR_NOT_SKIN.test(this.boneIndex.get(bone)?.label ?? "")) arm.add(i);
+      });
+      const verts: number[] = [], onArm: number[] = [];
+      for (let v = 0; v < slot.bind.length / 3; v++) {
+        if (!inClearRegion(slot.bind, v)) continue;
+        let w = 0;
+        if (skinIndex && skinWeight) for (let k = 0; k < 4; k++) if (arm.has(skinIndex.getComponent(v, k))) w += skinWeight.getComponent(v, k);
+        verts.push(v);
+        onArm.push(w >= 0.5 ? 1 : 0);
+      }
       if (!verts.length) return;
       // Only the triangles round those points, for which way is out at each.
       const inside = new Set(verts);
@@ -2845,26 +2985,34 @@ export class Dresser {
         const a = index.getX(t), b = index.getX(t + 1), c = index.getX(t + 2);
         if (inside.has(a) || inside.has(b) || inside.has(c)) tris.push(a, b, c);
       }
-      clearSkin.push({ slot: s, verts: Int32Array.from(verts), tris: Int32Array.from(tris) });
+      clearSkin.push({ slot: s, verts: Int32Array.from(verts), tris: Int32Array.from(tris), arm: Uint8Array.from(onArm) });
     });
     if (clearSkin.length) {
-      // A garment's pieces (its materials) go by the whole garment's reach: a top's hem band is low on its own.
-      const garmentTop = new Map<Object3D, number>();
-      for (const slot of this.slots) {
-        const garment = slot.mesh.parent ?? slot.mesh;
-        let top = garmentTop.get(garment) ?? -Infinity;
-        for (let v = 1; v < slot.bind.length; v += 3) top = Math.max(top, slot.bind[v]);
-        garmentTop.set(garment, top);
+      // The shell's upright line: midway between her front and back at her chest, as built.
+      let front = Infinity, back = -Infinity;
+      for (const piece of clearSkin) {
+        const points = this.slots[piece.slot].bind;
+        piece.verts.forEach((v, n) => {
+          const y = points[v * 3 + 1];
+          if (piece.arm[n] || y < 1.1 || y > 1.3 || Math.abs(points[v * 3]) > 0.05) return;
+          front = Math.min(front, points[v * 3 + 2]);
+          back = Math.max(back, points[v * 3 + 2]);
+        });
       }
+      const centre = Number.isFinite(front + back) ? (front + back) / 2 : 0;
       const cloths = new Map<MeshSlot, Int32Array>();
       for (const slot of this.slots) {
         if (!slot.follow || !(slot.part === "Cloth" || (slot.part === "Cum" && stainMeshOf(slot.mesh, body)))) continue;
-        if ((garmentTop.get(slot.mesh.parent ?? slot.mesh) ?? -Infinity) < CLEAR_GARMENT_TOP) continue;
+        // Each piece (material) by its own reach: an outfit's leggings are pieces of the same mesh as its top, and
+        // pushed out over a breast hanging to her waist, their waistband stood out from her belly.
+        let top = -Infinity;
+        for (let v = 1; v < slot.bind.length; v += 3) top = Math.max(top, slot.bind[v]);
+        if (top < CLEAR_GARMENT_TOP) continue;
         const verts: number[] = [];
         for (let v = 0; v < slot.bind.length / 3; v++) if (inClearRegion(slot.bind, v)) verts.push(v);
         if (verts.length) cloths.set(slot, Int32Array.from(verts));
       }
-      if (cloths.size) this.clear = { skin: clearSkin, cloths };
+      if (cloths.size) this.clear = { skin: clearSkin, cloths, centre };
     }
 
     const discs = discSlot ? readDiscs(discSlot.mesh.geometry, discSlot.bind) : [];
@@ -3158,7 +3306,7 @@ export class Dresser {
         spanCleavage(this.cleavage.hold, span, slot.bind, moves[this.slots.indexOf(slot)].total, bodyMoves);
       }
     }
-    if (false && this.clear && active.size > 0) {
+    if (this.clear && active.size > 0) {
       const shaped = this.slots.map((slot) => slot.bind);
       for (const { slot } of this.clear.skin) {
         const { bind } = this.slots[slot];
@@ -3168,11 +3316,13 @@ export class Dresser {
         shaped[slot] = now;
       }
       const skin = clearGrid(this.clear.skin, shaped);
+      const shell = shellOf(this.clear.skin, shaped, this.clear.centre);
       // Only the outfit she has on: there are hundreds of pieces in her wardrobe, and each was a few milliseconds.
       const outfit = outfitOf(this.body, look).mesh;
       for (const [slot, verts] of this.clear.cloths) {
         if (slot.part === "Cloth" && outfitMeshOf(slot.mesh, this.body) !== outfit) continue;
         const { total } = moves[this.slots.indexOf(slot)];
+        onShell(shell, verts, slot.bind, total);
         clearOfSkin(skin, clearOfSkin(skin, verts, slot.bind, total), slot.bind, total);
       }
     }
