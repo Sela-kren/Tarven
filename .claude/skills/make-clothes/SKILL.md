@@ -193,6 +193,17 @@ rebuild, export again and measure: after the refit, 95% of points were within 0.
   No crack, tear or skin windows at J, M or Q. At M and up the tee hangs from the breasts' fronts with a flat panel
   under the middle. Diagnose such things by switching one game step off at a time (follow, span, smoothing, shell,
   clear, nipple riders) and rendering the cups as the game shapes them.
+- **The tee hangs from a big bust** (`HANG`, `hangField`/`hangTop` in appearance.ts, `HANG_TOPS` = the tee only):
+  a real shirt falls straight down from the front of the breasts to its hem, it doesn't tuck back under them to
+  the ribs. Round her upright line, each way round and each height, the cloth comes out at least as far as the
+  cloth above it, less a slope (0.2 m back per m down). Fades in from C (none) to G (all), and only over her front
+  (full to 55°, none past 80°, so her sides and sleeves keep their shape). Two things to keep:
+  1. the push is eased into the cloth round it but never made *smaller* (easing it down left the crease under
+     the breast as a line above a roll);
+  2. the hem's turned-under strip moves with the fold above it (`turnedPartners`), or the edge loses its depth.
+
+  Check it with `tools/posepreview/teeexport.preview.ts` (body + tee OBJ per cup; `HANG='{"cups":["Y","Z"]}'`
+  turns it off for a before/after) and side views.
 - **Folds made in the build survive the game's reshaping**: `smoothMoves` eases the *moves*, not the shape,
   so a built fold rides along as the bust changes.
 - **Rebuilding is safe and quick**: an unchanged `build_world.py` reproduces `public/models/female.glb`

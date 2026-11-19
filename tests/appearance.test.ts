@@ -273,14 +273,22 @@ describe("smoothing a fitted top", () => {
   });
 
   it("turns a hem's turned-under strip with the fold it turns under at", () => {
-    // A strip of two triangles: the fold (0, 1) along x, the turned-under edge (2, 3) 2 mm in under it, and the
-    // shirt above it (4, 5).
-    const bind = Float32Array.from([0, 1, 0, 0.01, 1, 0, 0, 1, 0.002, 0.01, 1, 0.002, 0, 1.01, 0, 0.01, 1.01, 0]);
-    const index = [0, 1, 2, 1, 3, 2, 4, 5, 0, 5, 1, 0];
+    // Four points across (1 cm apart), in rows: the shirt at 1.02 m and 1.01 m, the fold at 1 m, and the turned-under
+    // edge 2 mm in under the fold, joined row to row in squares.
+    const rows = [[1.02, 0], [1.01, 0], [1, 0], [1, 0.002]];
+    const bind = Float32Array.from(rows.flatMap(([y, z]) => [0, 1, 2, 3].flatMap((i) => [i * 0.01, y, z])));
+    const index: number[] = [];
+    for (let r = 0; r < 3; r++) {
+      for (let i = 0; i < 3; i++) {
+        const a = r * 4 + i, b = a + 1, c = a + 4, d = c + 1;
+        index.push(a, c, b, b, c, d);
+      }
+    }
     const partner = turnedPartners(bind, smoothTable(bind, index), index);
-    expect(partner[2]).toBe(0);
-    expect(partner[3]).toBe(1);
-    for (const v of [0, 1, 4, 5]) expect(partner[v]).toBe(-1);
+    // The turned-under edge's middle points go with the fold's above them; the rest go their own way.
+    expect(partner[13]).toBe(9);
+    expect(partner[14]).toBe(10);
+    for (let v = 0; v < 16; v++) if (v !== 13 && v !== 14) expect(partner[v]).toBe(-1);
   });
 });
 
