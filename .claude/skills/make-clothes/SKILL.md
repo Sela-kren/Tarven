@@ -135,6 +135,24 @@ them live with the body sliders (`src/game/appearance.ts`, the `Dresser` class).
   (`smoothMoves`, `SMOOTH_TOPS`, 100 passes, fading out from an F cup to a J cup). Add new fitted tops'
   materials to `SMOOTH_TOPS`.
 
+## When the body under the clothes isn't the user's sculpt
+
+Clothes ride on her body, so a body that drifted from what the user sculpted shows on every outfit. The user's
+sculpts live in `art/bust_review/*.blend` (one `Bust_<cup>` body per cup) and reach the game as
+`art/sculpt_fixes/female_NN.npz`, which `apply_sculpt_fixes` stacks in order. To check, export her body as the
+game shapes it (`tools/posepreview/bustexport.preview.ts`, POSE_OUT and CUPS) and measure each point's
+distance to the sculpted surface (nearest point on `Bust_<cup>`). On 2026-11-19 the default C cup sat 9 to 15 mm
+outside `sculpted_03_with_extension.blend` under the bust at her sides (later changes had moved it, and no fix
+held a C cup). `tools/blender/bust_refit.py` wrote `female_04.npz` to bring it back:
+
+```powershell
+blender -b art/bust_review/sculpted_03_with_extension.blend -P tools/blender/bust_refit.py -- C <bustexport>/bust_C.obj <bustexport>/growth.json
+```
+
+Export every cup (no CUPS) for the growth file, so the build tells the breasts from her body as it does for
+the other fixes. bust_fixes.py can't be used once points have been added to her mesh since the review. Then
+rebuild, export again and measure: after the refit, 95% of points were within 0.2 mm.
+
 ## Lessons from trying it here
 
 - **A plain cloth simulation does not work on these clothes as they are.** Running Blender's cloth sim
