@@ -718,6 +718,7 @@ FEMALE = {
     "navel": 0.962,  # the height of her navel, a small pit pressed into the bare belly
     "vulva": True,  # a grid over her groin the game shapes into her vulva, opening onto her canal
     "anus": True,  # a disc in the cleft of her rear the game shapes into her anus, opening onto its canal
+    "neck_root": True,  # her neck, shoulders and arms brought nearer the real_heroin sculpt's (NECK_ROOT)
     "name": "Female", "tunic": "tee_white", "hair": "hair_f", "skin": "skin_f", "pants": "pants_red",
     "belt": "waistband", "shoe": "shoe_w", "sole": "sole_w", "splay": 0.28, "leg_splay": 0.05,
     "arm_sides": 8, "cuff_bands": 0, "midriff_bands": 2, "bare_arm_bands": 2, "bare_forearm": True,
@@ -775,8 +776,13 @@ FEMALE = {
              (0.51, 0.05, 0.036, 0.056)],
     "neck": [(1.335, 0.06, 0.042, 0.05, -0.002, 0.008), (1.37, 0.04, 0.034, 0.04, -0.004, 0.004),
              (1.395, 0.033, 0.03, 0.034, -0.006, 0.0), (1.45, 0.03, 0.03, 0.034, -0.006, 0.0)],
-    "chin_z": 1.4, "head_scale": (0.86, 0.9, 1.0), "jaw": 1.0, "ears": True, "head_grid": True,
-    "hat_z": 1.545,
+    # Her head 8% smaller all round than built till 2026-11-19 (the user found it too big), scaled about her chin so
+    # her neck keeps its length; a touch wider for its height than before (x 0.846, was 0.86 against 0.9 deep).
+    "chin_z": 1.4, "head_scale": (0.846, 0.828, 0.92), "jaw": 1.0, "ears": True, "head_grid": True,
+    # Her cranium taller (2026-11-19, the user asked): everything over her brows (0.12 above the chin, in head units)
+    # stretched up by a fifth, her crown 1.4 cm higher; her face is all below it and stays as it was (see head_up).
+    "cranium": (0.12, 0.2),
+    "hat_z": 1.538,  # with the head: 0.145 above the chin, by its height (0.92), raised with her cranium
     "head_rings": HEAD_CUTE, "hair_outlines": HAIR_UPDO,
     "bob": True, "strands": [],
 }
@@ -1423,13 +1429,16 @@ def hand_joints(spec, side, sx):
 
 # The face and skull as drawn in the head reference. Face columns run from the centre out to the temple.
 # Each row: depth of the face at the centre, then (x, height above the chin) for each face column.
+# Her jaw rounded off (2026-11-19, against the user's reference and the real_heroin sculpt): it ran up from a narrow,
+# pointed chin in a V; now the chin is a little wider and the jaw fuller and lower, a soft U. The jaw's front points
+# (FACE_POINTS' j1 to j5) and the edge of her lower cheeks (rows 1 to 3) moved out with it.
 HEAD_FACE_COLUMNS = ("C", "A", "B", "D", "E")
 HEAD_FACE_ROWS = [
-    (0.0, [(0.0, 0.0), (0.0085, 0.0), (0.0249, 0.0086), (0.0412, 0.0196), (0.0569, 0.0293)]),  # chin and jaw
+    (0.0, [(0.0, 0.0), (0.0105, 0.0), (0.0275, 0.0068), (0.0445, 0.0172), (0.0592, 0.0285)]),  # chin and jaw
     # Between the jaw and the brow only the edge of the face is a grid point; FACE_POINTS holds the rest.
-    (0.0, [None, None, None, None, (0.0619, 0.0397)]),
-    (0.0, [None, None, None, None, (0.0683, 0.055)]),
-    (0.0, [None, None, None, None, (0.0747, 0.0733)]),
+    (0.0, [None, None, None, None, (0.064, 0.0397)]),
+    (0.0, [None, None, None, None, (0.07, 0.055)]),
+    (0.0, [None, None, None, None, (0.0757, 0.0733)]),
     (0.0, [None, None, None, None, (0.0803, 0.0917)]),
     (0.0, [None, None, None, None, (0.0818, 0.1008)]),
     (0.0, [(0.0, 0.1051), (0.0292, 0.1051), (0.0462, 0.1021), (0.0647, 0.0978), (0.0825, 0.1161)]),  # brow
@@ -1458,8 +1467,8 @@ FACE_TRACE_X, FACE_TRACE_UP = 0.000711, 0.000611
 FACE_TRACED_ROWS = 6
 # One half of the face: name -> (pixels sideways, pixels up, how far forward).
 FACE_POINTS = {
-    "j0": (0, 10, 0.085), "j1": (13, 10, 0.084), "j2": (38, 28, 0.0764), "j3": (60, 50, 0.0713), "j4": (78, 75, 0.0704),
-    "j5": (90, 100, 0.065), "mu": (0, 28, 0.0854), "ub": (20, 28, 0.085),
+    "j0": (0, 10, 0.085), "j1": (15, 9, 0.084), "j2": (41, 25, 0.0764), "j3": (64, 47, 0.0713), "j4": (81, 73, 0.0704),
+    "j5": (91, 99, 0.065), "mu": (0, 28, 0.0854), "ub": (20, 28, 0.085),
     "lb0": (0, 36, 0.0924), "lb1": (11, 37, 0.089), "ll0": (0, 43, 0.0854), "l1": (12, 43, 0.085), "lc": (24, 43, 0.083),
     # The mouth line is level, so the game can open her mouth below it (face.ts). The lower lip has its own points
     # along it, a hair below the upper lip's, so the lips can part.
@@ -1606,33 +1615,44 @@ def brow_stroke(at, sx, surface=None):
     return rings
 # One half of the bob from the crown to the neck. Each ring runs around the outside from the front
 # edge to the centre of the back, then returns along the inside: (x, y, height above the chin).
+# Rounded to her skull (2026-11-19): it stood off her head in flat walls, 4 to 5 cm out at the sides and the back
+# of the crown, and read as a box in the game; now about 2 cm over her skull, the crown domed (the ring at 0.145),
+# the back tucked in towards her nape; then (the user: still a helmet, from the side) the sides and back in another
+# centimetre, about 1.5 to 2 cm over her skull, and the crown peaked a touch so the top reads as a dome.
+# Then to the user's drawing over its side view: the top a low dome about 1 cm over her skull, highest over her
+# crown (it peaked behind it); the back hanging straight down and a little out towards its end, not tucked in;
+# and the front locks running down along her jaw and forward to her chin at the bottom edge, framing her face.
 BOB_RINGS = [
-    [(0.0, -0.02, 0.212), (0.03, -0.03, 0.212), (0.02, -0.05, 0.212), (0.0, -0.058, 0.212),
-     (0.0, -0.045, 0.212), (0.0, -0.04, 0.212), (0.0, -0.033, 0.212), (0.0, -0.027, 0.212)],
-    [(0.065, -0.02, 0.192), (0.08, -0.04, 0.192), (0.06, -0.085, 0.192), (0.0, -0.1, 0.192),
+    [(0.0, -0.01, 0.205), (0.025, -0.02, 0.203), (0.02, -0.04, 0.198), (0.0, -0.045, 0.196),
+     (0.0, -0.035, 0.195), (0.0, -0.03, 0.195), (0.0, -0.022, 0.195), (0.0, -0.015, 0.195)],
+    [(0.058, -0.01, 0.187), (0.066, -0.04, 0.185), (0.05, -0.068, 0.18), (0.0, -0.077, 0.177),
      (0.0, -0.06, 0.165), (0.03, -0.05, 0.165), (0.05, -0.03, 0.165), (0.04, -0.025, 0.165)],
-    [(0.103, 0.03, 0.09), (0.12, -0.025, 0.09), (0.088, -0.1, 0.09), (0.0, -0.115, 0.09),
-     (0.0, -0.075, 0.09), (0.045, -0.07, 0.09), (0.072, -0.04, 0.09), (0.078, 0.022, 0.09)],
-    [(0.1, 0.05, 0.04), (0.13, -0.025, 0.04), (0.095, -0.105, 0.04), (0.0, -0.12, 0.04),
-     (0.0, -0.085, 0.04), (0.055, -0.078, 0.04), (0.08, -0.03, 0.04), (0.078, 0.04, 0.04)],
-    [(0.082, 0.082, -0.005), (0.118, -0.015, 0.0), (0.085, -0.1, 0.0), (0.0, -0.112, 0.0),
-     (0.0, -0.085, 0.0), (0.052, -0.075, 0.0), (0.074, -0.025, 0.0), (0.066, 0.065, -0.002)],
-    [(0.064, 0.05, -0.03), (0.09, -0.035, -0.033), (0.066, -0.088, -0.033), (0.0, -0.095, -0.033),
-     (0.0, -0.075, -0.033), (0.042, -0.068, -0.033), (0.062, -0.035, -0.033), (0.056, 0.04, -0.03)],
-    [(0.058, 0.0, -0.045), (0.072, -0.05, -0.047), (0.052, -0.075, -0.047), (0.0, -0.082, -0.047),
-     (0.0, -0.07, -0.047), (0.04, -0.062, -0.047), (0.06, -0.05, -0.047), (0.056, -0.005, -0.045)],
+    [(0.09, 0.02, 0.145), (0.094, -0.035, 0.145), (0.076, -0.094, 0.145), (0.0, -0.105, 0.145),
+     (0.0, -0.07, 0.13), (0.042, -0.062, 0.13), (0.066, -0.036, 0.13), (0.064, 0.0, 0.13)],
+    [(0.097, 0.03, 0.09), (0.101, -0.025, 0.09), (0.08, -0.1, 0.09), (0.0, -0.112, 0.09),
+     (0.0, -0.08, 0.09), (0.045, -0.072, 0.09), (0.072, -0.04, 0.09), (0.078, 0.022, 0.09)],
+    [(0.094, 0.045, 0.04), (0.101, -0.02, 0.04), (0.08, -0.1, 0.04), (0.0, -0.116, 0.04),
+     (0.0, -0.09, 0.04), (0.055, -0.08, 0.04), (0.08, -0.03, 0.04), (0.078, 0.04, 0.04)],
+    [(0.08, 0.07, 0.0), (0.095, -0.012, 0.0), (0.075, -0.103, 0.0), (0.0, -0.12, 0.0),
+     (0.0, -0.095, 0.0), (0.055, -0.083, 0.0), (0.074, -0.025, 0.0), (0.068, 0.062, 0.0)],
+    [(0.072, 0.08, -0.03), (0.085, -0.035, -0.033), (0.07, -0.1, -0.033), (0.0, -0.122, -0.033),
+     (0.0, -0.1, -0.033), (0.052, -0.085, -0.033), (0.064, -0.035, -0.033), (0.064, 0.072, -0.03)],
+    [(0.066, 0.085, -0.047), (0.072, -0.045, -0.049), (0.058, -0.098, -0.05), (0.0, -0.116, -0.05),
+     (0.0, -0.104, -0.05), (0.048, -0.088, -0.05), (0.062, -0.045, -0.049), (0.06, 0.078, -0.047)],
 ]
-# The side-swept fringe, from the parting across to the far temple. Each station: back of the crown,
-# the raised ridge, the lower edge on the forehead, and a point inside the skull.
+# The side-swept fringe, from the parting across to the far temple. Each station: back of the crown, a point
+# over the top of her forehead, the raised ridge, the lower edge on the forehead, and a point inside the skull.
+# Laid close to her forehead (2026-11-19): it stood out in front like a visor, 2.5 cm off her skull; now about 1 cm
+# over it, and the point over the top keeps it clear of her skull where it turns back to the crown.
 BOB_FRINGE = [
-    [(-0.1, -0.055, 0.14), (-0.1, 0.0, 0.115), (-0.095, 0.03, 0.09), (-0.06, 0.0, 0.105)],
-    [(-0.098, -0.045, 0.165), (-0.097, 0.05, 0.155), (-0.092, 0.05, 0.118), (-0.06, -0.03, 0.125)],
-    [(-0.055, -0.035, 0.195), (-0.066, 0.066, 0.18), (-0.064, 0.085, 0.135), (-0.04, -0.03, 0.145)],
-    [(-0.008, -0.035, 0.212), (-0.012, 0.075, 0.185), (-0.012, 0.096, 0.133), (-0.008, -0.03, 0.145)],
-    [(0.035, -0.035, 0.21), (0.04, 0.078, 0.185), (0.04, 0.095, 0.122), (0.03, -0.03, 0.135)],
-    [(0.078, -0.04, 0.197), (0.09, 0.065, 0.16), (0.088, 0.072, 0.1), (0.06, -0.03, 0.115)],
-    [(0.1, -0.045, 0.145), (0.105, 0.035, 0.118), (0.102, 0.04, 0.105), (0.08, 0.01, 0.105)],
-    [(0.1, -0.055, 0.118), (0.105, -0.01, 0.112), (0.1, 0.015, 0.1), (0.075, -0.01, 0.1)],
+    [(-0.1, -0.055, 0.14), (-0.1, -0.02, 0.135), (-0.1, 0.0, 0.118), (-0.095, 0.03, 0.098), (-0.06, 0.0, 0.105)],
+    [(-0.094, -0.045, 0.163), (-0.092, -0.01, 0.158), (-0.09, 0.045, 0.148), (-0.088, 0.05, 0.115), (-0.06, -0.03, 0.125)],
+    [(-0.055, -0.035, 0.19), (-0.058, 0.022, 0.191), (-0.062, 0.062, 0.169), (-0.06, 0.078, 0.124), (-0.04, -0.03, 0.145)],
+    [(-0.008, -0.03, 0.202), (-0.01, 0.035, 0.205), (-0.012, 0.074, 0.18), (-0.012, 0.103, 0.124), (-0.008, -0.03, 0.145)],
+    [(0.035, -0.03, 0.2), (0.036, 0.034, 0.201), (0.038, 0.068, 0.178), (0.038, 0.097, 0.12), (0.03, -0.03, 0.135)],
+    [(0.075, -0.04, 0.186), (0.08, 0.01, 0.178), (0.085, 0.058, 0.156), (0.084, 0.068, 0.108), (0.06, -0.03, 0.115)],
+    [(0.098, -0.045, 0.145), (0.098, -0.01, 0.14), (0.098, 0.03, 0.12), (0.097, 0.04, 0.1), (0.08, 0.01, 0.105)],
+    [(0.1, -0.055, 0.118), (0.101, -0.035, 0.116), (0.103, -0.01, 0.112), (0.098, 0.015, 0.1), (0.075, -0.01, 0.1)],
 ]
 HEAD_AROUND = ("C", "A", "B", "D", "E", "H1", "H2", "H3", "P")
 
@@ -1961,6 +1981,23 @@ def add_bob(at, hair, hair_parts):
     for sx in (-1, 1):
         hair_parts[sx].loft([[at(sx * x, y, up) for x, y, up in station] for station in BOB_RINGS], hair)
     hair_parts["hair"].loft([[at(x, y, up) for x, y, up in station] for station in BOB_FRINGE], hair)
+    # Locks laid over it (bob_locks), each half's on its own bone with the half, the fringe's with the fringe.
+    sides, front = bob_locks(BOB_RINGS, BOB_FRINGE)
+    for sx in (-1, 1):
+        for lock in sides[sx]:
+            hair_parts[sx].loft([[at(*p) for p in ring] for ring in lock], hair)
+    for lock in front:
+        hair_parts["hair"].loft([[at(*p) for p in ring] for ring in lock], hair)
+
+
+def head_up(spec, up):
+    """
+    A height above the chin in head units, with her cranium raised (spec "cranium": (from, stretch)): everything above
+    `from` (over her brows) stretched upwards by `stretch`, so her skull is taller and her face stays as it is. Her
+    hair and anything else laid on her head goes through this too, so it stays on her skull.
+    """
+    start, stretch = spec.get("cranium", (0.0, 0.0))
+    return up + max(0.0, up - start) * stretch if stretch else up
 
 
 def add_head(part, spec, m, hair_parts=None):
@@ -1971,7 +2008,7 @@ def add_head(part, spec, m, hair_parts=None):
     kx, ky, kz = spec["head_scale"]
 
     def at(x, y, up):
-        return (x * kx, y * ky, chin + up * kz)
+        return (x * kx, y * ky, chin + head_up(spec, up) * kz)
 
     def outline(up, half):
         return [at(x, y, up) for x, y in half + [(-x, y) for x, y in reversed(half[1:-1])]]
@@ -2156,6 +2193,209 @@ def hair_lock(path):
     return [ring(up, t, w, w, y, x, n=6) for x, y, up, w, t in path]
 
 
+def hair_rope(path, across=(1.0, 0.0, 0.0), sides=8):
+    """
+    A length of hair along any path, its sections square to the path (hair_tube's and hair_lock's lie level, which
+    only suits hair hanging down): (x, y, height, half width, half thickness) stations, the width along `across`
+    as near as the path allows, the thickness at right angles to both.
+    """
+    points = [Vector(s[:3]) for s in path]
+    hint = Vector(across)
+    rings = []
+    for i, (x, y, up, w, t) in enumerate(path):
+        d = (points[min(i + 1, len(points) - 1)] - points[max(i - 1, 0)]).normalized()
+        a = hint - d * hint.dot(d)
+        a = a.normalized() if a.length > 1e-6 else d.orthogonal().normalized()
+        b = d.cross(a)
+        rings.append([tuple(points[i] + a * (w * math.cos(2 * math.pi * k / sides))
+                            + b * (t * math.sin(2 * math.pi * k / sides))) for k in range(sides)])
+    return rings
+
+
+# Hair in locks (.claude/skills/make-hair, after YanSculpts' "Easiest Way To Create Hair in Blender"): each lock is a
+# path with a cross-section swept along it, as a curve bevelled by another curve. The cross-sections are his: a
+# closed outline across the lock (x, from -1 to 1) and out from her head (y), its flat side down on her.
+HAIR_PROFILES = {
+    "dome": [(-1.0, 0.0), (-0.75, 0.32), (-0.35, 0.52), (0.0, 0.56), (0.35, 0.52), (0.75, 0.32), (1.0, 0.0), (0.0, -0.08)],
+    "lens": [(-1.0, 0.0), (-0.6, 0.36), (0.0, 0.5), (0.6, 0.36), (1.0, 0.0), (0.6, -0.22), (0.0, -0.3), (-0.6, -0.22)],
+    "tent": [(-1.0, 0.0), (-0.55, 0.28), (-0.15, 0.62), (0.15, 0.62), (0.55, 0.28), (1.0, 0.0), (0.4, -0.08), (-0.4, -0.08)],
+    "flat": [(-1.0, 0.0), (-0.8, 0.16), (0.0, 0.2), (0.8, 0.16), (1.0, 0.0), (0.8, -0.08), (0.0, -0.1), (-0.8, -0.08)],
+    # Two strands stuck together, a groove between: the lock reads as a clump, not one ribbon.
+    "clump": [(-1.0, 0.0), (-0.7, 0.4), (-0.4, 0.5), (-0.1, 0.3), (0.2, 0.48), (0.55, 0.52), (0.85, 0.3), (1.0, 0.0),
+              (0.3, -0.08), (-0.4, -0.08)],
+}
+# Where "out from her head" points from, in head units: the middle of her skull.
+HAIR_CENTRE = (0.0, -0.01, 0.1)
+
+
+def hair_strand(path, profile, width, thick, tilt=0.0):
+    """
+    One lock: `profile` (HAIR_PROFILES) swept along `path`, (x, y, up, size) points in head units, its flat side
+    towards her head. `width` and `thick` are its half width and thickness at size 1; `size` scales both along it
+    (Alt+S on a curve's points): small at the root, full along it, coming to a point at the tip. `tilt` turns it
+    about its length (Ctrl+T), in radians.
+    """
+    shape = HAIR_PROFILES[profile]
+    points = [Vector(p[:3]) for p in path]
+    centre = Vector(HAIR_CENTRE)
+    rings = []
+    for i, (x, y, up, size) in enumerate(path):
+        d = (points[min(i + 1, len(points) - 1)] - points[max(i - 1, 0)]).normalized()
+        out = points[i] - centre
+        out = (out - d * out.dot(d)).normalized()
+        across = d.cross(out)
+        if tilt:
+            c, s = math.cos(tilt), math.sin(tilt)
+            across, out = across * c + out * s, out * c - across * s
+        rings.append([tuple(points[i] + across * (px * width * size) + out * (py * thick * size)) for px, py in shape])
+    return rings
+
+
+def lock_path(points, sizes, lift=0.003, root=-0.003):
+    """A lock's path through points on her hair, each lifted `lift` off it (out from HAIR_CENTRE) so the lock lies on
+    it, not in it, with its size at each; its root sunk `root` into the hair, so it grows out of it (roots standing
+    on the hair showed as a spiky crest round her crown)."""
+    centre = Vector(HAIR_CENTRE)
+    out = []
+    for i, (p, size) in enumerate(zip(points, sizes)):
+        p = Vector(p)
+        p = p + (p - centre).normalized() * (root if i == 0 else lift)
+        out.append((p.x, p.y, p.z, size))
+    return out
+
+
+# The locks laid over the bob (BOB_LOCKS) and over its fringe (FRINGE_LOCKS), mirrored. A lock over the bob runs from
+# near the crown down its outside to past its bottom edge: `u` is where round her head it lies, 0 at the front edge of
+# the hair, 1 at the side, 2 behind it, 3 at the middle of the back, and `drift` how far round it turns on the way
+# down (the hair's flow). Big, middle and small locks mixed (shape variation), a few out of line (a little chaos).
+# (u, drift, half width, thickness, profile, tilt, how far past the bottom edge its tip hangs)
+BOB_LOCKS = [
+    (0.12, 0.05, 0.016, 0.006, "lens", 0.0, 0.012), (0.42, 0.08, 0.02, 0.007, "clump", 0.1, 0.018),
+    (0.72, 0.06, 0.014, 0.006, "dome", -0.1, 0.01), (0.98, 0.1, 0.022, 0.008, "clump", 0.0, 0.02),
+    (1.26, 0.08, 0.016, 0.006, "tent", 0.15, 0.014), (1.52, 0.12, 0.024, 0.008, "clump", -0.1, 0.022),
+    (1.8, 0.08, 0.014, 0.006, "lens", 0.0, 0.012), (2.06, 0.12, 0.022, 0.008, "dome", 0.1, 0.02),
+    (2.34, 0.06, 0.016, 0.006, "tent", -0.15, 0.016), (2.6, 0.08, 0.024, 0.008, "clump", 0.0, 0.022),
+    (2.86, 0.04, 0.018, 0.007, "dome", 0.1, 0.018),
+    # A small one off the line, turned out across its neighbours (chaos, not overdone).
+    (1.66, 0.3, 0.01, 0.005, "lens", 0.5, 0.026),
+]
+# A lock over the fringe runs from the back of the crown over the top and down the forehead to past its lower edge,
+# at `s`, across from the parting (0) to the far temple (7): (s, half width, thickness, profile, tilt, how far past
+# the lower edge its point hangs). Pointed and uneven, so the fringe ends in points instead of a straight line.
+FRINGE_LOCKS = [
+    (0.4, 0.016, 0.006, "lens", 0.1, 0.008), (1.2, 0.02, 0.007, "clump", 0.0, 0.016),
+    (2.0, 0.018, 0.007, "dome", -0.1, 0.01), (2.7, 0.022, 0.008, "clump", 0.1, 0.02),
+    (3.4, 0.016, 0.006, "tent", 0.0, 0.012), (4.1, 0.022, 0.008, "clump", -0.1, 0.022),
+    (4.9, 0.018, 0.007, "dome", 0.1, 0.014), (5.7, 0.02, 0.007, "lens", 0.0, 0.018),
+    (6.5, 0.016, 0.006, "tent", -0.15, 0.012),
+]
+LOCK_SIZES = (0.35, 0.8, 1.0, 1.0, 0.95, 0.85, 0.7, 0.45, 0.06)  # Alt+S down a lock, root to tip
+
+
+def bob_locks(rings, fringe, locks=BOB_LOCKS, fringe_locks=FRINGE_LOCKS):
+    """
+    The locks over a bob built from `rings` (one half, as BOB_RINGS) and `fringe` (as BOB_FRINGE), in head units:
+    ({side: [lock rings, ...]} for -1 and 1, [fringe lock rings, ...]).
+    """
+    def on_ring(r, u):
+        outline = rings[r][:4]
+        i = min(int(u), 2)
+        t = u - i
+        return Vector(outline[i]).lerp(Vector(outline[i + 1]), t)
+
+    def sizes(n):
+        # LOCK_SIZES stretched over n points.
+        return [LOCK_SIZES[min(len(LOCK_SIZES) - 1, round(k * (len(LOCK_SIZES) - 1) / (n - 1)))] for k in range(n)]
+
+    sides = {-1: [], 1: []}
+    last = len(rings) - 1
+    for u, drift, width, thick, profile, tilt, tip in locks:
+        points = []
+        for r in range(1, last + 1):
+            t = (r - 1) / (last - 1)
+            points.append(on_ring(r, min(3.0, u + drift * t)))
+        end = points[-1]
+        points.append(end + Vector((0.0, 0.0, -tip)) + (end - Vector(HAIR_CENTRE)).normalized() * tip * 0.3)
+        path = lock_path(points, sizes(len(points)))
+        for sx in (-1, 1):
+            sides[sx].append(hair_strand([(sx * x, y, up, s) for x, y, up, s in path], profile, width, thick,
+                                         tilt * sx))
+    front = []
+    for s, width, thick, profile, tilt, tip in fringe_locks:
+        i = min(int(s), len(fringe) - 2)
+        t = s - i
+        a, b = fringe[i], fringe[i + 1]
+        points = [Vector(a[k]).lerp(Vector(b[k]), t) for k in range(4)]  # back of crown, over the top, ridge, edge
+        down = (points[3] - points[2]).normalized()
+        points.append(points[3] + down * tip)
+        front.append(hair_strand(lock_path(points, sizes(len(points))), profile, width, thick, tilt))
+    return sides, front
+
+
+def hair_braid(path, lumps, radius, sides=8):
+    """
+    A braid along a path of (x, y, height) points: a rope that swells and narrows `lumps` times, each swell a little
+    to one side and then the other, as the three strands cross over.
+    """
+    points = [Vector(p) for p in path]
+    lengths = [0.0]
+    for p, q in zip(points, points[1:]):
+        lengths.append(lengths[-1] + (q - p).length)
+
+    def at(s):
+        s = min(max(s, 0.0), lengths[-1])
+        for i in range(len(points) - 1):
+            if s <= lengths[i + 1]:
+                t = (s - lengths[i]) / max(lengths[i + 1] - lengths[i], 1e-9)
+                return points[i].lerp(points[i + 1], t)
+        return points[-1]
+
+    steps = lumps * 4
+    stations = []
+    for k in range(steps + 1):
+        s = lengths[-1] * k / steps
+        swell = abs(math.sin(math.pi * lumps * k / steps))
+        r = radius * (0.65 + 0.35 * swell)
+        side = 1 if (k // 4) % 2 == 0 else -1
+        p = at(s)
+        d = (at(s + 0.002) - at(s - 0.002)).normalized()
+        nudge = d.cross(Vector((0.0, 0.0, 1.0)))
+        nudge = nudge.normalized() * (0.0018 * side * swell) if nudge.length > 1e-6 else Vector()
+        q = p + nudge
+        stations.append((q.x, q.y, q.z, r, r * 0.85))
+    return hair_rope(stations, across=(0.0, 0.0, 1.0), sides=sides)
+
+
+def hair_flick(x, y, up, out, drop, width):
+    """A lock of hair at (x, y, up) on the edge of a style, hanging `drop` and curling `out` from her head at its
+    end. Lies along the edge: wide along it, thin across it."""
+    n = Vector((x, y, 0.0)).normalized()
+    tangent = (-n.y, n.x, 0.0)
+    base = Vector((x, y, up))
+    stations = [(base, width, 0.0045), (base + Vector((0, 0, -drop * 0.6)) + n * (out * 0.2), width * 0.85, 0.004),
+                (base + Vector((0, 0, -drop * 0.9)) + n * (out * 0.6), width * 0.55, 0.003),
+                (base + Vector((0, 0, -drop)) + n * out, width * 0.15, 0.0015)]
+    return hair_rope([(p.x, p.y, p.z, w, t) for p, w, t in stations], across=tangent, sides=6)
+
+
+# The braided bob (the user's picture, 2026-11-19): the bob as she wears it, with a longer side-swept fringe falling
+# past one eye and down her cheek, a strand before each ear, a braid back along the parting side, and the ends
+# flicked out. All in head units, like the bob.
+BRAID_FRINGE_LOWER = {0: (-0.095, 0.03, 0.12), 2: (-0.06, 0.076, 0.128), 3: (-0.012, 0.103, 0.12),
+                      4: (0.04, 0.097, 0.108), 5: (0.08, 0.074, 0.088), 6: (0.1, 0.048, 0.06), 7: (0.1, 0.012, 0.062)}
+# The braid lies along her parting, from her hairline over the top of her head towards the crown, on the fringe.
+BRAID_PATH = [(-0.057, 0.066, 0.174), (-0.056, 0.045, 0.186), (-0.054, 0.02, 0.196), (-0.05, -0.015, 0.197),
+              (-0.045, -0.045, 0.19), (-0.038, -0.07, 0.178)]
+BRAID_STRANDS = [(0.088, 0.055, 0.12, 0.008, 0.003), (0.09, 0.06, 0.06, 0.008, 0.003),
+                 (0.087, 0.063, 0.0, 0.007, 0.0025), (0.082, 0.066, -0.045, 0.002, 0.0015)]
+# The ends turned out: the bob's last two rings pushed out from (0, -0.02) by these shares, all but their front
+# corners (the locks framing her face), the inside less, so the hair keeps its thickness.
+BRAID_FLARE = {6: (1.1, 1.05), 7: (1.2, 1.1)}
+# A few ends flicked further out at her sides (x, y, up), mirrored; how far out, down, and how wide.
+BRAID_FLICKS = [(0.08, -0.005, -0.03), (0.078, -0.045, -0.035)]
+BRAID_FLICK = (0.014, 0.016, 0.016)
+
+
 def hair_styles(spec):
     """The extra styles for a character: {style: [rings, ...]}, each ring list lofted into one closed piece."""
     skull = SKULL[spec["name"]]
@@ -2171,7 +2411,26 @@ def hair_styles(spec):
 
     if spec["name"] == "Female":
         fringe = [list(station) for station in BOB_FRINGE]
+        def flared(r, k, x, y, up):
+            if r not in BRAID_FLARE or k in (0, 7):
+                return x, y, up
+            share = BRAID_FLARE[r][0 if k < 4 else 1]
+            return x * share, -0.02 + (y + 0.02) * share, up
+
+        bob = [[[(sx * fx, fy, fu) for k, p in enumerate(station) for fx, fy, fu in [flared(r, k, *p)]]
+                for r, station in enumerate(BOB_RINGS)] for sx in (-1, 1)]
+        long_fringe = [[BRAID_FRINGE_LOWER[i] if k == 3 and i in BRAID_FRINGE_LOWER else p for k, p in enumerate(station)]
+                       for i, station in enumerate(BOB_FRINGE)]
+        out, drop, width = BRAID_FLICK
+        braid_sides, braid_front = bob_locks(bob[1], long_fringe)
         return {
+            # The braided bob: see BRAID_FRINGE_LOWER. Locks over it as over the bob (bob_locks).
+            "Braid": [
+                *bob, long_fringe, hair_braid(BRAID_PATH, 9, 0.0085),
+                *braid_sides[-1], *braid_sides[1], *braid_front,
+                *[hair_lock([(sx * x, y, up, w, t) for x, y, up, w, t in BRAID_STRANDS]) for sx in (-1, 1)],
+                *[hair_flick(sx * x, y, up, out, drop, width) for x, y, up in BRAID_FLICKS for sx in (-1, 1)],
+            ],
             # Short and close, with her side-swept fringe: down over the tops of her ears, a sideburn in front
             # of each, and tapered into the nape.
             "Pixie": [over_ears_cap(0.016), fringe],
@@ -2314,7 +2573,7 @@ def build_character(c, m, spec):
         for style, pieces in hair_styles(spec).items():
             facet = part(f"Hair{style}", neck_at)
             for rings in pieces:
-                facet.loft([[(x * kx, y * ky, chin + up * kz) for x, y, up in r] for r in rings], hair_mat)
+                facet.loft([[(x * kx, y * ky, chin + head_up(spec, up) * kz) for x, y, up in r] for r in rings], hair_mat)
             facet.finish(head_obj, neck_at)
 
     shoulder_x, shoulder_z = spec["shoulder"]
@@ -3519,7 +3778,10 @@ VULVA_HALF = 0.034  # its half width
 VULVA_LENGTH = 0.085
 # Where its first row lies down her middle from the top of the line it's laid along, and over how long a stretch of
 # that line each row takes its way out from: a twelfth of the length, as the grid was first built 13 rows long.
-VULVA_START = VULVA_LENGTH / 12
+# VULVA_SHIFT moves it further down and under her (2026-11-19): the hood and clit sit where her mound turns under,
+# all that shows from the front; the opening lies underneath, between her legs, ending short of her anus's disc.
+VULVA_SHIFT = 0.04
+VULVA_START = VULVA_LENGTH / 12 + VULVA_SHIFT
 VULVA_SPAN = VULVA_LENGTH / 12
 VULVA_TOP = 0.812  # the height of its top row, on the front of her mound
 # Her middle is found by rays from inside her groin at (y, z), turning from a little above forwards round to back
@@ -3547,8 +3809,8 @@ VULVA_REFINE = [1.0, 0.75]
 # And once more under her slit and round her anus, so the skin hidden under her openings (VULVA_HOLE, ANUS_HOLE)
 # follows their shapes closely. Only split, the surface left exactly as it was, so the grid and the disc lie on
 # the skin as they did.
-OPENING_REFINE = [([(0.0, 0.042, 0.742), (0.0, 0.06, 0.775)], (0.021, 0.02, 0.024), 1),
-                  ([(0.0, -0.026, 0.765)], (0.026, 0.022, 0.026), -1)]
+OPENING_REFINE = [([(0.0, -0.004, 0.742), (0.0, 0.026, 0.744)], (0.021, 0.02, 0.024), 0),
+                  ([(0.0, -0.038, 0.776)], (0.026, 0.022, 0.026), -1)]
 # Her opening: between these two rows the grid is cut down its middle, and the two sides of the cut open onto her
 # canal (T_canal), a pocket going into her. Closed, the sides meet and it lies flat between them; the game parts
 # them (vulva.ts). Each side of the cut has its own corners: u a quarter column to the left or right of the middle.
@@ -3570,7 +3832,7 @@ VULVA_HOLE_ENDS = (0.008, 0.0)
 VULVA_FIRST_GRID = ((-1.0, -0.72, -0.5, -0.34, -0.2, -0.09, 0.0, 0.09, 0.2, 0.34, 0.5, 0.72, 1.0), 13, (5, 10))
 # The skin's many-sided faces this near her slit are split into triangles first (SkinProbe.split): a point and how
 # far from it.
-VULVA_SPLIT = ((0.0, 0.05, 0.758), 0.05)
+VULVA_SPLIT = ((0.0, 0.015, 0.755), 0.06)
 
 
 def smooth01(t):
@@ -3713,9 +3975,19 @@ def add_vulva(m, name, body_obj):
 
         def skin(s):
             planned = middle + Vector((s * width, 0.0, 0.0)) - normal * VULVA_WRAP * s * s
-            # The skin under the aim, looking in from outside her; failing that, the skin nearest it.
+            # The skin under the aim, looking in from outside her. Where the aim misses her (under her, the creases
+            # between her trunk and thighs), the row carries on flat from the nearest place in towards her middle
+            # that meets her skin: the skin nearest the aim lies deep in the crease, and the row would fold into it.
             point = tree.ray_cast(planned + normal * 0.04, -normal, 0.08)[0]
-            return point if point is not None else tree.find_nearest(planned)[0]
+            if point is not None:
+                return point
+            for k in range(1, 20):
+                inner = s * (1 - k / 20)
+                aim = middle + Vector((inner * width, 0.0, 0.0)) - normal * VULVA_WRAP * inner * inner
+                hit = tree.ray_cast(aim + normal * 0.04, -normal, 0.08)[0]
+                if hit is not None:
+                    return hit + (planned - aim)
+            return tree.find_nearest(planned)[0]
 
         # The crease down her middle, filled: no point lies further in than its neighbours, so the crease's walls
         # never stand in front of the slit. Only so far, so the notch between her thighs stays as it is. Filled
@@ -3741,11 +4013,24 @@ def add_vulva(m, name, body_obj):
     step = VULVA_LENGTH / (VULVA_ROWS - 1)
     grid = {}
     normals = []
+    rows = []
     for r in range(VULVA_ROWS):
         normal, placed, points = row_at(VULVA_START + r * step, r / (VULVA_ROWS - 1), VULVA_COLUMNS)
-        for c, (co, point) in enumerate(zip(placed, points)):
-            grid[c, r] = probe.vert(co, probe.weights(point))
+        rows.append((placed, points))
         normals.append(normal)
+    # Dents along her, filled as the crease across is: under her the skin is lumpy, and the grid would take every
+    # lump as a fold across it. Each point comes out (along its row's way out, never in) towards the middle of its
+    # neighbours up and down its column, no further than VULVA_FILL past where it lay.
+    out = [[0.0] * len(VULVA_COLUMNS) for _ in range(VULVA_ROWS)]
+    for _ in range(VULVA_FILL_PASSES):
+        for r in range(1, VULVA_ROWS - 1):
+            for c in range(len(VULVA_COLUMNS)):
+                here = rows[r][0][c] + normals[r] * out[r][c]
+                around = (rows[r - 1][0][c] + normals[r - 1] * out[r - 1][c] + rows[r + 1][0][c] + normals[r + 1] * out[r + 1][c]) / 2
+                out[r][c] = min(VULVA_FILL, max(out[r][c], out[r][c] + (around - here).dot(normals[r])))
+    for r, (placed, points) in enumerate(rows):
+        for c, (co, point) in enumerate(zip(placed, points)):
+            grid[c, r] = probe.vert(co + normals[r] * out[r][c], probe.weights(point))
 
     # The cut down the middle column: each side of it gets its own corners, at the same place while she's closed.
     columns = len(VULVA_COLUMNS)
@@ -3843,8 +4128,9 @@ ANUS_RADIUS = 0.026  # the disc's edge, out past the rim stretched as wide as th
 ANUS_DEPTH = 0.03  # the canal's depth as built
 ANUS_MOUTH = 0.0005  # the rim's radius as built: closed
 ANUS_LIFT = 0.0008
-# Where it's found: looking out from inside her, back and down into the cleft of her rear.
-ANUS_AIM = ((0.0, 0.0, 0.8), (0.0, -0.6, -0.8))
+# Where it's found: looking out from inside her, back and down into the cleft of her rear; aimed further back since
+# her vulva moved under her (VULVA_SHIFT), keeping the same gap behind her opening.
+ANUS_AIM = ((0.0, 0.0, 0.8), (0.0, -0.9, -0.65))
 # The skin under it hidden while it shows, as under her vulva's opening: this far from its middle. The cleft's walls
 # close in around it, so well out past the rim stretched, while still under the disc.
 ANUS_HOLE = 0.022
@@ -5372,6 +5658,203 @@ def build_plunge_extra(spec, m):
     return extra
 
 
+# ---------------------------------------------------------------- the halter dress
+# A long black halter dress: a snug collar round the slim of her neck, her shoulders, arms and back bare down to the
+# small of her back, fitted close over her breasts, waist and hips, then on round both legs together in a narrow tube
+# to her lower calves. Sheer lace panels run down each side from under her bust to the hem; the game tints them
+# towards her skin (OutfitDef.sheerCloth), so she shows through. Its own materials, "halter" and "lace", so it's
+# smoothed into fabric and finished like the tee (SMOOTH_TOPS, finish_tee) without touching any other outfit.
+# Measured against its reference with tools/refcompare (its cuts across her show how far the cloth stands off her).
+HALTER_COLOURS = (("halter", (0.08, 0.075, 0.085)), ("lace", (0.09, 0.08, 0.09)))
+STAIN_OWN_RAND = ("Halter",)  # outfits whose stains draw from their own random numbers (see the stains)
+HALTER_COLLAR = (1.335, 1.395)  # the collar's bottom and top, on the slim of her neck, its bottom over the front's top
+HALTER_COLLAR_EASE = 0.004  # how far it stands off her neck's table (her neck as built sits a few mm inside it)
+HALTER_NECK = 1.362  # the front panel's top, tucked under the collar
+# Half the width of the front panel at heights from the collar down: a strip the width of her throat, opening out over
+# her breasts to her sides, so her shoulders and the tops of her sides stay bare (a halter's deep armholes).
+HALTER_FRONT = [(1.36, 0.03), (1.32, 0.036), (1.28, 0.045), (1.25, 0.06), (1.21, 0.09), (1.17, 0.125), (1.13, 0.3)]
+HALTER_BACK = (0.975, 1.17)  # the bare back's lowest point at her spine, and where its edge meets her sides
+HALTER_LACE = 1.13  # the lace panels' top
+HALTER_LACE_BAND = (-0.4, 0.5)  # the panels round her, as sin of the angle (-1 her back, 0 her side, 1 her front)
+HALTER_TUBE = [0.9, 0.85, 0.79, 0.72, 0.64, 0.56, 0.48, 0.41, 0.34, 0.28, 0.23]  # the tube's rows, hips to hem
+HALTER_TUBE_TOP = 0.8  # her trunk's faces below this are left to the tube (they overlap its top, so no seam opens as she moves)
+HALTER_EASE = (0.007, 0.01)  # how far the tube stands off her outline at its top and at its hem
+HALTER_SIDES = 32  # columns round the tube
+HALTER_SLACK = 0.007  # how much looser the tube is at the front and back of her thighs and knees
+HALTER_ONTO_LEGS = (0.8, 0.88)  # the tube rides her hips above the second height, her legs below the first
+HALTER_KNEE_BLEND = 0.05  # how far either side of her knee it passes from her thigh to her shin
+
+
+def halter_table(table, z):
+    """A (height, value) table from the top down, read at z, held at its ends."""
+    if z >= table[0][0]:
+        return table[0][1]
+    for (z0, v0), (z1, v1) in zip(table, table[1:]):
+        if z >= z1:
+            return v1 + (v0 - v1) * (z - z1) / (z0 - z1)
+    return table[-1][1]
+
+
+def halter_side(spec, cx, cy, cz):
+    """Where a point lies round her trunk, as sin of its angle on her outline: 1 her front middle, 0 her side, -1 her
+    back middle."""
+    w, f, b = profile_at(spec, cz)
+    u, v = cx / max(w, 1e-6), cy / max(f if cy > 0 else b, 1e-6)
+    return v / max(1e-6, math.hypot(u, v))
+
+
+def halter_cloth(spec, m, skin):
+    """The worn faces of the halter dress: her front from the collar down, her sides, her back below its opening, all
+    down to her hips, with the lace down her sides."""
+    faces = []
+    for f, fm in skin.faces:
+        if fm is m["stripe"] or len(f) > 4:
+            continue
+        bone, (cx, cy, cz) = face_bone(skin, f)
+        # Her throat under the collar is on her head's bone.
+        trunk = bone in ("Hips", "Torso") or (bone == "Head" and cz < HALTER_NECK)
+        if not trunk or face_leans(skin, f, "UpperArm") or cz < HALTER_TUBE_TOP:
+            continue
+        if cy > 0:
+            if cz > HALTER_NECK or abs(cx) > halter_table(HALTER_FRONT, cz):
+                continue
+        else:
+            # The back's opening: lowest at her spine, rising to meet the front's edge at her sides.
+            w = profile_at(spec, cz)[0]
+            edge = HALTER_BACK[0] + (HALTER_BACK[1] - HALTER_BACK[0]) * min(1.0, abs(cx) / max(w, 1e-6)) ** 2
+            if cz > edge:
+                continue
+        side = halter_side(spec, cx, cy, cz)
+        lace = cz < HALTER_LACE and HALTER_LACE_BAND[0] < side < HALTER_LACE_BAND[1]
+        faces.append((f, m["lace"] if lace else m["halter"]))
+    return faces
+
+
+def skin_slicer(skin, m, keep):
+    """A function giving her skin cut across at a height, as (x, y) points: the faces whose bone `keep` accepts."""
+    edges = set()
+    for f, fm in skin.faces:
+        if fm is m["stripe"] or not keep(face_bone(skin, f)[0]):
+            continue
+        for a, b in zip(f, f[1:] + f[:1]):
+            edges.add((min(a, b), max(a, b)))
+
+    def slice_at(z):
+        out = []
+        for a, b in edges:
+            pa, pb = skin.points[a], skin.points[b]
+            if (pa[2] - z) * (pb[2] - z) <= 0 and pa[2] != pb[2]:
+                t = (z - pa[2]) / (pb[2] - pa[2])
+                out.append((pa[0] + (pb[0] - pa[0]) * t, pa[1] + (pb[1] - pa[1]) * t))
+        return out
+    return slice_at
+
+
+def hull_ring(points, sides, ease, slack=None, offset=0.0):
+    """A ring round points pulled tight, as cloth stretched round them lies: their convex hull, `ease` out from it,
+    read at `sides` even turns round its middle (0 at her right side, a quarter turn at her front), each `offset` of a
+    step further round. Returns the middle and the ring's points."""
+    pts = sorted(set((round(x, 6), round(y, 6)) for x, y in points))
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower, upper = [], []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    hull = lower[:-1] + upper[:-1]
+    cx = (min(p[0] for p in hull) + max(p[0] for p in hull)) / 2
+    cy = (min(p[1] for p in hull) + max(p[1] for p in hull)) / 2
+    ring = []
+    for k in range(sides):
+        a = 2 * math.pi * (k + offset) / sides
+        dx, dy = math.cos(a), math.sin(a)
+        reach = 0.0
+        for (x0, y0), (x1, y1) in zip(hull, hull[1:] + hull[:1]):
+            # Where the ray from the middle crosses this side of the hull.
+            ex, ey = x1 - x0, y1 - y0
+            den = dx * ey - dy * ex
+            if abs(den) < 1e-12:
+                continue
+            t = ((x0 - cx) * ey - (y0 - cy) * ex) / den
+            u = ((x0 - cx) * dy - (y0 - cy) * dx) / den
+            if t > 0 and -1e-9 <= u <= 1 + 1e-9:
+                reach = max(reach, t)
+        more = slack(a) if slack else 0.0
+        ring.append((cx + dx * (reach + ease + more), cy + dy * (reach + ease + more)))
+    return (cx, cy), ring
+
+
+def build_halter_extra(spec, m, skin):
+    """The halter dress's collar, and its tube round both legs from her hips to her lower calves, lace down its sides.
+    Both are single sheets: finish_tee turns their edges under, as the tee's."""
+    extra = Skin()
+
+    # The collar: a snug band round the slim of her neck, on her head's bone like a choker. (Her neck is the head's,
+    # built apart from the skin these faces come from, so it's placed from her neck's table, not cut from her skin.)
+    neck_band(extra, spec, "collar", HALTER_COLLAR, HALTER_COLLAR_EASE, m["halter"], sides=16)
+
+    # The tube: her hips and both legs (not her arms or hands) cut across at each row, the cloth pulled tight round
+    # them. Weighted by rule, not the skirt's bones (they swing a flared skirt out, and pushed this one's sides off her
+    # and her knees through its front) nor copied from the nearest skin (at the front between her legs that's her
+    # crotch, on her hips, so a thigh swinging forward came through it): its top rides her hips, easing onto her legs
+    # below; each half rides its own thigh, then its own shin below the knee. The cloth across the middle stretches
+    # from one leg to the other as fabric between two legs does. No column lies on her middle line (hull_ring's
+    # half-step offset), so every point has a side.
+    limbs = ("UpperArm", "ForeArm", "Hand")
+    body = skin_slicer(skin, m, lambda bone: not bone.startswith(limbs))
+
+    def leg_letter(sign):
+        """Which leg ("L" or "R") her skin on this side of her (x's sign) belongs to."""
+        votes = {}
+        for p, w in zip(skin.points, skin.weights):
+            if p[0] * sign > 0.03 and 0.35 < p[2] < 0.7:
+                for bone, share in w.items():
+                    if bone.startswith(("Thigh_", "Shin_")):
+                        votes[bone[-1]] = votes.get(bone[-1], 0.0) + share
+        return max(votes, key=votes.get)
+
+    letters = {sign: leg_letter(sign) for sign in (-1, 1)}
+
+    def ease(a, b, z):
+        t = min(1.0, max(0.0, (z - a) / (b - a)))
+        return t * t * (3 - 2 * t)
+
+    def tube_weights(co):
+        x, _, z = co
+        leg = letters[1 if x >= 0 else -1]
+        hips = ease(*HALTER_ONTO_LEGS, z)
+        shin = 1.0 - ease(spec["knee_z"] - HALTER_KNEE_BLEND, spec["knee_z"] + HALTER_KNEE_BLEND, z)
+        out = {"Hips": hips, f"Thigh_{leg}": (1 - hips) * (1 - shin), f"Shin_{leg}": (1 - hips) * shin}
+        return {bone: w for bone, w in out.items() if w > 1e-4}
+
+    rows = []
+    for r, z in enumerate(HALTER_TUBE):
+        t = r / (len(HALTER_TUBE) - 1)
+        # A little slack at the front and back of her thighs and knees, where a leg steps forward or back past the
+        # cloth shared between her legs (tools/refcompare's clipping scan, in her standing pose).
+        legs = max(0.0, min(1.0, (HALTER_ONTO_LEGS[1] - z) / 0.1)) * max(0.0, min(1.0, (z - 0.3) / 0.1))
+        slack = lambda a, legs=legs: legs * HALTER_SLACK * math.sin(a) ** 2
+        _, ring = hull_ring(body(z), HALTER_SIDES, HALTER_EASE[0] + (HALTER_EASE[1] - HALTER_EASE[0]) * t, slack, 0.5)
+        rows.append([((x, y, z), tube_weights((x, y, z))) for x, y in ring])
+    for r, row in enumerate(rows):
+        for k, (co, weights) in enumerate(row):
+            extra.add(f"tube{r}_{k}", 0, co, weights)
+    for r in range(len(rows) - 1):
+        for k in range(HALTER_SIDES):
+            j = (k + 1) % HALTER_SIDES
+            turn = 2 * math.pi * (k + 1) / HALTER_SIDES  # the face between columns k and k + 1, half a step on
+            mat = m["lace"] if HALTER_LACE_BAND[0] < math.sin(turn) < HALTER_LACE_BAND[1] else m["halter"]
+            extra.face((f"tube{r}_{k}", f"tube{r + 1}_{k}", f"tube{r + 1}_{j}", f"tube{r}_{j}"), 0, mat)
+    return extra
+
+
 # ---------------------------------------------------------------- the pirate's rig
 # For both bodies: a loose shirt with full sleeves, breeches tucked into tall bucket-topped boots, a sash round the
 # waist knotted at the left hip with its ends hanging, and a cocked hat trimmed with braid. He wears a waistcoat
@@ -6865,6 +7348,7 @@ def more_outfits(spec, m, skin, normals, fit):
                  build_gown_extra(spec, m)),
         "Frills": (*frills, build_frill_extra(spec, m, ClothSurface(skin, [(f, None) for f, _ in skin.faces], frills[1]))),
         "Plunge": (plunge_cloth(spec, m, skin), lifted(nightwear_lift), build_plunge_extra(spec, m)),
+        "Halter": (halter_cloth(spec, m, skin), lifted(nightwear_lift), build_halter_extra(spec, m, skin)),
         "Tee": (tee_cloth(spec, m, skin), lifted(tee_lift), build_tee_extra(spec, m, skin, normals)),
         **guests,
     }
@@ -7195,6 +7679,8 @@ def build_coat(c, m, name, body_obj, clothes=()):
     # so the splats on her skin stay as they were.
     rand = random.Random(11)
     cloth_rand = random.Random(23)
+    # Outfits added since keep their own draws, so adding one leaves the splats on the rest as they were.
+    own_rand = {outfit: random.Random(f"stains-{outfit}") for outfit in STAIN_OWN_RAND}
 
     # Each piece of each outfit, by outfit ("" for her own) and material.
     pieces = []
@@ -7299,10 +7785,11 @@ def build_coat(c, m, name, body_obj, clothes=()):
                     if (outfit, material) not in stains:
                         stains[(outfit, material)] = (bmesh.new(), on)
                     sbm = stains[(outfit, material)][0]
-                    splat(sbm, on, cloth_rand, at, n, radius, sides=14, lift=STAIN_LIFT)
+                    rnd = own_rand.get(outfit, cloth_rand)
+                    splat(sbm, on, rnd, at, n, radius, sides=14, lift=STAIN_LIFT)
                     for _ in range(drips):
-                        off = Vector((cloth_rand.uniform(-0.6, 0.6) * radius, 0, -radius * 0.45))
-                        drip(sbm, on, cloth_rand, at + off, length * cloth_rand.uniform(0.8, 1.2),
+                        off = Vector((rnd.uniform(-0.6, 0.6) * radius, 0, -radius * 0.45))
+                        drip(sbm, on, rnd, at + off, length * rnd.uniform(0.8, 1.2),
                              max(0.0025, radius * 0.25), lift=STAIN_LIFT)
             layers.append(layer(f"{name}_Cum{section}{stage}", bm, body))
             for (outfit, material), (sbm, on) in stains.items():
@@ -7471,8 +7958,8 @@ def skin_character(c, m, spec, root):
         more, more_kept = pieces.mesh(f"{name}_Cloth{outfit}Pieces", pieces.faces)
         outfits.append(join(obj, [pieces.link(c, more, more_kept, name, f"{name}_Cloth{outfit}Pieces")]))
     # Every dress she can wear has the leg warmers and garter belt too, for the legwear styles that show them.
-    # Not the outfits whose breeches or mail cover her legs, nor the plunge dress, which has no legwear.
-    covered = {label(f"Cloth{outfit}") for outfit in ("Pirate", "Archer", "Warrior", "Rogue", "Brute", "Plunge")}
+    # Not the outfits whose breeches or mail cover her legs, nor the plunge and halter dresses, which have no legwear.
+    covered = {label(f"Cloth{outfit}") for outfit in ("Pirate", "Archer", "Warrior", "Rogue", "Brute", "Plunge", "Halter")}
     dresses = [cloth_obj] + [obj for obj in outfits if obj.name not in covered] if medieval else []
     for dress in dresses:
         join(dress, [build_warmers(c, m, name, skin, normals)])
@@ -7632,7 +8119,15 @@ def skin_character(c, m, spec, root):
                 finish_tee(body_obj, tee, folds=(), drape=TEE_DRAPE)
             else:
                 finish_tee(body_obj, tee)
+        # And the halter dress the same way, without the tee's folds.
+        halter = bpy.data.objects.get(f"{name}_ClothHalter")
+        if halter is not None:
+            finish_tee(body_obj, halter, "T_halter", folds=())
 
+    joints = character_joints(spec)
+    if spec.get("neck_root"):
+        # Her neck, shoulders and arms brought nearer the real_heroin sculpt's (NECK_ROOT), on all of her at once.
+        shape_neck_root(name, [o for o in c.objects if o.type == "MESH"], joints)
     # Last of all on her shape: her skin kept inside her T-shirt (see TEE_COVER).
     tee = bpy.data.objects.get(f"{name}_ClothTee")
     if tee is not None and spec.get("jiggle"):
@@ -7645,7 +8140,6 @@ def skin_character(c, m, spec, root):
     rig.parent = root
     bpy.context.view_layer.objects.active = rig
     bpy.ops.object.mode_set(mode="EDIT")
-    joints = character_joints(spec)
     for bone_name, (_, head) in joints.items():
         bone = armature.edit_bones.new(bone_name)
         bone.head = head
@@ -7741,7 +8235,7 @@ def keep_slider_rest(rig, meshes):
 # bumps: its points are eased towards their neighbours' average again and again, each time put back CLEAR's gap
 # over the skin where easing took them under it. Only these materials (whole tops, not their trim or anything
 # modelled on them); the edges where they meet anything else (hem, neck, sleeve ends, other materials) stay put.
-SMOOTH_TOPS = ("T_tee",)
+SMOOTH_TOPS = ("T_tee", "T_halter", "T_lace")
 SMOOTH_TOPS_PASSES = 24
 SMOOTH_TOPS_EASE = 0.5
 
@@ -8231,6 +8725,13 @@ def finish_tee(body_obj, obj, material="T_tee", folds=TEE_FOLDS, drape=None):
     left = len(inward())
     print(f"finish tee: untangled in {rounds} rounds, {left} faces still turned in or creased")
 
+    # 1b. Draped: Blender's cloth simulation, run once here (see TEE_DRAPE).
+    if drape:
+        drape_cloth(body_obj, bm, faces, border, drape)
+        for v in mine:
+            keep_clear(v)
+        bm.normal_update()
+
     # 2. Folds, on the body of the tee (not its sleeves).
     arms = tee_arm_points(obj)
     torso_faces = [f for f in faces if not any(v.index in arms for v in f.verts)]
@@ -8490,13 +8991,6 @@ def slider_joint_shifts(rig):
 # through them (w: its half width). a is how far it pushes out (+) or in (-), in metres. Mirrored to her other
 # side unless "centre". Worked out from figure and pelvis references: the bony landmarks that show through on a
 # fit, soft heroine, kept soft.
-    # 1b. Draped: Blender's cloth simulation, run once here (see TEE_DRAPE).
-    if drape:
-        drape_cloth(body_obj, bm, faces, border, drape)
-        for v in mine:
-            keep_clear(v)
-        bm.normal_update()
-
 LANDMARKS = [
     # Pelvis: the hip bones at the front, the groove from them down to the mound, the swell at the trochanters,
     # the dimples above the glutes, and the crease under each one.
@@ -8711,6 +9205,114 @@ NECK_SINK = 0.03  # how far the neck's bottom ring goes down into the smoothed s
 # No flare at the back: the trunk there is no deeper than the neck, so any would stand out behind it as a lip.
 NECK_FLARE = {"above": 0.03, "side": 0.45, "back": 0.0, "front": 0.08, "under": 0.008, "reach": 0.12,
               "cuts": 3}
+# Her neck, shoulders and arms brought nearer the real_heroin sculpt's (art/real_heroin_sculpt.blend, 2026-11-19), once
+# she is finished, on every mesh alike so her clothes, collars and hair stay where they lay on her. Measured against
+# the sculpt: her shoulders' tops beside her neck sat 1.5 to 3 cm low (from her chin), so her neck stood out of a flat
+# shelf like a stalk; her shoulder joints were 2 cm narrower each side (the study's median, MODEL_STUDY.md, 1.2 cm);
+# and her neck was as wide as the sculpt's but 1.5 cm shallower front to back.
+# - "arm_out": her arms, and her shoulders above "girdle_z" from "girdle_x" out, moved out each side.
+# - "lift": the slope from her neck down over her shoulders (the trapezius) raised: all of it to "lift_r"[0] from her
+#   neck's middle, none past "lift_r"[1]; by height, rising from nothing at "lift_z"[0] to all at [1], back to nothing
+#   at [2] (under her jaw, so her head stays put); by side, "lift_turn" at her front (her collarbones and the notch
+#   between them stay low), at her sides and at her back.
+# - "neck": her neck fuller across and deeper, by "neck_k" (across, front to back) about "axis", all of it by
+#   "neck_z"[1]..[2], none at [0] and [3]; out to "neck_r"[0] from the middle, none past [1].
+# At first (the same day) the trapezius rose 3 cm and the neck grew 1.12 across and 1.2 deep: matching the sculpt's
+# measures, but in the game her jaw ran straight down into a wedge of shoulder, no neck between; the user found it
+# much worse. Now a gentle slope (1.2 cm, gone below her neck's middle) and a neck only a little fuller.
+# - "weights": her neck's lower part bent by her trunk as well as her head, all trunk at [0], all head at [1], so a
+#   turn of her head twists her neck along its length instead of turning its root round on her shoulders.
+NECK_ROOT = {"axis": (0.0, -0.008), "arm_out": 0.014, "girdle_x": (0.05, 0.12), "girdle_z": (1.17, 1.25),
+             "lift": 0.012, "lift_r": (0.07, 0.17), "lift_z": (1.18, 1.3, 1.37), "lift_turn": (0.35, 1.0, 0.85),
+             "neck_k": (1.05, 1.15), "neck_z": (1.3, 1.35, 1.4, 1.45), "neck_r": (0.05, 0.08),
+             "weights": (1.33, 1.4)}
+
+
+def neck_root_move(p, arm, root=NECK_ROOT):
+    """Where a point goes (NECK_ROOT): `arm` is its arms' share of its weights, 0 to 1."""
+    def smooth(t):
+        t = min(1.0, max(0.0, t))
+        return t * t * (3 - 2 * t)
+
+    x, y, z = p
+    ax, ay = root["axis"]
+    dx, dy = x - ax, y - ay
+    r = math.hypot(dx, dy)
+    side = 1.0 if x >= 0 else -1.0
+    # Out with the arms.
+    g0, g1 = root["girdle_x"]
+    h0, h1 = root["girdle_z"]
+    girdle = smooth((abs(x) - g0) / (g1 - g0)) * smooth((z - h0) / (h1 - h0))
+    nx = x + side * root["arm_out"] * (arm + (1 - arm) * girdle)
+    # The trapezius raised.
+    r0, r1 = root["lift_r"]
+    z0, z1, z2 = root["lift_z"]
+    front, middle, back = root["lift_turn"]
+    cos = dy / r if r > 1e-6 else 0.0
+    turn = middle + (front - middle) * max(0.0, cos) ** 2 + (back - middle) * max(0.0, -cos) ** 2
+    by_height = smooth((z - z0) / (z1 - z0)) if z < z1 else 1 - smooth((z - z1) / (z2 - z1))
+    nz = z + root["lift"] * (1 - smooth((r - r0) / (r1 - r0))) * by_height * turn
+    # The neck fuller.
+    n0, n1, n2, n3 = root["neck_z"]
+    k_at = smooth((z - n0) / (n1 - n0)) if z < n1 else (1.0 if z <= n2 else 1 - smooth((z - n2) / (n3 - n2)))
+    k_at *= 1 - smooth((r - root["neck_r"][0]) / (root["neck_r"][1] - root["neck_r"][0]))
+    kx, ky = root["neck_k"]
+    nx += dx * (kx - 1) * k_at
+    ny = y + dy * (ky - 1) * k_at
+    return (nx, ny, nz)
+
+
+def shape_neck_root(name, meshes, joints, root=NECK_ROOT):
+    """
+    Her neck, shoulders and arms moved as NECK_ROOT says, on every mesh (each point by its own arms' share of its
+    weights) and on the arms' joints; then her neck's lower part weighted to her trunk as well as her head.
+    """
+    def arm_bone(group):
+        return group.split("_", 1)[-1].startswith(ARM_BONES)
+
+    head_group, torso_group = f"{name}_Head", f"{name}_Torso"
+    w0, w1 = root["weights"]
+    moved = 0
+    for obj in meshes:
+        mesh = obj.data
+        if not len(mesh.vertices):
+            continue
+        names = {g.index: g.name for g in obj.vertex_groups}
+        arm_ids = {i for i, n in names.items() if arm_bone(n)}
+        head_id = next((i for i, n in names.items() if n == head_group), None)
+        to_world, to_local = obj.matrix_world.copy(), obj.matrix_world.inverted()
+        hair = "Hair" in obj.name
+        reweigh = []
+        for v in mesh.vertices:
+            total = sum(g.weight for g in v.groups)
+            arm = sum(g.weight for g in v.groups if g.group in arm_ids) / total if total else 0.0
+            p = to_world @ v.co
+            q = Vector(neck_root_move(tuple(p), arm, root))
+            if (q - p).length > 1e-7:
+                v.co = to_local @ q
+                moved += 1
+            if head_id is not None and not hair and q.z < w1 and math.hypot(q.x - root["axis"][0], q.y - root["axis"][1]) < 0.09:
+                head = sum(g.weight for g in v.groups if g.group == head_id)
+                if head > 0:
+                    reweigh.append((v.index, head, q.z))
+        mesh.update()
+        if reweigh:
+            torso = obj.vertex_groups.get(torso_group) or obj.vertex_groups.new(name=torso_group)
+            heads = obj.vertex_groups[head_group]
+            for index, head, z in reweigh:
+                t = min(1.0, max(0.0, (z - w0) / (w1 - w0)))
+                keep = t * t * (3 - 2 * t)
+                heads.add([index], head * keep, "REPLACE")
+                old = 0.0
+                try:
+                    old = torso.weight(index)
+                except RuntimeError:
+                    pass
+                torso.add([index], old + head * (1 - keep), "REPLACE")
+    for bone, (parent, head) in list(joints.items()):
+        if bone.startswith(ARM_BONES):
+            joints[bone] = (parent, neck_root_move(head, 1.0, root))
+    print(f"neck root: {moved} points moved")
 SUBDIVIDE_TRIM = 0.15  # a separate piece of clothing smaller than this across, in metres, is a trim and stays crisp
 LEG_CAP_BELOW = 0.3  # a flat, downward many-sided face below this height, off her middle, closes a leg's end
 
@@ -9781,6 +10383,11 @@ def main():
     # Her T-shirt (the leggings are the legwear bands), the same way.
     random_state = rng.bit_generator.state
     for key, colour in TEE_COLOURS:
+        mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
+    rng.bit_generator.state = random_state
+    # The halter dress's own cloth and lace panels, the same way.
+    random_state = rng.bit_generator.state
+    for key, colour in HALTER_COLOURS:
         mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
     rng.bit_generator.state = random_state
     # What men leave on her, likewise.

@@ -11,9 +11,10 @@ export const PUBIC_MATERIAL = "T_pubic";
 export const PUBIC_FRAME = { half: 0.11, bottom: 0.68, top: 0.96 } as const;
 /**
  * The top of her cleft, the point every style is placed from, as a height in the model: the top of her vulva's
- * slit (vulva.ts) at its usual size.
+ * slit (vulva.ts) at its usual size. 0.746 since her vulva moved down and under her (VULVA_SHIFT in build_world.py,
+ * 2026-11-19); it was 0.786.
  */
-export const PUBIC_CLEFT = 0.786;
+export const PUBIC_CLEFT = 0.746;
 /** No hair grows over the slit itself, below the top of her cleft: this far either side of her middle. */
 const SLIT_HALF = 0.007;
 /** The texture's size: square texels about 3.4 mm across, coarse like the rest of her. */

@@ -344,6 +344,8 @@ export interface OutfitDef {
   under?: { bra?: string; briefs?: string };
   /** How much of her skin colour shows through its stockings below their top band, out of 1: sheer stockings. */
   sheer?: number;
+  /** Its own materials her skin shows through too, by `sheer` (the halter dress's lace panels). */
+  sheerCloth?: string[];
   /**
    * Its legwear comes down rather than off (leggings): the band they're pulled down to, rolled up in the outfit's
    * roll (LEGROLL_MATERIAL) just above it, with the bands from there down still on her. Only for a style that reaches
@@ -679,6 +681,8 @@ const FEMALE_SLIDERS: SliderDef[] = [
   { id: "vulvaSize", label: "Size", tab: "body", group: "Vulva", terms: [] },
   { id: "vulvaFull", label: "Outer lips", tab: "body", group: "Vulva", terms: [] },
   { id: "vulvaLips", label: "Inner lips", tab: "body", group: "Vulva", terms: [] },
+  // How thick her outer lips are across: thin narrow ridges either side of the slit, or broad full ones.
+  { id: "vulvaThick", label: "Outer lip thickness", tab: "body", group: "Vulva", terms: [] },
   // Her anus likewise: its disc is shaped from this and the type (see anus.ts).
   { id: "anusSize", label: "Size", tab: "body", group: "Anus", terms: [] },
   // Each glute has its own bone, about 3 cm inside the curve of the rear. The rear is fullest low down and
@@ -972,7 +976,11 @@ const FEMALE_COLORS: ColorDef[] = [
   // The frilled set's bow (its top is the bodice, its ruffles the skirt, the lace round her arm the lace), and the
   // plunge dress with its choker.
   { id: "bow", label: "Bow", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_bow"]] },
-  { id: "dress", label: "Dress", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_dress"]] },
+  // The plunge dress, and the halter dress with the lace panels sewn into its sides.
+  {
+    id: "dress", label: "Dress", tab: "clothes", mode: "dye", palette: CLOTH_COLORS,
+    parts: [["Cloth", "T_dress"], ["Cloth", "T_halter"], ["Cloth", "T_lace"]],
+  },
   // Her T-shirt; its leggings are the legwear.
   { id: "tee", label: "T-shirt", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_tee"]] },
   // The pirate's rig. Her corset is the bodice, her shirt the blouse, and her belt and corset laces the belt.
@@ -1095,6 +1103,17 @@ const FEMALE_OUTFITS: OutfitDef[] = [
     colors: ["dress", "shoes", "soles", "bra", "smalls"],
     preset: { dress: "#d9b85c", shoes: "#b8892e", soles: "#7a5c22", bra: "#d9b85c", smalls: "#d9b85c" },
     // A stick-on bra down the open front, and a gold g-string.
+    under: { bra: "adhesive", briefs: "gstring" },
+  },
+  {
+    // A long black halter dress: a high collar, bare shoulders and back down to the small of her back, fitted close to
+    // her lower calves round both legs, with sheer lace panels down her sides that her skin shows through. Bare legs.
+    id: "halter", label: "Halter dress", mesh: "Halter",
+    colors: ["dress", "shoes", "soles", "bra", "smalls"],
+    preset: { dress: "#141216", shoes: "#c9a86a", soles: "#7a5c22", bra: "#141216", smalls: "#141216" },
+    sheer: 0.2,
+    sheerCloth: ["T_lace"],
+    // Nothing that shows at the open back or through the lace: a stick-on bra and a black g-string.
     under: { bra: "adhesive", briefs: "gstring" },
   },
   {
@@ -1223,6 +1242,8 @@ export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
     pieces: [{ id: "apron", label: "Apron", parts: [["Cloth", "T_apron"]] }],
     hairstyles: [
       { id: "bob", label: "Bob", mesh: "" },
+      // The bob with a long side-swept fringe, a braid along the parting and the ends flicked out (build_world.py).
+      { id: "braid", label: "Braided bob", mesh: "Braid" },
       { id: "pixie", label: "Pixie", mesh: "Pixie" },
       { id: "long", label: "Long", mesh: "Long" },
       { id: "ponytail", label: "Ponytail", mesh: "Ponytail" },
@@ -1664,13 +1685,15 @@ export function legwearOf(body: BodyName, look: Pick<Look, "outfit" | "legwear">
 
 /**
  * The stocking bands her skin shows through, and how much, for an outfit with sheer stockings: every band her legwear
- * reaches but the top one, which is doubled over and stays solid. Null for an outfit without them.
+ * reaches but the top one, which is doubled over and stays solid; and the outfit's own sheer cloth (sheerCloth).
+ * Null for an outfit without either.
  */
 export function sheerOf(body: BodyName, look: Pick<Look, "outfit" | "legwear">): { bands: string[]; amount: number } | null {
-  const amount = outfitOf(body, look).sheer ?? 0;
+  const outfit = outfitOf(body, look);
+  const amount = outfit.sheer ?? 0;
   const legwear = legwearOf(body, look);
-  if (amount <= 0 || !legwear) return null;
-  const bands = legwear.bands.filter((band) => HOSE_BANDS.includes(band)).slice(1);
+  if (amount <= 0) return null;
+  const bands = [...(legwear?.bands.filter((band) => HOSE_BANDS.includes(band)).slice(1) ?? []), ...(outfit.sheerCloth ?? [])];
   return bands.length ? { bands, amount } : null;
 }
 
@@ -2204,6 +2227,14 @@ interface BoneRest {
 
 /** How many body points each clothing point follows, and how softly the nearer ones count over the further. */
 const FOLLOW_POINTS = 4;
+const FOLLOW_SOFT = 0.005;
+/**
+ * Fitted tops (SMOOTH_TOPS) follow more of her skin, more evenly: over the crease under a big bust the four
+ * nearest points of a tee bridging it were split between the breast's underside and her ribs, and as the breast
+ * grew and dropped they parted and tore the cloth between them. Following the skin round it as a whole, the cloth
+ * moves smoothly with the breast and hangs from its front, as a tight shirt does.
+ */
+const TOP_FOLLOW = { k: 12, soft: 0.015 };
 /**
  * Cloth within the first distance of the body follows it fully; by the second it keeps to its own bones,
  * so a skirt's flared hem keeps its shape instead of copying the legs.
@@ -2225,14 +2256,6 @@ const RIDE = 0.04;
 
 /**
  * Clothes don't sink into the cleavage: fabric pulled over two breasts stretches straight from one to the other.
-const FOLLOW_SOFT = 0.005;
-/**
- * Fitted tops (SMOOTH_TOPS) follow more of her skin, more evenly: over the crease under a big bust the four
- * nearest points of a tee bridging it were split between the breast's underside and her ribs, and as the breast
- * grew and dropped they parted and tore the cloth between them. Following the skin round it as a whole, the cloth
- * moves smoothly with the breast and hangs from its front, as a tight shirt does.
- */
-const TOP_FOLLOW = { k: 12, soft: 0.015 };
  * The body points that can hold it out: the front of the chest, from just off the middle to past the breasts.
  * Model space: x across, y up, z backwards.
  */
@@ -2625,6 +2648,176 @@ export function smoothTopGap(bust: number): number {
   const t = Math.min(1, Math.max(0, (bust - from) / (to - from)));
   return SMOOTH_TOPS_GAP.gaps[0] + (SMOOTH_TOPS_GAP.gaps[1] - SMOOTH_TOPS_GAP.gaps[0]) * t;
 }
+/**
+ * Her T-shirt hangs from a big bust instead of wrapping under it: below the front of each breast the cloth falls
+ * straight down to the hem, a little back as it goes (`slope`, metres back per metre down), not back in under the
+ * breast to her ribs. Round her upright line (the shell's), each way round from her front (`bins` of it, half each
+ * side) and each height (`band`), the cloth comes out at least as far as the cloth above it, less the slope. Fully
+ * out to `ways[0]` round from her front, none past `ways[1]` (her sides and sleeves keep their shape). None up to the
+ * first cup, all of it by the second. The hem's turned-under strip goes with the fold it turns under at.
+ */
+const HANG_TOPS: readonly string[] = ["T_tee"];
+export const HANG = {
+  cups: ["C", "G"] as const, slope: 0.2, bins: 72, band: 0.005, ways: [55, 80] as const, top: 1.32,
+  /** The turned-under strip's points: on the tee's open edge, this close to the fold they turn at. */
+  turned: 0.005,
+  /** Passes the push out is eased by (see smoothMoves). */
+  ease: 30,
+  /** Her stains on the tee, kept this far out on it. */
+  lift: 0.001,
+};
+
+/** How much of the hang (see HANG) her T-shirt takes at this Cup size slider value. */
+export function hangAmount(bust: number): number {
+  const [from, to] = HANG.cups.map((letter) => stopValue(CUPS, CUPS.labels.indexOf(letter)));
+  return Math.min(1, Math.max(0, (bust - from) / (to - from)));
+}
+
+/** Per point of a top, the point of the fold its turned-under strip turns at (-1 for the rest). */
+export function turnedPartners(bind: Float32Array, table: SmoothTable, index: ArrayLike<number>): Int32Array {
+  const { node, nodes } = table;
+  const edges = new Map<number, number>();
+  for (let t = 0; t + 2 < index.length; t += 3) {
+    for (let k = 0; k < 3; k++) {
+      const a = node[index[t + k]], b = node[index[t + ((k + 1) % 3)]];
+      if (a === b) continue;
+      const key = Math.min(a, b) * nodes + Math.max(a, b);
+      edges.set(key, (edges.get(key) ?? 0) + 1);
+    }
+  }
+  const open = new Uint8Array(nodes);
+  for (const [key, n] of edges) if (n === 1) open[Math.floor(key / nodes)] = open[key % nodes] = 1;
+  const first = new Int32Array(nodes).fill(-1);
+  for (let v = 0; v < node.length; v++) if (first[node[v]] < 0) first[node[v]] = v;
+  const best = new Int32Array(nodes).fill(-1);
+  const bestDistance = new Float32Array(nodes).fill(HANG.turned);
+  for (const key of edges.keys()) {
+    const a = Math.floor(key / nodes), b = key % nodes;
+    if (open[a] === open[b]) continue;
+    const [edge, fold] = open[a] ? [a, b] : [b, a];
+    const p = first[edge] * 3, q = first[fold] * 3;
+    const d = Math.hypot(bind[p] - bind[q], bind[p + 1] - bind[q + 1], bind[p + 2] - bind[q + 2]);
+    if (d < bestDistance[edge]) {
+      bestDistance[edge] = d;
+      best[edge] = fold;
+    }
+  }
+  const partner = new Int32Array(node.length).fill(-1);
+  for (let v = 0; v < node.length; v++) if (best[node[v]] >= 0) partner[v] = first[best[node[v]]];
+  return partner;
+}
+
+/** How far out round the upright line at (x, z = `centre`) the hanging cloth comes, by way round and height. */
+export interface HangField {
+  centre: number;
+  bottom: number;
+  bands: number;
+  /** Per way round (HANG.bins) and band from `bottom` up, how far out; -Infinity where nothing hangs. */
+  out: Float32Array;
+}
+
+/** Which way round her upright line a point is (0 her front, to ±π/2 her sides; x across, z backwards). */
+function hangWay(x: number, z: number, centre: number): number {
+  return Math.atan2(x, centre - z);
+}
+
+/** The hang (see HANG) of a top shaped at `shaped` (its points `verts`): how far out it hangs everywhere. */
+export function hangField(shaped: Float32Array, verts: ArrayLike<number>, centre: number): HangField | null {
+  let bottom = Infinity;
+  for (let i = 0; i < verts.length; i++) bottom = Math.min(bottom, shaped[verts[i] * 3 + 1]);
+  if (!Number.isFinite(bottom)) return null;
+  const bands = Math.max(1, Math.ceil((HANG.top - bottom) / HANG.band) + 1);
+  const most = new Float32Array(HANG.bins * bands).fill(-Infinity);
+  const reach = (HANG.ways[1] * Math.PI) / 180;
+  for (let i = 0; i < verts.length; i++) {
+    const v = verts[i] * 3;
+    const x = shaped[v], y = shaped[v + 1], z = shaped[v + 2];
+    const way = hangWay(x, z, centre);
+    if (Math.abs(way) > reach || y > HANG.top) continue;
+    const bin = Math.min(HANG.bins - 1, Math.max(0, Math.floor(((way / Math.PI) + 0.5) * HANG.bins)));
+    const band = Math.min(bands - 1, Math.floor((y - bottom) / HANG.band));
+    const at = bin * bands + band;
+    most[at] = Math.max(most[at], Math.hypot(x, centre - z));
+  }
+  // Each band takes what hangs from every band above it (not its own: a point never hangs from itself).
+  const out = new Float32Array(HANG.bins * bands).fill(-Infinity);
+  const drop = HANG.slope * HANG.band;
+  for (let bin = 0; bin < HANG.bins; bin++) {
+    let hang = -Infinity;
+    for (let band = bands - 1; band >= 0; band--) {
+      out[bin * bands + band] = hang;
+      hang = Math.max(hang - drop, most[bin * bands + band]);
+    }
+  }
+  return { centre, bottom, bands, out };
+}
+
+/** How far out the cloth hangs at a point (x, y, z), between the ways round either side of it. */
+function hangAt(field: HangField, x: number, y: number, z: number): number {
+  const { centre, bottom, bands, out } = field;
+  const way = (hangWay(x, z, centre) / Math.PI + 0.5) * HANG.bins - 0.5;
+  const height = (y - bottom) / HANG.band - 0.5;
+  const lo = Math.floor(way), t = way - lo;
+  const low = Math.floor(height), u = height - low;
+  // Between the two nearest of each, leaving out any with nothing hanging there.
+  let sum = 0, weights = 0;
+  for (const [bin, wb] of [[lo, 1 - t], [lo + 1, t]]) {
+    for (const [band, wh] of [[low, 1 - u], [low + 1, u]]) {
+      if (bin < 0 || bin >= HANG.bins || band < 0 || band >= bands) continue;
+      const value = out[bin * bands + band];
+      if (value === -Infinity || wb * wh <= 0) continue;
+      sum += value * wb * wh;
+      weights += wb * wh;
+    }
+  }
+  return weights > 0 ? sum / weights : -Infinity;
+}
+
+/**
+ * Hangs a top's points (`verts`, shaped at `shaped`, their moves `moves` changed in place) out to `field` by
+ * `amount`, `lift` beyond it; a point with a `partner` (its turned-under strip) moves as its partner does.
+ */
+export function hangTop(
+  field: HangField, shaped: Float32Array, verts: ArrayLike<number>, moves: Float32Array, amount: number,
+  lift = 0, partner?: Int32Array, table?: SmoothTable,
+): void {
+  if (amount <= 0) return;
+  const full = (HANG.ways[0] * Math.PI) / 180, none = (HANG.ways[1] * Math.PI) / 180;
+  const push = new Float32Array(shaped.length);
+  const { centre } = field;
+  for (let i = 0; i < verts.length; i++) {
+    const v = verts[i] * 3;
+    const x = shaped[v], y = shaped[v + 1], z = shaped[v + 2];
+    const way = Math.abs(hangWay(x, z, centre));
+    if (way >= none) continue;
+    const hang = hangAt(field, x, y, z) + lift;
+    const r = Math.hypot(x, centre - z);
+    if (!(hang > r) || r < 1e-6) continue;
+    const fade = way <= full ? 1 : 1 - (way - full) / (none - full);
+    const s = ((hang - r) * amount * fade * fade * (3 - 2 * fade)) / r;
+    push[v] = x * s;
+    push[v + 2] = (z - centre) * s;
+  }
+  // Eased into the cloth round it, so it rounds off where it leaves the breast instead of creasing there; never less
+  // than its own (eased down, the deepest of the crease under the breast stayed in as a line above a roll).
+  if (table) {
+    const eased = push.slice();
+    smoothMoves(table, eased, HANG.ease, SMOOTH_TOPS_EASE);
+    for (let v = 0; v < push.length; v += 3) {
+      if (eased[v] ** 2 + eased[v + 2] ** 2 > push[v] ** 2 + push[v + 2] ** 2) {
+        push[v] = eased[v];
+        push[v + 2] = eased[v + 2];
+      }
+    }
+  }
+  for (let i = 0; i < verts.length; i++) {
+    const v = verts[i];
+    const from = partner && partner[v] >= 0 ? partner[v] : v;
+    moves[v * 3] += push[from * 3];
+    moves[v * 3 + 2] += push[from * 3 + 2];
+  }
+}
+
 /** Points of a top this close together, as built, are one point (glTF splits them at seams). */
 const SMOOTH_WELD = 1e-5;
 
@@ -2843,6 +3036,8 @@ interface FollowTable {
   points: Int32Array;
   weights: Float32Array;
   own: Float32Array;
+  /** How many body points each point follows (FOLLOW_POINTS, or TOP_FOLLOW for fitted tops). */
+  k: number;
 }
 
 /** The clothing points over a nipple: by index into their mesh, which disc, and how far from its tip as built. */
@@ -2864,8 +3059,6 @@ const unbind = new Matrix4();
  */
 const PUBIC_OVER_VULVA = 0.0004;
 /** How near his penis's root a piece of clothing has to come to cover his groin. */
-  /** How many body points each point follows (FOLLOW_POINTS, or TOP_FOLLOW for fitted tops). */
-  k: number;
 const GROIN_REACH = 0.035;
 /** Her vulva's and anus's meshes, and his penis's, which only show while bare there; guests never show them. */
 const PRIVATE_MATERIALS: readonly string[] = [
@@ -2956,6 +3149,8 @@ export class Dresser {
   private readonly clear: { skin: ClearSkin[]; cloths: Map<MeshSlot, Int32Array>; centre: number } | null = null;
   /** Her fitted tops, smoothed after the reshaping (see SMOOTH_TOPS). */
   private readonly smoothTops = new Map<MeshSlot, SmoothTable>();
+  /** Her T-shirt, hanging from a big bust (see HANG), with its turned-under strips' folds (see turnedPartners). */
+  private readonly hangTops = new Map<MeshSlot, Int32Array>();
   /** How aroused her vulva shows, from 0 to 1; a state of the night, never part of the look. */
   private vulvaArousal = 0;
   /**
@@ -3104,6 +3299,9 @@ export class Dresser {
       if (slot.part !== "Cloth" || !geometry.index || !SMOOTH_TOPS.includes(slot.original.name)) continue;
       const table = smoothTable(slot.bind, geometry.index.array as ArrayLike<number>);
       this.smoothTops.set(slot, table);
+      if (HANG_TOPS.includes(slot.original.name)) {
+        this.hangTops.set(slot, turnedPartners(slot.bind, table, geometry.index.array as ArrayLike<number>));
+      }
       const normal = geometry.getAttribute("normal");
       if (normal) weldNormals(table, normal as BufferAttribute);
     }
@@ -3503,6 +3701,9 @@ export class Dresser {
     });
     if (this.cleavage && active.size > 0) {
       for (const [slot, span] of this.cleavage.spans) {
+        // Not her fitted tops (SMOOTH_TOPS): they bridge her cleavage as built and are kept out on her shell; over a
+        // big bust the span's line from breast to breast cut across their lower insides and folded them into flaps.
+        if (this.smoothTops.has(slot)) continue;
         spanCleavage(this.cleavage.hold, span, slot.bind, moves[this.slots.indexOf(slot)].total, bodyMoves);
       }
     }
@@ -3521,19 +3722,34 @@ export class Dresser {
       const outfit = outfitOf(this.body, look).mesh;
       const topGap = smoothTopGap(look.sliders.bust ?? 0);
       const topSteps = smoothTopSteps(look.sliders.bust ?? 0);
-      for (const [slot, verts] of this.clear.cloths) {
+      const hang = hangAmount(look.sliders.bust ?? 0);
+      let field: HangField | null = null;
+      const shapedOf = (slot: MeshSlot, total: Float32Array) => {
+        const now = new Float32Array(slot.bind.length);
+        for (let i = 0; i < now.length; i++) now[i] = slot.bind[i] + total[i];
+        return now;
+      };
+      // Her T-shirt before its stains, which hang with it.
+      const order = [...this.clear.cloths].sort(([a], [b]) => Number(b.part === "Cloth") - Number(a.part === "Cloth"));
+      for (const [slot, verts] of order) {
         if (slot.part === "Cloth" && outfitMeshOf(slot.mesh, this.body) !== outfit) continue;
         const { total } = moves[this.slots.indexOf(slot)];
         onShell(shell, verts, slot.bind, total);
-        // Not her fitted tops (SMOOTH_TOPS): they bridge her cleavage as built and are kept out on her shell; over a
-        // big bust the span's line from breast to breast cut across their lower insides and folded them into flaps.
-        if (this.smoothTops.has(slot)) continue;
         // A fitted top: smoothed once out on her shell, out on it again (smoothing pulls it in a little over her
         // curves), then kept out of her skin by more the bigger her bust (see SMOOTH_TOPS_GAP).
         const table = this.smoothTops.get(slot);
         if (table) {
           smoothMoves(table, total, SMOOTH_TOPS_PASSES * 2, topSteps);
           onShell(shell, verts, slot.bind, total);
+        }
+        // Her T-shirt hanging from a big bust, and its stains with it (see HANG).
+        const turned = this.hangTops.get(slot);
+        if (turned && hang > 0) {
+          const shaped = shapedOf(slot, total);
+          field = hangField(shaped, verts, this.clear.centre);
+          if (field) hangTop(field, shaped, verts, total, hang, 0, turned, table);
+        } else if (field && slot.part === "Cum" && slot.mesh.name.includes(`_${HANG_TOPS[0]}_`)) {
+          hangTop(field, shapedOf(slot, total), verts, total, hang, HANG.lift);
         }
         const gap = table ? topGap : CLEAR_GAP;
         clearOfSkin(skin, clearOfSkin(skin, verts, slot.bind, total, gap), slot.bind, total, gap);
@@ -4075,7 +4291,7 @@ export class Dresser {
     const { sliders } = this.look;
     return vulvaShape(
       type, clampSlider(sliders.vulvaSize), clampSlider(sliders.vulvaFull), clampSlider(sliders.vulvaLips), this.vulvaArousal,
-      this.vulvaOpen,
+      this.vulvaOpen, clampSlider(sliders.vulvaThick),
     );
   }
 

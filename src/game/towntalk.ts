@@ -185,7 +185,7 @@ export function outfitStyleOf(outfit: string | undefined): OutfitStyle {
   if (outfit === "dirndl") return "medieval";
   if (outfit === "priestess") return "church";
   if (outfit === "babydoll" || outfit === "frills") return "lingerie";
-  if (outfit === "bunny" || outfit === "gown" || outfit === "plunge") return "revealing";
+  if (outfit === "bunny" || outfit === "gown" || outfit === "plunge" || outfit === "halter") return "revealing";
   return "work";
 }
 

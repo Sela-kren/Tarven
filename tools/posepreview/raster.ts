@@ -1,5 +1,8 @@
 /** The preview's software rasteriser: a model's skin posed on the CPU and its triangles filled into a depth buffer. */
-import { Matrix4, Object3D, PerspectiveCamera, SkinnedMesh, Mesh, Vector3 } from "three";
+import { Camera, Matrix4, Object3D, SkinnedMesh, Mesh, Vector3 } from "three";
+
+/** How a mesh is coloured, or null to leave it out (colourOf by default). */
+export type Colouring = (mesh: Object3D, name: string) => [number, number, number] | null;
 
 export const W = Number(process.env.PREVIEW_W ?? 336);
 export const H = Number(process.env.PREVIEW_H ?? 560);
@@ -70,28 +73,49 @@ export function colourOf(mesh: Object3D, name: string): [number, number, number]
   return null;
 }
 
-export function draw(model: Object3D, name: string, camera: PerspectiveCamera): Uint8Array {
-  return drawAll([{ model, name }], camera);
+export function draw(model: Object3D, name: string, camera: Camera, colour: Colouring = colourOf): Uint8Array {
+  return drawAll([{ model, name }], camera, colour);
 }
 
 /** Several bodies into the one picture, each in front of or behind the others as they stand. */
-export function drawAll(items: readonly { model: Object3D; name: string }[], camera: PerspectiveCamera): Uint8Array {
+export function drawAll(
+  items: readonly { model: Object3D; name: string }[],
+  camera: Camera,
+  colour: Colouring = colourOf,
+): Uint8Array {
   const rgba = new Uint8Array(W * H * 4);
   const depth = new Float32Array(W * H).fill(Infinity);
   for (let i = 0; i < W * H; i++) rgba.set([40, 40, 48, 255], i * 4);
-  for (const { model, name } of items) drawInto(model, name, camera, rgba, depth);
+  for (const { model, name } of items) drawInto(model, name, camera, rgba, depth, colour);
   return rgba;
 }
 
-function drawInto(model: Object3D, name: string, camera: PerspectiveCamera, rgba: Uint8Array, depth: Float32Array): void {
+function drawInto(
+  model: Object3D,
+  name: string,
+  camera: Camera,
+  rgba: Uint8Array,
+  depth: Float32Array,
+  colourFor: Colouring,
+): void {
   model.updateMatrixWorld(true);
   camera.updateMatrixWorld(true);
   const viewProj = new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-  const light = new Vector3(-0.4, 0.6, 0.7).normalize();
+  const ortho = (camera as { isOrthographicCamera?: boolean }).isOrthographicCamera === true;
+  const facing = camera.getWorldDirection(new Vector3()).negate();
+  // An orthographic camera (the ref compare's) is lit from its own side, up and to the left, whichever way it looks.
+  const light = ortho
+    ? facing
+        .clone()
+        .multiplyScalar(0.75)
+        .add(new Vector3(0, 1, 0).applyQuaternion(camera.quaternion).multiplyScalar(0.55))
+        .add(new Vector3(-1, 0, 0).applyQuaternion(camera.quaternion).multiplyScalar(0.35))
+        .normalize()
+    : new Vector3(-0.4, 0.6, 0.7).normalize();
   const v = new Vector3();
   model.traverse((o) => {
     if (!(o instanceof Mesh) || !o.visible) return;
-    const colour = colourOf(o, name);
+    const colour = colourFor(o, name);
     if (!colour) return;
     const geo = o.geometry;
     const pos = geo.attributes.position;
@@ -116,8 +140,8 @@ function drawInto(model: Object3D, name: string, camera: PerspectiveCamera, rgba
       ab.subVectors(world[ib], world[ia]);
       ac.subVectors(world[ic], world[ia]);
       const n = ab.cross(ac).normalize();
-      // Lit from the camera's side whichever way the triangle winds.
-      const toCam = camera.position.clone().sub(world[ia]).normalize();
+      // Lit from the camera's side whichever way the triangle winds (an orthographic camera's side is its facing).
+      const toCam = ortho ? facing : camera.position.clone().sub(world[ia]).normalize();
       if (n.dot(toCam) < 0) n.negate();
       const shade = 0.35 + 0.65 * Math.max(0, n.dot(light));
       const [a, b, c] = [screen[ia], screen[ib], screen[ic]];

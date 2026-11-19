@@ -100,6 +100,8 @@ export const VULVA_TYPES: VulvaType[] = [
 export interface VulvaShape {
   outer: number;
   crest: number;
+  /** How thick the outer lips are across, -1 (thin) to 1 (thick): see OUTER_THICK. */
+  thick: number;
   inner: number;
   reach: number;
   droop: number;
@@ -171,17 +173,22 @@ export function easeOpening(shown: number, target: number, dt: number): number {
 /**
  * A type with the sliders (-1 to 1), how aroused she is (0 to 1) and how open (0 closed, 1 fully, up to
  * VULVA_STRETCHED stretched) put in. Aroused, the lips swell, the inner ones most, the hood stands a little and the
- * outer lips part.
+ * outer lips part. `thickness` (-1 to 1) is how thick the outer lips are across: thin narrow ridges either side of
+ * the slit, or thick broad ones filling the patch (OUTER_THICK).
  */
-export function vulvaShape(type: VulvaType, size: number, fullness: number, lips: number, arousal: number, open = 0): VulvaShape {
+export function vulvaShape(
+  type: VulvaType, size: number, fullness: number, lips: number, arousal: number, open = 0, thickness = 0,
+): VulvaShape {
   const a = smooth(arousal);
+  const thick = Math.min(1, Math.max(-1, thickness));
   const scale = vulvaScale(size);
   // Heights grow with the size too, so a bigger one isn't flatter.
   const grow = scale / vulvaScale(0);
   const stretch = smooth(Math.min(VULVA_STRETCHED, open) - 1);
   return {
-    outer: type.outer * (1 + 0.5 * fullness) * (1 + 0.12 * a) * grow,
+    outer: type.outer * (1 + 0.5 * fullness) * (1 + 0.12 * a) * (1 + OUTER_THICK.height * thick) * grow,
     crest: type.crest,
+    thick,
     inner: type.inner * (1 + 0.45 * lips) * (1 + 0.45 * a) * grow,
     reach: Math.min(1, Math.max(0.3, type.reach + 0.2 * lips)),
     droop: type.droop,
@@ -231,6 +238,12 @@ function parting(shape: VulvaShape, row: number): number {
   return shape.open * cutShare(row) ** (1 - 0.4 * shape.stretch);
 }
 
+/**
+ * The outer lips' thickness slider: at its ends, how much wider or narrower they are across (as a share: thin lips
+ * end this much short of the patch's edge, thick ones' crests sit this much further out) and how much higher they
+ * stand, thick lips being fuller too.
+ */
+const OUTER_THICK = { across: 0.4, height: 0.2 } as const;
 /** The slit runs this far either side of the middle of the patch, as a share of its length. */
 const SLIT = 0.36;
 /** Where the clit is down the slit (in its half lengths from the middle, -1 its top). */
@@ -248,9 +261,12 @@ export function vulvaAt(shape: VulvaShape, s: number, t: number): { h: number; l
   // The outer lips run the length of the slit and round off past its ends, where they meet and their crests
   // draw in towards the middle.
   const along = 1 - smooth((Math.abs(w) - 0.75) / 0.55);
-  const crest = shape.crest * (1 - 0.55 * smooth((Math.abs(w) - 0.35) / 0.9));
+  // Thick lips are broader, their crests further out; thin ones narrower, falling away before the patch's edge.
+  const k = 1 + OUTER_THICK.across * shape.thick;
+  const edge = Math.min(1, k);
+  const crest = Math.min(edge * 0.8, shape.crest * k * (1 - 0.55 * smooth((Math.abs(w) - 0.35) / 0.9)));
   const floor = crest * 0.38;
-  const across = a < crest ? smooth((a - floor) / (crest - floor)) : 1 - smooth((a - crest) / (1 - crest));
+  const across = a < crest ? smooth((a - floor) / (crest - floor)) : 1 - smooth((a - crest) / (edge - crest));
   const outer = shape.outer * along * across;
   // The inner lips, from round the clit down as far as they reach: a thin ridge each side of the slit, steep on its
   // inner face (down into the slit, the vestibule between them) and easing out under the outer lip, its edge

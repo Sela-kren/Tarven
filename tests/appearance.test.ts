@@ -70,6 +70,10 @@ import {
   GUEST_LOOKS,
   NOBLE_OUTFITS,
   guestOutfitColors,
+  HANG,
+  hangAmount,
+  hangField,
+  hangTop,
   PIRATE_LOOKS,
   pirateGuestColors,
   playerOutfits,
@@ -81,6 +85,7 @@ import {
   smoothMoves,
   smoothTable,
   smoothTopGap,
+  turnedPartners,
   weldNormals,
   stopValue,
   toneColor,
@@ -243,6 +248,39 @@ describe("smoothing a fitted top", () => {
     expect(smoothTopGap(cup("J"))).toBeLessThan(0.008);
     expect(smoothTopGap(cup("M"))).toBeCloseTo(0.008);
     expect(smoothTopGap(cup("Z"))).toBeCloseTo(0.008);
+  });
+
+  it("hangs her T-shirt straight down from a big bust, not back in under it", () => {
+    const cup = (letter: string) => stopValue(CUPS, CUPS.labels.indexOf(letter));
+    expect(hangAmount(cup("C"))).toBe(0);
+    expect(hangAmount(cup("E"))).toBeGreaterThan(0);
+    expect(hangAmount(cup("J"))).toBe(1);
+    // Her upright line at z = 0. In front (-z): the front of a breast 20 cm out at 1.2 m, cloth under it 10 cm out
+    // at 1.1 m, and some above it at 1.25 m 12 cm out. At her side (+x), 15 cm out under her arm, at 1.1 m.
+    const shaped = Float32Array.from([0, 1.2, -0.2, 0, 1.1, -0.1, 0, 1.25, -0.12, 0.15, 1.1, 0]);
+    const verts = [0, 1, 2, 3];
+    const field = hangField(shaped, verts, 0)!;
+    const moves = new Float32Array(shaped.length);
+    hangTop(field, shaped, verts, moves, 1);
+    // Under the breast: out to its front, less the slope over the 10 cm down.
+    expect(-(shaped[5] + moves[5])).toBeCloseTo(0.2 - HANG.slope * 0.1, 2);
+    // The breast, the cloth above it and her side stay.
+    for (const k of [0, 1, 2, 6, 7, 8, 9, 10, 11]) expect(moves[k]).toBe(0);
+    // Half as far at half the amount.
+    const half = new Float32Array(shaped.length);
+    hangTop(field, shaped, verts, half, 0.5);
+    expect(half[5]).toBeCloseTo(moves[5] / 2, 5);
+  });
+
+  it("turns a hem's turned-under strip with the fold it turns under at", () => {
+    // A strip of two triangles: the fold (0, 1) along x, the turned-under edge (2, 3) 2 mm in under it, and the
+    // shirt above it (4, 5).
+    const bind = Float32Array.from([0, 1, 0, 0.01, 1, 0, 0, 1, 0.002, 0.01, 1, 0.002, 0, 1.01, 0, 0.01, 1.01, 0]);
+    const index = [0, 1, 2, 1, 3, 2, 4, 5, 0, 5, 1, 0];
+    const partner = turnedPartners(bind, smoothTable(bind, index), index);
+    expect(partner[2]).toBe(0);
+    expect(partner[3]).toBe(1);
+    for (const v of [0, 1, 4, 5]) expect(partner[v]).toBe(-1);
   });
 });
 
@@ -1030,6 +1068,8 @@ describe("legwear", () => {
     });
     expect(sheerOf("Female", { outfit: "frills", legwear: "noshow" })).toBeNull();
     expect(sheerOf("Female", { outfit: "bunny" })).toBeNull();
+    // The halter dress has no legwear; its lace panels are its own sheer cloth.
+    expect(sheerOf("Female", { outfit: "halter" })).toEqual({ bands: ["T_lace"], amount: 0.2 });
 
     const { model, thigh, over, skin } = legRig();
     (skin.material as MeshLambertMaterial).color.setRGB(0.8, 0.5, 0.4);

@@ -15,15 +15,19 @@ import {
   ShaderMaterial,
   Texture,
   Vector2,
+  Vector3,
   WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
 import { addSkinDetail } from "./skindetail";
+import { hexToOklab, hexToSrgb, MAX_PALETTE } from "./palettes";
 
 /** Target lines on screen. Toned down from the PS1's 480: on a ~1080p window this is full resolution. */
 const RETRO_HEIGHT = 720;
 /** Lines of the grid that vertices snap to: a little coarser than the image, so models wobble only slightly. */
 const SNAP_HEIGHT = 540;
+/** The snap grid against the image's lines, kept when a place draws with bigger pixels (setLines). */
+const SNAP_PER_LINE = SNAP_HEIGHT / RETRO_HEIGHT;
 /** Brightness steps per colour channel on screen (6-bit colour: the dither is faint). */
 const COLOR_LEVELS = 63;
 /** The PS1's warping textures. Off: textures are drawn perspective-correct. */
@@ -250,6 +254,10 @@ export class RetroPipeline {
         uLevels: { value: COLOR_LEVELS },
         uDrunk: { value: 0 },
         uTime: { value: 0 },
+        uPaletteLab: { value: Array.from({ length: MAX_PALETTE }, () => new Vector3()) },
+        uPaletteSrgb: { value: Array.from({ length: MAX_PALETTE }, () => new Vector3()) },
+        uPaletteSize: { value: 0 },
+        uDitherL: { value: 0 },
       },
       vertexShader: /* glsl */ `
         void main() {
@@ -261,6 +269,11 @@ export class RetroPipeline {
         uniform float uLevels;
         uniform float uDrunk;
         uniform float uTime;
+        // A palette to snap every pixel to (setPalette), nearest as the eye sees it: OKLab. Size 0 = no palette.
+        uniform vec3 uPaletteLab[${MAX_PALETTE}];
+        uniform vec3 uPaletteSrgb[${MAX_PALETTE}];
+        uniform int uPaletteSize;
+        uniform float uDitherL;
 
         // Drunk vision, at full drunkenness: how many game pixels the rows ripple and the double image drifts,
         // and how strong the double image is.
@@ -279,6 +292,17 @@ export class RetroPipeline {
           return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
         }
 
+        // Linear sRGB to OKLab (Ottosson 2020); the same maths as palettes.ts. Matrices are column by column.
+        vec3 linearToOklab(vec3 c) {
+          vec3 lms = mat3(0.4122214708, 0.2119034982, 0.0883024619,
+                          0.5363325363, 0.6806995451, 0.2817188376,
+                          0.0514459929, 0.1073969566, 0.6299787005) * c;
+          lms = pow(max(lms, 0.0), vec3(1.0 / 3.0));
+          return mat3(0.2104542553, 1.9779984951, 0.0259040371,
+                      0.7936177850, -2.4285922050, 0.7827717662,
+                      -0.0040720468, 0.4505937099, -0.8086757660) * lms;
+        }
+
         void main() {
           ivec2 pixel = ivec2(gl_FragCoord.xy / uScale);
           vec3 scene = texelFetch(tScene, pixel, 0).rgb;
@@ -293,8 +317,23 @@ export class RetroPipeline {
             ivec2 ghost = clamp(wavy + ivec2(round(drift)), ivec2(0), last);
             scene = mix(texelFetch(tScene, wavy, 0).rgb, texelFetch(tScene, ghost, 0).rgb, DRUNK_GHOST * uDrunk);
           }
-          vec3 color = linearToSrgb(clamp(scene, 0.0, 1.0));
           float threshold = BAYER[(pixel.x & 3) + ((pixel.y & 3) << 2)] / 16.0 - 0.46875;
+          if (uPaletteSize > 0) {
+            // Pixel art: the palette colour nearest this pixel, with an optional dither on lightness only.
+            vec3 lab = linearToOklab(clamp(scene, 0.0, 1.0));
+            lab.x += threshold * uDitherL;
+            float best = 1e9;
+            int pick = 0;
+            for (int i = 0; i < ${MAX_PALETTE}; i++) {
+              if (i >= uPaletteSize) break;
+              vec3 d = lab - uPaletteLab[i];
+              float dist = dot(d, d);
+              if (dist < best) { best = dist; pick = i; }
+            }
+            gl_FragColor = vec4(uPaletteSrgb[pick], 1.0);
+            return;
+          }
+          vec3 color = linearToSrgb(clamp(scene, 0.0, 1.0));
           color = floor((color + threshold / uLevels) * uLevels + 0.5) / uLevels;
           gl_FragColor = vec4(color, 1.0);
         }`,
@@ -307,18 +346,51 @@ export class RetroPipeline {
     this.postScene.add(quad);
   }
 
+  /** Lines on screen: RETRO_HEIGHT, or fewer for bigger pixels in a place (setLines). */
+  private lines = RETRO_HEIGHT;
+  private windowSize = new Vector2(1, 1);
+  private palette: readonly string[] | null = null;
+
   resize(windowWidth: number, windowHeight: number): void {
+    this.windowSize.set(windowWidth, windowHeight);
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(windowWidth, windowHeight);
 
     // A whole number of physical pixels per game pixel keeps every pixel the same size and sharp.
     const screen = this.renderer.getDrawingBufferSize(new Vector2());
-    const scale = Math.max(1, Math.round(screen.y / RETRO_HEIGHT));
+    const scale = Math.max(1, Math.round(screen.y / this.lines));
     const width = Math.ceil(screen.x / scale);
     const height = Math.ceil(screen.y / scale);
     this.target.setSize(width, height);
-    snapResolution.value.set(Math.round((SNAP_HEIGHT * width) / height), SNAP_HEIGHT);
+    const snapLines = Math.round(this.lines * SNAP_PER_LINE);
+    snapResolution.value.set(Math.round((snapLines * width) / height), snapLines);
     this.postMaterial.uniforms.uScale.value = scale;
+  }
+
+  /** Draws with about this many lines on screen (bigger pixels for fewer), or the game's own RETRO_HEIGHT if null. */
+  setLines(lines: number | null): void {
+    const wanted = lines ?? RETRO_HEIGHT;
+    if (wanted === this.lines) return;
+    this.lines = wanted;
+    this.resize(this.windowSize.x, this.windowSize.y);
+  }
+
+  /**
+   * Snaps every pixel to the nearest colour of `palette` ("rrggbb" strings, up to MAX_PALETTE), as the eye sees it,
+   * or back to the game's usual colour steps if null. `dither` (0 = none) shades between neighbouring lightnesses.
+   * Cheap to call every frame: nothing changes unless the palette does.
+   */
+  setPalette(palette: readonly string[] | null, dither = 0): void {
+    const uniforms = this.postMaterial.uniforms;
+    uniforms.uDitherL.value = dither;
+    if (palette === this.palette) return;
+    this.palette = palette;
+    const colours = (palette ?? []).slice(0, MAX_PALETTE);
+    colours.forEach((hex, i) => {
+      (uniforms.uPaletteLab.value as Vector3[])[i].fromArray(hexToOklab(hex));
+      (uniforms.uPaletteSrgb.value as Vector3[])[i].fromArray(hexToSrgb(hex));
+    });
+    uniforms.uPaletteSize.value = colours.length;
   }
 
   /** Wobbles the picture: `amount` from 0 (sober, untouched) to 1. `time` in seconds keeps it moving. */

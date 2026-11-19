@@ -58,6 +58,17 @@ describe("vulva types", () => {
     expect(VULVA_TYPES.map((t) => t.id)).toEqual(["tucked", "puffy", "peeking", "long", "hooded"]);
   });
 
+  it("makes the outer lips thin and narrow or thick and broad, and never stand at the patch's edge", () => {
+    const at = (thickness: number, s: number) => vulvaAt(vulvaShape(type("puffy"), 0, 0, 0, 0, 0, thickness), s, 0.5).h;
+    // Far out across her: thin lips are gone there, thick ones still full.
+    expect(at(-1, 0.75)).toBe(0);
+    expect(at(1, 0.75)).toBeGreaterThan(at(0, 0.75));
+    // Thick ones stand higher too, and as built (0) nothing changes.
+    expect(Math.max(...[0.3, 0.45, 0.6].map((s) => at(1, s)))).toBeGreaterThan(outerAt("puffy"));
+    expect(at(0, type("puffy").crest)).toBe(outerAt("puffy"));
+    for (const t of [-1, 0, 1]) expect(at(t, 1)).toBe(0);
+  });
+
   it("hides the inner lips between the outer ones when tucked or puffy, and shows them otherwise", () => {
     for (const id of ["tucked", "puffy"]) expect(innerAt(id)).toBeLessThan(outerAt(id));
     for (const id of ["peeking", "long"]) expect(innerAt(id)).toBeGreaterThan(outerAt(id));

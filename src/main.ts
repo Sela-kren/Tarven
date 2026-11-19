@@ -27,6 +27,7 @@ import { Input } from "./game/input";
 import { DayNightLighting } from "./game/lighting";
 import { DownloadTally, LoadScreen, nextPaint } from "./game/loadscreen";
 import { applyRetroLook, RetroPipeline } from "./game/retro";
+import { PALETTES, townLook } from "./game/palettes";
 import { WorldClock } from "./game/time";
 import { setupWorld } from "./game/world";
 
@@ -69,6 +70,7 @@ async function start(): Promise<void> {
   document.body.prepend(renderer.domElement);
 
   const pipeline = new RetroPipeline(renderer);
+  const town = townLook(location.search, import.meta.env.DEV);
   const scene = new Scene();
   scene.background = new Color(0x050404);
   // One clock for the whole world; the lighting follows it. Indoors, so no sky is painted.
@@ -165,7 +167,8 @@ async function start(): Promise<void> {
   camera.lookAt(look);
 
   if (import.meta.env.DEV) {
-    Object.assign(window, { __tarven: { game, world, renderer, clock, audio } });
+    // town: its palette and lines can be swapped live (palettes.ts PALETTES) to compare looks.
+    Object.assign(window, { __tarven: { game, world, renderer, clock, audio, town, palettes: PALETTES } });
   }
 
   // Every shader the first frames need, compiled now (in the background where the browser can), rather than
@@ -210,6 +213,9 @@ async function start(): Promise<void> {
     }
 
     game.renderSpeech();
+    // The town is drawn as pixel art in its own palette (palettes.ts TOWN_LOOK); the tavern keeps the usual look.
+    pipeline.setPalette(game.outdoors ? town.palette : null);
+    pipeline.setLines(game.outdoors ? town.lines : null);
     pipeline.render(scene, camera);
   });
 

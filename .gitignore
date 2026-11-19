@@ -5,3 +5,8 @@ ref
 # Python caches (change on every run, conflict between sessions)
 __pycache__/
 *.pyc
+
+# Ref compare: its renders and sheets, and the pictures dropped in to compare against
+tools/refcompare/out/
+tools/refcompare/refs/*
+!tools/refcompare/refs/.gitkeep
