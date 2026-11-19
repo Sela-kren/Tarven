@@ -1976,12 +1976,14 @@ def head_grid(at, m):
     return head.points, head.faces, head.mats
 
 
-def add_bob(at, hair, hair_parts):
+def add_bob(at, hair, hair_parts, locks=False):
     """A side-parted bob. Each half hangs from its own bone so the ends can swing."""
     for sx in (-1, 1):
         hair_parts[sx].loft([[at(sx * x, y, up) for x, y, up in station] for station in BOB_RINGS], hair)
     hair_parts["hair"].loft([[at(x, y, up) for x, y, up in station] for station in BOB_FRINGE], hair)
     # Locks laid over it (bob_locks), each half's on its own bone with the half, the fringe's with the fringe.
+    if not locks:
+        return
     sides, front = bob_locks(BOB_RINGS, BOB_FRINGE)
     for sx in (-1, 1):
         for lock in sides[sx]:
@@ -2074,7 +2076,7 @@ def add_head(part, spec, m, hair_parts=None):
         points, faces, mats = angular_hair(at, m)
         scalp.solid(points, faces, mats)
     elif spec.get("bob"):
-        add_bob(at, hair, hair_parts)
+        add_bob(at, hair, hair_parts, spec.get("hair_locks", False))
     else:
         scalp.loft([outline(up, half) for up, half in spec["hair_outlines"]], hair)
     for offset, lump in spec.get("buns", []):
@@ -2289,35 +2291,42 @@ FRINGE_LOCKS = [
     (4.9, 0.018, 0.007, "dome", 0.1, 0.014), (5.7, 0.02, 0.007, "lens", 0.0, 0.018),
     (6.5, 0.016, 0.006, "tent", -0.15, 0.012),
 ]
-LOCK_SIZES = (0.35, 0.8, 1.0, 1.0, 0.95, 0.85, 0.7, 0.45, 0.06)  # Alt+S down a lock, root to tip
+# Alt+S down a lock, root to tip: the ends rounded off, not drawn to a point. Pointed (to 0.06) they hung round her
+# hem in a row of spikes like teeth; the user's reference (the braided bob's) has soft ends curling out.
+LOCK_SIZES = (0.35, 0.8, 1.0, 1.0, 0.95, 0.88, 0.78, 0.62, 0.38)
 
 
-def bob_locks(rings, fringe, locks=BOB_LOCKS, fringe_locks=FRINGE_LOCKS):
+def lock_sizes(n):
+    """LOCK_SIZES stretched over n points."""
+    return [LOCK_SIZES[min(len(LOCK_SIZES) - 1, round(k * (len(LOCK_SIZES) - 1) / (n - 1)))] for k in range(n)]
+
+
+def bob_locks(rings, fringe, locks=BOB_LOCKS, fringe_locks=FRINGE_LOCKS, left=None):
     """
-    The locks over a bob built from `rings` (one half, as BOB_RINGS) and `fringe` (as BOB_FRINGE), in head units:
+    The locks over a bob built from `rings` (one half, as BOB_RINGS; `left`, if given, her other half's, shaped
+    on its own and given the same way, on +x) and `fringe` (as BOB_FRINGE), in head units:
     ({side: [lock rings, ...]} for -1 and 1, [fringe lock rings, ...]).
     """
-    def on_ring(r, u):
-        outline = rings[r][:4]
+    def on_ring(half, r, u):
+        outline = half[r][:4]
         i = min(int(u), 2)
         t = u - i
         return Vector(outline[i]).lerp(Vector(outline[i + 1]), t)
 
-    def sizes(n):
-        # LOCK_SIZES stretched over n points.
-        return [LOCK_SIZES[min(len(LOCK_SIZES) - 1, round(k * (len(LOCK_SIZES) - 1) / (n - 1)))] for k in range(n)]
-
+    sizes = lock_sizes
     sides = {-1: [], 1: []}
     last = len(rings) - 1
     for u, drift, width, thick, profile, tilt, tip in locks:
-        points = []
-        for r in range(1, last + 1):
-            t = (r - 1) / (last - 1)
-            points.append(on_ring(r, min(3.0, u + drift * t)))
-        end = points[-1]
-        points.append(end + Vector((0.0, 0.0, -tip)) + (end - Vector(HAIR_CENTRE)).normalized() * tip * 0.3)
-        path = lock_path(points, sizes(len(points)))
         for sx in (-1, 1):
+            half = left if (sx < 0 and left) else rings
+            points = []
+            for r in range(1, last + 1):
+                t = (r - 1) / (last - 1)
+                points.append(on_ring(half, r, min(3.0, u + drift * t)))
+            end = points[-1]
+            # The end turned out a little as it hangs past the edge, as her hair's ends curl.
+            points.append(end + Vector((0.0, 0.0, -tip)) + (end - Vector(HAIR_CENTRE)).normalized() * tip * 0.6)
+            path = lock_path(points, sizes(len(points)))
             sides[sx].append(hair_strand([(sx * x, y, up, s) for x, y, up, s in path], profile, width, thick,
                                          tilt * sx))
     front = []
@@ -2330,6 +2339,29 @@ def bob_locks(rings, fringe, locks=BOB_LOCKS, fringe_locks=FRINGE_LOCKS):
         points.append(points[3] + down * tip)
         front.append(hair_strand(lock_path(points, sizes(len(points))), profile, width, thick, tilt))
     return sides, front
+
+
+def swoop_locks(swoop, locks):
+    """
+    Locks over a side-swept fringe (`swoop`, stations as BOB_FRINGE's): each starts over the top near the parting and
+    runs across and down to the lower edge further along, as hair combed from a side parting falls across the
+    forehead. (start station, how many stations across it runs, half width, thickness, profile, tilt, tip).
+    """
+    def at(k, s):
+        i = min(int(s), len(swoop) - 2)
+        t = min(1.0, s - i)
+        return Vector(swoop[i][k]).lerp(Vector(swoop[i + 1][k]), t)
+
+    out = []
+    last = len(swoop) - 1
+    for s0, run, width, thick, profile, tilt, tip in locks:
+        s1 = min(last, s0 + run)
+        points = [at(0, s0), at(1, s0), at(2, s0 + run * 0.45), at(2, s0 + run * 0.7).lerp(at(3, s0 + run * 0.7), 0.5),
+                  at(3, s1)]
+        down = (points[-1] - points[-2]).normalized()
+        points.append(points[-1] + down * tip)
+        out.append(hair_strand(lock_path(points, lock_sizes(len(points))), profile, width, thick, tilt))
+    return out
 
 
 def hair_braid(path, lumps, radius, sides=8):
@@ -2378,11 +2410,61 @@ def hair_flick(x, y, up, out, drop, width):
     return hair_rope([(p.x, p.y, p.z, w, t) for p, w, t in stations], across=tangent, sides=6)
 
 
-# The braided bob (the user's picture, 2026-11-19): the bob as she wears it, with a longer side-swept fringe falling
-# past one eye and down her cheek, a strand before each ear, a braid back along the parting side, and the ends
-# flicked out. All in head units, like the bob.
+# The braided bob (the user's pictures, 2026-11-19): a jaw-length bob with a deep side parting on her right (-x). No
+# fringe straight across: from the parting the hair sweeps across her forehead and down past her outer brow to her
+# cheek on her left (BRAID_SWOOP); on her right it is combed back from her hairline (BRAID_COMBED) and tucked behind
+# her ear (BRAID_TUCK), her forehead showing by the parting. A braid back along the parting, a strand before each
+# ear, and the ends soft and curling out. A first try had a straight fringe with a jagged edge and spiky ends; the
+# user: "you are doing it wrong". All in head units, like the bob.
+# The first braided bob's fringe (with "hair_locks" off): BOB_FRINGE with these lower edges, falling past one eye.
 BRAID_FRINGE_LOWER = {0: (-0.095, 0.03, 0.12), 2: (-0.06, 0.076, 0.128), 3: (-0.012, 0.103, 0.12),
                       4: (0.04, 0.097, 0.108), 5: (0.08, 0.074, 0.088), 6: (0.1, 0.048, 0.06), 7: (0.1, 0.012, 0.062)}
+# The sweep: stations from the parting across to her left temple, each as BOB_FRINGE's (back of the crown, over the
+# top, the ridge, the lower edge, inside). The lower edge runs down from her hairline by the parting, across her
+# forehead above her brows, past her outer brow and down to her cheek, about 1.2 to 1.5 cm over her skin.
+BRAID_SWOOP = [
+    [(-0.045, -0.035, 0.195), (-0.048, 0.02, 0.197), (-0.05, 0.052, 0.182), (-0.05, 0.064, 0.17), (-0.035, -0.03, 0.15)],
+    [(-0.012, -0.03, 0.203), (-0.013, 0.035, 0.206), (-0.014, 0.075, 0.181), (-0.015, 0.095, 0.15), (-0.01, -0.03, 0.145)],
+    [(0.018, -0.03, 0.202), (0.019, 0.035, 0.204), (0.02, 0.072, 0.179), (0.02, 0.1, 0.132), (0.015, -0.03, 0.14)],
+    [(0.045, -0.032, 0.198), (0.048, 0.03, 0.197), (0.052, 0.065, 0.172), (0.052, 0.088, 0.112), (0.04, -0.03, 0.13)],
+    [(0.075, -0.04, 0.186), (0.08, 0.01, 0.178), (0.084, 0.052, 0.152), (0.084, 0.066, 0.088), (0.06, -0.03, 0.115)],
+    [(0.098, -0.045, 0.145), (0.098, -0.01, 0.14), (0.1, 0.03, 0.115), (0.098, 0.042, 0.06), (0.08, 0.01, 0.1)],
+    [(0.1, -0.055, 0.118), (0.101, -0.035, 0.116), (0.103, -0.005, 0.095), (0.098, 0.02, 0.035), (0.075, -0.01, 0.08)],
+]
+# The parting side combed back: stations from her right temple to the parting, the lower edge at her hairline.
+BRAID_COMBED = [
+    [(-0.1, -0.055, 0.14), (-0.1, -0.025, 0.137), (-0.1, -0.005, 0.13), (-0.097, 0.008, 0.122), (-0.065, -0.01, 0.11)],
+    [(-0.094, -0.045, 0.163), (-0.092, -0.012, 0.162), (-0.09, 0.02, 0.155), (-0.088, 0.032, 0.146), (-0.06, -0.03, 0.125)],
+    [(-0.055, -0.035, 0.19), (-0.058, 0.02, 0.19), (-0.06, 0.046, 0.176), (-0.06, 0.052, 0.166), (-0.04, -0.03, 0.145)],
+    BRAID_SWOOP[0],
+]
+# Her right half (built on +x, as BOB_RINGS, then mirrored) tucked behind her ear: each ring's front corner and side
+# moved back behind it (her ear stands 0.07 out, from 0.0105 to -0.027 deep), outside then inside. {ring: {corner: point}}
+BRAID_TUCK = {
+    2: {0: (0.088, -0.005, 0.145)},
+    3: {0: (0.09, -0.04, 0.09), 1: (0.1, -0.065, 0.09), 6: (0.072, -0.045, 0.09), 7: (0.075, -0.034, 0.09)},
+    4: {0: (0.086, -0.035, 0.04), 1: (0.098, -0.06, 0.04), 6: (0.072, -0.042, 0.04), 7: (0.072, -0.032, 0.04)},
+    5: {0: (0.078, -0.035, 0.0), 1: (0.092, -0.06, 0.0), 6: (0.068, -0.045, 0.0), 7: (0.066, -0.033, 0.0)},
+    6: {0: (0.07, -0.035, -0.03), 1: (0.082, -0.06, -0.033), 6: (0.06, -0.048, -0.033), 7: (0.06, -0.035, -0.03)},
+    7: {0: (0.064, -0.035, -0.047), 1: (0.072, -0.062, -0.049), 6: (0.056, -0.05, -0.049), 7: (0.056, -0.036, -0.047)},
+}
+# Fewer, bigger locks than the bob's: her hair in a few big masses with strand lines, as drawn.
+BRAID_LOCKS = [
+    (0.15, 0.05, 0.022, 0.008, "clump", 0.0, 0.014), (0.55, 0.08, 0.026, 0.009, "dome", 0.1, 0.018),
+    (0.95, 0.1, 0.028, 0.009, "clump", 0.0, 0.02), (1.35, 0.1, 0.024, 0.008, "lens", -0.1, 0.016),
+    (1.75, 0.1, 0.03, 0.009, "clump", 0.1, 0.022), (2.15, 0.08, 0.026, 0.008, "dome", 0.0, 0.018),
+    (2.55, 0.06, 0.028, 0.009, "clump", -0.1, 0.02), (2.9, 0.03, 0.024, 0.008, "dome", 0.1, 0.016),
+    (1.55, 0.35, 0.012, 0.005, "lens", 0.5, 0.026),
+]
+# Over the sweep, each from near the parting across and down (swoop_locks): (start, across, half width, thickness,
+# profile, tilt, tip); over the combed side, straight back (across 0).
+BRAID_SWOOP_LOCKS = [
+    (0.0, 2.0, 0.024, 0.008, "clump", 0.1, 0.01), (0.6, 2.2, 0.028, 0.009, "dome", 0.0, 0.014),
+    (1.3, 2.4, 0.026, 0.009, "clump", -0.1, 0.016), (2.1, 2.4, 0.028, 0.009, "dome", 0.1, 0.018),
+    (3.0, 2.4, 0.024, 0.008, "clump", 0.0, 0.02), (3.8, 2.2, 0.022, 0.008, "lens", 0.1, 0.022),
+]
+BRAID_COMBED_LOCKS = [(0.3, 0.0, 0.022, 0.007, "dome", 0.0, 0.004), (1.3, 0.0, 0.024, 0.007, "clump", 0.0, 0.004),
+                      (2.3, 0.0, 0.02, 0.007, "dome", 0.0, 0.004)]
 # The braid lies along her parting, from her hairline over the top of her head towards the crown, on the fringe.
 BRAID_PATH = [(-0.057, 0.066, 0.174), (-0.056, 0.045, 0.186), (-0.054, 0.02, 0.196), (-0.05, -0.015, 0.197),
               (-0.045, -0.045, 0.19), (-0.038, -0.07, 0.178)]
@@ -2394,6 +2476,42 @@ BRAID_FLARE = {6: (1.1, 1.05), 7: (1.2, 1.1)}
 # A few ends flicked further out at her sides (x, y, up), mirrored; how far out, down, and how wide.
 BRAID_FLICKS = [(0.08, -0.005, -0.03), (0.078, -0.045, -0.035)]
 BRAID_FLICK = (0.014, 0.016, 0.016)
+
+
+# Long: the sheet down her back (hair_curtain's levels: height, half width, how far back its middle hangs, how far
+# forward its edges wrap, thickness), the long locks over it (across it from -1 to 1, half width, thickness, profile,
+# tilt), and the lock either side of her face (her left's path, mirrored), out past her cheek.
+# Long's sheet before the locks, kept for when they're off ("hair_locks" in FEMALE).
+LONG_CURTAIN_OLD = [(0.16, 0.07, -0.085, 0.03, 0.02), (0.1, 0.098, -0.112, 0.07, 0.025), (0.04, 0.104, -0.116, 0.09, 0.025),
+                    (-0.03, 0.104, -0.104, 0.08, 0.022), (-0.1, 0.104, -0.098, 0.045, 0.02), (-0.2, 0.1, -0.092, 0.03, 0.018),
+                    (-0.3, 0.09, -0.088, 0.02, 0.014), (-0.36, 0.07, -0.085, 0.01, 0.008)]
+# Its upper part as far back as the bob's top over it (BOB_RINGS: 0.12 behind at her chin), so the top's edge
+# doesn't stand out over it in a ledge across her nape.
+LONG_CURTAIN = [(0.16, 0.07, -0.085, 0.03, 0.02), (0.1, 0.098, -0.115, 0.07, 0.025), (0.04, 0.106, -0.12, 0.09, 0.025),
+                (-0.03, 0.108, -0.126, 0.08, 0.024), (-0.1, 0.106, -0.12, 0.05, 0.022), (-0.2, 0.1, -0.11, 0.035, 0.02),
+                (-0.3, 0.092, -0.1, 0.022, 0.016), (-0.36, 0.074, -0.094, 0.012, 0.01)]
+LONG_LOCKS = [(-0.88, 0.022, 0.008, "clump", 0.1), (-0.62, 0.026, 0.009, "dome", 0.0), (-0.36, 0.024, 0.008, "clump", -0.1),
+              (-0.1, 0.028, 0.009, "dome", 0.1), (0.14, 0.024, 0.008, "clump", 0.0), (0.4, 0.026, 0.009, "dome", -0.1),
+              (0.65, 0.024, 0.008, "clump", 0.1), (0.9, 0.02, 0.007, "lens", 0.0), (0.27, 0.012, 0.005, "lens", 0.5)]
+LONG_FACE_LOCK = [(0.088, 0.035, 0.15), (0.102, 0.04, 0.08), (0.106, 0.035, 0.01), (0.102, 0.025, -0.06),
+                  (0.096, 0.015, -0.13), (0.092, 0.008, -0.17)]
+
+
+def curtain_locks(levels, locks, lift=0.004):
+    """Long locks down a hair_curtain sheet, on its back: each at its place across it (-1 to 1) all the way down,
+    following the sheet as it narrows, its root sunk into the hair over her head and its end hanging a little past."""
+    out = []
+    for across, width, thick, profile, tilt in locks:
+        points = []
+        for up, half, back, wrap, _ in levels[1:]:
+            x = across * half * 0.92
+            points.append((x, back + wrap * (x / half) ** 2 - lift, up))
+        x, y, up = points[-1]
+        points.append((x, y + 0.004, up - 0.03))
+        points[0] = (points[0][0], points[0][1] + 2 * lift, points[0][2])
+        sizes = lock_sizes(len(points))
+        out.append(hair_strand([(x, y, up, s) for (x, y, up), s in zip(points, sizes)], profile, width, thick, tilt))
+    return out
 
 
 def hair_styles(spec):
@@ -2417,37 +2535,61 @@ def hair_styles(spec):
             share = BRAID_FLARE[r][0 if k < 4 else 1]
             return x * share, -0.02 + (y + 0.02) * share, up
 
-        bob = [[[(sx * fx, fy, fu) for k, p in enumerate(station) for fx, fy, fu in [flared(r, k, *p)]]
-                for r, station in enumerate(BOB_RINGS)] for sx in (-1, 1)]
-        long_fringe = [[BRAID_FRINGE_LOWER[i] if k == 3 and i in BRAID_FRINGE_LOWER else p for k, p in enumerate(station)]
-                       for i, station in enumerate(BOB_FRINGE)]
+        # Her left half as the bob's, her right tucked behind her ear (BRAID_TUCK); both on +x, flared.
+        left_half = [[flared(r, k, *BRAID_TUCK.get(r, {}).get(k, p)) for k, p in enumerate(station)]
+                     for r, station in enumerate(BOB_RINGS)]
+        right_half = [[flared(r, k, *p) for k, p in enumerate(station)] for r, station in enumerate(BOB_RINGS)]
+        bob = [[[(-x, y, up) for x, y, up in station] for station in left_half],
+               [list(station) for station in right_half]]
         out, drop, width = BRAID_FLICK
-        braid_sides, braid_front = bob_locks(bob[1], long_fringe)
+        braid_sides, _ = bob_locks(right_half, BOB_FRINGE, locks=BRAID_LOCKS, fringe_locks=[], left=left_half)
+        # Long: the bob's top locks, those that would hang at the back left off (the long locks cover it there).
+        long_sides, long_front = bob_locks(BOB_RINGS, BOB_FRINGE, locks=[l for l in BOB_LOCKS if l[0] < 1.6])
+        long_sides = long_sides[-1] + long_sides[1]
+        if not spec.get("hair_locks"):
+            # The styles as they were before the locks (see "hair_locks" in FEMALE): the first braided bob, its bob
+            # mirrored and flared, with a longer fringe; and Long as a cap, a sheet down her back and a flat lock
+            # either side.
+            sym = [[[(sx * x, y, up) for x, y, up in station] for station in right_half] for sx in (-1, 1)]
+            long_fringe = [[BRAID_FRINGE_LOWER[i] if k == 3 and i in BRAID_FRINGE_LOWER else p
+                            for k, p in enumerate(station)] for i, station in enumerate(BOB_FRINGE)]
+            braid = [*sym, long_fringe, hair_braid(BRAID_PATH, 9, 0.0085),
+                     *[hair_lock([(sx * x, y, up, w, t) for x, y, up, w, t in BRAID_STRANDS]) for sx in (-1, 1)],
+                     *[hair_flick(sx * x, y, up, out, drop, width) for x, y, up in BRAID_FLICKS for sx in (-1, 1)]]
+            long = [over_ears_cap(0.016), fringe, hair_curtain(LONG_CURTAIN_OLD),
+                    *[hair_lock([(sx * 0.086, 0.02, 0.15, 0.014, 0.006), (sx * 0.098, 0.01, 0.07, 0.028, 0.008),
+                                 (sx * 0.104, 0.005, 0.0, 0.032, 0.01), (sx * 0.098, 0.0, -0.07, 0.026, 0.008),
+                                 (sx * 0.092, -0.005, -0.13, 0.014, 0.005)]) for sx in (-1, 1)]]
         return {
-            # The braided bob: see BRAID_FRINGE_LOWER. Locks over it as over the bob (bob_locks).
+            # The braided bob: see BRAID_SWOOP. Locks over it (bob_locks, swoop_locks), fewer and bigger than the bob's.
             "Braid": [
-                *bob, long_fringe, hair_braid(BRAID_PATH, 9, 0.0085),
-                *braid_sides[-1], *braid_sides[1], *braid_front,
-                *[hair_lock([(sx * x, y, up, w, t) for x, y, up, w, t in BRAID_STRANDS]) for sx in (-1, 1)],
-                *[hair_flick(sx * x, y, up, out, drop, width) for x, y, up in BRAID_FLICKS for sx in (-1, 1)],
-            ],
+                *bob, BRAID_SWOOP, BRAID_COMBED, hair_braid(BRAID_PATH, 9, 0.0085),
+                *braid_sides[-1], *braid_sides[1], *swoop_locks(BRAID_SWOOP, BRAID_SWOOP_LOCKS),
+                *swoop_locks(BRAID_COMBED, BRAID_COMBED_LOCKS),
+                # A strand before her left ear only: her right ear is bare, the hair tucked behind it.
+                hair_lock(BRAID_STRANDS),
+                # Her left side's flicks; her right's further back, behind her ear with the hair tucked there (at
+                # the front it hung on her bare neck as a dark disc).
+                *[hair_flick(x, y, up, out, drop, width) for x, y, up in BRAID_FLICKS],
+                hair_flick(-0.078, -0.075, -0.035, out, drop, width),
+            ] if spec.get("hair_locks") else braid,
             # Short and close, with her side-swept fringe: down over the tops of her ears, a sideburn in front
             # of each, and tapered into the nape.
             "Pixie": [over_ears_cap(0.016), fringe],
             # Long and straight down her back, with a lock either side of the face. The hair comes down over
             # her ears, the curtain wraps round the sides of her head, and each lock is wide enough to meet it,
             # so no skin shows between them.
+            # Rebuilt in locks (2026-11-19, make-hair): it was a cap over her skull, which showed through it at the
+            # crown, a sheet down her back and a flat lock either side; heavy as a hood in the game. Now the bob's
+            # close top and fringe with their locks, the sheet down her back covered in long locks, and a lock either
+            # side of her face, kept out past her cheeks so her face isn't narrowed.
             "Long": [
-                over_ears_cap(0.016), fringe,
-                hair_curtain([(0.16, 0.07, -0.085, 0.03, 0.02), (0.1, 0.098, -0.112, 0.07, 0.025),
-                              (0.04, 0.104, -0.116, 0.09, 0.025), (-0.03, 0.104, -0.104, 0.08, 0.022),
-                              (-0.1, 0.104, -0.098, 0.045, 0.02), (-0.2, 0.1, -0.092, 0.03, 0.018),
-                              (-0.3, 0.09, -0.088, 0.02, 0.014), (-0.36, 0.07, -0.085, 0.01, 0.008)]),
-                *[hair_lock([(sx * 0.086, 0.02, 0.15, 0.014, 0.006), (sx * 0.098, 0.01, 0.07, 0.028, 0.008),
-                             (sx * 0.104, 0.005, 0.0, 0.032, 0.01), (sx * 0.098, 0.0, -0.07, 0.026, 0.008),
-                             (sx * 0.092, -0.005, -0.13, 0.014, 0.005)])
-                  for sx in (-1, 1)],
-            ],
+                *[[[(sx * x, y, up) for x, y, up in station] for station in BOB_RINGS] for sx in (-1, 1)],
+                fringe, hair_curtain(LONG_CURTAIN),
+                *long_sides, *long_front, *curtain_locks(LONG_CURTAIN, LONG_LOCKS),
+                *[hair_strand(lock_path([(sx * x, y, up) for x, y, up in LONG_FACE_LOCK], lock_sizes(len(LONG_FACE_LOCK))),
+                              "clump", 0.02, 0.008, 0.2 * sx) for sx in (-1, 1)],
+            ] if spec.get("hair_locks") else long,
             # Tied high at the back of the head, hanging to the nape, with the hair down over her ears.
             "Ponytail": [
                 over_ears_cap(0.012), fringe,

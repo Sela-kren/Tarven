@@ -89,6 +89,20 @@ pieces, which suit only hair hanging straight down).
 - **A braid lies on the hair along the parting.** Placed off the shell it stuck out like a stick of beads.
 - **Ends turned out**: a flared edge, or a few wide flicks. A row of thin hanging flicks looked like teeth.
 - **The user draws over a render** to say what they want (side view especially). Follow the drawing's outline.
+- **Read the parting before the fringe.** The user's braided-bob picture has a deep side parting. The hair sweeps from
+  it across the forehead and down past the outer brow (`BRAID_SWOOP`, its locks running diagonally with
+  `swoop_locks`), the forehead shows by the parting, and the other side is combed back and tucked behind the ear
+  (`BRAID_COMBED`, `BRAID_TUCK`). Giving it a fringe straight across was "doing it wrong". Not every bob has bangs.
+- **Ends soft, not spikes.** `LOCK_SIZES` ends at 0.38, so tips are rounded and curl out a little. Drawn to a point,
+  a row of hem tips read as teeth.
+- **Few big masses for a drawn style.** Manga hair is a few large shapes with strand lines (`BRAID_LOCKS`: 9 wide
+  locks a side), not many thin ones.
+- **When hair moves back, move what was on it.** Tucking the hair behind her ear left a hem flick hanging on her
+  bare neck as a dark disc. Ray-cast from the camera through an odd pixel to find which piece it is.
+- **Long hair**: the bob's close top and fringe with their locks, `LONG_CURTAIN` down her back covered by
+  `curtain_locks`, and a face-framing lock either side kept past her cheeks. The curtain's top must stand as far back
+  as the bob's (about 0.12 head units behind at her chin) or the top's edge shows as a ledge across her nape. The old
+  `over_ears_cap` hood let her skull show through at the crown.
 
 ## Checking it
 
