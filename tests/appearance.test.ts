@@ -272,6 +272,20 @@ describe("smoothing a fitted top", () => {
     expect(half[5]).toBeCloseTo(moves[5] / 2, 5);
   });
 
+  it("folds the cloth hanging from her bust: a valley under her cleavage, a ridge a half fold round", () => {
+    // The front of a breast 20 cm out at 1.2 m with cloth 10 cm out under it at 1.1 m: under her cleavage, and half
+    // a fold round (HANG.fold / 2 at 20 cm out).
+    const way = HANG.fold / 2 / 0.2;
+    const at = (r: number, y: number, round: number) => [r * Math.sin(round), y, -r * Math.cos(round)];
+    const shaped = Float32Array.from([...at(0.2, 1.2, 0), ...at(0.1, 1.1, 0), ...at(0.2, 1.2, way), ...at(0.1, 1.1, way)]);
+    const verts = [0, 1, 2, 3];
+    const moves = new Float32Array(shaped.length);
+    hangTop(hangField(shaped, verts, 0)!, shaped, verts, moves, 1);
+    const out = (v: number) => Math.hypot(shaped[v * 3] + moves[v * 3], shaped[v * 3 + 2] + moves[v * 3 + 2]);
+    expect(out(1)).toBeCloseTo(0.2 - HANG.slope * 0.1, 2);
+    expect(out(3) - out(1)).toBeCloseTo(HANG.depth, 2);
+  });
+
   it("turns a hem's turned-under strip with the fold it turns under at", () => {
     // Four points across (1 cm apart), in rows: the shirt at 1.02 m and 1.01 m, the fold at 1 m, and the turned-under
     // edge 2 mm in under the fold, joined row to row in squares.

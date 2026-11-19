@@ -2665,6 +2665,23 @@ export const HANG = {
   ease: 30,
   /** Her stains on the tee, kept this far out on it. */
   lift: 0.001,
+  /**
+   * Where it hangs free (from `free` metres below where it hangs from, all of it by twice that), its shape is ironed (`iron` passes, its points eased towards their
+   * neighbours'), so the crease the tee was built with under a smaller bust doesn't stay in as a line across it.
+   */
+  free: 0.01,
+  iron: 24,
+  /** Passes its rows are evened out in height by, where it hangs free. */
+  even: 80,
+  /**
+   * Folds down the cloth hanging from her bust, as a sheet hanging from two points falls in: ridges `fold` metres
+   * apart round her front, a valley under her cleavage, out by up to `depth`, from nothing `grow` metres above the
+   * front of her breasts (down their lower halves, so the folds and the breasts are one cloth) to all of it `grow`
+   * below.
+   */
+  fold: 0.06,
+  depth: 0.01,
+  grow: 0.03,
 };
 
 /** How much of the hang (see HANG) her T-shirt takes at this Cup size slider value. */
@@ -2714,6 +2731,10 @@ export interface HangField {
   bands: number;
   /** Per way round (HANG.bins) and band from `bottom` up, how far out; -Infinity where nothing hangs. */
   out: Float32Array;
+  /** Per way round and band, the height it hangs from. */
+  from: Float32Array;
+  /** Per way round, the height it comes out furthest at (the front of her breast there); NaN where none. */
+  apex: Float32Array;
 }
 
 /** Which way round her upright line a point is (0 her front, to ±π/2 her sides; x across, z backwards). */
@@ -2741,36 +2762,64 @@ export function hangField(shaped: Float32Array, verts: ArrayLike<number>, centre
   }
   // Each band takes what hangs from every band above it (not its own: a point never hangs from itself).
   const out = new Float32Array(HANG.bins * bands).fill(-Infinity);
+  const from = new Float32Array(HANG.bins * bands);
   const drop = HANG.slope * HANG.band;
   for (let bin = 0; bin < HANG.bins; bin++) {
-    let hang = -Infinity;
+    let hang = -Infinity, at = HANG.top;
     for (let band = bands - 1; band >= 0; band--) {
       out[bin * bands + band] = hang;
+      from[bin * bands + band] = at;
+      if (most[bin * bands + band] >= hang - drop) at = bottom + (band + 0.5) * HANG.band;
       hang = Math.max(hang - drop, most[bin * bands + band]);
     }
   }
-  return { centre, bottom, bands, out };
+  const apex = new Float32Array(HANG.bins).fill(NaN);
+  for (let bin = 0; bin < HANG.bins; bin++) {
+    let best = -Infinity;
+    for (let band = 0; band < bands; band++) {
+      if (most[bin * bands + band] > best) {
+        best = most[bin * bands + band];
+        apex[bin] = bottom + (band + 0.5) * HANG.band;
+      }
+    }
+  }
+  return { centre, bottom, bands, out, from, apex };
 }
 
-/** How far out the cloth hangs at a point (x, y, z), between the ways round either side of it. */
-function hangAt(field: HangField, x: number, y: number, z: number): number {
-  const { centre, bottom, bands, out } = field;
+/**
+ * How far out the cloth hangs at a point (x, y, z), between the ways round either side of it, and the height it hangs
+ * from (`at[0]`).
+ */
+function hangAt(field: HangField, x: number, y: number, z: number, at?: number[]): number {
+  const { centre, bottom, bands, out, from } = field;
   const way = (hangWay(x, z, centre) / Math.PI + 0.5) * HANG.bins - 0.5;
   const height = (y - bottom) / HANG.band - 0.5;
   const lo = Math.floor(way), t = way - lo;
   const low = Math.floor(height), u = height - low;
   // Between the two nearest of each, leaving out any with nothing hanging there.
-  let sum = 0, weights = 0;
+  let sum = 0, weights = 0, height_ = 0;
   for (const [bin, wb] of [[lo, 1 - t], [lo + 1, t]]) {
     for (const [band, wh] of [[low, 1 - u], [low + 1, u]]) {
       if (bin < 0 || bin >= HANG.bins || band < 0 || band >= bands) continue;
       const value = out[bin * bands + band];
       if (value === -Infinity || wb * wh <= 0) continue;
       sum += value * wb * wh;
+      height_ += from[bin * bands + band] * wb * wh;
       weights += wb * wh;
     }
   }
+  if (at) at[0] = weights > 0 ? height_ / weights : y;
   return weights > 0 ? sum / weights : -Infinity;
+}
+
+/** The height the cloth comes out furthest at, this way round (see HangField.apex), between the ways either side. */
+function apexAt(field: HangField, way: number): number {
+  const at = (way / Math.PI + 0.5) * HANG.bins - 0.5;
+  const lo = Math.max(0, Math.min(HANG.bins - 1, Math.floor(at))), hi = Math.min(HANG.bins - 1, lo + 1);
+  const a = field.apex[lo], b = field.apex[hi], t = Math.min(1, Math.max(0, at - lo));
+  if (Number.isNaN(a)) return b;
+  if (Number.isNaN(b)) return a;
+  return a + (b - a) * t;
 }
 
 /**
@@ -2784,17 +2833,24 @@ export function hangTop(
   if (amount <= 0) return;
   const full = (HANG.ways[0] * Math.PI) / 180, none = (HANG.ways[1] * Math.PI) / 180;
   const push = new Float32Array(shaped.length);
+  /** Per point, how far it hangs below where it hangs from (NaN where it doesn't), and how much its fade lets it. */
+  const below = new Float32Array(shaped.length / 3).fill(NaN);
+  const fades = new Float32Array(shaped.length / 3);
   const { centre } = field;
+  const at = [0];
   for (let i = 0; i < verts.length; i++) {
     const v = verts[i] * 3;
     const x = shaped[v], y = shaped[v + 1], z = shaped[v + 2];
     const way = Math.abs(hangWay(x, z, centre));
     if (way >= none) continue;
-    const hang = hangAt(field, x, y, z) + lift;
+    const hang = hangAt(field, x, y, z, at) + lift;
     const r = Math.hypot(x, centre - z);
-    if (!(hang > r) || r < 1e-6) continue;
+    if (hang === -Infinity || r < 1e-6) continue;
     const fade = way <= full ? 1 : 1 - (way - full) / (none - full);
-    const s = ((hang - r) * amount * fade * fade * (3 - 2 * fade)) / r;
+    below[verts[i]] = Math.max(0, at[0] - y);
+    fades[verts[i]] = fade * fade * (3 - 2 * fade);
+    if (!(hang > r)) continue;
+    const s = ((hang - r) * amount * fades[verts[i]]) / r;
     push[v] = x * s;
     push[v + 2] = (z - centre) * s;
   }
@@ -2809,12 +2865,74 @@ export function hangTop(
         push[v + 2] = eased[v + 2];
       }
     }
+    // Ironed where it hangs free: how far out it is there, eased, by how freely each point hangs (only how far out:
+    // eased all over, the hanging cloth drew up towards her bust).
+    const reach = new Float32Array(shaped.length);
+    for (let v = 0; v < reach.length / 3; v++) {
+      reach[v * 3] = Math.hypot(shaped[v * 3] + push[v * 3], centre - shaped[v * 3 + 2] - push[v * 3 + 2]);
+    }
+    // The hem's turned-under strip as far out as its fold: lying in under it, it drew the fold and the hem in.
+    if (partner) for (let v = 0; v < reach.length / 3; v++) if (partner[v] >= 0) reach[v * 3] = reach[partner[v] * 3];
+    // How freely each point hangs, none (held as it is) to all: by how far below where it hangs from it is.
+    const free = new Float32Array(shaped.length / 3);
+    for (let v = 0; v < free.length; v++) {
+      if (Number.isNaN(below[v])) continue;
+      const t = Math.min(1, Math.max(0, below[v] / HANG.free - 1));
+      free[v] = t * t * (3 - 2 * t) * fades[v] * Math.min(1, amount);
+    }
+    const ironed = reach.slice();
+    smoothHeld(table, ironed, HANG.iron, free);
+    for (let v = 0; v < reach.length / 3; v++) {
+      const by = ironed[v * 3] - reach[v * 3];
+      const r = reach[v * 3];
+      if (r < 1e-6 || by === 0) continue;
+      push[v * 3] += ((shaped[v * 3] + push[v * 3]) / r) * by;
+      push[v * 3 + 2] += ((shaped[v * 3 + 2] + push[v * 3 + 2] - centre) / r) * by;
+    }
+    // And its rows evened out in height: under a grown bust the tee's rows down to the hem (12 cm of it as built) were
+    // squeezed into its last few centimetres. Her bust above and the hem (eased only along itself) hold.
+    const heights = new Float32Array(shaped.length);
+    for (let v = 0; v < heights.length / 3; v++) heights[v * 3] = shaped[v * 3 + 1];
+    const even = heights.slice();
+    smoothHeld(table, even, HANG.even, free);
+    for (let v = 0; v < heights.length / 3; v++) push[v * 3 + 1] += even[v * 3] - heights[v * 3];
+  }
+  // The folds, out from her upright line.
+  for (let i = 0; i < verts.length; i++) {
+    const v = verts[i];
+    if (Number.isNaN(below[v])) continue;
+    const x = shaped[v * 3] + push[v * 3], z = shaped[v * 3 + 2] + push[v * 3 + 2];
+    const r = Math.hypot(x, centre - z);
+    if (r < 1e-6) continue;
+    // From nothing `grow` above the front of her breast, all of it `grow` below: down the breast into the hang.
+    const apex = apexAt(field, hangWay(x, z, centre));
+    if (Number.isNaN(apex)) continue;
+    const t = Math.min(1, Math.max(0, (apex + HANG.grow - (shaped[v * 3 + 1] + push[v * 3 + 1])) / (2 * HANG.grow)));
+    const round = hangWay(x, z, centre) * 0.2;
+    const fold = HANG.depth * amount * fades[v] * t * t * (3 - 2 * t) * 0.5 * (1 - Math.cos((2 * Math.PI * round) / HANG.fold));
+    push[v * 3] += (x / r) * fold;
+    push[v * 3 + 2] += ((z - centre) / r) * fold;
   }
   for (let i = 0; i < verts.length; i++) {
     const v = verts[i];
     const from = partner && partner[v] >= 0 ? partner[v] : v;
     moves[v * 3] += push[from * 3];
+    moves[v * 3 + 1] += push[from * 3 + 1];
     moves[v * 3 + 2] += push[from * 3 + 2];
+  }
+}
+
+/**
+ * smoothMoves, a pass at a time, each point held where it started by all but `free` of each pass (0 holds it, 1 lets
+ * it go): the eased points between held ones even out between them.
+ */
+function smoothHeld(table: SmoothTable, values: Float32Array, passes: number, free: Float32Array): void {
+  const start = values.slice();
+  for (let pass = 0; pass < passes; pass++) {
+    smoothMoves(table, values, 1, SMOOTH_TOPS_EASE);
+    for (let v = 0; v < free.length; v++) {
+      for (let k = v * 3; k < v * 3 + 3; k++) values[k] = start[k] + (values[k] - start[k]) * free[v];
+    }
   }
 }
 
