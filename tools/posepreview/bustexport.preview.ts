@@ -95,5 +95,21 @@ test("export her body at each cup size", async () => {
     growth[letter] = grown;
   }
   writeFileSync(join(out, "growth.json"), JSON.stringify(growth));
+  // Her body as built, none of the cup fixes on (the C cup, where the slider moves nothing): the surface the build
+  // finds her points on when it applies a new fix (tools/blender/bust_refit.py uses it as the fix's ref_co). Measured
+  // on bust_C.obj instead, which wears the C cup's own fix, points in the crease under her bust and in her armpit
+  // found the skin across the crease and took its move.
+  {
+    const meshes = await shape(0, true);
+    const lines: string[] = [`# ${NAME} as built, no cup fixes`];
+    let base = 1;
+    for (const m of meshes) {
+      lines.push(`o ${m.name}`);
+      for (let i = 0; i < m.co.length; i += 3) lines.push(`v ${m.co[i].toFixed(6)} ${m.co[i + 1].toFixed(6)} ${m.co[i + 2].toFixed(6)}`);
+      for (let i = 0; i < m.faces.length; i += 3) lines.push(`f ${m.faces[i] + base} ${m.faces[i + 1] + base} ${m.faces[i + 2] + base}`);
+      base += m.co.length / 3;
+    }
+    writeFileSync(join(out, "bust_bare.obj"), lines.join("\n"));
+  }
   writeFileSync(join(out, "index.json"), JSON.stringify(index, null, 1));
 });
