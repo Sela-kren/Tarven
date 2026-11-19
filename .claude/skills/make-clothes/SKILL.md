@@ -161,6 +161,15 @@ rebuild, export again and measure: after the refit, 95% of points were within 0.
   pin the neckline and shoulders (vertex group in Pin), turn gravity down or off, keep the collision's
   inner thickness small, raise quality, and use shrink only for tension. Run it *before* the game's
   tables are built (in the build, after `smooth_tops`).
+- **Baked drape in the build (2026-11-19)**: `drape_cloth` / `TEE_DRAPE` in build_world.py runs Blender's cloth
+  sim on the tee between untangling and the turned-under edges. It's off unless `TARVEN_DRAPE` is set
+  (`'{}'` for the defaults, or JSON overrides such as `'{"bend": 2.0, "self": 1}'`). What we found:
+  shrink or gravity crumples the narrow hem band (it fights the collision), so use none. Use quality 12, since rows under the
+  bust are 1–2 mm apart. The turned-under edges must come *after* it. It takes about 40 s (77 s with self-collision).
+  The chest drapes naturally (soft bridging under and between the breasts). But **it can't fix the tee's mesh**:
+  copied from her skin, the tee carries her skin's under-bust crease as a pleat (a line across the top of the hem
+  band, also visible in the game), and the sleeves go puffy and ragged. Neither stiffer cloth nor self-collision helped.
+  The real fix is the tutorials' way: build the tee as its own clean mesh (plane → extrude → shrinkwrap), then drape.
 - **Folds made in the build survive the game's reshaping**: `smoothMoves` eases the *moves*, not the shape,
   so a built fold rides along as the bust changes.
 - **Rebuilding is safe and quick**: an unchanged `build_world.py` reproduces `public/models/female.glb`
