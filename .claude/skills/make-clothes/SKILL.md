@@ -103,20 +103,33 @@ them live with the body sliders (`src/game/appearance.ts`, the `Dresser` class).
 | Tutorial step | Tarven today | Gap |
 |---|---|---|
 | Plane plus Shrinkwrap with offset | Clothes are **her skin's faces copied and lifted** off it (`lifted(...)`, `CLOTH_GAP`, e.g. `tee_cloth` / `tee_lift`) | The cloth copies every crease of her skin. `smooth_tops` eases the tee over it, but only a few rows |
-| Solidify (thickness) | None: single-sided surfaces | **No hem, cuff or neckline thickness**, so the edges look painted on |
-| Sculpt folds | None | **No folds at all**: no gathering at the waist, armpits or under the bust |
+| Solidify (thickness) | Single-sided surfaces. The tee's edges are now turned under (`finish_tee`) | **Every other outfit's edges still look painted on** |
+| Sculpt folds | The tee has a few soft folds (`TEE_FOLDS`) | **Every other outfit has no folds**: reuse `finish_tee` with that outfit's own fold lines |
 | Data Transfer weights plus blur | Copied from the skin; `ease_shoulder_weights` blurs the shoulders | Fine |
 | UV seams plus painted texture | `tex_flat`: a 32 px flat noisy colour per material | **No seams, stitching or fold shading** |
 | Recalculate normals | — | Hard edges in the export made a line across the tee (see below) |
 
 ## Fixes already made (keep them)
 
-- **Line across the tee at the top of its hem band**: the export split its normals there (points at one
-  spot with different normals, 63 across the front at 1.06 m). The game now averages them per spot
-  (`weldNormals` in appearance.ts, run once for `SMOOTH_TOPS` materials). The tutorial's equivalent is
-  "Recalculate Outside" plus smooth shading. Check any new garment for split normals with this skill's
-  script: `python .claude/skills/make-clothes/check_split_normals.py public/models/female.glb Female_ClothTee T_tee`
-  (the mesh name and its material). Points listed there are hard lines in the game unless the game welds them.
+- **The tee finished as cloth in the build** (`finish_tee` in build_world.py, after `smooth_tops`):
+  1. *Untangled* (`TEE_UNTANGLE`): copied from her skin, the cloth folded flat on itself where her skin does
+     (164 faces across the front at 1.06 m turned in towards her, more on her shoulder blades), and the
+     top of the hem band was a corner sharper than the export's 55° split. Both showed as a hard line
+     across the tee. Round each such face, and any inner edge sharper than 40°, the cloth is eased out flat
+     and kept over her skin.
+  2. *Folds* (`TEE_FOLDS`): soft ridges by (turn round her, height), mirrored: drag lines from the bust up
+     to the armpits and gathers round the waist's sides. Depths 1 to 2 mm, widths 6 to 9 mm. They're subtle at
+     the game's resolution, so raise `depth` to make them read more.
+  3. *Edges* (`TEE_EDGE`): hem, sleeve ends and neckline turned under 2.5 mm, with a 0.7 mm bead. This is
+     the code version of the tutorials' Solidify.
+- **Hard lines from split normals**: the export splits a point's normal at any corner over 55°. The game
+  averages, per spot, only the normals that lean within 60° of each other (`weldNormals`, `WELD_NORMALS`
+  in appearance.ts, for `SMOOTH_TOPS` materials). So gentle splits merge, but turned-under edges (about 90°)
+  stay crisp, and opposite normals (cloth folded flat) are never averaged into nothing. Check a garment
+  with this skill's script: `python .claude/skills/make-clothes/check_split_normals.py public/models/female.glb Female_ClothTee T_tee`
+  (the mesh name and its material). Splits at the edges are the turned-under strips, as meant. Any inside
+  the garment are faults: find them with a face-facing check (a face whose normal points against the
+  nearest skin normal is folded in).
 - **Folds and tearing when the bust slider changes size**: each cloth point copied the move of the nearest
   skin points, so neighbours moved apart. The game now eases the tee's moves together after the reshape
   (`smoothMoves`, `SMOOTH_TOPS`, 100 passes, fading out from an F cup to a J cup). Add new fitted tops'

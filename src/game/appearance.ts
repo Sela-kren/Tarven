@@ -2580,6 +2580,161 @@ export function clearOfSkin(skin: ClearGrid, clothVerts: Int32Array, bind: Float
 }
 
 /**
+ * Fitted tops are smoothed after the reshaping: the build smooths them into fabric over her (smooth_tops in
+ * build_world.py), but each point then takes its own move as her bust is sized, and neighbours moving apart crumpled
+ * the cloth: a point under the bust took the breast's move or the ribs' by which skin point was nearest. A top built
+ * over a C cup bunched into ridges over a smaller one, a few centimetres apart, and tore under a bigger one. Its moves
+ * are eased towards their neighbours' (not its points: its built shape stays as it was), enough passes to reach across
+ * those ridges; the edges (hem, neck, sleeve ends) are eased only along themselves. Only these materials.
+ * Past SMOOTH_TOPS_FADE[0] it fades out, gone by [1]: over a bust that big the eased cloth lagged behind its growth
+ * and her skin and nipples showed through it.
+ */
+const SMOOTH_TOPS: readonly string[] = ["T_tee"];
+const SMOOTH_TOPS_PASSES = 100;
+const SMOOTH_TOPS_EASE: readonly number[] = [0.5];
+const SMOOTH_TOPS_FADE: readonly [string, string] = ["F", "J"];
+
+/** How many passes her tops are smoothed by at this Cup size slider value (see SMOOTH_TOPS). */
+export function smoothTopPasses(bust: number): number {
+  const [from, to] = SMOOTH_TOPS_FADE.map((letter) => stopValue(CUPS, CUPS.labels.indexOf(letter)));
+  const t = Math.min(1, Math.max(0, (bust - from) / (to - from)));
+  return Math.round(SMOOTH_TOPS_PASSES * (1 - t));
+}
+/** Points of a top this close together, as built, are one point (glTF splits them at seams). */
+const SMOOTH_WELD = 1e-5;
+
+/** A top's points welded into nodes, each node's neighbours (start..start+1 in `next`) and its points. */
+export interface SmoothTable {
+  /** Per point, its node. */
+  node: Int32Array;
+  nodes: number;
+  start: Int32Array;
+  next: Int32Array;
+}
+
+/** The smoothing table for a top's points as built (`bind`) and its triangles. */
+export function smoothTable(bind: Float32Array, index: ArrayLike<number>): SmoothTable {
+  const count = bind.length / 3;
+  const node = new Int32Array(count);
+  const seen = new Map<string, number>();
+  let nodes = 0;
+  for (let v = 0; v < count; v++) {
+    const key = `${Math.round(bind[v * 3] / SMOOTH_WELD)},${Math.round(bind[v * 3 + 1] / SMOOTH_WELD)},${Math.round(bind[v * 3 + 2] / SMOOTH_WELD)}`;
+    let n = seen.get(key);
+    if (n === undefined) {
+      n = nodes++;
+      seen.set(key, n);
+    }
+    node[v] = n;
+  }
+  // Each edge between nodes, and how many triangles share it: an edge only one has is on the top's edge.
+  const edges = new Map<number, number>();
+  for (let t = 0; t + 2 < index.length; t += 3) {
+    for (let k = 0; k < 3; k++) {
+      const a = node[index[t + k]], b = node[index[t + ((k + 1) % 3)]];
+      if (a === b) continue;
+      const key = Math.min(a, b) * nodes + Math.max(a, b);
+      edges.set(key, (edges.get(key) ?? 0) + 1);
+    }
+  }
+  const edge = new Uint8Array(nodes);
+  for (const [key, n] of edges) {
+    if (n !== 1) continue;
+    edge[Math.floor(key / nodes)] = 1;
+    edge[key % nodes] = 1;
+  }
+  const around: number[][] = Array.from({ length: nodes }, () => []);
+  for (const [key, n] of edges) {
+    const a = Math.floor(key / nodes), b = key % nodes;
+    // A point on the edge is eased only along it; a point inside, by all its neighbours.
+    if (!edge[a] || n === 1) around[a].push(b);
+    if (!edge[b] || n === 1) around[b].push(a);
+  }
+  const start = new Int32Array(nodes + 1);
+  around.forEach((list, n) => (start[n + 1] = start[n] + list.length));
+  const next = new Int32Array(start[nodes]);
+  around.forEach((list, n) => next.set(list, start[n]));
+  return { node, nodes, start, next };
+}
+
+/**
+ * Points at one spot whose normals lean less than this apart (as a cosine) are lit as one. Further apart, the edge is
+ * meant: the tee's hem, cuffs and neckline turn under at about a right angle (finish_tee in build_world.py), and
+ * stay crisp.
+ */
+const WELD_NORMALS = 0.5;
+
+/**
+ * Gives every point at one spot (one node of `table`) the average of the normals there that lean its way, so no
+ * hard edge shows where the export split them at a gentle corner.
+ */
+export function weldNormals(table: SmoothTable, normal: BufferAttribute): void {
+  const { node, nodes } = table;
+  const start = new Int32Array(nodes + 1);
+  for (let v = 0; v < node.length; v++) start[node[v] + 1]++;
+  for (let n = 0; n < nodes; n++) start[n + 1] += start[n];
+  const fill = start.slice(0, nodes);
+  const members = new Int32Array(node.length);
+  for (let v = 0; v < node.length; v++) members[fill[node[v]]++] = v;
+  const built = Float32Array.from(normal.array as ArrayLike<number>);
+  for (let v = 0; v < node.length; v++) {
+    const n = node[v];
+    if (start[n + 1] - start[n] < 2) continue;
+    const ox = built[v * 3], oy = built[v * 3 + 1], oz = built[v * 3 + 2];
+    let x = 0, y = 0, z = 0;
+    for (let i = start[n]; i < start[n + 1]; i++) {
+      const m = members[i] * 3;
+      if (built[m] * ox + built[m + 1] * oy + built[m + 2] * oz < WELD_NORMALS) continue;
+      x += built[m];
+      y += built[m + 1];
+      z += built[m + 2];
+    }
+    const length = Math.hypot(x, y, z);
+    if (length > 1e-9) normal.setXYZ(v, x / length, y / length, z / length);
+  }
+  normal.needsUpdate = true;
+}
+
+/**
+ * Eases a top's points (`values`, any per-point vectors, changed in place) towards their neighbours', `passes` times
+ * over, each pass easing by the next of `steps` in turn.
+ */
+export function smoothMoves(
+  table: SmoothTable, moves: Float32Array, passes = SMOOTH_TOPS_PASSES, steps: readonly number[] = SMOOTH_TOPS_EASE,
+): void {
+  const { node, nodes, start, next } = table;
+  let at = new Float32Array(nodes * 3);
+  const members = new Float32Array(nodes);
+  for (let v = 0; v < node.length; v++) {
+    const n = node[v] * 3;
+    at[n] += moves[v * 3];
+    at[n + 1] += moves[v * 3 + 1];
+    at[n + 2] += moves[v * 3 + 2];
+    members[node[v]]++;
+  }
+  for (let n = 0; n < nodes; n++) for (let k = 0; k < 3; k++) at[n * 3 + k] /= members[n] || 1;
+  let to = new Float32Array(nodes * 3);
+  for (let pass = 0; pass < passes; pass++) {
+    const ease = steps[pass % steps.length];
+    for (let n = 0; n < nodes; n++) {
+      const from = start[n], end = start[n + 1];
+      for (let k = 0; k < 3; k++) {
+        const own = at[n * 3 + k];
+        if (end === from) {
+          to[n * 3 + k] = own;
+          continue;
+        }
+        let sum = 0;
+        for (let i = from; i < end; i++) sum += at[next[i] * 3 + k];
+        to[n * 3 + k] = own + ease * (sum / (end - from) - own);
+      }
+    }
+    [at, to] = [to, at];
+  }
+  for (let v = 0; v < node.length; v++) moves.set(at.subarray(node[v] * 3, node[v] * 3 + 3), v * 3);
+}
+
+/**
  * Pulling her tops off her breasts (Dresser.setPull), in the model's space (y up, forwards -z, metres as built).
  * Only cloth this high takes part, from under her breasts up past her collarbone, and only this far either side.
  */
@@ -2772,6 +2927,8 @@ export class Dresser {
   private readonly cleavage: { hold: CleavageHold; spans: Map<MeshSlot, ClothSpan> } | null = null;
   /** Her skin round her chest and the points of her tops kept out of it (see clearOfSkin). */
   private readonly clear: { skin: ClearSkin[]; cloths: Map<MeshSlot, Int32Array>; centre: number } | null = null;
+  /** Her fitted tops, smoothed after the reshaping (see SMOOTH_TOPS). */
+  private readonly smoothTops = new Map<MeshSlot, SmoothTable>();
   /** How aroused her vulva shows, from 0 to 1; a state of the night, never part of the look. */
   private vulvaArousal = 0;
   /**
@@ -2911,6 +3068,18 @@ export class Dresser {
     for (const rest of this.bones) rest.parent = rest.bone.parent ? (this.boneIndex.get(rest.bone.parent) ?? null) : null;
     this.bodyCount = bodyCount;
     this.reshapedRest = this.slots.some((slot) => slot.rest !== undefined);
+    // Her fitted tops, smoothed after each reshaping (see SMOOTH_TOPS), and lit smooth all over: the build left hard
+    // edges inside the tee (its points at one spot with different normals), and one across the front at the top of its
+    // hem band showed as a line across her. Each spot takes the average of its points' normals, before the lighting
+    // keeps them as built (see refreshNormals).
+    for (const slot of this.slots) {
+      const { geometry } = slot.mesh;
+      if (slot.part !== "Cloth" || !geometry.index || !SMOOTH_TOPS.includes(slot.original.name)) continue;
+      const table = smoothTable(slot.bind, geometry.index.array as ArrayLike<number>);
+      this.smoothTops.set(slot, table);
+      const normal = geometry.getAttribute("normal");
+      if (normal) weldNormals(table, normal as BufferAttribute);
+    }
 
     const bodyPoints = new Float32Array(bodyCount * 3);
     for (const slot of this.slots) if (slot.part === "Body") bodyPoints.set(slot.bind, slot.bodyStart * 3);
@@ -3319,10 +3488,14 @@ export class Dresser {
       const shell = shellOf(this.clear.skin, shaped, this.clear.centre);
       // Only the outfit she has on: there are hundreds of pieces in her wardrobe, and each was a few milliseconds.
       const outfit = outfitOf(this.body, look).mesh;
+      const smoothPasses = smoothTopPasses(look.sliders.bust ?? 0);
       for (const [slot, verts] of this.clear.cloths) {
         if (slot.part === "Cloth" && outfitMeshOf(slot.mesh, this.body) !== outfit) continue;
         const { total } = moves[this.slots.indexOf(slot)];
         onShell(shell, verts, slot.bind, total);
+        // Smoothed once out on her shell (smoothed before, the shell put its own steps back), then kept out of her skin.
+        const table = this.smoothTops.get(slot);
+        if (table && smoothPasses > 0) smoothMoves(table, total, smoothPasses);
         clearOfSkin(skin, clearOfSkin(skin, verts, slot.bind, total), slot.bind, total);
       }
     }

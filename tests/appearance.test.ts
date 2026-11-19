@@ -78,6 +78,10 @@ import {
   readLooks,
   reshape,
   shapeAmount,
+  smoothMoves,
+  smoothTable,
+  smoothTopPasses,
+  weldNormals,
   stopValue,
   toneColor,
   sheerOf,
@@ -139,6 +143,106 @@ const look = (sliders: Record<string, number> = {}, colors: Record<string, strin
   ...newLook(),
   sliders,
   colors,
+});
+
+describe("smoothing a fitted top", () => {
+  /** A flat grid of n by n points, 1 cm apart, with every inner point doubled as glTF does at a seam. */
+  function grid(n: number) {
+    const bind: number[] = [];
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) bind.push(i * 0.01, j * 0.01, 0);
+    const twin = bind.length / 3;
+    bind.push(...bind.slice(0, 3 * n * n));
+    const index: number[] = [];
+    for (let j = 0; j + 1 < n; j++) {
+      for (let i = 0; i + 1 < n; i++) {
+        const a = j * n + i, b = a + 1, c = a + n, d = c + 1;
+        // The top half of the grid uses the doubled points, as the far side of a seam.
+        const o = j >= n / 2 ? twin : 0;
+        index.push(a + o, b + o, d + o, a + o, d + o, c + o);
+      }
+    }
+    return { bind: Float32Array.from(bind), index, twin };
+  }
+
+  it("irons out ridges in its moves and keeps a seam closed", () => {
+    const n = 12;
+    const { bind, index, twin } = grid(n);
+    const table = smoothTable(bind, index);
+    expect(table.nodes).toBe(n * n);
+    // Ridges across it: every other row pushed out, as the bust's moves left them.
+    const moves = new Float32Array(bind.length);
+    for (let v = 0; v < bind.length / 3; v++) moves[v * 3 + 2] = (v % twin) % (2 * n) < n ? 0.01 : 0;
+    // The biggest step from one row to the next: the ridges' height. (The edges, held, leave a gentle slope.)
+    const ridge = () => {
+      let most = 0;
+      for (let j = 1; j < n - 2; j++) for (let i = 1; i < n - 1; i++) {
+        most = Math.max(most, Math.abs(moves[(j * n + i) * 3 + 2] - moves[((j + 1) * n + i) * 3 + 2]));
+      }
+      return most;
+    };
+    expect(ridge()).toBeCloseTo(0.01);
+    smoothMoves(table, moves, 100);
+    expect(ridge()).toBeLessThan(0.0015);
+    // A point and its twin across the seam move as one.
+    for (let v = 0; v < n * n; v++) expect(moves[(twin + v) * 3 + 2]).toBe(moves[v * 3 + 2]);
+  });
+
+  it("eases its edges only along themselves", () => {
+    const n = 8;
+    const { bind, index } = grid(n);
+    const table = smoothTable(bind, index);
+    // Everything inside pushed out, the edges still: the inside doesn't drag the hem with it.
+    const moves = new Float32Array(bind.length);
+    for (let j = 1; j < n - 1; j++) for (let i = 1; i < n - 1; i++) moves[(j * n + i) * 3 + 2] = 0.01;
+    smoothMoves(table, moves, 50);
+    for (let v = 0; v < n * n; v++) {
+      const i = v % n, j = Math.floor(v / n);
+      if (i === 0 || j === 0 || i === n - 1 || j === n - 1) expect(moves[v * 3 + 2]).toBe(0);
+    }
+  });
+
+  it("lights the points at one spot alike, so no hard edge shows across it", () => {
+    const n = 4;
+    const { bind, index, twin } = grid(n);
+    const table = smoothTable(bind, index);
+    // The build's hard edge at a gentle corner: the two copies of each point at the seam lean 47 degrees apart.
+    const normals = new Float32Array(bind.length);
+    const lean = Math.sin((23.5 * Math.PI) / 180), up = Math.cos((23.5 * Math.PI) / 180);
+    for (let v = 0; v < bind.length / 3; v++) normals.set(v < twin ? [lean, 0, up] : [-lean, 0, up], v * 3);
+    const normal = new Float32BufferAttribute(normals, 3);
+    weldNormals(table, normal);
+    for (let v = 0; v < n * n; v++) {
+      expect(normal.getX(v)).toBeCloseTo(0);
+      expect(normal.getZ(v)).toBeCloseTo(1);
+      expect(normal.getX(twin + v)).toBeCloseTo(normal.getX(v));
+    }
+  });
+
+  it("keeps a hem's turned edge crisp, and never averages opposite normals into nothing", () => {
+    const n = 4;
+    const { bind, index, twin } = grid(n);
+    const table = smoothTable(bind, index);
+    // A right-angled edge (a hem turned under), and copies facing opposite ways (cloth folded flat on itself).
+    const normals = new Float32Array(bind.length);
+    for (let v = 0; v < bind.length / 3; v++) {
+      const at = v % twin;
+      normals.set(v < twin ? [0, 0, 1] : at < n * 2 ? [0, 0, -1] : [1, 0, 0], v * 3);
+    }
+    const normal = new Float32BufferAttribute(normals, 3);
+    weldNormals(table, normal);
+    for (let v = 0; v < bind.length / 3; v++) {
+      expect([normal.getX(v), normal.getY(v), normal.getZ(v)]).toEqual(Array.from(normals.subarray(v * 3, v * 3 + 3)));
+    }
+  });
+
+  it("smooths fully up to an F cup and not at all from a J", () => {
+    const cup = (letter: string) => stopValue(CUPS, CUPS.labels.indexOf(letter));
+    expect(smoothTopPasses(cup("A"))).toBe(100);
+    expect(smoothTopPasses(cup("F"))).toBe(100);
+    expect(smoothTopPasses(cup("J"))).toBe(0);
+    expect(smoothTopPasses(cup("H"))).toBeGreaterThan(0);
+    expect(smoothTopPasses(cup("H"))).toBeLessThan(100);
+  });
 });
 
 describe("reshaping", () => {

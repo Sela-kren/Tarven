@@ -7613,6 +7613,10 @@ def skin_character(c, m, spec, root):
         apply_sculpt_fixes(name, body_obj, [o for o in c.objects if o.type == "MESH"])
         # Then her fitted tops smoothed into fabric over all of that (see SMOOTH_TOPS).
         smooth_tops(body_obj, [o for o in c.objects if o.type == "MESH" and "_Cloth" in o.name])
+        # Then her T-shirt finished as cloth (see TEE_UNTANGLE).
+        tee = bpy.data.objects.get(f"{name}_ClothTee")
+        if tee is not None:
+            finish_tee(body_obj, tee)
 
     armature = bpy.data.armatures.new(f"{name}_Bones")
     rig = bpy.data.objects.new(f"{name}_Armature", armature)
@@ -7775,6 +7779,206 @@ def smooth_tops(body_obj, meshes):
             mesh.vertices[i].co = to_local @ Vector(co[i])
         mesh.update()
         print(f"smooth tops: {obj.name} ({len(free)} points)")
+
+
+# Her T-shirt finished as cloth (.claude/skills/make-clothes): made from her skin's faces, it lay on her like paint.
+# Three steps, after smooth_tops:
+# 1. Untangled: where her skin folds flat on itself (the crease under her bust, her shoulder blades) the copied
+#    cloth folded flat too, its faces turned in towards her, and showed as a hard line across the tee. Round any
+#    such face the cloth is eased out flat, a few rings of points about it, kept CLEAR's gap over her skin, until
+#    none is left (TEE_UNTANGLE).
+# 2. Folds: a few soft ridges where a fitted cropped tee gathers and pulls (TEE_FOLDS): drag lines from the side of
+#    the bust up to the armpit, and gathers round the sides of the waist above the hem. Each is a line on the tee
+#    by (turn round her from the front towards her side, in degrees; height), mirrored to both sides; the cloth
+#    rises by `depth` along it, easing to nothing `width` either side and towards its ends.
+# 3. Edges: the hem, sleeve ends and neckline turned under (TEE_EDGE), a strip from each edge in towards her, so
+#    the cloth has an edge you can see instead of ending in a line; the edge itself rolled out a touch (a hem's
+#    bead). The strip stands at a sharp angle to the tee, so its edge stays crisp in the game's light.
+TEE_UNTANGLE = {"rings": 3, "passes": 6, "rounds": 40, "ease": 0.5, "crease": 40}
+TEE_FOLDS = [
+    {"line": [(26, 1.115), (44, 1.165), (62, 1.205)], "depth": 0.0018, "width": 0.009},
+    {"line": [(30, 1.085), (50, 1.125), (70, 1.17)], "depth": 0.0013, "width": 0.008},
+    {"line": [(52, 1.072), (78, 1.066), (102, 1.072)], "depth": 0.0016, "width": 0.007},
+    {"line": [(58, 1.094), (84, 1.086), (108, 1.092)], "depth": 0.0011, "width": 0.006},
+    {"line": [(118, 1.08), (148, 1.074)], "depth": 0.0012, "width": 0.007},
+]
+TEE_EDGE = {"depth": 0.0025, "least": 0.0008, "clear": 0.0035, "bead": 0.0007}
+
+
+def tee_arm_points(obj):
+    """Which of a cloth's points are its sleeves' (their weight mostly on the upper arms)."""
+    arm = {g.index for g in obj.vertex_groups if g.name.split("_", 1)[-1].startswith("UpperArm")}
+    out = set()
+    for v in obj.data.vertices:
+        total = sum(g.weight for g in v.groups)
+        if total and sum(g.weight for g in v.groups if g.group in arm) / total > 0.5:
+            out.add(v.index)
+    return out
+
+
+def finish_tee(body_obj, obj, material="T_tee"):
+    names = [m.name if m else "" for m in obj.data.materials]
+    if material not in names:
+        return
+    if obj.data.shape_keys:
+        print(f"finish tee: {obj.name} has shape keys, left as it was")
+        return
+    shirt = names.index(material)
+    world, local = obj.matrix_world.copy(), obj.matrix_world.inverted()
+    body_names = [m.name if m else "" for m in body_obj.data.materials]
+    skin = [p.vertices[:] for p in body_obj.data.polygons if body_names[p.material_index] not in CLEAR["skip"]]
+    tree = BVHTree.FromPolygons([body_obj.matrix_world @ v.co for v in body_obj.data.vertices], skin)
+    gap = CLEAR["gap"]
+
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.verts.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    for v in bm.verts:
+        v.co = world @ v.co
+    faces = [f for f in bm.faces if f.material_index == shirt]
+    mine = {v for f in faces for v in f.verts}
+    border = {v for f in faces for e in f.edges if len(e.link_faces) == 1 for v in e.verts}
+
+    def keep_clear(v):
+        near, normal, _, _ = tree.find_nearest(v.co, CLEAR["near"])
+        if near is not None:
+            height = (v.co - near).dot(normal)
+            if height < gap:
+                v.co = v.co + normal * (gap - height)
+
+    # 1. Untangled: faces turned in towards her, and sharp corners inside the tee (the top of its hem band turned
+    # in over her ribs at more than the export's sharp angle, a hard line in the game's light).
+    crease = math.radians(TEE_UNTANGLE["crease"])
+
+    def inward():
+        out = []
+        for f in faces:
+            near, normal, _, _ = tree.find_nearest(f.calc_center_median(), CLEAR["near"])
+            if near is not None and f.normal.dot(normal) < -0.2:
+                out.append(f)
+        for e in {e for f in faces for e in f.edges}:
+            if len(e.link_faces) != 2 or any(v in border for v in e.verts):
+                continue
+            if all(f.material_index == shirt for f in e.link_faces) and e.calc_face_angle(0.0) > crease:
+                out.extend(e.link_faces)
+        return out
+
+    rounds = 0
+    for rounds in range(TEE_UNTANGLE["rounds"]):
+        bm.normal_update()
+        bad = inward()
+        if not bad:
+            break
+        region = {v for f in bad for v in f.verts}
+        for _ in range(TEE_UNTANGLE["rings"]):
+            region |= {o for v in region for e in v.link_edges for o in e.verts if o in mine}
+        region -= border
+        for _ in range(TEE_UNTANGLE["passes"]):
+            moved = {}
+            for v in region:
+                around = [e.other_vert(v) for e in v.link_edges if e.other_vert(v) in mine]
+                if around:
+                    mean = sum((o.co for o in around), Vector()) / len(around)
+                    moved[v] = v.co + (mean - v.co) * TEE_UNTANGLE["ease"]
+            for v, co in moved.items():
+                v.co = co
+                keep_clear(v)
+    bm.normal_update()
+    left = len(inward())
+    print(f"finish tee: untangled in {rounds} rounds, {left} faces still turned in or creased")
+
+    # 2. Folds, on the body of the tee (not its sleeves).
+    arms = tee_arm_points(obj)
+    torso_faces = [f for f in faces if not any(v.index in arms for v in f.verts)]
+    surface = BVHTree.FromPolygons([v.co.copy() for v in bm.verts], [[v.index for v in f.verts] for f in torso_faces])
+    torso = [v for v in mine if v.index not in arms]
+
+    def middle_at(z):
+        ys = [v.co.y for v in torso if abs(v.co.z - z) < 0.01 and abs(v.co.x) < 0.03]
+        return (min(ys) + max(ys)) / 2 if ys else 0.0
+
+    def on_tee(turn, z):
+        a = math.radians(turn)
+        centre = Vector((0.0, middle_at(z), z))
+        out = Vector((math.sin(a), math.cos(a), 0.0))
+        hit, _, _, _ = surface.ray_cast(centre + out * 0.6, -out, 0.6)
+        return hit
+
+    lift = {}
+    for fold in TEE_FOLDS:
+        for side in (1, -1):
+            line = [on_tee(turn * side, z) for turn, z in fold["line"]]
+            if any(p is None for p in line):
+                print(f"finish tee: a fold missed the tee at {fold['line']}")
+                continue
+            lengths = [(b - a).length for a, b in zip(line, line[1:])]
+            total = sum(lengths)
+            for v in torso:
+                best, along = None, 0.0
+                run = 0.0
+                for (a, b), length in zip(zip(line, line[1:]), lengths):
+                    ab = b - a
+                    t = max(0.0, min(1.0, (v.co - a).dot(ab) / (length * length or 1)))
+                    d = (v.co - (a + ab * t)).length
+                    if best is None or d < best:
+                        best, along = d, (run + t * length) / total
+                    run += length
+                if best >= fold["width"]:
+                    continue
+                across = math.cos(0.5 * math.pi * best / fold["width"]) ** 2
+                ends = math.sin(math.pi * along) ** 0.7
+                lift[v] = lift.get(v, 0.0) + fold["depth"] * across * ends
+    for v, amount in lift.items():
+        if v not in border:
+            v.co = v.co + v.normal * amount
+    bm.normal_update()
+    print(f"finish tee: folds lift {len(lift)} points")
+
+    # 3. Edges turned under.
+    deform = bm.verts.layers.deform.active
+    uv = bm.loops.layers.uv.active
+    edges = [e for e in {e for f in faces for e in f.edges} if len(e.link_faces) == 1]
+    inner = {}
+    for v in {v for e in edges for v in e.verts}:
+        normal = Vector()
+        for f in v.link_faces:
+            if f.material_index == shirt:
+                normal += f.normal
+        normal = normal.normalized() if normal.length else v.normal
+        near, skin_normal, _, _ = tree.find_nearest(v.co, CLEAR["near"])
+        height = (v.co - near).dot(skin_normal) if near is not None else TEE_EDGE["clear"] + TEE_EDGE["depth"]
+        depth = max(TEE_EDGE["least"], min(TEE_EDGE["depth"], height - TEE_EDGE["clear"]))
+        v.co = v.co + normal * TEE_EDGE["bead"]
+        made = bm.verts.new(v.co - normal * (depth + TEE_EDGE["bead"]))
+        if deform is not None:
+            for group, weight in v[deform].items():
+                made[deform][group] = weight
+        inner[v] = made
+    bm.verts.ensure_lookup_table()
+    edge_of = {made: v for v, made in inner.items()}
+    for e in edges:
+        a, b = e.verts
+        f = e.link_faces[0]
+        # Wound so the strip faces out of the tee's edge, away from the face it ends.
+        outward = (a.co + b.co) / 2 - f.calc_center_median()
+        quad = [a, b, inner[b], inner[a]]
+        made = bm.faces.new(quad)
+        made.normal_update()
+        if made.normal.dot(outward) < 0:
+            made.normal_flip()
+        made.material_index = shirt
+        made.smooth = f.smooth
+        if uv is not None:
+            source = {l.vert: l[uv].uv.copy() for l in f.loops}
+            for l in made.loops:
+                l[uv].uv = source.get(edge_of.get(l.vert, l.vert), Vector((0.0, 0.0)))
+    for v in bm.verts:
+        v.co = local @ v.co
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+    print(f"finish tee: {obj.name}, {len(edges)} edges turned under")
 
 
 def apply_sculpt_fixes(name, body_obj, meshes):
