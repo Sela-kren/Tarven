@@ -7616,7 +7616,22 @@ def skin_character(c, m, spec, root):
         # Then her T-shirt finished as cloth (see TEE_UNTANGLE).
         tee = bpy.data.objects.get(f"{name}_ClothTee")
         if tee is not None:
-            finish_tee(body_obj, tee)
+            # Made clean by default (TARVEN_CLEAN=0 for the tee as copied from her skin); the cloth simulation
+            # (TEE_DRAPE) only with TARVEN_DRAPE set, for tests: it crumpled the tee.
+            if os.environ.get("TARVEN_CLEAN", "1") != "0":
+                # Made clean, draped, its weights copied afresh and its stains carried along (see TEE_CLEAN).
+                tee_stains = [o for o in c.objects if o.type == "MESH" and f"_CumOnTee_T_tee_" in o.name]
+                anchors = anchor_stains(tee, tee_stains)
+                clean_tee(body_obj, tee)
+                # Not draped by default: on the cleaned tee the cloth simulation crumpled its hem band and sleeves.
+                drape = TEE_DRAPE if os.environ.get("TARVEN_DRAPE") is not None else None
+                finish_tee(body_obj, tee, folds=(), drape=drape)
+                copy_skin_weights(body_obj, tee)
+                replace_stains(tee, anchors)
+            elif os.environ.get("TARVEN_DRAPE") is not None:
+                finish_tee(body_obj, tee, folds=(), drape=TEE_DRAPE)
+            else:
+                finish_tee(body_obj, tee)
 
     armature = bpy.data.armatures.new(f"{name}_Bones")
     rig = bpy.data.objects.new(f"{name}_Armature", armature)
@@ -7816,7 +7831,266 @@ def tee_arm_points(obj):
     return out
 
 
-def finish_tee(body_obj, obj, material="T_tee"):
+# The tee made clean before it's draped (.claude/skills/make-clothes, the tutorials' plane + Shrinkwrap step): copied
+# from her skin's faces, it carried her skin's creases as pleats (a line across the top of its hem band, where it
+# folded back on itself over the crease under her bust), which no cloth simulation unfolds. Its points keep their
+# connections but are relaxed like a taut sheet, `passes` times: each eased towards its neighbours' middle, which
+# evens their spacing and unfolds any pleat, and never let closer to her skin than `gap` (`sleeve_gap` on the
+# sleeves), so it hugs her where she's rounded and bridges her hollows. Its edges (hem, neckline, sleeve ends) and
+# any point it shares with another material stay where they are. Points slide over her as they relax, so afterwards
+# their bone weights are copied afresh from the skin under them (copy_skin_weights), and the stains made for the tee
+# are carried along (anchor_stains / replace_stains).
+TEE_CLEAN = {"passes": 200, "ease": 0.5, "gap": 0.003, "sleeve_gap": 0.004, "near": 0.06}
+
+
+def skin_tree(body_obj):
+    """Her skin (not the patches over it) as a BVH tree in world space, with its points and faces."""
+    names = [m.name if m else "" for m in body_obj.data.materials]
+    world = body_obj.matrix_world
+    points = [world @ v.co for v in body_obj.data.vertices]
+    polys = [p for p in body_obj.data.polygons if names[p.material_index] not in CLEAR["skip"]]
+    return BVHTree.FromPolygons(points, [p.vertices[:] for p in polys]), points, polys
+
+
+def clean_tee(body_obj, obj, material="T_tee", cfg=TEE_CLEAN):
+    """Relaxes the tee's points into a taut sheet over her (see TEE_CLEAN), in place."""
+    import time
+    t0 = time.time()
+    names = [m.name if m else "" for m in obj.data.materials]
+    if material not in names:
+        return
+    shirt = names.index(material)
+    mesh = obj.data
+    world, local = obj.matrix_world.copy(), obj.matrix_world.inverted()
+    count = len(mesh.vertices)
+    co = np.array([(world @ v.co)[:] for v in mesh.vertices])
+    mine = np.zeros(count, bool)
+    other = np.zeros(count, bool)
+    edge_faces = {}
+    around = [set() for _ in range(count)]
+    for p in mesh.polygons:
+        ids = p.vertices[:]
+        if p.material_index == shirt:
+            mine[list(ids)] = True
+            for k, i in enumerate(ids):
+                j = ids[(k + 1) % len(ids)]
+                around[i].add(j)
+                around[j].add(i)
+                key = (min(i, j), max(i, j))
+                edge_faces[key] = edge_faces.get(key, 0) + 1
+        else:
+            other[list(ids)] = True
+    border = np.zeros(count, bool)
+    for (i, j), n in edge_faces.items():
+        if n == 1:
+            border[i] = border[j] = True
+    free = np.nonzero(mine & ~border & ~other)[0]
+    arms = tee_arm_points(obj)
+    gap = np.array([cfg["sleeve_gap"] if i in arms else cfg["gap"] for i in free])
+    rings = [np.array(sorted(around[i])) for i in free]
+    tree, _, _ = skin_tree(body_obj)
+    start = co.copy()
+    for _ in range(cfg["passes"]):
+        mean = np.array([co[r].mean(axis=0) for r in rings])
+        co[free] += (mean - co[free]) * cfg["ease"]
+        for k, i in enumerate(free):
+            spot = Vector(co[i])
+            near, normal, _, _ = tree.find_nearest(spot, cfg["near"])
+            if near is None:
+                continue
+            height = (spot - near).dot(normal)
+            if height < gap[k]:
+                co[i] = tuple(spot + normal * (gap[k] - height))
+    for i in free:
+        mesh.vertices[i].co = local @ Vector(co[i])
+    mesh.update()
+    moved = np.linalg.norm(co - start, axis=1)
+    print(f"clean tee: {len(free)} points relaxed, {time.time() - t0:.0f} s, median {np.median(moved[free]) * 1000:.1f} mm, "
+          f"most {moved.max() * 1000:.0f} mm")
+
+
+def copy_skin_weights(body_obj, obj, material="T_tee"):
+    """The tee's bone weights copied afresh from the skin under each of its points (the tutorials' Data Transfer,
+    nearest face interpolated): the weights of the skin face nearest it, blended by where on that face it lands."""
+    names = [m.name if m else "" for m in obj.data.materials]
+    if material not in names:
+        return
+    shirt = names.index(material)
+    mesh = obj.data
+    world = obj.matrix_world
+    tree, points, polys = skin_tree(body_obj)
+    body_groups = {g.index: g.name for g in body_obj.vertex_groups}
+    weights = [{body_groups[g.group]: g.weight for g in v.groups if g.weight > 0} for v in body_obj.data.vertices]
+    mine = sorted({i for p in mesh.polygons if p.material_index == shirt for i in p.vertices})
+    groups = {g.name: g for g in obj.vertex_groups}
+    for i in mine:
+        spot = world @ mesh.vertices[i].co
+        near, _, face, _ = tree.find_nearest(spot)
+        if near is None:
+            continue
+        corners = polys[face].vertices[:]
+        # Blended by inverse distance to the face's corners (close to barycentric on the small faces of her skin).
+        dist = [max(1e-6, (points[c] - near).length) for c in corners]
+        share = [1 / d for d in dist]
+        total = sum(share)
+        blend = {}
+        for c, s in zip(corners, share):
+            for bone, w in weights[c].items():
+                blend[bone] = blend.get(bone, 0.0) + w * s / total
+        for g in obj.vertex_groups:
+            g.remove([i])
+        for bone, w in blend.items():
+            if w < 1e-4:
+                continue
+            if bone not in groups:
+                groups[bone] = obj.vertex_groups.new(name=bone)
+            groups[bone].add([i], w, "REPLACE")
+    print(f"copy skin weights: {obj.name}, {len(mine)} points")
+
+
+def anchor_stains(obj, stains, material="T_tee"):
+    """Where each stain point lies on the tee: its face, the spot on that face (as shares of its corners), and how far
+    off it. The tee keeps its faces as it's cleaned and draped, so the stains can be put back on the same spots."""
+    names = [m.name if m else "" for m in obj.data.materials]
+    if material not in names:
+        return None
+    shirt = names.index(material)
+    world = obj.matrix_world
+    pts = [world @ v.co for v in obj.data.vertices]
+    faces = [p for p in obj.data.polygons if p.material_index == shirt]
+    tree = BVHTree.FromPolygons(pts, [p.vertices[:] for p in faces])
+    anchors = []
+    for stain in stains:
+        sw = stain.matrix_world
+        rows = []
+        for v in stain.data.vertices:
+            spot = sw @ v.co
+            near, normal, k, _ = tree.find_nearest(spot)
+            corners = faces[k].vertices[:]
+            dist = [max(1e-6, (pts[c] - near).length) for c in corners]
+            share = [1 / d for d in dist]
+            total = sum(share)
+            rows.append((faces[k].index, [s / total for s in share], (spot - near).dot(normal)))
+        anchors.append((stain, rows))
+    return anchors
+
+
+def replace_stains(obj, anchors):
+    """Puts the stains back on the tee where anchor_stains found them, after it moved."""
+    if not anchors:
+        return
+    world = obj.matrix_world
+    pts = [world @ v.co for v in obj.data.vertices]
+    polys = obj.data.polygons
+    for stain, rows in anchors:
+        local = stain.matrix_world.inverted()
+        for v, (face, share, lift) in zip(stain.data.vertices, rows):
+            corners = polys[face].vertices[:]
+            spot = sum((pts[c] * s for c, s in zip(corners, share)), Vector())
+            normal = (world.to_3x3() @ polys[face].normal).normalized()
+            v.co = local @ (spot + normal * lift)
+        stain.data.update()
+    print(f"replace stains: {len(anchors)} stain meshes back on the tee")
+
+
+# The tee draped over her by Blender's cloth simulation, once, at build time (.claude/skills/make-clothes): cotton
+# hanging from her shoulders, so it settles over her bust and ribs and gathers where cloth does, instead of copying
+# her skin. Run after untangling and before the edges are turned under (their small right-angled strips crumpled in
+# the simulation). Shoulders and neckline pinned (fully above pin[1], easing out by pin[0]): unpinned, it slid down
+# her and bunched round her waist. No gravity and no shrinking: with either, the narrow hem band and the collision
+# fought and it crumpled; the cloth settles over her by its own stiffness and her skin pushing it out. Quality 12:
+# under her bust its rows are a millimetre or two apart. Her skin is the collider, only her torso and upper arms
+# (ZONE), for speed.
+TEE_DRAPE = {"frames": 30, "quality": 12, "collision_quality": 2, "gravity": 0.0, "shrink": 0.0, "mass": 0.15,
+             "tension": 15.0, "bend": 0.4, "distance": 0.003, "friction": 5.0, "pin": (1.24, 1.3),
+             "zone": (0.85, 1.5)}
+
+
+def drape_cloth(body_obj, bm, faces, border, cfg):
+    """Drapes these faces of `bm` (world coordinates) over her skin with a cloth simulation, moving their points.
+    TARVEN_DRAPE (JSON) overrides settings, for tuning without editing."""
+    import json
+    import time
+    cfg = {**cfg, **json.loads(os.environ.get("TARVEN_DRAPE") or "{}")}
+    print(f"drape settings: {cfg}")
+    scene = bpy.context.scene
+    # Welded: where the tee's sections meet (its hem band and its chest, its sleeves and its body) the build leaves two
+    # rings of points at one spot. Simulated apart, the cloth parted along them (a slit across the top of the hem
+    # band, sleeves coming off), so each spot is one point in the simulation, and every point there takes its result.
+    verts = sorted({v for f in faces for v in f.verts}, key=lambda v: v.index)
+    spots = {}
+    slot = {v: spots.setdefault(tuple(round(c, 5) for c in v.co), len(spots)) for v in verts}
+    first = {}
+    for v in verts:
+        first.setdefault(slot[v], v)
+    sim_faces = []
+    for f in faces:
+        ids = [slot[v] for v in f.verts]
+        if len(set(ids)) == len(ids):
+            sim_faces.append(ids)
+    mesh = bpy.data.meshes.new("DrapeCloth")
+    mesh.from_pydata([first[k].co[:] for k in range(len(spots))], [], sim_faces)
+    cloth_obj = bpy.data.objects.new("DrapeCloth", mesh)
+    scene.collection.objects.link(cloth_obj)
+    pin = cloth_obj.vertex_groups.new(name="pin")
+    low, high = cfg["pin"]
+    for v in verts:
+        t = min(1.0, max(0.0, (v.co.z - low) / (high - low)))
+        if t > 0:
+            pin.add([slot[v]], t * t * (3 - 2 * t), "REPLACE")
+    # Her skin round the tee, as a collider.
+    names = [m.name if m else "" for m in body_obj.data.materials]
+    world = body_obj.matrix_world
+    points = [world @ v.co for v in body_obj.data.vertices]
+    keep = [p for p in body_obj.data.polygons if names[p.material_index] not in CLEAR["skip"]
+            and cfg["zone"][0] < sum(points[i].z for i in p.vertices) / len(p.vertices) < cfg["zone"][1]]
+    used = sorted({i for p in keep for i in p.vertices})
+    at = {i: k for k, i in enumerate(used)}
+    skin_mesh = bpy.data.meshes.new("DrapeSkin")
+    skin_mesh.from_pydata([points[i][:] for i in used], [], [[at[i] for i in p.vertices] for p in keep])
+    skin_obj = bpy.data.objects.new("DrapeSkin", skin_mesh)
+    scene.collection.objects.link(skin_obj)
+    skin_obj.modifiers.new("Collision", "COLLISION")
+    skin_obj.collision.thickness_outer = cfg["distance"]
+    skin_obj.collision.thickness_inner = 0.003
+    skin_obj.collision.cloth_friction = cfg["friction"]
+    cloth = cloth_obj.modifiers.new("Cloth", "CLOTH")
+    s = cloth.settings
+    s.quality = cfg["quality"]
+    s.mass = cfg["mass"]
+    s.tension_stiffness = s.compression_stiffness = cfg["tension"]
+    s.shear_stiffness = cfg["tension"] / 3
+    s.bending_stiffness = cfg["bend"]
+    s.vertex_group_mass = "pin"
+    s.pin_stiffness = 1.0
+    s.shrink_min = cfg["shrink"]
+    s.effector_weights.gravity = cfg["gravity"]
+    cs = cloth.collision_settings
+    cs.distance_min = cfg["distance"]
+    cs.collision_quality = cfg["collision_quality"]
+    cs.use_self_collision = bool(cfg.get("self"))
+    cs.self_distance_min = cfg.get("self_distance", 0.0015)
+    cloth.point_cache.frame_start = 1
+    cloth.point_cache.frame_end = cfg["frames"]
+    was = scene.frame_current
+    t0 = time.time()
+    for frame in range(1, cfg["frames"] + 1):
+        scene.frame_set(frame)
+    done = cloth_obj.evaluated_get(bpy.context.evaluated_depsgraph_get()).data
+    moved = 0.0
+    for v in verts:
+        co = Vector(done.vertices[slot[v]].co)
+        moved = max(moved, (co - v.co).length)
+        v.co = co
+    scene.frame_set(was)
+    for obj in (cloth_obj, skin_obj):
+        data = obj.data
+        bpy.data.objects.remove(obj)
+        bpy.data.meshes.remove(data)
+    print(f"drape: {len(verts)} points ({len(spots)} welded), {time.time() - t0:.0f} s, most moved {moved * 1000:.0f} mm")
+
+
+def finish_tee(body_obj, obj, material="T_tee", folds=TEE_FOLDS, drape=None):
     names = [m.name if m else "" for m in obj.data.materials]
     if material not in names:
         return
@@ -7906,7 +8180,7 @@ def finish_tee(body_obj, obj, material="T_tee"):
         return hit
 
     lift = {}
-    for fold in TEE_FOLDS:
+    for fold in folds:
         for side in (1, -1):
             line = [on_tee(turn * side, z) for turn, z in fold["line"]]
             if any(p is None for p in line):
@@ -8147,6 +8421,13 @@ def slider_joint_shifts(rig):
 # through them (w: its half width). a is how far it pushes out (+) or in (-), in metres. Mirrored to her other
 # side unless "centre". Worked out from figure and pelvis references: the bony landmarks that show through on a
 # fit, soft heroine, kept soft.
+    # 1b. Draped: Blender's cloth simulation, run once here (see TEE_DRAPE).
+    if drape:
+        drape_cloth(body_obj, bm, faces, border, drape)
+        for v in mine:
+            keep_clear(v)
+        bm.normal_update()
+
 LANDMARKS = [
     # Pelvis: the hip bones at the front, the groove from them down to the mound, the swell at the trochanters,
     # the dimples above the glutes, and the crease under each one.

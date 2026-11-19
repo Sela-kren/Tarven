@@ -170,6 +170,15 @@ rebuild, export again and measure: after the refit, 95% of points were within 0.
   copied from her skin, the tee carries her skin's under-bust crease as a pleat (a line across the top of the hem
   band, also visible in the game), and the sleeves go puffy and ragged. Neither stiffer cloth nor self-collision helped.
   The real fix is the tutorials' way: build the tee as its own clean mesh (plane → extrude → shrinkwrap), then drape.
+- **The clean tee (2026-11-19, now the default)**: `clean_tee` / `TEE_CLEAN` keeps the tee's connections but
+  relaxes it like a taut sheet (200 passes: each point eased to its neighbours' middle, never closer than 3 mm
+  to her skin, or 4 mm on the sleeves; edges fixed). That's the code version of plane + Shrinkwrap. It removed the
+  pleat line, bridges the under-bust crease, and evens the point spacing, all in about 12 s. Then
+  `copy_skin_weights` (Data Transfer: weights from the skin face under each point) and the stains carried along
+  (`anchor_stains` / `replace_stains`). The cloth sim on top of it crumpled the hem band and sleeves again, so the
+  drape stays off. `TARVEN_CLEAN=0` gives back the copied-skin tee. Still open: J cup and up (torn under the bust,
+  and a thin crack down the cleavage where the bridged midline is pulled apart), and a couple of skin specks at
+  the back of a sleeve.
 - **Folds made in the build survive the game's reshaping**: `smoothMoves` eases the *moves*, not the shape,
   so a built fold rides along as the bust changes.
 - **Rebuilding is safe and quick**: an unchanged `build_world.py` reproduces `public/models/female.glb`
