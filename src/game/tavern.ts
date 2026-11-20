@@ -1240,6 +1240,8 @@ export interface Guest {
   hired?: boolean;
   /** Served before their patience was half gone: one of the things that delights them (fans). */
   servedFast?: boolean;
+  /** Ran out of patience and left without paying: they walk out under a thief's mark, so she sees who it was. */
+  walkedOut?: boolean;
   /** Hidden from the player for now: nothing shows these and nothing changes them yet. 0 to 10. */
   lust: number;
   desires: number;
@@ -1301,6 +1303,8 @@ const copyMess = (mess: Mess): Mess => ({
 export interface TalkChoice {
   label: string;
   disabled: boolean;
+  /** What picking it does to heat, shown on the button as a flame and +1 or −1 so it's never a surprise. */
+  heat?: number;
 }
 
 /** One thing said in a conversation: who says it ("You" for the player, null for narration) and what. */
@@ -3803,13 +3807,14 @@ export class Tavern {
       this.bookPromised = true;
       this.news.push("You promised Pell the book. The debt is forgotten, for now. He'll be back to ask where it is.");
     } else if (said === "refuse") {
-      this.owed = DOUBLED_DEBT;
-      this.news.push(`You told Pell there's no book. The debt is ${DOUBLED_DEBT} now, and he'll collect it in three parts.`);
+      // Doubled: the second half goes on top of what's left, so anything she's already paid still counts.
+      this.owed += DOUBLED_DEBT - DEBT;
+      this.news.push(`You told Pell there's no book. The debt is ${this.owed} now. He'll collect it in three parts, or pay it sooner yourself.`);
     } else if (said === "defy") {
-      this.owed = DOUBLED_DEBT;
+      this.owed += DOUBLED_DEBT - DEBT;
       this.adjust(0, DEFY_TRUST, DEFY_HEAT);
       this.plotFlags.add("defiedPell");
-      this.news.push(PELL_DEFIED, `The debt is ${DOUBLED_DEBT} now, and he'll collect it in three parts.`);
+      this.news.push(PELL_DEFIED, `The debt is ${this.owed} now. He'll collect it in three parts, or pay it sooner yourself.`);
     } else {
       this.corruption += EAR_CORRUPTION;
       this.adjust(0, EAR_TRUST, 0);
@@ -4299,6 +4304,7 @@ export class Tavern {
 
   private walkOut(guest: Guest): void {
     guest.status = "leaving";
+    guest.walkedOut = true;
     this.walkouts++;
     this.fansTonight += FANS_WALKOUT;
     this.shift({ fame: FAME_WALKOUT });
@@ -7070,6 +7076,7 @@ export class Tavern {
         options.push({
           label: reply.label,
           disabled: false,
+          heat: reply.heat || undefined,
           run: () => {
             chat.answered = true;
             this.adjust(reply.gold, reply.trust, reply.heat);
@@ -7493,7 +7500,7 @@ export class Tavern {
     if (this.grabChat) return this.grabOptions(this.grabChat).map(({ label, disabled }) => ({ label, disabled }));
     if (this.showChat) return this.showOptions(this.showChat).map(({ label, disabled }) => ({ label, disabled }));
     if (this.lantern.chat) return this.lantern.options(this.lanternHost).map(({ label, disabled }) => ({ label, disabled }));
-    if (this.tipChat) return this.tipOptions(this.tipChat).map(({ label, disabled }) => ({ label, disabled }));
+    if (this.tipChat) return this.tipOptions(this.tipChat).map(({ label, disabled, heat }) => ({ label, disabled, heat }));
     if (this.talkingTo === null) return [];
     const state = this.stateOf(this.talkingTo);
     const members = this.partyGuests(this.talkingTo).length;
@@ -8000,6 +8007,31 @@ export class Tavern {
       this.addDebuff("inDebt");
       this.news.push(`Pell wanted ${due} gold. He took the ${paid} you had, and you're ${this.arrears} behind.`);
     }
+  }
+
+  /** Whether she can pay the Baron's debt now: any time she has gold and owes it, but not mid-fight. */
+  get canPayDebt(): boolean {
+    return this.owed > 0 && this.gold > 0 && this.fight === null && this.duel === null;
+  }
+
+  /**
+   * She pays the Baron's debt herself, whenever she likes, as much as she has: what she's behind on goes first (and
+   * the debuff with it once she's caught up), and Pell's later collections only take what's left. Says what she paid.
+   */
+  payDebt(amount: number): number {
+    if (!this.canPayDebt) return 0;
+    const paid = Math.min(Math.max(0, Math.floor(amount)), this.gold, this.owed);
+    if (paid <= 0) return 0;
+    this.gold -= paid;
+    this.owed -= paid;
+    this.arrears = Math.max(0, this.arrears - paid);
+    if (this.arrears === 0) this.clearDebuff("inDebt");
+    this.say(
+      this.owed === 0
+        ? `You count ${paid} gold into Pell's purse for the Baron. The debt is paid. Grandma's tavern is yours, free and clear.`
+        : `You count ${paid} gold into Pell's purse for the Baron. ${this.owed} still owed${this.arrears > 0 ? `, and you're ${this.arrears} behind` : ""}.`,
+    );
+    return paid;
   }
 
   nextNight(): void {

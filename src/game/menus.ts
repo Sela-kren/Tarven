@@ -205,7 +205,43 @@ export function showSettingsMenu(game: Game, back: () => void): void {
   const feed = sideMenu("Feed (posts, DMs, streams, sponsors)", (g, b) => showFeed(g, b));
   const knight = sideMenu("Knight (the garrison)", showKnight);
   const guild = sideMenu("Guild (quests and party)", (g, b) => showGuild(g, b));
-  for (const row of [heading, note, toggle, boldness, rimjob, footjob, difficulty, trinkets, work, staff, revel, feed, knight, guild]) box.insertBefore(row, menu);
+  const debt = sideMenu(game.tavern.owed > 0 ? `The Baron's debt (pay Pell: ${game.tavern.owed} owed)` : "The Baron's debt (paid)", (g, b) => showDebt(g, b));
+  for (const row of [heading, note, toggle, boldness, rimjob, footjob, difficulty, trinkets, work, staff, revel, feed, knight, guild, debt]) box.insertBefore(row, menu);
+}
+
+/**
+ * The Baron's debt (STORY.md section 7): she can pay Pell whenever she has the gold, a little or all of it, instead
+ * of waiting for him to come and collect. Pell still comes at his beats, for whatever's left.
+ */
+export function showDebt(game: Game, back: () => void): void {
+  const tavern = game.tavern;
+  const again = () => showDebt(game, back);
+  const pay = (amount: number) => () => {
+    if (tavern.payDebt(amount) > 0) game.audio.play("click");
+    again();
+  };
+  const lines =
+    tavern.owed === 0
+      ? ["The debt is paid. Grandma's tavern is yours, free and clear."]
+      : [
+          `You owe the Baron ${tavern.owed} gold${tavern.arrears > 0 ? `, and you're ${tavern.arrears} behind on Pell's last collection` : ""}. You have ${tavern.gold}.`,
+          "Pay whenever you like. Pell still comes to collect at his beats, but only for what's left.",
+          ...(tavern.bookPromised ? ["Paying the gold won't stop him asking about the book you promised."] : []),
+          ...(tavern.fight || tavern.duel ? ["Not in the middle of a fight."] : []),
+        ];
+  const all = Math.min(tavern.owed, tavern.gold);
+  game.openMenu(
+    "The Baron's debt",
+    lines,
+    tavern.owed === 0
+      ? []
+      : [
+          { label: "Pay 50 gold", disabled: !tavern.canPayDebt || tavern.gold < 50 || tavern.owed < 50, onPick: pay(50) },
+          { label: "Pay 100 gold", disabled: !tavern.canPayDebt || tavern.gold < 100 || tavern.owed < 100, onPick: pay(100) },
+          { label: `Pay all you can (${all} gold)`, disabled: !tavern.canPayDebt, onPick: pay(all) },
+        ],
+    back,
+  );
 }
 
 /** One number for the dev panel: whole numbers plain, the rest to one place. */

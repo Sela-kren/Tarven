@@ -10,9 +10,9 @@ Every staff member is an adult (18+) with a name, a face and a body of their own
 
 | Stage | When | What opens |
 |---|---|---|
-| **Early (act 1)** | Nights 1–5 | No staff. She works alone, learns the bar, and meets the people who'll ask for work later (as regulars, in town, or in the story). |
-| **Mid (act 2)** | After the Baron's first visit, or once she can pay wages (gold 150+) | **Hire 1 or 2:** a barmaid or a cook, then a doorman. They have their basic stats and wages, and their personal story opens. The Lantern's girls (Tamsin first) are in this stage too, once the lantern is hung. |
-| **Late (act 3)** | Act 3, or fame 60+ | **Full staff:** up to 6. This adds staff fame and fans, staff passives and titles, staff rivalries and romances, poaching by the Velvet House, the church recruiting your staff, and staff taking sides on the last night. |
+| **Early** | Until Hollin's Cider Barn falls (STORY.md 2.24: bosses unlock features) | No staff. She works alone, learns the bar, and meets the people who'll ask for work later (as regulars, in town, or in the story). |
+| **Mid** | Hollin beaten (his last stage, 300 fans). *Built today: after Pell's visit, gold 150+, or night 6, until STORY.md item 12c* | **Hire 1 or 2:** a barmaid or a cook, then a doorman. They have their basic stats and wages, and their personal story opens. The Lantern's girls (Tamsin first) are in this stage too, once the lantern is hung. |
+| **Late** | Jory beaten: the Copper Bell falls (2,500 fans). *Built today: the Copper Bell, or fame 60+* | **Full staff:** up to 6. This adds staff fame and fans, staff passives and titles, staff rivalries and romances, poaching by the Velvet House, the church recruiting your staff, and staff taking sides on the last night. |
 
 ## 2. The jobs
 

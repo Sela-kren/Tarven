@@ -16,7 +16,7 @@ The rules are in **`src/game/knight.ts`** (pure, no DOM, injected rng) with test
 
 | # | Rank | How she earns it | What she does | What it gives |
 |---|---|---|---|---|
-| 0 | **Volunteer** | Rhea signs her on (after the meeting beat; Rhea's "something worth serving") | Errands for the garrison, the drill yard, market patrols | A badge, patrol XP. Nothing else yet: she's "the innkeeper with a stick" |
+| 0 | **Volunteer** | Rhea signs her on once the Watch Canteen falls: Pike vouches for her (STORY.md 2.24; built today: any day) | Errands for the garrison, the drill yard, market patrols | A badge, patrol XP. Nothing else yet: she's "the innkeeper with a stick" |
 | 1 | **Squire** | **5 brawls won** + **pass the drill test** (score 60+) | Patrols, escorts, the tourney | **Sword bonus** in brawls (+1), heat −1 a night *while in favour*, respect +1 a week |
 | 2 | **Knight** (Dame of Tarven) | **Win a tourney duel** + **swear the oath** + 5 patrols + the garrison's favour (30) | Harder patrols (smugglers' carts), leads a **squad of three** (Corporal Dunn, Grisha the orc, Wenna the fox) | +2 brawl damage, a **squad ally** in brawls (a loyal one), heat −1, respect +2 a week |
 | 3 | **Knight-Captain** | **Fame 40, Respect 40**, 12 patrols, a **loyal squad** (3+, loyalty 60 on average) | **Raids**: the smugglers' cave, Sabine's Velvet House, the pass bandits | Raids, 2 squad allies, heat −2 a night |

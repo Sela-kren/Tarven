@@ -10,7 +10,7 @@ Updated 18 Nov 2026. Read this first to find the right doc. Every doc stays in t
 |---|---|
 | [GAME_PATH.MD](GAME_PATH.MD) | The consent rule (yours to set), guest types, their preferences and the systems. Every other doc defers to it on consent |
 | [WORLD.md](WORLD.md) | The setting: a medieval adult comedy with modern things, its peoples, heroes, the King and Queen, titles |
-| [STORY.md](STORY.md) | The story: the spine, her arc, the cast, popularity, the Ledger, Act 1, the Lantern, endings. Current scope: Chapter 1, Tarven |
+| [STORY.md](STORY.md) | The story: the spine, her arc, the cast, popularity, the Ledger, the rival bosses (their stages, and the feature each one unlocks), Act 1, the Lantern, endings. Current scope: Chapter 1, Tarven |
 | [CORRUPTION_TROPES.md](CORRUPTION_TROPES.md) | How every stage of a fall is written: the tropes and the five beats |
 
 ## Built (art still to come where noted)

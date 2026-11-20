@@ -84,6 +84,21 @@ export const FLAME = pixelSvg(
   { K: OUTLINE, O: "#f08a24", Y: "#ffd23a", W: "#fff3b0", R: "#c8200f" },
 );
 
+/**
+ * A flame and "+1" or "−1" for the end of a choice's button: what picking it does to heat, said before she picks.
+ * Up is red (the Baron's men take note), down is green (the garrison eases off).
+ */
+export function heatTag(heat: number): HTMLElement {
+  const tag = document.createElement("span");
+  tag.className = `heat-tag ${heat > 0 ? "up" : "down"}`;
+  tag.innerHTML = FLAME;
+  const amount = document.createElement("b");
+  amount.textContent = heat > 0 ? `+${heat}` : `−${-heat}`;
+  tag.append(amount);
+  tag.title = heat > 0 ? `+${heat} heat: the Baron's men take note. At 8 they raid.` : `−${-heat} heat: the garrison eases off.`;
+  return tag;
+}
+
 const KEG = pixelSvg(
   [
     "............",

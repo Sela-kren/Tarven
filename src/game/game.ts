@@ -74,14 +74,14 @@ import { softHeft } from "./heft";
 import { statsOf, type GuestRole } from "./guestroles";
 import { cloneLayout, emptyLayout, footprint, HousePlan, seatSpecs, type FurnitureKind, type HouseLayout, type Placed } from "./house";
 import { HouseView } from "./houseview";
-import { COIN, FLAME, StatsHud, VILLAGERS } from "./hud";
+import { COIN, FLAME, heatTag, StatsHud, VILLAGERS } from "./hud";
 import { changeLabel, dayIcon, dayStory, statusLines, townTalk, type Standing } from "./daystory";
 import { StatusCard } from "./statuscard";
 import { DRINK_COLORS, Icon, type IconName } from "./icons";
 import type { Input } from "./input";
 import { CURSOR_EVENT, CURSOR_START, KeyNav } from "./keynav";
 import { DEBUFFS } from "./debuffs";
-import { ordinal } from "./ledger";
+import { DEFY_HEAT, ordinal, RUIN_HEAT } from "./ledger";
 import { biggestFanGroup, chapterEndingCard, firstInTarvenCard } from "./chapter1";
 import { findCobwebSpots, findDustSpots, MessLayer } from "./mess";
 import { Outline, outlineMaterial } from "./outline";
@@ -697,6 +697,8 @@ export interface Button {
   start?: boolean;
   /** A small pixel icon before the label, as SVG markup of our own (fighticons.ts). */
   icon?: string;
+  /** What picking it does to heat, shown after the label as a flame and +1 or −1. */
+  heat?: number;
 }
 
 // Kept for the browser tab only, so a new visit asks again. Storage can be blocked; then it just asks each time.
@@ -1947,6 +1949,7 @@ export class Game {
         el.append(icon);
       }
       el.append(label);
+      if (button.heat) el.append(heatTag(button.heat));
       if (button.save) {
         el.append(saveBadges(button.save, PLAYER_LABELS));
         // The icons say it in pictures; screen readers get the words.
@@ -2718,6 +2721,7 @@ export class Game {
       paragraphs,
       tavern.lastCallChoices.map((choice, index) => ({
         label: choice.label,
+        heat: choice.heat,
         onPick: () => {
           tavern.chooseLastCall(index);
           this.removeVisitor();
@@ -3408,10 +3412,14 @@ export class Game {
       const buttons = card.house
         ? [
             { label: `Partner with ${card.house.boss}`, onPick: () => answer(() => tavern.answerHouse("partner")) },
-            { label: `Ruin ${card.house.name} (corruption, heat)`, onPick: () => answer(() => tavern.answerHouse("ruin")) },
+            { label: `Ruin ${card.house.name} (corruption)`, heat: RUIN_HEAT, onPick: () => answer(() => tavern.answerHouse("ruin")) },
           ]
         : // Pell's answers change with who she's become (STORY.md 4b): two more for some of her.
-          tavern.pellChoices.map((c) => ({ label: c.label, onPick: () => answer(() => tavern.answerPell(c.answer)) }));
+          tavern.pellChoices.map((c) => ({
+            label: c.label,
+            heat: c.answer === "defy" ? DEFY_HEAT : undefined,
+            onPick: () => answer(() => tavern.answerPell(c.answer)),
+          }));
       this.openPanel(card.title, card.lines, buttons);
       return;
     }
@@ -4160,5 +4168,6 @@ function ledgerLine(tavern: Tavern): string {
 function debtLine(tavern: Tavern): string {
   if (tavern.bookPromised) return "Pell wants the book you promised him.";
   if (tavern.owed === 0) return "";
-  return tavern.arrears > 0 ? `You owe the Baron ${tavern.owed} gold, and you're ${tavern.arrears} behind.` : `You owe the Baron ${tavern.owed} gold.`;
+  const owe = tavern.arrears > 0 ? `You owe the Baron ${tavern.owed} gold, and you're ${tavern.arrears} behind.` : `You owe the Baron ${tavern.owed} gold.`;
+  return `${owe} Pay Pell any time: Settings › The Baron's debt.`;
 }
