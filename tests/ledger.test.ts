@@ -191,6 +191,41 @@ describe("Pell and the debt", () => {
     expect(t.heat).toBeGreaterThan(heat - 1);
     expect(t.news.some((l) => l.includes("The book, innkeeper"))).toBe(true);
   });
+
+  it("she can pay it herself any time: arrears first, never more than she has or owes", () => {
+    const t = pellAtDawn();
+    t.answerPell(false);
+    t.gold = 40;
+    nextMorning(t, 310);
+    expect(t.arrears).toBe(60);
+    t.takeBaronVisit();
+    t.gold = 80;
+    expect(t.payDebt(100)).toBe(80);
+    expect(t.gold).toBe(0);
+    expect(t.owed).toBe(DOUBLED_DEBT - 120);
+    expect(t.arrears).toBe(0);
+    expect(t.debuffs.some((d) => d.id === "inDebt")).toBe(false);
+    expect(t.canPayDebt).toBe(false);
+    t.gold = 1000;
+    expect(t.payDebt(1000)).toBe(DOUBLED_DEBT - 120);
+    expect(t.owed).toBe(0);
+    expect(t.payDebt(10)).toBe(0);
+    // Paid off, Pell's next collection finds nothing to take.
+    t.answerHouse("partner");
+    const gold = t.gold;
+    nextMorning(t, 410);
+    expect(t.takeBaronVisit()).toBeNull();
+    expect(t.gold).toBeGreaterThanOrEqual(gold);
+  });
+
+  it("paid before Pell's dawn, refusing him only adds the second half", () => {
+    const t = pellAtDawn();
+    t.gold = 100;
+    t.payDebt(100);
+    expect(t.owed).toBe(DEBT - 100);
+    t.answerPell(false);
+    expect(t.owed).toBe(DOUBLED_DEBT - 100);
+  });
 });
 
 describe("first in Tarven", () => {

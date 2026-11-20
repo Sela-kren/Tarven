@@ -21,6 +21,7 @@
 import { statsOf, type RoleStats } from "./guestroles";
 import type { GuestKind } from "./tavern";
 import type { StatId } from "./skills";
+import { knowsMove, type BrawlSkillId } from "./brawlskills";
 import { flavor } from "./flavor";
 import { HIT_WILL, maxWillpower, STARE_WILL, STEEL_STAMINA, STEEL_WILL } from "./willpower";
 import {
@@ -353,6 +354,8 @@ export const RESTORE_WILL = 6;
 
 /** Her side of the fight: her stat levels, and what her passives add. */
 export interface FighterStats {
+  /** The brawl skills she's learned (brawlskills.ts): moves no skill she has teaches aren't offered. Left out, she knows them all. */
+  skills?: ReadonlySet<BrawlSkillId>;
   levels: Record<StatId, number>;
   damage: number;
   dodge: number;
@@ -1076,8 +1079,15 @@ export class Fight {
     return RESTORE_WILL + (this.stats.levels.mind - 1) * 2;
   }
 
-  /** What she can do now, with the chance each has. */
+  /** What she can do now, with the chance each has: only the moves she's learned (brawlskills.ts). */
   choices(): FightChoice[] {
+    const known = this.stats.skills;
+    const all = this.everyChoice();
+    return known ? all.filter((c) => knowsMove(c.move, known)) : all;
+  }
+
+  /** Every move open to her now, learned or not. */
+  private everyChoice(): FightChoice[] {
     if (this.offering) return [];
     // Reeling from coming: nothing to do but come back to herself (KP's down, orgasm).
     if (this.dazed) return [{ move: "recover", label: "Come back to yourself", chance: null, disabled: false }];

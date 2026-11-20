@@ -6,7 +6,7 @@ This is a late-game way to run the tavern. On chosen nights it's the pass's noto
 
 ## When it opens
 
-- **Late game (act 3).** Her lewdness or corruption is high (Known stage), the table scene (`taproom.ts`) has happened several times (for example 10 table scenes, or 30 partners in all), and the tavern has the room for it (a House Plans build: **the Revel Hall**, made from the taproom with cushions and the big table).
+- **Late game: the Copper Bell beaten** (Jory, STORY.md 2.24, bosses unlock features). Her lewdness or corruption is high (Known stage), the table scene (`taproom.ts`) has happened several times (for example 10 table scenes, or 30 partners in all), and the tavern has the room for it (a House Plans build: **the Revel Hall**, made from the taproom with cushions and the big table).
 - **A story moment:** the room asks for it, the Lantern's girls suggest it, or the church wants a feast night for Veyra.
 
 ## A revel night

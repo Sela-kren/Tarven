@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { BRAWL_SKILLS } from "../src/game/brawlskills";
 import { noEffects } from "../src/game/passives";
 import { hire, STAFF_ROSTER, type StaffJob } from "../src/game/staff";
 import { BARMAID_PATIENCE, Tavern } from "../src/game/tavern";
@@ -24,7 +25,9 @@ describe("the edict tree", () => {
       expect(branches.has(rule.branch), rule.id).toBe(true);
       const e = noEffects();
       rule.effect?.(e);
-      expect(JSON.stringify(e) !== none || rule.posts !== undefined || rule.staff !== undefined, rule.id).toBe(true);
+      // A Brawling edict does its work by teaching a move (brawlskills.ts), not through the effects.
+      const teaches = BRAWL_SKILLS.some((skill) => "edict" in skill.learn && skill.learn.edict === rule.id);
+      expect(JSON.stringify(e) !== none || rule.posts !== undefined || rule.staff !== undefined || teaches, rule.id).toBe(true);
     }
   });
 

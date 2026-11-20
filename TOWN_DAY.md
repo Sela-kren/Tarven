@@ -98,7 +98,7 @@ Past Chapter 1 she isn't only an innkeeper. Each career is a ladder with its own
 | Career | Ladder | Who opens it |
 |---|---|---|
 | **Knight** | Squire → Knight → Knight-Captain | Rhea and the garrison (the knight kit already exists: one faction, shared colours and badge) |
-| **Adventurer** | Hired blade → Party leader → Guild master | Kestrel and the adventurers (300 fans) |
+| **Adventurer** | Hired blade → Party leader → Guild master | Kestrel and the adventurers, once the Toll-Gate Inn falls (STORY.md 2.24) |
 | **Smuggler** | Runner → Partner → Boss of the pass routes | Silas |
 | **Clergy** | Acolyte → … → Voice of Veyra | The Warm House |
 | **Madam** | The Lantern's stages | The Lantern arc (built in part) |

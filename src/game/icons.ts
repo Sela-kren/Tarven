@@ -3,7 +3,21 @@ import type { Held } from "./tavern";
 
 /** "suds1" and "suds2" are the two frames of scrubbing at the tub; "sparkle" is a dish coming out clean. */
 /** "anger" is the mark over a guest working up to a brawl. */
-export type IconName = Held | "dots" | "alert" | "anger" | "arrow" | "suds1" | "suds2" | "sparkle" | "call";
+/** "thief" is a masked face over a guest walking out without paying; "heat1" to "heat3", a flame and +N heat. */
+export type IconName =
+  | Held
+  | "dots"
+  | "alert"
+  | "anger"
+  | "arrow"
+  | "suds1"
+  | "suds2"
+  | "sparkle"
+  | "call"
+  | "thief"
+  | "heat1"
+  | "heat2"
+  | "heat3";
 
 type Draw = (rect: (color: string, x: number, y: number, w: number, h: number) => void) => void;
 
@@ -31,6 +45,29 @@ const suds = (bubbles: readonly [number, number, number][]): { bubble: boolean; 
       r(INK, x, y - 1, size, size + 2);
       r(SUDS, x, y, size, size);
     }
+  },
+});
+
+/** Rows of pixels, one character each, drawn from (x, y) in `palette`'s colours; "." and unknown characters are clear. */
+const rows = (r: Parameters<Draw>[0], x: number, y: number, art: readonly string[], palette: Record<string, string>) =>
+  art.forEach((row, dy) => [...row].forEach((c, dx) => palette[c] && r(palette[c], x + dx, y + dy, 1, 1)));
+
+const FLAME_ART = ["..R..", ".RR..", ".ROR.", "RROOR", "ROYOR", "ROYOR", ".RYR."];
+const FLAME_COLORS = { R: "#c8200f", O: "#f07a1a", Y: "#ffd23a" };
+const DIGITS: Record<number, readonly string[]> = {
+  1: [".#.", "##.", ".#.", ".#.", "###"],
+  2: ["###", "..#", "###", "#..", "###"],
+  3: ["###", "..#", "###", "..#", "###"],
+};
+
+/** A flame and "+n": heat a guest just cost her, over their head. */
+const heatBadge = (n: number): { bubble: boolean; draw: Draw } => ({
+  bubble: true,
+  draw: (r) => {
+    rows(r, 1, 4, FLAME_ART, FLAME_COLORS);
+    r(INK, 7, 7, 3, 1);
+    r(INK, 8, 6, 1, 3);
+    rows(r, 11, 5, DIGITS[n], { "#": INK });
   },
 });
 
@@ -166,6 +203,32 @@ const ART: Record<IconName, { bubble: boolean; draw: Draw }> = {
       r(red, 9, 9, 2, 4);
     },
   },
+  // A bandit's masked face: a guest walking out without paying.
+  thief: {
+    bubble: true,
+    draw: (r) =>
+      rows(
+        r,
+        2,
+        2,
+        [
+          "..HHHHHH..",
+          ".HHHHHHHH.",
+          ".SSSSSSSS.",
+          "MMMMMMMMMM",
+          "MMWWMMWWMM",
+          ".MMMMMMMM.",
+          ".SSSSSSSS.",
+          ".SSSDDSSS.",
+          "..SSSSSS..",
+          "...SSSS...",
+        ],
+        { H: "#3a2a20", S: "#e2b088", M: INK, W: "#ffffff", D: "#9a5a40" },
+      ),
+  },
+  heat1: heatBadge(1),
+  heat2: heatBadge(2),
+  heat3: heatBadge(3),
   arrow: {
     bubble: false,
     draw: (r) => {

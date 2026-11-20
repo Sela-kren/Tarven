@@ -10,7 +10,7 @@
 The guild's **branch office in Tarven** is a long hall off the high street, next to the garrison yard: a counter with a bored clerk, the **quest board**, a trophy wall (a slime in a jar, a troll's tooth), benches where parties sit waiting for work, and a back room where loot is weighed.
 
 - **Before she joins** it's a place to look at. Adventurers drink at her bar and talk about it.
-- **Kestrel Vey opens it** (`TOWN_DAY.md` §6.1): once the tavern has **300 fans** (`JOIN_FANS`), Kestrel brings her a guild card. Her C-rank party is the model of what she could become, and later a rival.
+- **Kestrel Vey opens it** (`TOWN_DAY.md` §6.1): once **the Toll-Gate Inn falls** (Agnes beaten, STORY.md 2.24: bosses unlock features; built today at **300 fans**, `JOIN_FANS`, until item 12c), Kestrel brings her a guild card, now the road's trade comes to her door. Her C-rank party is the model of what she could become, and later a rival.
 - **The tavern becomes the adventurers' hangout.** Some quests are **posted at her own bar** (`atBar` on a quest), parties celebrate a rank-up at her tables (big tips, big Lust) or come back hurt and broke. Later, **the guild counter moves into her tavern** (WORLD.md §10), which is one of the conditions for Guild master.
 - **Time:** a quest costs day hours like any town job (`hours`, out of her nine). Big quests take **days** (`days` 2 or 3): she's away overnight, and the tavern only opens if her staff run it (`STAFF.md`).
 

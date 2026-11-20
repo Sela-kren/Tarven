@@ -63,7 +63,7 @@ const PLAN_TABS: { id: PlanTab; label: string; icon: BuildIcon; hint: string }[]
 ];
 
 /** Each branch's picture on the edict tree. */
-const BRANCH_ICONS: Record<EdictBranch, BuildIcon> = { service: "cup", staff: "heart", conduct: "rule", order: "rule", house: "lantern" };
+const BRANCH_ICONS: Record<EdictBranch, BuildIcon> = { service: "cup", staff: "heart", conduct: "rule", order: "rule", house: "lantern", brawl: "fist" };
 
 /** One edict as the tree shows it. */
 export interface EdictView {

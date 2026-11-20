@@ -1,3 +1,4 @@
+import { heatTag } from "./hud";
 import type { TalkChoice, TalkLine } from "./tavern";
 
 /** Letters revealed per second, a touch quicker than the intro so service doesn't drag. */
@@ -126,6 +127,7 @@ export class DialogueBox {
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = `${index + 1}. ${choice.label}`;
+      if (choice.heat) button.append(heatTag(choice.heat));
       button.disabled = choice.disabled;
       button.addEventListener("click", (event) => {
         event.stopPropagation();

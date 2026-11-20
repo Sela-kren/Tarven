@@ -416,3 +416,36 @@
   outline: 3px solid var(--gold);
   outline-offset: 2px;
 }
+
+/* What a choice does to heat, after its label: a flame and +1 (red, the Baron's men take note) or −1 (green). */
+.heat-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  margin-left: 10px;
+  padding: 1px 6px 1px 3px;
+  font: 700 14px/1 var(--font);
+  vertical-align: middle;
+  text-shadow: 1px 1px 0 #000;
+  background: #1a0e06;
+  border: 2px solid #000;
+}
+
+.heat-tag svg {
+  width: 16px;
+  height: 16px;
+}
+
+.heat-tag.up {
+  color: #ff7a5a;
+}
+
+.heat-tag.down {
+  color: #8fe07a;
+}
+
+/* On the plank menus it sits at the right end, lined up down the list. */
+#panel button .heat-tag {
+  margin-left: auto;
+}

@@ -3463,6 +3463,8 @@ export interface ProgressSave {
   rules?: string[];
   /** Edict points not yet spent (tavernrules.ts). Older saves have none and start with the opening few. */
   edictPoints?: number;
+  /** Brawl skills someone taught her (brawlskills.ts). Older saves have none: they knew every move. */
+  taught?: string[];
   /** Trinkets worn (trinkets.ts). */
   trinkets?: string[];
   /** A riot night on (sidejobs.ts), and nights since her hair was trimmed. */
@@ -3493,6 +3495,7 @@ export function readProgress(raw: unknown): ProgressSave {
   out.rulesAdopted = ids(fields.rulesAdopted);
   out.rules = ids(fields.rules);
   if (typeof fields.edictPoints === "number") out.edictPoints = Math.floor(num(fields.edictPoints, 1000));
+  if (Array.isArray(fields.taught)) out.taught = ids(fields.taught);
   if (Array.isArray(fields.passives)) out.passives = [...new Set(fields.passives.filter((id): id is string => typeof id === "string" && PASSIVE_BY_ID.has(id)))];
   const r = fields.records;
   if (r && typeof r === "object") {

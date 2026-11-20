@@ -14,6 +14,9 @@ const ARRIVE_DISTANCE = 0.06;
 const ICON_HEIGHT = 2.25;
 const BAR_HEIGHT = 1.88;
 const RUMOR_ICON_HEIGHT = 2.72;
+/** The heat a walk-out cost her, in its own bubble over their thief's mark. */
+const WALKOUT_HEAT_HEIGHT = 2.95;
+const HEAT_BADGES = [null, "heat1", "heat2", "heat3"] as const;
 /** Where a speech bubble points, clear of the order icon, and of the rumor icon when there is one. */
 const SPEECH_HEIGHT = 2.7;
 const SPEECH_HEIGHT_OVER_RUMOR = 3.02;
@@ -114,6 +117,9 @@ export class GuestActor {
   private readonly rumorIcon = new Icon(0.42);
   /** The angry mark over their head while trouble brews and they come for her. */
   private readonly troubleIcon = new Icon(0.7);
+  /** A masked face over someone walking out without paying, and the heat it cost her over that. */
+  private readonly thiefIcon = new Icon(0.7);
+  private readonly walkoutHeatIcon = new Icon(0.62);
   /** Whether they've sat down for the first time, which tells the rules they've arrived. */
   private arrived = false;
   /** Counts down to looking for her again while coming for her, since she moves. */
@@ -147,7 +153,7 @@ export class GuestActor {
     this.group.visible = wait <= 0;
     this.seatedY = body.seatedOffset(seat.height);
     this.walker.setPath([...entrance, ...this.route(this.doorstep, seat.approach)]);
-    this.group.add(this.orderIcon.sprite, this.rumorIcon.sprite, this.troubleIcon.sprite);
+    this.group.add(this.orderIcon.sprite, this.rumorIcon.sprite, this.troubleIcon.sprite, this.thiefIcon.sprite, this.walkoutHeatIcon.sprite);
     this.bar = new PatienceBar(this.group);
   }
 
@@ -198,6 +204,13 @@ export class GuestActor {
     this.orderIcon.sprite.position.y = ICON_HEIGHT + lift;
     if (seated) this.bar.show(BAR_HEIGHT + lift, guest.patience / guest.maxPatience);
     else this.bar.hide();
+    // Walking out without paying: the thief's mark all the way to the door, and the heat it cost, if any.
+    const thief = guest.status === "leaving" && Boolean(guest.walkedOut);
+    this.thiefIcon.show(thief ? "thief" : null);
+    this.thiefIcon.sprite.position.y = ICON_HEIGHT + lift;
+    const heat = HEAT_BADGES[Math.min(HEAT_BADGES.length - 1, Math.max(0, guest.stats.walkoutHeat))];
+    this.walkoutHeatIcon.show(thief ? heat : null);
+    this.walkoutHeatIcon.sprite.position.y = WALKOUT_HEAT_HEIGHT + lift;
   }
 
   private updatePlate(): void {
