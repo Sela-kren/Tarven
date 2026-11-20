@@ -151,7 +151,14 @@ describe("back arch", () => {
 
   it("tips her pelvis forwards under an upright torso, keeping the legs and head straight", () => {
     const { hips, torso, head, thigh } = stand("Female");
-    expect(hips.rotation.x).toBeLessThan(-0.05);
+    // Standing still she keeps her model's own posture (real_heroin's), with only a hint of the style's arch...
+    expect(hips.rotation.x).toBeLessThan(0);
+    expect(hips.rotation.x).toBeGreaterThan(-0.05);
+    // ...and walking she holds the whole of it.
+    const root = skeleton("Female");
+    const walker = new Body(root, "Female");
+    walker.pose(0, 1);
+    expect(root.getObjectByName("Female_Hips")!.rotation.x).toBeLessThan(-0.05);
     const chest = hips.rotation.x + torso.rotation.x;
     expect(chest).toBeGreaterThanOrEqual(0);
     expect(chest).toBeLessThan(0.03);

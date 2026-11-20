@@ -46,6 +46,11 @@ export class Outline {
         const skinned = new SkinnedMesh(source.geometry, material);
         skinned.bindMode = source.bindMode;
         skinned.bind(source.skeleton, source.bindMatrix);
+        // The same morph weights as its mesh (his physique), shared so it keeps following them.
+        if (source.morphTargetInfluences) {
+          skinned.morphTargetInfluences = source.morphTargetInfluences;
+          skinned.morphTargetDictionary = source.morphTargetDictionary;
+        }
         hull = skinned;
       } else if (smooth) {
         const geometry = smoothHull(source.geometry);

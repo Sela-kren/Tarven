@@ -16,7 +16,7 @@ export const HELP: readonly HelpSection[] = [
     title: "Keys",
     lines: [
       "WASD or arrows: move. Shift: run. E: use, serve, talk (the prompt says what).",
-      "O: walk style. M: sound on or off. N: the AI narrator, if KoboldCpp is running. Esc: pause.",
+      "I: your own sheet. O: walk style. M: sound on or off. N: the AI narrator, if KoboldCpp is running. Esc: pause.",
       "On the character select: C to customize, Enter to start.",
     ],
   },

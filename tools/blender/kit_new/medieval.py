@@ -22,10 +22,55 @@ import bpy  # noqa: E402
 from mathutils import Vector  # noqa: E402
 
 import homekit as hk  # noqa: E402
-from homekit import km, beam, prism, gable, put, window, MAT  # noqa: E402
+from homekit import km, beam, prism, put, window, MAT  # noqa: E402  (gable: our own below, with tile courses)
 from kit import MB, PI, TAU  # noqa: E402
 
 T = 0.15  # timber section (square), centred on the wall plane so it stands 7.5 cm proud
+
+
+# ------------------------------------------------------------------ more detail (2026-11-20, the ref look)
+# Round parts (posts, chimney pots, lantern caps, the well, the cross) drawn with 12 sides instead of the kit's 6-8,
+# so they read round, not PS1. Only these new pieces are built here, so the kit's own pieces are untouched.
+_kit_cyl = MB.cyl
+
+
+def _round_cyl(self, r, h, loc, m, n=6, rot=(0, 0, 0), r2=None, base=True):
+    if n in (6, 8) and max(r, r2 or 0.0) > 0.05:
+        n = 12
+    return _kit_cyl(self, r, h, loc, m, n, rot, r2, base)
+
+
+MB.cyl = _round_cyl
+
+COURSE = 0.32  # roof tile course spacing down the slope
+
+
+def roof_courses(p, w, d, H, rh, roof, ov, t, y0):
+    """
+    A raised lip every COURSE down each slope of a gable roof (ridge along y), so tile and slate roofs step at the
+    eaves and at the gable ends like laid courses instead of one flat board.
+    """
+    ridge = Vector((0.0, H + rh))
+    for sx in (-1, 1):
+        eave = Vector((sx * w / 2, H))
+        s = (ridge - eave).normalized()
+        a = eave - s * ov
+        up = Vector((-s.y, s.x)) if sx < 0 else Vector((s.y, -s.x))
+        if up.y < 0:
+            up = -up
+        length = (ridge - a).length
+        k = 1
+        while k * COURSE < length - 0.2:
+            q = a + s * (k * COURSE) + up * (t + 0.01)
+            beam(p, (q.x, y0 - ov, q.y), (q.x, y0 + d + ov, q.y), 0.05, roof, 0.035)
+            k += 1
+
+
+def gable(p, w, d, H, rh, wall, roof, ov=0.45, t=0.16, edge=None, y0=0.0):
+    """homekit's gable roof, plus tile courses on anything but thatch"""
+    hk.gable(p, w, d, H, rh, wall, roof, ov, t, edge, y0)
+    if "thatch" not in roof.name:
+        roof_courses(p, w, d, H, rh, roof, ov, t, y0)
 
 
 # ------------------------------------------------------------------ palette (homekit's MAT plus the old-town colours)

@@ -35,21 +35,30 @@ export const PENIS_TIP = SULCUS + PENIS_GLANS + 1;
 export const SCROTUM_RINGS = 14;
 export const SCROTUM_LAST = SCROTUM_RINGS;
 
-/** How long and how thick (its radius) at his usual size, soft and hard. */
-const SOFT_LENGTH = 0.085;
-const HARD_LENGTH = 0.145;
-const SOFT_RADIUS = 0.0135;
-const HARD_RADIUS = 0.0172;
+/**
+ * How long and how thick (its radius) at his usual size, soft and hard. Hard, as measured off the male reference
+ * (2026-11-20, scaled to his 1.87 m): 15.6 cm long, 2.4 cm thick, near even from the root to the glans.
+ */
+const SOFT_LENGTH = 0.09;
+const HARD_LENGTH = 0.156;
+const SOFT_RADIUS = 0.0175;
+const HARD_RADIUS = 0.0235;
 /** How far the root goes into him, behind the skin, so no gap shows where the shaft meets it. */
 const EMBED = 0.008;
+/** How much fuller the shaft is where it meets his skin, fading out over its first ROOT_FILLET metres. */
+const ROOT_FLARE = 0.16;
+const ROOT_FILLET = 0.022;
 /** The glans' length, as a share of the whole. */
 const GLANS_SHARE = 0.2;
 /** Soft, it leaves him a little below level and turns to hang nearly straight down within this share of its length. */
 const SOFT_ROOT_ANGLE = -0.45;
 const SOFT_HANG = -1.42;
 const SOFT_BEND = 0.38;
-/** The sack at his usual size, relaxed: its half width, its depth out from him, its height, and how low it hangs. */
-const SACK = { width: 0.03, depth: 0.023, height: 0.028, hang: 0.018 };
+/**
+ * The sack at his usual size, relaxed: its half width, its depth out from him, its height, and how low it hangs.
+ * The reference's: 6 cm across, 6.4 cm tall, its bottom 8.4 cm below the penis's root.
+ */
+const SACK = { width: 0.031, depth: 0.026, height: 0.032, hang: 0.022 };
 /** How far the sack stands out of him before it turns down. */
 const SACK_OUT = 0.004;
 /**
@@ -276,9 +285,9 @@ export function glansRadius(shape: PenisShape, s: number): number {
   const CREST = 0.12;
   // The corona: a rim standing up steeply out of the sulcus, rounding over at its crest.
   if (u < CREST) return lerp(neck * lerp(0.9, 0.97, shape.point), crown, Math.sin((Math.PI / 2) * (u / CREST)));
-  // Then a blunt cone rather than a dome, rounding off to the tip; or a long point.
+  // Then a full dome (the reference's), rounding off to the tip; or a long point.
   const w = (u - CREST) / (1 - CREST);
-  const blunt = Math.pow(Math.max(0, 1 - Math.pow(w, 2.4)), 0.55);
+  const blunt = Math.pow(Math.max(0, 1 - Math.pow(w, 2.1)), 0.5);
   const pointed = Math.pow(Math.max(0, 1 - w), 0.8) * (1 + 0.12 * Math.sin(Math.PI * Math.min(1, w * 1.6)));
   return crown * lerp(blunt, pointed, shape.point);
 }
@@ -428,11 +437,13 @@ export function penisRings(shape: PenisShape): PenisRing[] {
   }
   const shaftEnd = foreskin[0].s;
   const rings: PenisRing[] = [];
-  // The root goes into him; the shaft's own rings, a touch fuller at the root, spread out to where the foreskin starts.
-  rings.push({ s: -EMBED, r: radius * 1.1 });
+  // The root goes into him; the shaft's own rings flare out into his skin at the root (ROOT_FLARE, fading over the
+  // first ROOT_FILLET of it, as the reference's does), then spread out to where the foreskin starts.
+  rings.push({ s: -EMBED, r: radius * (1 + ROOT_FLARE * 1.3) });
   for (let i = 1; i < PENIS_SHAFT; i++) {
     const s = (shaftEnd * (i - 1)) / (PENIS_SHAFT - 1) + (i === 1 ? 0.0015 : 0);
-    rings.push({ s, r: shaftR(s) * (i === 1 ? 1.06 : 1) });
+    const fillet = ROOT_FLARE * (1 - smooth(s / ROOT_FILLET)) ** 2;
+    rings.push({ s, r: shaftR(s) * (1 + fillet) });
   }
   rings.push(...foreskin);
   rings.push({ s: sulcus, r: r * 0.88 });

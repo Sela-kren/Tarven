@@ -1,8 +1,9 @@
 /**
- * The innkeeper's journal: an open book with your name and how you stand. The left page is the ledger and the
- * village (gold against the debt, trust and heat); the right page is what the room says about you. It's read
- * from the book on the chest in the bedroom, instead of crowding the screen with every number. More spreads
- * keep the adult side: tonight's desire and touches, her passives, and her records.
+ * The innkeeper's journal: an open book about the tavern. The ledger spread is gold against the debt and the
+ * Village Ledger on the left, the village (trust and heat) and favors owed on the right. It's read from the book
+ * on the chest in the bedroom, instead of crowding the screen with every number. More spreads keep the adult
+ * side: tonight's desire and touches, her passives, and her records. What's about her alone (what they say of
+ * her, her deeds, what she carries) is her own sheet, `herselfBook`, opened anywhere with I.
  */
 import type { Persona } from "./banter";
 import type { TouchRegion } from "./touchtalk";
@@ -52,17 +53,12 @@ export interface JournalState {
   fans?: number;
   rank?: number;
   houses?: readonly { name: string; boss: string; fans: number; fate?: "partner" | "ruin" | "fallen" }[];
-  /** What she carries for things gone badly (debuffs.ts): name, what it does, how long it lasts. */
-  debuffs?: readonly { name: string; detail: string; lasts: string }[];
   trust: number;
   trustMax: number;
   /** Trust at which the village rises against the baron. */
   trustToRise: number;
   heat: number;
   heatMax: number;
-  persona: Persona;
-  lewdness: number;
-  corruption: number;
   /** What's still to come of favors: promises she's made, and favors owed her (favors.ts). */
   favors?: readonly { kind: "promise" | "return"; note: string }[];
 }
@@ -173,48 +169,74 @@ export function journalBook(state: JournalState, onName: (name: string) => void)
     }
   }
 
-  // Debuffs: what went badly, and what it's costing her (Karryn-style).
-  const debuffs = state.debuffs ?? [];
-  if (debuffs.length > 0) {
-    left.append(el("h2", "", "What you carry"));
-    for (const d of debuffs) left.append(el("p", "note danger", `${d.name}: ${d.detail}. ${d.lasts}`));
-  }
-
-  left.append(el("h2", "", "The village"));
-  left.append(
+  // The right page: the village, and what's still owed between her and it.
+  right.append(el("h2", "", "The village"));
+  right.append(
     row("Trust", `${state.trust}/${state.trustMax}`, {
       icon: VILLAGERS,
       bar: meter(state.trust, 0, state.trustMax, "green"),
     }),
   );
-  left.append(el("p", "note", `At ${state.trustToRise} the village stands with you against the baron.`));
-  left.append(
+  right.append(el("p", "note", `At ${state.trustToRise} the village stands with you against the baron.`));
+  right.append(
     row("Heat", `${state.heat}/${state.heatMax}`, { icon: FLAME, bar: meter(state.heat, 0, state.heatMax, "red") }),
   );
-  left.append(el("p", state.heat >= state.heatMax - 2 ? "note danger" : "note", `At ${state.heatMax} the garrison raids the tavern.`));
+  right.append(el("p", state.heat >= state.heatMax - 2 ? "note danger" : "note", `At ${state.heatMax} the garrison raids the tavern.`));
 
   // Promises she's made and favors owed her: someone will come for each, on a later night.
   const favors = state.favors ?? [];
   if (favors.length > 0) {
-    left.append(el("h2", "", "Your word, and what's owed"));
-    for (const f of favors) left.append(el("p", f.kind === "promise" ? "note danger" : "note", `${f.kind === "promise" ? "Promised" : "Owed"}: ${f.note}`));
+    right.append(el("h2", "", "Your word, and what's owed"));
+    for (const f of favors) right.append(el("p", f.kind === "promise" ? "note danger" : "note", `${f.kind === "promise" ? "Promised" : "Owed"}: ${f.note}`));
   }
+  return book;
+}
+
+
+// ---------- Herself (the I key) ----------
+
+/** What the I sheet shows: how the room sees her, what she's done, and what she carries. */
+export interface HerselfState {
+  name: string;
+  night: number;
+  persona: Persona;
+  lewdness: number;
+  corruption: number;
+  /** What she carries for things gone badly (debuffs.ts): name, what it does, how long it lasts. */
+  debuffs?: readonly { name: string; detail: string; lasts: string }[];
+}
+
+/** Her own sheet, opened anywhere with I: what they say of her, her deeds, and what she carries. */
+export function herselfBook(state: HerselfState): HTMLElement {
+  const book = el("div", "journal-book herself");
+  const left = el("div", "page left");
+  const right = el("div", "page right");
+  book.append(left, el("div", "spine"), right);
+
+  left.append(el("h1", "title", state.name || "The innkeeper"));
+  left.append(el("p", "role", `Innkeeper of Tarven · Night ${state.night}`));
 
   const p = state.persona;
-  right.append(el("h2", "", "What they say of you"));
+  left.append(el("h2", "", "What they say of you"));
   const sign = (n: number) => (n > 0 ? `+${n}` : String(n));
-  right.append(row("Respect", sign(p.respect), { bar: meter(p.respect, -10, 10) }));
-  right.append(row("Fame", String(p.fame), { bar: meter(p.fame, 0, 100) }));
-  right.append(row("Lewdness", String(state.lewdness), { bar: meter(state.lewdness, 0, 100, "red") }));
-  right.append(el("p", "note", lewdWord(state.lewdness)));
-  right.append(row("Corruption", String(state.corruption), { bar: meter(state.corruption, 0, 100, "purple") }));
-  right.append(el("p", "note", corruptWord(state.corruption)));
+  left.append(row("Respect", sign(p.respect), { bar: meter(p.respect, -10, 10) }));
+  left.append(row("Fame", String(p.fame), { bar: meter(p.fame, 0, 100) }));
+  left.append(row("Lewdness", String(state.lewdness), { bar: meter(state.lewdness, 0, 100, "red") }));
+  left.append(el("p", "note", lewdWord(state.lewdness)));
+  left.append(row("Corruption", String(state.corruption), { bar: meter(state.corruption, 0, 100, "purple") }));
+  left.append(el("p", "note", corruptWord(state.corruption)));
 
   right.append(el("h2", "", "Deeds"));
   right.append(row("Drinks with guests", String(p.drinks)));
   right.append(row("Secrets kept", String(p.protected)));
   right.append(row("Told to the baron's men", String(p.informed)));
   right.append(row("Secrets sold", String(p.sold)));
+
+  // Debuffs: what went badly, and what it's costing her (Karryn-style).
+  right.append(el("h2", "", "What you carry"));
+  const debuffs = state.debuffs ?? [];
+  if (debuffs.length === 0) right.append(el("p", "note good", "Nothing weighing on you."));
+  for (const d of debuffs) right.append(el("p", "note danger", `${d.name}: ${d.detail}. ${d.lasts}`));
   return book;
 }
 

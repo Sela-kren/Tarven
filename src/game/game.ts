@@ -1,3 +1,4 @@
+import { guestMan, withRandomMan } from "./physique";
 import {
   Box3,
   Camera,
@@ -32,6 +33,7 @@ import {
   guestPersonColors,
   OUTFIT_COLORS,
   randomLook,
+  applyPhysique,
   storeLooks,
   type BodyName,
   type Look,
@@ -118,7 +120,7 @@ import {
 import { INTRO, StoryBox } from "./story";
 import { Chatter } from "./chatter";
 import { DrinkComic } from "./comic";
-import { showJournal } from "./journalpanel";
+import { showHerself, showJournal } from "./journalpanel";
 import { showBedChoice, showDuelTest, showFight, playAdultScene } from "./fightpanels";
 import { reloadToTitle } from "./devresume";
 import { showHelp } from "./helpscreen";
@@ -1081,6 +1083,8 @@ export class Game {
   panelButtons: Button[] = [];
   /** Where Esc leads from the open menu, or null when it has no way back. */
   panelBack: (() => void) | null = null;
+  /** The key that opened the panel, which shuts it again (I for her sheet), or null. */
+  panelKey: string | null = null;
   /** W/S and E through whatever menu is up (keynav.ts). */
   private readonly keyNav: KeyNav;
   private readonly talkChoicesEl = element("talk-choices");
@@ -1245,7 +1249,7 @@ export class Game {
       tab: (tab) => this.aimCustomize(tab, false),
       done: () => this.closeCustomizer(),
       builtColor: (id) => this.builtColor(id),
-      random: (body) => randomLook(body),
+      random: (body) => (body === "Male" ? withRandomMan(randomLook(body)) : randomLook(body)),
       dress: (dressing) => this.chosen !== null && this.dressers[this.chosen].setDressing(dressing),
       open: (vulva, anus) => (this.openingPreview = { vulva, anus }),
       erect: (level) => (this.erectionPreview = level),
@@ -1497,8 +1501,10 @@ export class Game {
     // Most come in modern clothes now (WORLD.md, section 2b); some keep their type's kit or their plain clothes.
     const stats = kind === "visitor" ? null : statsOf(kind, role);
     const own = stats ? guestModernOutfit(look, stats.modern.share, stats.modern.styles) ?? stats.outfit : null;
-    // Their own skin, hair and eyes, when they rolled a look; their kind's hair when they didn't.
-    const person = look > 0 ? guestPersonColors(look) : { [slots.hair]: hex(outfit.hair) };
+    // Their own skin, hair and eyes, when they rolled a look; their kind's hair when they didn't. A man's go with his
+    // heritage, and he has his own body and face for his type (physique.ts).
+    const man = !female && look > 0 ? guestMan(look, role) : null;
+    const person = man ? man.colors : look > 0 ? guestPersonColors(look) : { [slots.hair]: hex(outfit.hair) };
     // Their own hairstyle too, from the same look.
     const hairstyle = guestHairstyle(body, look);
     if (dressed) {
@@ -1512,6 +1518,7 @@ export class Game {
       const clothes = look > 0 && plain.length > 0 ? plain[Math.floor(look / PLAIN_STEP) % plain.length] : outfit;
       dressColors(model, body, { [slots.top]: hex(clothes.top), [slots.legs]: hex(clothes.legs), ...person }, undefined, undefined, hairstyle);
     }
+    if (man) applyPhysique(model, body, man.sliders);
     return new Body(model, body);
   }
 
@@ -2234,6 +2241,7 @@ export class Game {
     this.panelEl.replaceChildren();
     this.panelButtons = [];
     this.panelBack = null;
+    this.panelKey = null;
   }
 
   /**
@@ -4196,6 +4204,12 @@ export class Game {
       }
     }
 
+    // I opens her own sheet: what they say of her, her deeds, what she carries.
+    if (input.pressed("KeyI")) {
+      showHerself(this);
+      return;
+    }
+
     // K and L act out putting a piece back on and passing out, to check the animations, in development only.
     if (import.meta.env.DEV && input.pressed("KeyK")) player.act("dress");
     if (import.meta.env.DEV && input.pressed("KeyL")) player.act(player.acted?.kind === "faint" ? null : "faint");
@@ -4789,7 +4803,8 @@ export class Game {
     } else if (this.screen === "talk") {
       this.updateTalk(dt);
     } else if (this.screen === "panel" || this.screen === "title") {
-      this.handlePanelKeys();
+      if (this.panelKey && this.panelBack && this.input.pressed(this.panelKey)) this.panelBack();
+      else this.handlePanelKeys();
       this.siblings.forEach((sibling) => sibling.rest(dt));
     } else if (this.screen === "select") {
       this.updateSelect(dt);

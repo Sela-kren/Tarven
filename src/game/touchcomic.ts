@@ -371,7 +371,8 @@ export function cutArm(model: Object3D, name: string): Arm {
     const uvs = uv ? new Float32Array(renumber.size * 2) : null;
     for (const [old, i] of renumber) {
       // Where the vertex is now, posed, then in the forearm's own space.
-      object.applyBoneTransform(old, v.fromBufferAttribute(position, old));
+      // (getVertexPosition: with his physique morphs, then skinned)
+      object.getVertexPosition(old, v);
       v.applyMatrix4(object.matrixWorld).applyMatrix4(toArm);
       positions.set([v.x, v.y, v.z], i * 3);
       if (weightOf(old, [foreIndex]) >= 0.6) handPoints.push({ at: v.clone(), part: parts.length, u: uv ? uv.getX(old) : 0, v: uv ? uv.getY(old) : 0, material: object.material });
@@ -1427,7 +1428,7 @@ function paintSkin(model: Object3D, shade: UnderShade): void {
       painted.side = SKIN_WET.test(material.name) ? DoubleSide : material.side;
       painted.onBeforeCompile = (shader) => {
         // Her painted layers from the Blender bridge (paint.ts), as in the room.
-        addPaintTo(shader);
+        addPaintTo(shader, painted.name);
         Object.assign(shader.uniforms, shade);
         shader.vertexShader = `varying vec3 vShadeAt;
 ${shader.vertexShader}`.replace(

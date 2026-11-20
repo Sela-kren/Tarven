@@ -1,6 +1,6 @@
 /** The journal on the chest, opened over the game: ribbon tabs across the top, one spread per tab. */
 import type { Game } from "./game";
-import { journalBook, lettersBook, passivesBook, privateBook, recordsBook, skillsBook, titlesBook, wantedBook, type LetterEntry } from "./journal";
+import { herselfBook, journalBook, lettersBook, passivesBook, privateBook, recordsBook, skillsBook, titlesBook, wantedBook, type LetterEntry } from "./journal";
 import { LETTER_BY_ID, LETTERS, letterLines, type LetterSet } from "./letters";
 import { CHAPTER_ENDINGS } from "./chapter1";
 import { roleLabel } from "./guestroles";
@@ -50,19 +50,11 @@ export function showJournal(game: Game, page: JournalPage = "ledger"): void {
         fans: tavern.fans,
         rank: tavern.rank,
         houses: HOUSES.map((h) => ({ name: h.name, boss: h.boss, fans: h.fans, fate: tavern.houses[h.id] })),
-        debuffs: tavern.debuffs.map((d) => {
-          const def = DEBUFFS[d.id];
-          const lasts = def.nights === 0 ? "Until it's put right." : d.nights === 1 ? "Tonight." : `${d.nights} more nights.`;
-          return { name: d.level > 1 ? `${def.name} ${d.level}` : def.name, detail: def.detail(d.level), lasts };
-        }),
         trust: tavern.trust,
         trustMax: TRUST_MAX,
         trustToRise: TRUST_TO_OVERTHROW,
         heat: tavern.heat,
         heatMax: HEAT_MAX,
-        persona: tavern.persona,
-        lewdness: tavern.lewdness,
-        corruption: Math.round(tavern.corruption),
         favors: tavern.favorsAhead.map((f) => ({ kind: f.kind, note: f.note })),
       },
       (name) => (tavern.name = name),
@@ -170,5 +162,46 @@ export function showJournal(game: Game, page: JournalPage = "ledger"): void {
     { label: "Close", onPick: close },
   ];
   game.panelBack = close;
+  game.screen = "panel";
+}
+
+/**
+ * Her own sheet, opened anywhere with I (and closed with I or Esc): what the room says of her, her deeds, and
+ * what she carries. The night waits while she looks.
+ */
+export function showHerself(game: Game): void {
+  const { tavern } = game;
+  game.clearTarget();
+  game.audio.play("click");
+  const close = () => {
+    game.closePanel();
+    game.screen = "play";
+  };
+  const book = herselfBook({
+    name: tavern.name,
+    night: tavern.nightIndex + 1,
+    persona: tavern.persona,
+    lewdness: tavern.lewdness,
+    corruption: Math.round(tavern.corruption),
+    debuffs: tavern.debuffs.map((d) => {
+      const def = DEBUFFS[d.id];
+      const lasts = def.nights === 0 ? "Until it's put right." : d.nights === 1 ? "Tonight." : `${d.nights} more nights.`;
+      return { name: d.level > 1 ? `${def.name} ${d.level}` : def.name, detail: def.detail(d.level), lasts };
+    }),
+  });
+  const shut = document.createElement("button");
+  shut.type = "button";
+  shut.className = "journal-close";
+  shut.textContent = "Close";
+  shut.addEventListener("click", close);
+  const wrap = document.createElement("div");
+  wrap.className = "journal";
+  wrap.append(book, shut);
+  game.panelEl.classList.remove("title-screen", "adult-open");
+  game.panelEl.classList.add("open", "journal-open");
+  game.panelEl.replaceChildren(wrap);
+  game.panelButtons = [{ label: "Close", onPick: close }];
+  game.panelBack = close;
+  game.panelKey = "KeyI";
   game.screen = "panel";
 }

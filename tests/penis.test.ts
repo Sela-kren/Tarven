@@ -190,7 +190,9 @@ describe("penis rings", () => {
   });
 
   it("swells the wolf's knot as he hardens, and runs its glans to a point with no crown", () => {
-    const widest = (id: string, a: number) => Math.max(...penisRings(shape(id, a)).slice(1, PENIS_SHAFT).map((r) => r.r));
+    // Past the root's flare into his skin (its first 2.2 cm).
+    const widest = (id: string, a: number) =>
+      Math.max(...penisRings(shape(id, a)).slice(1, PENIS_SHAFT).filter((r) => r.s > 0.022).map((r) => r.r));
     expect(widest("wolf", 1)).toBeGreaterThan(shape("wolf", 1).radius * 1.4);
     expect(widest("wolf", 0)).toBeLessThan(shape("wolf", 0).radius * 1.1);
     const wolf = shape("wolf", 1);

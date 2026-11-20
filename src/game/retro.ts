@@ -57,21 +57,34 @@ const AFFINE_VARYINGS = /* glsl */ `
  */
 const SMOOTH_SKIN_NAMES = /^(T_skin|T_skin_f|T_face_skin|T_areola|T_anus_skin|T_penis|T_glans|T_scrotum)$/;
 
+/**
+ * The town kit's painted textures and their normal maps (tools/blender/kit_tex.py, 2026-11-20): painted in the refs'
+ * style at 512 px, so drawn smooth like the skin, and sharper at a slant (roofs, the street seen along its length).
+ */
+const PAINTED_TEXTURE_NAMES = /^TK_/;
+
 function makeTextureRetro(texture: Texture | null, smooth = false): void {
   if (!texture) return;
+  const painted = PAINTED_TEXTURE_NAMES.test(texture.name);
+  smooth ||= painted;
   texture.magFilter = smooth ? LinearFilter : NearestFilter;
   texture.minFilter = smooth ? LinearMipmapLinearFilter : NearestFilter;
   texture.generateMipmaps = smooth;
-  texture.anisotropy = 1;
+  texture.anisotropy = painted ? 4 : 1;
   texture.needsUpdate = true;
 }
 
 function toRetroMaterial(source: MeshStandardMaterial): MeshLambertMaterial {
   makeTextureRetro(source.map, SMOOTH_SKIN_NAMES.test(source.name));
   makeTextureRetro(source.emissiveMap);
+  makeTextureRetro(source.normalMap, true);
   return withPs1Rasterizer(new MeshLambertMaterial({
     name: source.name,
     map: source.map,
+    // The town kit's normal maps (the other models have none): their stone, boards and tiles catch the light.
+    normalMap: source.normalMap,
+    normalScale: source.normalScale,
+    vertexColors: source.vertexColors,
     color: source.color,
     emissive: source.emissive,
     emissiveMap: source.emissiveMap,
@@ -188,7 +201,7 @@ const SKIN_GLOW_GLSL = `{
 function withPs1Rasterizer<T extends MeshLambertMaterial | MeshPhongMaterial>(material: T): T {
   material.onBeforeCompile = (shader) => {
     // The Blender bridge's painted layers (paint.ts), first, so the glow and detail go over them.
-    addPaintTo(shader);
+    addPaintTo(shader, material.name);
     if (SKIN_GLOW_NAMES.test(material.name)) {
       shader.fragmentShader = shader.fragmentShader.replace("#include <dithering_fragment>", SKIN_GLOW_GLSL);
     }

@@ -99,18 +99,24 @@ const DRUNK_SLUMP = 0.08;
 
 const ELBOW_REST = 0.08;
 /**
- * Her arms as they hang, against her model's rest (radians, per model). The female model is built with its upper
- * arms 20° behind her and 16° out from her sides, and standing she held them 11° behind with her forearms 27° in
- * front, her hands back by her rear; the hero-shooter refs hang the upper arm 4° behind and the forearm 17° in front
- * (measured 2026-11-19, ref/_sculpt_work/shoulder). So standing she swings her upper arms forward to the
- * refs' line, a little further out, clear of her hips, and bends her elbows a little less. Standing still only: at
- * first it held through her walk and run too, straightening the elbows and stiffening the swing they were tuned
- * with, and the user found her walk and run broken. Carrying and sitting set their own angles, and the posed scenes
- * (cut-ins, comics, fights) keep theirs, all worked out on the rest as built.
+ * Her arms as they hang, against her model's rest (radians, per model). Her model is real_heroin, built in her own
+ * standing pose: upper arms 21° behind her and 16° out from her sides, elbows bent 17°, forearms hanging straight
+ * down (measured 2026-11-20, ref/_bridge/idle). Standing still she keeps her arms just as built (the user: idle she
+ * should look like real_heroin), so this only takes back the walk's own elbow bend. It was tuned on the old body
+ * (forward 0.13, out 0.1, elbow -0.25, to the hero-shooter refs' line), which swung her arms forward and out of her
+ * own stance. Standing still only: at first it held through her walk and run too, and the user found her walk and
+ * run broken. Carrying and sitting set their own angles, and the posed scenes (cut-ins, comics, fights) keep theirs.
  */
 const ARM_HANG: Record<string, { forward: number; out: number; elbow: number }> = {
-  Female: { forward: 0.13, out: 0.1, elbow: -0.25 },
+  Female: { forward: 0, out: 0, elbow: -ELBOW_REST },
 };
+/**
+ * Standing still, how much of her walk style's standing pose (the hip pop, the relaxed knee, the shoulder tilt, the
+ * arch) she takes on over her model's own stance. real_heroin is sculpted standing in her own posture, so she keeps
+ * it, with only a hint of the style's weight shift for life (breathing stays whole). Walking and running keep all of
+ * the style's arch; the hand on her hip (style 5) is a pose of its own and stays whole too.
+ */
+const OWN_STANCE = 0.15;
 
 /** One way of moving at one speed. Angles are in radians, distances in metres. */
 interface Stride {
@@ -207,6 +213,8 @@ interface Gait {
   run: Stride;
   /** Without one, the character stands in the model's resting pose. */
   stance?: Stance;
+  /** How much of the stance's standing-still pose to lay over the model's own (1, all of it, if left out). */
+  settle?: number;
 }
 
 const PLAIN_WALK: Stride = {
@@ -344,7 +352,7 @@ export function styledStance(level: number): Stance {
 }
 
 function feminine(level: number): Gait {
-  return { ...styledStrides(level), stance: styledStance(level) };
+  return { ...styledStrides(level), stance: styledStance(level), settle: OWN_STANCE };
 }
 
 /**
@@ -855,11 +863,16 @@ export class Body {
     // The standing pose fades in as the walk fades out, and is all zeros for a gait without one.
     const s = this.gait.stance ?? NO_STANCE;
     const still = (1 - swing) * (1 - sit);
-    const shifting = still * (1 + s.sway * Math.sin((this.clock * 2 * Math.PI) / SWAY_PERIOD));
+    // Only this much of the standing pose goes over her model's own stance (OWN_STANCE); breathing stays whole.
+    const settle = this.gait.settle ?? 1;
+    const settled = still * settle;
+    const shifting = settled * (1 + s.sway * Math.sin((this.clock * 2 * Math.PI) / SWAY_PERIOD));
     const breath = Math.sin((this.clock * 2 * Math.PI) / BREATH_PERIOD) * s.breath * still;
     // Negative X tips the pelvis's top forwards; the torso leans back past it and the thighs swing
-    // forwards by the same amount, so the legs still hang straight.
-    const arch = (this.gait.stance ? Math.max(0, s.arch + this.posture.arch) : 0) * (1 - sit);
+    // forwards by the same amount, so the legs still hang straight. Walking holds the style's whole arch; standing
+    // still, her own posture keeps only the settled share of it, and the Back arch slider's on top.
+    const styleArch = s.arch * MathUtils.lerp(1, settle, 1 - swing);
+    const arch = (this.gait.stance ? Math.max(0, styleArch + this.posture.arch) : 0) * (1 - sit);
     // The ribcage leans back over the waist, or rounds forwards; the arms still hang straight down from it.
     const chestLean = this.posture.chest * (1 - sit);
     this.torso.userData.chestLean = chestLean;
@@ -879,14 +892,14 @@ export class Body {
     // Tipping the pelvis carries the waist forwards; the hips move back by as much, so her upper body stays over
     // her feet where it stood, and only her rear and the small of her back change.
     this.hips.position.z = this.hipsBaseZ + Math.sin(arch) * this.torso.position.y;
-    this.hips.rotation.y = -Math.sin(stride + lead) * g("hipTwist") * moving + s.hipTwist * still;
+    this.hips.rotation.y = -Math.sin(stride + lead) * g("hipTwist") * moving + s.hipTwist * settled;
     this.hips.position.x = Math.cos(stride + lead) * g("hipShift") * moving + s.hipShift * shifting;
 
     this.torso.rotation.z = -hipRoll - lift * g("shoulderRoll") * moving - s.shoulderRoll * shifting;
     this.torso.rotation.y =
-      -this.hips.rotation.y + phase * g("shoulderTwist") * moving + s.shoulderTwist * still;
+      -this.hips.rotation.y + phase * g("shoulderTwist") * moving + s.shoulderTwist * settled;
     this.torso.rotation.x = -(lean - pelvisLean) + breath + arch * ARCH_CHEST + chestLean;
-    this.head.rotation.z = -(this.hips.rotation.z + this.torso.rotation.z) * HEAD_STEADY + s.headTilt * still;
+    this.head.rotation.z = -(this.hips.rotation.z + this.torso.rotation.z) * HEAD_STEADY + s.headTilt * settled;
     this.head.rotation.y = -(this.hips.rotation.y + this.torso.rotation.y) * HEAD_STEADY;
     this.head.rotation.x = -(this.hips.rotation.x + this.torso.rotation.x) * HEAD_STEADY;
     if (this.drunk > 0) {
@@ -897,16 +910,16 @@ export class Body {
 
     const thighSwing = g("thighSwing") * swing;
     const thighBias = g("thighBias") * swing + pelvisLean;
-    this.thighL.rotation.x = lerp(phase * thighSwing + thighBias + s.freeThigh * still, SIT_THIGH, sit) + arch;
+    this.thighL.rotation.x = lerp(phase * thighSwing + thighBias + s.freeThigh * settled, SIT_THIGH, sit) + arch;
     this.thighR.rotation.x = lerp(-phase * thighSwing + thighBias, SIT_THIGH, sit) + arch;
-    this.thighL.rotation.y = s.freeTurn * still;
+    this.thighL.rotation.y = s.freeTurn * settled;
     // The legs stay upright under the rolling hips, lean back against the hip slide so the feet stay
     // where they are, then step in towards the centre line, most of all as each foot reaches forwards,
     // so the knees pass close without striking.
     const crossover = g("crossover") * moving;
     const underHips = -hipRoll - this.hips.position.x / this.legLength;
-    this.thighL.rotation.z = crossover * (0.55 + 0.45 * phase) + underHips + s.freeIn * still;
-    this.thighR.rotation.z = -crossover * (0.55 - 0.45 * phase) + underHips - s.standIn * still;
+    this.thighL.rotation.z = crossover * (0.55 + 0.45 * phase) + underHips + s.freeIn * settled;
+    this.thighR.rotation.z = -crossover * (0.55 - 0.45 * phase) + underHips - s.standIn * settled;
     // A knee bends while its leg travels forwards; the heel kicks up just after the foot leaves the floor behind;
     // the knee stays bent as the leg comes out in front, and gives under the weight at mid-stance.
     const knee = (forwards: number, ahead: number) => {
@@ -918,7 +931,7 @@ export class Body {
         Math.max(0, -forwards) * g("stanceKnee")
       ) * swing;
     };
-    this.shinL.rotation.x = lerp(knee(lift, phase) - s.freeKnee * still, -this.sitKnee, sit);
+    this.shinL.rotation.x = lerp(knee(lift, phase) - s.freeKnee * settled, -this.sitKnee, sit);
     this.shinR.rotation.x = lerp(knee(-lift, -phase), -this.sitKnee, sit);
 
     // Floating: the hips simply bob. Planted: they sit as low as the longer leg reaches, so that foot stays
@@ -940,19 +953,22 @@ export class Body {
     const hanging = hang ? still * (1 - carrying) : 0;
     const hangForward = hang ? hang.forward * hanging : 0;
     const hangOut = hang ? hang.out * hanging : 0;
-    this.upperArmL.rotation.x = raised(-phase * armSwing + armBias + s.freeArm * still - chestLean + hangForward);
-    this.upperArmR.rotation.x = raised(phase * armSwing + armBias + s.standArm * still - chestLean + hangForward);
+    this.upperArmL.rotation.x = raised(-phase * armSwing + armBias + s.freeArm * settled - chestLean + hangForward);
+    this.upperArmR.rotation.x = raised(phase * armSwing + armBias + s.standArm * settled - chestLean + hangForward);
     // Loose arms hang straight down while the body above the hips tilts.
     const dangle = -(this.hips.rotation.z + this.torso.rotation.z) * g("armDangle") * moving;
     // Positive Z swings the left arm in and the right arm out. Running, each hand swings in across the body as it
     // comes up in front, with the chest turning the same way.
     const across = RUN_ARM_ACROSS * flight;
-    this.upperArmL.rotation.z = dangle - this.armSpread - hangOut + Math.max(0, -phase) * across;
-    this.upperArmR.rotation.z = dangle + this.armSpread + hangOut - Math.max(0, phase) * across;
+    // Her arms hang behind her bust, standing still, so only her build's share of the spread holds there (Posture's
+    // standSpread); swinging forwards walking, they clear the whole of it.
+    const spread = lerp(this.armSpread, this.posture.standSpread ?? this.armSpread, hanging);
+    this.upperArmL.rotation.z = dangle - spread - hangOut + Math.max(0, -phase) * across;
+    this.upperArmR.rotation.z = dangle + spread + hangOut - Math.max(0, phase) * across;
     const hangElbow = hang ? hang.elbow * hanging : 0;
     const elbow = (ahead: number, resting: number) => {
       const swinging =
-        ELBOW_REST + hangElbow + (g("elbow") + Math.max(0, ahead) * g("elbowFlick")) * swing + resting * still;
+        ELBOW_REST + hangElbow + (g("elbow") + Math.max(0, ahead) * g("elbowFlick")) * swing + resting * settled;
       return lerp(lerp(swinging, CARRY_ELBOW, carrying), SIT_ELBOW, sit);
     };
     this.foreArmL.rotation.x = elbow(-phase, s.elbow);

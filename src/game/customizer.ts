@@ -272,7 +272,7 @@ export class Customizer {
         }
       }
       group = def.group;
-      rows.push(def.stops ? this.stopsRow(def.id, def.label, def.stops) : this.sliderRow(def.id, def.label));
+      rows.push(def.stops ? this.stopsRow(def.id, def.label, def.stops) : this.sliderRow(def.id, def.label, def.oneWay));
       // Her pubic hair's colour sits with its style and size, as well as with her hair's on the hair tab.
       const pubes = def.group === "Pubic hair" ? options.colors.find((color) => color.id === "pubes") : undefined;
       if (pubes && tab !== pubes.tab) rows.push(this.colorRow(pubes.id, "Colour", pubes.palette));
@@ -472,13 +472,14 @@ export class Customizer {
     return row;
   }
 
-  private sliderRow(id: string, label: string): HTMLElement {
+  /** `oneWay`: from 0 to the top only (a morph with no minus side). */
+  private sliderRow(id: string, label: string, oneWay = false): HTMLElement {
     const row = make("label", "row slider");
     const name = make("span", "name", label);
     const value = make("output");
     const input = make("input");
     input.type = "range";
-    input.min = String(-SLIDER_STEPS);
+    input.min = String(oneWay ? 0 : -SLIDER_STEPS);
     input.max = String(SLIDER_STEPS);
     input.step = "1";
     const set = (steps: number) => {

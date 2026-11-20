@@ -1,4 +1,4 @@
-import { BufferAttribute, Color, Material, Matrix3, Matrix4, MeshLambertMaterial, Object3D, Quaternion, SkinnedMesh, Texture, Vector3 } from "three";
+import { BufferAttribute, Color, Material, Matrix3, Matrix4, Mesh, MeshLambertMaterial, Object3D, Quaternion, SkinnedMesh, Texture, Vector3 } from "three";
 import {
   DISC_MATERIAL, NIPPLE_TYPES, nippleProfile, readDiscs, shapeDisc, skinUnder, tentHeight, type Disc, type NippleType,
 } from "./nipples";
@@ -212,6 +212,13 @@ export interface SliderDef {
    * entirely and 1 gives all of it.
    */
   rest?: number;
+  /**
+   * His physique: the slider sets the morph targets "<morph>_p" (at +1) and "<morph>_n" (at -1), MPFB shape keys
+   * baked onto his skin and everything he wears (tools/blender/mpfb_male), on every mesh of his that has them.
+   */
+  morph?: string;
+  /** Goes from 0 to 1 only (a morph with no "_n" side: age, heritage). */
+  oneWay?: boolean;
 }
 
 /** How many steps above `zero` make a value of 1: up to `full` if given, else the last step. */
@@ -477,9 +484,9 @@ const lumbar = (depth: number): BoneTerm[] =>
     back: [0, 0.03],
   }));
 
-const SKIN_TONES = ["#f6d5be", "#eab594", "#dba07f", "#c68a64", "#a86f4c", "#8a5536", "#6b3f27", "#4a2a1a"];
-const HAIR_COLORS = ["#130f0f", "#3b2416", "#6b4226", "#a0663a", "#8c2f1c", "#c9a066", "#e3cf9c", "#9a948a", "#e8e4dc"];
-const EYE_COLORS = ["#0a0807", "#192126", "#3a2416", "#5b8ead", "#3d6e3f", "#7a5a2c", "#6a6a78"];
+export const SKIN_TONES = ["#f6d5be", "#eab594", "#dba07f", "#c68a64", "#a86f4c", "#8a5536", "#6b3f27", "#4a2a1a"];
+export const HAIR_COLORS = ["#130f0f", "#3b2416", "#6b4226", "#a0663a", "#8c2f1c", "#c9a066", "#e3cf9c", "#9a948a", "#e8e4dc"];
+export const EYE_COLORS = ["#0a0807", "#192126", "#3a2416", "#5b8ead", "#3d6e3f", "#7a5a2c", "#6a6a78"];
 /** Her irises (anime eyes): the brown she's built with first, the rest as everyone's, then violet, red and gold. */
 const HER_EYE_COLORS = ["#73452b", ...EYE_COLORS, "#7a4a9e", "#a8343a", "#c7953a"];
 const LIP_COLORS = ["#cc706d", "#e59993", "#d88a7a", "#b04a52", "#8c3a3a", "#9e6554"];
@@ -819,37 +826,38 @@ const BUST_SHAPES: BustShape[] = [
   { id: "slender", label: "Slender", terms: [{ bone: "Bust", grow: [-0.3, 0.3, 0.15], lobes: BREASTS }] },
 ];
 
+// His physique and face are MPFB shape keys (morph targets) on his skin and on everything he wears, so the clothes
+// follow (tools/blender/mpfb_male/build_mpfb_male.py, PHYSIQUE); his height, legs and head size are still bones.
+const morph = (id: string, label: string, tab: SliderDef["tab"], group: string, extra: Partial<SliderDef> = {}): SliderDef => ({
+  id, label, tab, group, terms: [], morph: id, ...extra,
+});
 const MALE_SLIDERS: SliderDef[] = [
   { id: "height", label: "Height", tab: "body", height: 0.06, terms: [] },
-  {
-    id: "build", label: "Build", tab: "body", terms: [
-      ...terms(["Torso"], [0.1, 0, 0.1]),
-      ...terms(["Hips"], [0.08, 0, 0.08]),
-      ...terms(both("Thigh"), [0.15, 0, 0.15]),
-      ...terms(both("Shin"), [0.1, 0, 0.1], { fade: [0, -0.35] }),
-      ...terms(both("UpperArm"), [0.15, 0, 0.15]),
-      ...terms(both("ForeArm"), [0.12, 0, 0.12]),
-      ...terms(HAND_BONES, [0.12, 0, 0.12]),
-    ],
-  },
-  { id: "shoulders", label: "Shoulders", tab: "body", terms: terms(["Torso"], [0.12, 0, 0], { fade: [0.28, 0.1] }) },
-  { id: "chest", label: "Chest", tab: "body", terms: terms(["Torso"], [0.05, 0, 0.14], { fade: [0.25, 0.08] }) },
-  { id: "waist", label: "Waist", tab: "body", terms: terms(["Torso"], [0.15, 0, 0.12], { fade: [0.04, 0.2] }) },
-  { id: "hips", label: "Hips", tab: "body", terms: terms(["Hips"], [0.12, 0, 0.1]) },
   {
     id: "legs", label: "Leg length", tab: "body", terms: [
       ...terms(both("Thigh"), [0, 0.1, 0], { span: [-0.42, 0] }),
       ...terms(both("Shin"), [0, 0.1, 0], { span: [-0.46, 0] }),
     ],
   },
-  { id: "thighs", label: "Thighs", tab: "body", terms: terms(both("Thigh"), [0.18, 0, 0.18]) },
-  {
-    id: "arms", label: "Arms", tab: "body", terms: [
-      ...terms(both("UpperArm"), [0.18, 0, 0.18]),
-      ...terms(both("ForeArm"), [0.15, 0, 0.15]),
-      ...terms(HAND_BONES, [0.15, 0, 0.15]),
-    ],
-  },
+  morph("muscle", "Muscle", "body", "Physique"),
+  morph("fat", "Weight", "body", "Physique"),
+  morph("age", "Age", "body", "Physique", { oneWay: true, roll: 0.5 }),
+  morph("proportions", "Proportions", "body", "Physique"),
+  morph("belly", "Belly", "body", "Physique"),
+  morph("pecs", "Chest", "body", "Physique"),
+  morph("shoulderWidth", "Shoulders", "body", "Physique"),
+  morph("african", "African", "face", "Heritage", { oneWay: true, roll: 0 }),
+  morph("asian", "Asian", "face", "Heritage", { oneWay: true, roll: 0 }),
+  morph("caucasian", "European", "face", "Heritage", { oneWay: true, roll: 0 }),
+  { id: "head", label: "Head size", tab: "face", group: "Face", terms: terms(["Head"], [0.12, 0.12, 0.12]) },
+  morph("headShape", "Head shape", "face", "Face"),
+  morph("jaw", "Jaw", "face", "Face"),
+  morph("chin", "Chin", "face", "Face"),
+  morph("cheeks", "Cheekbones", "face", "Face"),
+  morph("brow", "Brow", "face", "Face"),
+  morph("noseSize", "Nose size", "face", "Face"),
+  morph("noseShape", "Nose bridge", "face", "Face"),
+  morph("neck", "Neck", "face", "Face"),
   // His penis and scrotum change no bones: the dresser shapes their tube and sack from these and the type (see
   // penis.ts).
   { id: "penisLength", label: "Length", tab: "body", group: "Penis", terms: [] },
@@ -858,9 +866,6 @@ const MALE_SLIDERS: SliderDef[] = [
   { id: "penisSkin", label: "Foreskin", tab: "body", group: "Penis", terms: [] },
   { id: "ballsSize", label: "Size", tab: "body", group: "Testicles", terms: [] },
   { id: "ballsHang", label: "Hang", tab: "body", group: "Testicles", terms: [] },
-  { id: "head", label: "Head size", tab: "face", terms: terms(["Head"], [0.12, 0.12, 0.12]) },
-  { id: "faceWidth", label: "Face width", tab: "face", terms: terms(["Head"], [0.12, 0, 0.04]) },
-  { id: "faceLength", label: "Face length", tab: "face", terms: terms(["Head"], [0, 0.1, 0]) },
   // His hair is a short crop on top of the head, starting about 0.13 above the neck joint.
   {
     // His torso's joint is 0.44 below his head's, for long hair lying on his back.
@@ -1528,7 +1533,7 @@ const paints = new Map<string, MeshLambertMaterial>();
  * wrinkles), not a flat colour. Recoloured,
  * they keep their texture, tinted so its average lands on the new colour; the rest turn one flat colour.
  */
-const PAINTED_MAPS = /^(T_skin_f|T_penis|T_glans|T_scrotum)$/;
+const PAINTED_MAPS = /^(T_skin_f|T_penis|T_glans|T_scrotum|T_eye_iris)$/;
 
 /** A material that shows `color` on average (linear): flat, or `original`'s painted texture tinted to it. */
 function paint(original: Material, color: Color): MeshLambertMaterial {
@@ -3385,7 +3390,9 @@ const unbind = new Matrix4();
  */
 const PUBIC_OVER_VULVA = 0.0004;
 /** How near his penis's root a piece of clothing has to come to cover his groin. */
-const GROIN_REACH = 0.035;
+// 7 cm since his MPFB skin (2026-11-20): his low-poly trousers' corners stand further off its fuller pubis, and off
+// the bulge they're built to clear (tools/blender/mpfb_male/mpfb_swap.py, "bulge").
+const GROIN_REACH = 0.07;
 /** Her vulva's and anus's meshes, and his penis's, which only show while bare there; guests never show them. */
 const PRIVATE_MATERIALS: readonly string[] = [
   VULVA_MATERIAL, LABIA_MATERIAL, CANAL_MATERIAL, ANUS_MATERIAL, ANUS_SKIN_MATERIAL, PENIS_MATERIAL, GLANS_MATERIAL, SCROTUM_MATERIAL,
@@ -3522,6 +3529,8 @@ export class Dresser {
     slots: MeshSlot[];
     patch: VulvaPatch;
     riders: Map<MeshSlot, { riders: VulvaRiders; over: number; rigid: boolean }>;
+    /** Sculpted by hand (the model says so): kept as it is, the game's shaping laid over it as a change. */
+    sculpted: boolean;
   } | null = null;
   /** The clothes near each piercing, which hide it while any of them is on. */
   private readonly jewelCovers = new Map<MeshSlot, MeshSlot[]>();
@@ -3813,7 +3822,11 @@ export class Dresser {
         // Her pubic hair lies under the grid as built; it rises clear over it, so a full bush still covers her.
         if (found) riders.set(slot, { riders: found, over: pubic ? PUBIC_OVER_VULVA : 0, rigid });
       }
-      this.vulva = { slots: vulvaSlots, patch, riders };
+      // A vulva the user sculpted by hand (the model's Female_Body marked "vulva_sculpted"): the game keeps her shape
+      // as it is and lays only its changes from its own rest shape over it (shapeVulva).
+      let sculpted = false;
+      for (let o: Object3D | null = vulvaSlots[0].mesh; o; o = o.parent) if (o.userData?.vulva_sculpted) sculpted = true;
+      this.vulva = { slots: vulvaSlots, patch, riders, sculpted };
     }
     const anusUvs = anusSlots.map((slot) => slot.mesh.geometry.getAttribute("uv"));
     const anus = anusSlots.length === 2 && anusUvs.every(Boolean) ? readAnus(anusUvs) : null;
@@ -4203,6 +4216,7 @@ export class Dresser {
     };
     if (this.pull) this.repull(this.pullSlots());
     this.refreshFace();
+    applyPhysique(this.bodyRoot, this.body, look.sliders);
 
     for (const rest of this.bones) {
       const delta = shift.get(rest)!;
@@ -4656,6 +4670,12 @@ export class Dresser {
   }
 
   /** Her vulva's shape from her look and how aroused she is; null for a body without one. */
+  /** The game's own vulva at rest, which a hand-sculpted one is measured from: the first type, sliders at 0, calm. */
+  private vulvaRestShape(): VulvaShape | null {
+    const type = LOOK_OPTIONS[this.body].vulva[0];
+    return type ? vulvaShape(type, 0, 0, 0, 0, 0, 0) : null;
+  }
+
   private vulvaShapeNow(): VulvaShape | null {
     const types = LOOK_OPTIONS[this.body].vulva;
     const type = types.find((t) => t.id === this.look.vulva) ?? types[0];
@@ -4796,14 +4816,30 @@ export class Dresser {
     const shape = this.vulvaShown ? this.vulvaShapeNow() : null;
     const out = vulva.slots.map((slot) => new Float32Array(slot.bind.length));
     const frame = shapeVulva(vulva.patch, skin, shape, out);
+    // Hand-sculpted: her shape as sculpted, plus the game's change from its own rest shape (the first type, every
+    // slider at 0, closed and calm), so at rest she is exactly as sculpted and arousal, opening, type and sliders
+    // still work on her.
+    const restShape = vulva.sculpted && shape ? this.vulvaRestShape() : null;
+    const rest = restShape ? vulva.slots.map((slot) => new Float32Array(slot.bind.length)) : null;
+    const restFrame = restShape && rest ? shapeVulva(vulva.patch, skin, restShape, rest) : null;
     vulva.slots.forEach((slot, m) => {
       const total = totals[this.slots.indexOf(slot)];
-      for (let i = 0; i < slot.bind.length; i++) total[i] = out[m][i] - slot.bind[i];
+      if (vulva.sculpted) {
+        const from = skin[m];
+        for (let i = 0; i < slot.bind.length; i++) total[i] = from[i] - slot.bind[i] + (rest ? out[m][i] - rest[m][i] : 0);
+      } else {
+        for (let i = 0; i < slot.bind.length; i++) total[i] = out[m][i] - slot.bind[i];
+      }
     });
     for (const [slot, { riders, over, rigid }] of vulva.riders) {
       const own = totals[this.slots.indexOf(slot)];
       const before = flat.get(slot)!;
       const rise = rideVulva(riders, frame, shape, over);
+      if (vulva.sculpted) {
+        // Riding her sculpted shape as it is: only the change from rest lifts them.
+        const still = restShape && restFrame ? rideVulva(riders, restFrame, restShape, over) : rise;
+        for (let k = 0; k < rise.length; k++) rise[k] -= still[k];
+      }
       // A ring through her hood rises as one, by the shape's rise under it on average, so it keeps its round.
       if (rigid && riders.verts.length) {
         const mean = [0, 0, 0];
@@ -5451,12 +5487,31 @@ export interface Posture {
   arch: number;
   /** How far her ribcage leans back over her waist (positive) or rounds forwards (negative): the Upper back arch. */
   chest: number;
+  /**
+   * How far her arms hang out from her sides standing still, in radians (standSpreadFor); left out, they hang out by
+   * the whole of armSpreadFor.
+   */
+  standSpread?: number;
 }
 export const UPRIGHT: Posture = { arch: 0, chest: 0 };
 
 export function postureFor(sliders: Record<string, number>): Posture {
   const chest = clampSlider(sliders.upperArch);
-  return { arch: clampSlider(sliders.arch) * ARCH_RANGE, chest: chest * (chest >= 0 ? CHEST_BACK : CHEST_ROUND) };
+  return {
+    arch: clampSlider(sliders.arch) * ARCH_RANGE, chest: chest * (chest >= 0 ? CHEST_BACK : CHEST_ROUND),
+    standSpread: standSpreadFor(sliders),
+  };
+}
+
+/**
+ * How far the arms hang out from the sides standing still, in radians: armSpreadFor without the bust's share.
+ * Standing, her arms hang as her model is built (real_heroin's own stance, 21 degrees behind her), behind her bust,
+ * which never reaches them, even at Z (her upper arm stays 17 mm off her side; spreading them only skins her side in
+ * closer: measured 2026-11-20, ref/_bridge/idle). The rest of her build still pushes them out, as her hands hang by
+ * her hips and rear. Walking, her arms swing forwards past her bust and take armSpreadFor whole.
+ */
+export function standSpreadFor(sliders: Record<string, number>): number {
+  return armSpreadFor({ ...sliders, bust: 0 });
 }
 const ARCH_RANGE = 0.15;
 /** The Upper back arch at its ends: leaning back 10 degrees at 1, rounding forwards 7 at -1. */
@@ -5468,6 +5523,30 @@ const ARM_SPREAD: [string, number][] = [
   // arms swing out about 17 degrees to clear it.
   ["bust", 0.3], ["hips", 0.06], ["build", 0.05], ["rear", 0.07], ["rearProjection", 0.05], ["rearWidth", 0.05], ["thighs", 0.03],
 ];
+
+/**
+ * Sets the physique morphs (SliderDef.morph) on every mesh under `root` that has them, from a look's sliders: the
+ * GPU adds them on top of whatever the Dresser shaped. Guests share their meshes but not these weights, so each
+ * can have his own body.
+ */
+export function applyPhysique(root: Object3D, body: BodyName, sliders: Record<string, number>): void {
+  const defs = LOOK_OPTIONS[body].sliders.filter((def) => def.morph);
+  if (!defs.length) return;
+  root.traverse((object) => {
+    const mesh = object as Mesh;
+    const names = mesh.morphTargetDictionary;
+    const weights = mesh.morphTargetInfluences;
+    if (!names || !weights) return;
+    weights.fill(0);
+    for (const def of defs) {
+      const value = clampSlider(sliders[def.id]);
+      const plus = names[`${def.morph}_p`];
+      const minus = names[`${def.morph}_n`];
+      if (value > 0 && plus !== undefined) weights[plus] = value;
+      else if (value < 0 && !def.oneWay && minus !== undefined) weights[minus] = -value;
+    }
+  });
+}
 
 /** A random look: every slider somewhere in the middle of its range, colours from the swatches. */
 export function randomLook(body: BodyName, random: () => number = Math.random): Look {

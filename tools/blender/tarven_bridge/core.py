@@ -42,6 +42,22 @@ def scratch_dir():
     return path
 
 
+def relink_textures():
+    """Points any texture whose file isn't where the master says at art/textures/<its file>, where the build keeps
+    them (a texture brought in from another .blend resolves its relative path against the wrong folder)."""
+    fixed = 0
+    folder = os.path.join(repo_root(), "art", "textures")
+    for image in bpy.data.images:
+        if image.source != "FILE" or image.packed_file or os.path.exists(bpy.path.abspath(image.filepath)):
+            continue
+        candidate = os.path.join(folder, os.path.basename(bpy.path.abspath(image.filepath)))
+        if os.path.exists(candidate):
+            image.filepath = bpy.path.relpath(candidate) if bpy.data.filepath else candidate
+            image.reload()
+            fixed += 1
+    return fixed
+
+
 def build_world():
     """build_world.py as a module (its main() only runs as a script), for its export settings and helpers."""
     tools = os.path.join(repo_root(), "tools", "blender")
@@ -63,6 +79,12 @@ def export_master(out_path=None):
     place in one step, so the game's reload never reads a half-written model. Returns a short summary dict."""
     out_path = out_path or game_glb_path()
     coll = master_collection()
+    relink_textures()
+    missing = [i.name for i in bpy.data.images if i.source == "FILE" and not i.packed_file and i.users
+               and not os.path.exists(bpy.path.abspath(i.filepath))]
+    if missing:
+        # An export with them missing drops them from the GLB: the game would show her untextured.
+        raise RuntimeError(f"{len(missing)} textures not found (e.g. {missing[:3]}): fix their paths before sending")
     context = bpy.context
     # The exporter needs object mode; put back what the user had afterwards.
     active = context.view_layer.objects.active
@@ -84,7 +106,7 @@ def export_master(out_path=None):
         paint.save_all()
         with paint.shifted_for_export():
             build_world().export_collection(coll, tmp)
-        os.replace(tmp, out_path)
+        _put_in_place(tmp, out_path)
         painted = paint.send_pictures(out_path)
     finally:
         for o, was_hidden, was_off, was_locked in hidden:
@@ -103,6 +125,20 @@ def export_master(out_path=None):
             "kb": round(os.path.getsize(out_path) / 1024), "painted": painted}
 
 
+def _put_in_place(tmp, out_path):
+    """Moves the finished export over the old file in one step; Windows refuses that while something has the old file
+    open (the dev server serving it), so it tries again and then copies over it instead."""
+    import shutil
+    for _ in range(10):
+        try:
+            os.replace(tmp, out_path)
+            return
+        except PermissionError:
+            time.sleep(0.5)
+    shutil.copyfile(tmp, out_path)
+    os.remove(tmp)
+
+
 def _paint():
     try:
         from . import paint
@@ -114,3 +150,31 @@ def _paint():
 # context.mode names back to mode_set's.
 _MODE_FOR = {"EDIT_MESH": "EDIT", "SCULPT": "SCULPT", "PAINT_TEXTURE": "TEXTURE_PAINT", "PAINT_VERTEX": "VERTEX_PAINT",
              "PAINT_WEIGHT": "WEIGHT_PAINT", "POSE": "POSE", "EDIT_ARMATURE": "EDIT"}
+
+
+def fit_clothes(body, cloth, stains=()):
+    """Her clothes made to sit on her skin as it is in the master (her hand sculpt is fuller than the build's skin
+    they were fitted to): her legwear split three ways each way (a band was two rings of 12 points, and her sculpted
+    thighs, knees and calves bulged out between them), then every corner inside her skin or nearer it than the gap
+    put back out, reaching further than the build does (6 cm, up to 5 cm out), twice."""
+    import bmesh
+    bw = build_world()
+    for obj in cloth:
+        names = [s.material.name if s.material else "" for s in obj.material_slots]
+        # Her hair is as coarse (a few hundred points), and her head as much fuller: all of it is split too.
+        hair = obj.name.startswith("Female_Hair")
+        legwear = {i for i, n in enumerate(names) if hair or n.startswith("T_hose")}
+        if not legwear:
+            continue
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        edges = {e for f in bm.faces if f.material_index in legwear for e in f.edges}
+        bmesh.ops.subdivide_edges(bm, edges=list(edges), cuts=2, use_grid_fill=True)
+        bm.to_mesh(obj.data)
+        bm.free()
+        obj.data.update()
+    deep = dict(bw.CLEAR, near=0.06, most=0.05)
+    for _ in range(2):
+        bw.keep_clothes_clear(body, list(cloth), deep)
+    if stains:
+        bw.keep_clothes_clear(body, list(stains), dict(deep, gap=bw.CLEAR["gap"] + bw.STAIN_LIFT))

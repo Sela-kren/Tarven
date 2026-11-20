@@ -670,6 +670,9 @@ MALE = {
     "hat_z": 1.8,  # where a hat's crown sits, just above the brow
     "hair_outlines": HAIR_SHORT,
     "penis": True,  # a tube and a sack at his groin the game shapes into his penis and scrotum
+    # His skin is MPFB's (art/male_mpfb.blend, tools/blender/mpfb_male): the ring-built body below only carries his
+    # clothes, shoes and hair onto it. Rebuild the cache with build_mpfb_male.py (needs MPFB, so not --factory-startup).
+    "mpfb_skin": True,
     "skinned": True, "quads": True, "plated": True, "skin": "skin", "pants": "trousers", "belt": "leather",
     "sleeve_rows": 7, "leg_drop": {}, "trunk_blend": (1.1, 0.08),
     "bare_profile": [(0.89, 0.173, 0.1, 0.125), (0.976, 0.16, 0.1, 0.13), (1.04, 0.14, 0.1, 0.12), (1.125, 0.13, 0.095, 0.1),
@@ -708,10 +711,10 @@ FEMALE = {
     # "modern": the original white tee, red track pants and white sneakers, kept for later.
     "outfit": "medieval",
     "jiggle": True,  # spring bones for the bust, belly, glutes and skirt hem
-    "heroic": False,  # OFF 2026-11-17: the user chose the old body (pre-933caa0) for the game. The stylised-heroine proportions (HEROIC, see heroic_reshape), applied to the finished rig
+    "heroic": True,  # ON again 2026-11-20 with real_heroin (its swap runs inside it). The stylised-heroine proportions (HEROIC, see heroic_reshape), applied to the finished rig
     "study_fit": True,  # then fitted to the measured reference heroines (STUDY_FIT, see study_fit, MODEL_STUDY.md)
     "sculpt_fit": False,  # (the old skin pulled onto the sculpt's forms, tools/blender/sculpt_fit.py; superseded)
-    "real_heroin": False,  # OFF 2026-11-17: the game keeps the old Female body; real_heroin is for later (panels etc.). Then real_heroin, the sculpted heroine, swapped in as her skin (real_heroin_swap.py)
+    "real_heroin": True,  # ON 2026-11-20 (the user): real_heroin, the sculpted heroine, swapped in as her skin (real_heroin_swap.py); the master's skin is then the user's hand sculpt (tools/blender/tarven_bridge/swap_sculpt.py)
     "subdivide": 1,  # her skin and clothes split this many times before the details go on (see subdivide_layers)
     "landmarks": True,  # her anatomy pressed into the skin and clothes (LANDMARKS, see sculpt_landmarks)
     "hand_detail": True,  # a palm, three-jointed fingers and a thumb with nails (detailed_hand)
@@ -9260,7 +9263,10 @@ def skin_character(c, m, spec, root):
     if spec.get("heroic"):
         # The look sliders (src/game/appearance.ts) were worked out on her as built, before the reshaping below:
         # every point and joint keeps where it was then, so the game shapes her there and carries the change over.
-        keep_slider_rest(rig, [o for o in c.objects if o.type == "MESH"])
+        # Not with real_heroin: her skin is joined in after this, with no rest of its own (an empty one at the origin
+        # threw her to the floor at a big cup), so the game shapes her as she is, about her own joints.
+        if not spec.get("real_heroin"):
+            keep_slider_rest(rig, [o for o in c.objects if o.type == "MESH"])
         heroic_reshape(HEROIC, rig, [o for o in c.objects if o.type == "MESH"])
         if spec.get("landmarks"):
             # Once more after the reshaping, which can bring them a hair closer; the stains on the clothes kept
@@ -9304,8 +9310,19 @@ def skin_character(c, m, spec, root):
             keep_clothes_clear(body_obj, (cloth_obj, *outfits))
             stains = [o for o in c.objects if o.type == "MESH" and "_CumOn" in o.name]
             keep_clothes_clear(body_obj, stains, dict(CLEAR, gap=CLEAR["gap"] + STAIN_LIFT))
-        slider_joint_shifts(rig)
+        if not spec.get("real_heroin"):
+            slider_joint_shifts(rig)
     else:
+        if spec.get("mpfb_skin"):
+            # His MPFB skin (art/male_mpfb.blend, tools/blender/mpfb_male) swapped in for the ring-built one: the old
+            # skin carries his clothes, shoes and hair onto it, the bones move to its joints, his penis is laid on
+            # again, and his physique keys are carried onto everything he wears (tools/blender/mpfb_male/mpfb_swap.py).
+            import sys
+            sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "mpfb_male"))
+            import mpfb_swap
+            mpfb_swap.swap_in(rig, body_obj, [o for o in c.objects if o.type == "MESH"], name,
+                              lambda body: add_penis(m, name, body),
+                              clear=lambda: keep_clothes_clear(body_obj, (cloth_obj, *outfits, shoes)))
         # Without the reshaping, still the smooth shading it gives (see heroic_reshape): flat faces split every point
         # per face in the export, three times the file, and the look is the painted, smooth one either way.
         for obj in (o for o in c.objects if o.type == "MESH"):

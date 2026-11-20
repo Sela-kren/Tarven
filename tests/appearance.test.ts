@@ -63,6 +63,8 @@ import {
   LOOK_OPTIONS,
   nearestStop,
   newLook,
+  postureFor,
+  standSpreadFor,
   startLook,
   startSliders,
   outfitOf,
@@ -618,8 +620,8 @@ describe("keeping looks", () => {
   });
 
   it("reads both siblings, with a missing one as built", () => {
-    const looks = readLooks({ Male: { sliders: { chest: 0.4 }, colors: {}, hidden: [] } });
-    expect(looks!.Male.sliders).toEqual({ chest: 0.4 });
+    const looks = readLooks({ Male: { sliders: { pecs: 0.4 }, colors: {}, hidden: [] } });
+    expect(looks!.Male.sliders).toEqual({ pecs: 0.4 });
     expect(looks!.Female).toEqual(startLook("Female"));
     expect(readLooks("nope")).toBeNull();
   });
@@ -897,6 +899,12 @@ describe("cup sizes", () => {
 
   it("spreads the arms for a fuller bust", () => {
     expect(armSpreadFor({ bust: 1 })).toBeGreaterThan(armSpreadFor({}));
+  });
+
+  it("standing still, spreads the arms for her build but not her bust, which they hang behind", () => {
+    expect(standSpreadFor({ bust: CUP_TOP })).toBe(standSpreadFor({}));
+    expect(standSpreadFor({ bust: 1, hips: 1 })).toBeCloseTo(armSpreadFor({ hips: 1 }), 6);
+    expect(postureFor({ bust: 1, rear: 1 }).standSpread).toBeGreaterThan(0);
   });
 });
 

@@ -1,7 +1,7 @@
 # Last Call at Tarven: Story
 
 > The story design document. It replaces the story parts of GAME_CONCEPT.md (sections 1, 8.2, 9 and 11) once it is approved.
-> **Draft 2.26, 20 Nov 2026.** See the changelog at the bottom. **New in 2.26:** the five houses are a ladder. Each is one step further along in the trade, and each beaten boss warns her what the next house has that she doesn't, which is what the win unlocks (section 7, "The ladder"). **New in 2.25:** each beaten boss shows her how the feature they unlocked works, in a short hands-on guide (section 7, "The boss shows her how"). **New in 2.24:** rivals are bosses. Each one's climb has 3 to 5 **stages**: at each fan mark the boss comes in for a comic scene and sends a mini-boss to brawl her that night, and the last stage is the boss's own fight. Beating a boss is what **unlocks the next feature** (staff, the feed, the garrison, the rooms and the guild, the full house). The acts still run on fans as before. The fan targets are about 5× longer (section 7).
+> **Draft 2.27, 20 Nov 2026.** See the changelog at the bottom. **New in 2.27:** the debt is much bigger: **750 gold, doubled to 1,500** at Pell's dawn, collected in growing parts of 300 / 500 / 700 (section 7). A lost boss stage costs far more fans: a tenth of the house's own count (30 at Hollin up to 250 at Jory). **New in 2.26:** the five houses are a ladder. Each is one step further along in the trade, and each beaten boss warns her what the next house has that she doesn't, which is what the win unlocks (section 7, "The ladder"). **New in 2.25:** each beaten boss shows her how the feature they unlocked works, in a short hands-on guide (section 7, "The boss shows her how"). **New in 2.24:** rivals are bosses. Each one's climb has 3 to 5 **stages**: at each fan mark the boss comes in for a comic scene and sends a mini-boss to brawl her that night, and the last stage is the boss's own fight. Beating a boss is what **unlocks the next feature** (staff, the feed, the garrison, the rooms and the guild, the full house). The acts still run on fans as before. The fan targets are about 5× longer (section 7).
 
 **House rules stay in force.** Tarven is an adult game, and it's written **raw and hard**, as explicit as Karryn's Prison: cocks, cunts, cum and all of it, said plainly, by her, the guests and the room. Every character is an adult (18+), and the game says so. Consent is the player's switch (GAME_PATH.MD, the consent rule, which is the source of truth): with **Consent on** (the default) every touch asks first, Slap and Pull away always work, being too drunk blocks every yes, and a lost brawl only offers, with Stop always there. With **Consent off** it plays like Karryn's Prison: in a brawl their hands land and they tear her clothes off, at drink 8 the table can happen whether she's ready or not, a lost brawl just happens with no Stop, and easing the ache at night can draw someone in. Whatever the switch, **nothing ever happens to her while she's passed out**, and nobody roaring drunk takes her.
 
@@ -85,7 +85,7 @@ The order is reversed: Father leaves first, and the split follows. Both parents 
 
 **Underneath (why it matters):**
 
-- **The Baron doesn't want 150 gold. He wants the red book.** It proves twenty years of stolen toll silver, and the crown's auditor is coming this winter. The debt is only a lever to get into the tavern.
+- **The Baron doesn't want 750 gold. He wants the red book.** It proves twenty years of stolen toll silver, and the crown's auditor is coming this winter. The debt is only a lever to get into the tavern.
 - **The debt is forged.** Pell wrote the note after Wren died. Later, her letters show the handwriting doesn't match, which becomes a clue.
 - **Pell was in the house the night Wren died.** He didn't hurt her (she died in her sleep, smiling); he came to search for the book, and Oden saw him climbing out of the window in his nightshirt.
 - **Wren split the book instead of sending it to the crown,** because half the village is in it too. Exposing the Baron would ruin them as well.
@@ -215,7 +215,7 @@ The Act 1 finale (section 9) is the main plot choice inside Chapter 1, so it's t
 | Sheltered / Curious, Honest | *"You've your grandmother's chin. Not her nerve, I think."* | **"Get out of my house."** (Trust at half or more): the debt doubles anyway, Heat +2, Trust +2, sets `defiedPell`. By noon the village knows she threw the Baron's man out |
 | Sheltered / Curious, Shady or worse | *"You count like she did. Good. Then you can count to three hundred."* | none |
 | Willing / Known, Honest | *"Half the garrison has had a hand on you. Who'd take your word over the Baron's?"* | none. Her word counts for less, so in Act 3 the Known keeper needs the book itself as proof, not her testimony (a hook for later) |
-| Willing / Known, Shady or worse | *"Wren sold what men told her in bed. I hear you've the same ear."* | **"The room talks to me. You could have that instead."**: the debt stays at 150 and doesn't double, Corruption +10, Trust −1, and sets `pellsEar`. From then on, each collection is 50 gold and a name from her room (Corruption +3 and Informed +1 a name). A Ledger entry (victim: "the room") comes with the Ledger of her deeds (section 8) |
+| Willing / Known, Shady or worse | *"Wren sold what men told her in bed. I hear you've the same ear."* | **"The room talks to me. You could have that instead."**: the debt stays at 750 and doesn't double, Corruption +10, Trust −1, and sets `pellsEar`. From then on, each collection is half its gold and a name from her room (Corruption +3 and Informed +1 a name). A Ledger entry (victim: "the room") comes with the Ledger of her deeds (section 8) |
 
 Both gated choices use what's already there: debt, heat, trust, corruption and story flags. The four-way split makes the same night read as defiance, fear, shame or a deal, depending on who she's become.
 
@@ -434,7 +434,9 @@ The whole story, **Act 1 included**, is **measured in fans**. A beat fires at th
 
 **The debt is paid at beats, not by date.** Pell collects when a beat brings him to the bar (section 9 finale, then the Act 2 beats), so a slow player is never foreclosed just for taking their time.
 
-**She can pay it herself any time (built, 20 Nov 2026).** Whenever she has gold and isn't mid-fight, she can pay Pell 50, 100 or all she can (`tavern.ts` `payDebt`; for now from Settings › The Baron's debt, and the morning report says so). What she's behind on goes first, which clears In the Baron's Debt, and Pell's collections only take what's left, and stop once it's paid. Refusing Pell at dawn adds the second 150 on top of what's left, so anything paid before still counts. A promised book isn't paid off with gold: Pell keeps asking for it.
+**The debt is big (2.27).** Grandma's note says **750 gold**, and Pell's dawn doubles it to **1,500**. That's more than three of the pass rivals put together would cost to buy (400 / 300 / 200), so it's a weight she carries through the whole chapter, not a bill she clears in a week. It's collected in **three growing parts** that follow her income as the bosses fall: **300** at 1,200 fans (Pike's fight), **500** at 1,800 (Agnes's) and **700** at 2,500 (Jory's). Anything still owed after that is collected every 7 nights, **250** a time. Needs playtesting against real takings (open question 1d).
+
+**She can pay it herself any time (built, 20 Nov 2026).** Whenever she has gold and isn't mid-fight, she can pay Pell 50, 100 or all she can (`tavern.ts` `payDebt`; for now from Settings › The Baron's debt, and the morning report says so; 2.27: 100, 250 or all she can, to suit the bigger debt). What she's behind on goes first, which clears In the Baron's Debt, and Pell's collections only take what's left, and stop once it's paid. Refusing Pell at dawn adds the second 750 on top of what's left, so anything paid before still counts. A promised book isn't paid off with gold: Pell keeps asking for it.
 
 ### What nights do (small, never the driver)
 
@@ -550,7 +552,7 @@ Every house is beaten the same way, so the player learns it once on Hollin and k
 
 **3. The mini-boss brawl (that night).** The mini-boss walks in with the guests during service; a toast card names it (*"Hollin's war, stage 1 of 3: Wat and Will, the cider twins"*), the room clears a space, and it's a brawl with every brawl rule (and the consent rule, GAME_PATH.MD). She still serves and earns fans on the night.
 - **Mini-bosses are named and have a gimmick:** a foe or a pair with a prefix (`foeprefix.ts`), a few more hit points than a guest, one signature move or line, and a brag before and a sulk after. They get stronger stage by stage.
-- **Losing a stage** loses the night, not the war: the stage stays where it was, and the mini-boss comes back the next night to try again (*"Back for seconds, innkeeper?"*). She takes **Bruised** as for any lost brawl, the house poaches 2 walk-ins, and she loses 10 fans (they saw her go down). Won stages never reset, and nothing ends the run.
+- **Losing a stage** loses the night, not the war: the stage stays where it was, and the mini-boss comes back the next night to try again (*"Back for seconds, innkeeper?"*). She takes **Bruised** as for any lost brawl, the house poaches 2 walk-ins, and she loses **a tenth of the house's fans** (they saw her go down, and the boss makes sure the whole village hears): **30** in Hollin's war, **70** in Tansy's, **120** in Pike's, **180** in Agnes's and **250** in Jory's (2.27). A lost boss's own fight costs the same. Losing them can drop her back below the stage's mark, but the stage stays reached, so the rematch still comes the next night. Won stages never reset, and nothing ends the run.
 - **She can ask for a night off.** By day, from the Ledger: *"Not tonight."* The mini-boss waits a night, and the house sends its talk and poachers instead (the built rival moves).
 - **Stages go in order.** The next stage needs both its fan mark and the last stage won. Her fans keep counting past a stage she hasn't won; the next mark's scene simply waits until it is.
 - **Between stages** the house fights back on some nights, as built: poaching walk-ins, talk in the square, a hired troublemaker. The boss's lines turn up in the gossip.
@@ -681,12 +683,12 @@ Two tracks run side by side (section 7, "Two tracks"). **The story track** fires
 | 575 | | Tansy, stage 2: the gossip table | 5th |
 | 700 | | **Tansy's own fight, with Dobb the miller.** Won: the Bakehouse falls, **the feed** and the Lantern's road unlocked | 4th |
 | 825 / 950 / 1,075 | | Pike, stages 1 to 3: Nobb and Lurk, the drill squad, Corporal Wace | 4th |
-| 1,000 | **Pell at dawn** (the Act 1 finale). The debt doubles to 300 unless she promises the book | | 4th |
-| 1,200 | Pell collects the **first 100** | **Pike's own fight.** Won: the Watch Canteen falls, **the garrison** unlocked | 3rd |
+| 1,000 | **Pell at dawn** (the Act 1 finale). The debt doubles to 1,500 unless she promises the book | | 4th |
+| 1,200 | Pell collects the **first 300** | **Pike's own fight.** Won: the Watch Canteen falls, **the garrison** unlocked | 3rd |
 | 1,350 / 1,500 / 1,650 | | Agnes, stages 1 to 3: the porters, Quill, the Rook brothers | 3rd |
-| 1,800 | Pell collects the **second 100** | **Agnes's hired sword, Dame Ottilie.** Won: the Toll-Gate Inn falls, **the rooms and the guild** unlocked | 2nd |
+| 1,800 | Pell collects the **second part, 500** | **Agnes's hired sword, Dame Ottilie.** Won: the Toll-Gate Inn falls, **the rooms and the guild** unlocked | 2nd |
 | 1,950 / 2,100 / 2,250 / 2,375 | | Jory, stages 1 to 4: Clang and Dong, the river smugglers, Pell's men, the young lords | 2nd |
-| 2,500 | Pell collects the **last 100** and asks for the book again | **Jory and Brass.** Won: the Copper Bell falls, **the full house** unlocked. **First in Tarven.** Riders from the Gilded Stag hand out cards at the door: the pass has noticed her | 1st |
+| 2,500 | Pell collects the **last 700** and asks for the book again | **Jory and Brass.** Won: the Copper Bell falls, **the full house** unlocked. **First in Tarven.** Riders from the Gilded Stag hand out cards at the door: the pass has noticed her | 1st |
 
 Pell's collections go by fans, not by the bosses, so the debt keeps its pace even while a boss holds her up. If she promised Pell the book, he doesn't collect. He asks where it is instead, and his patience gets shorter each time.
 
@@ -857,12 +859,12 @@ These are woven into Chapter 1 with the first three village bosses (section 7, "
 
 The debt falls due here, at 1,000 fans, not on a set night. Pell comes in at dawn to collect, and names the real price:
 
-> *"Keep your hundred and fifty. The Baron wants the book your grandmother kept. Bring it to him and the debt is forgotten. Hide it, and the debt doubles."*
+> *"Keep your seven hundred and fifty. The Baron wants the book your grandmother kept. Bring it to him and the debt is forgotten. Hide it, and the debt doubles."*
 
 | She has | What happens |
 |---|---|
-| 150 gold or more | She can pay, and the Baron still wants the book. The debt doubles to 300 anyway unless she promises it |
-| Less than 150 | She promises the book (debt "forgotten" for now), or takes the doubled debt in instalments |
+| 750 gold or more | She can pay, and the Baron still wants the book. The debt doubles to 1,500 anyway unless she promises it |
+| Less than 750 | She promises the book (debt "forgotten" for now), or takes the doubled debt in instalments |
 
 Then she finds **Wren's first letter**, hidden in the hollow leg of the bar stool Wren always sat on:
 
@@ -941,7 +943,7 @@ Letters are the story's reward for playing the systems. Each one unlocks at a mi
 >
 > *(These are the built numbers from before 2.24: the code still starts Act 2 on the old marks (600 to 1,500). In the 2.24 design it comes after Chapter 1 ends at 2,500 fans, and the marks below are the old ones ×5, to be checked when we get there. Some of its beats may move into Tarven (Sabine's visit, Oden and the nightshirt).)*
 
-The debt is 300, paid in three instalments of 100 that Pell collects in Chapter 1 (at the Watch Canteen, the Toll-Gate Inn and the Copper Bell), or "forgotten" if she promises Pell the book. Missing one carries the shortfall into the next instalment and puts her in the Baron's debt (a debuff); it never ends the run. The rivals open their doors, each a boss with its war (section 7). Each beat carries a rumour about one piece of the book, won one of the four ways (section 6). Upstairs rooms are already open (from Agnes, Chapter 1). Nights between beats are free service nights, with the usual rumours and table talk.
+The debt is 1,500, paid in three growing instalments (300, 500 and 700) that Pell collects in Chapter 1 (at the Watch Canteen, the Toll-Gate Inn and the Copper Bell), or "forgotten" if she promises Pell the book. Missing one carries the shortfall into the next instalment and puts her in the Baron's debt (a debuff); it never ends the run. The rivals open their doors, each a boss with its war (section 7). Each beat carries a rumour about one piece of the book, won one of the four ways (section 6). Upstairs rooms are already open (from Agnes, Chapter 1). Nights between beats are free service nights, with the usual rumours and table talk.
 
 | Fans | Beat | What happens |
 |---|---|---|
@@ -1208,7 +1210,9 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 12. **Fans and rivals:** a fans count with tags, rival counts that grow a little every night on the pass (at most +15), the Pass Ledger card at 5,000 fans, 7,500 fans and after Last Call, and **every** story beat, Act 1 included, triggered by fan count instead of night number (a beat queue in `plot.ts`). `NIGHTS` becomes the beat nights, and side nights draw from a shuffled pool. The run no longer ends on "last night". It ends at an ending.
 12a. **Chapter 1 first (the current scope):** the five innkeeper models (preset looks plus their outfits and the shared beards, spectacles, kerchief and stoop, section 7), the Village Ledger with the five Tarven houses at fixed fan counts (100 / 200 / 300 / 400 / 500), the Chapter 1 beat list (section 7), the partner-or-ruin card when a house falls, Pell's three collections, and the "First in Tarven" card plus teaser as the end of the build. Build this before anything on the pass.
 12c. **Bosses and unlocks (2.24, not built yet).** The code still has the old targets, and a house that falls on its fans alone:
-    - **`ledger.ts`:** the new fan targets (houses 300 / 700 / 1,200 / 1,800 / 2,500; Act 1 beats 0 / 150 / 500 / 1,000; collections by fans at 1,200 / 1,800 / 2,500). Each `HouseDef` gets its `stages` (fan mark, mini-boss name, foe kind and count, prefix, its scene's lines and answers) and its `unlocks`. House beats come out of `BEATS`; the story beats stay.
+    - **`ledger.ts`:** the new fan targets (houses 300 / 700 / 1,200 / 1,800 / 2,500; Act 1 beats 0 / 150 / 500 / 1,000; collections by fans at 1,200 / 1,800 / 2,500).
+    - **The bigger debt (2.27), with the targets above, not before** (on the old short chapter it would be too harsh): `DEBT` 750 and `DOUBLED_DEBT` 1,500; `COLLECTION` becomes a list, 300 / 500 / 700, then 250 every 7 nights; `EAR_COLLECTION` is half of each part; the pay-it-yourself buttons 100 / 250 / all; Pell's line in `ledger.ts` ("Keep your seven hundred and fifty") and the demand note in `cg.ts`.
+    - **A lost stage (2.27):** loses a tenth of the house's fans (`HouseDef.fans / 10`), and the stage stays reached even if that drops her below its mark. Each `HouseDef` gets its `stages` (fan mark, mini-boss name, foe kind and count, prefix, its scene's lines and answers) and its `unlocks`. House beats come out of `BEATS`; the story beats stay.
     - **The war in `tavern.ts`:** the stage she's on per house (saved), the morning scene card when a mark is reached, tonight's mini-boss walking in during service as a brawl (the `sideFight` path, with a new `{ kind: "stage" }`), won / lost / night off, and the house falling after the boss's own fight (then the Partner or Ruin card as built).
     - **Unlocks:** one `unlocked(feature)` check read from the houses beaten, replacing `staffStage`'s night 6 / gold 150 / fame 60, `guildOpen`'s 300 fans, and the open-from-the-start garrison, feed, rooms and bar dance. The Lantern and revel keep their own gates on top. An unlock toast when a house falls.
     - **The boss guides (2.25, section 7, "The boss shows her how"):** a new `src/game/bossguide.ts` with each house's guide as data. Each step has the boss's line (a Partner and a Ruin version), what to point at (a spot in the world for the target arrow, or a menu row or button to glow), and the event that finishes it (hired, posted, signed on, room let, and so on).
@@ -1260,8 +1264,8 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 1. Are the fan milestones right (2,500 to finish Tarven, 7,500 to finish Act 2, about 10,000 for the top house; 2.24)? They set how long the game runs, and need playtesting against the rivals' growth.
 1b. ~~Should Act 1 also move by fans?~~ **Decided: yes.** Fans drive every beat, and nights are never the driver.
 1c. How fast do fans come? The rule in section 7 ("How fans are earned") gives about 40 to 75 on a good night, rising with each unlock, so Tarven takes about 40 to 50 nights with its 19 stages (2.24; it was 8 to 12). Needs playtesting: if it drags, lower the later marks, not the early ones.
-1d. Pell's debt was sized for a short chapter. With 40 to 50 nights of takings, 100 a collection may be too easy. Raise it (say 150, doubled to 450), or leave it as built?
-1e. Should a lost stage cost fans (−10 as written), or only the Bruised debuff?
+1d. ~~Pell's debt was sized for a short chapter. Raise it?~~ **Decided (20 Nov 2026): much bigger.** 750, doubled to 1,500, collected 300 / 500 / 700 (section 7). Still to check in playtesting: whether a fair keeper can make the parts, and whether a player who falls behind can catch up.
+1e. ~~Should a lost stage cost fans?~~ **Decided (20 Nov 2026): yes, and far more than 10.** A tenth of the house's fans (30 to 250), on top of Bruised and the poached walk-ins.
 2. ~~Is Father alive in the cells, or is it only his pages that are?~~ **Decided (20 Nov 2026): only his pages.** The cells hold the last pages of the book he hid; Act 3's first beat is reaching them, not him.
 3. Should the player see the corruption number, or only the tier word?
 4. ~~Three rivals, or two to keep the scope down?~~ **Decided (20 Nov 2026): all three** (the Gilded Stag, the Velvet House, the Drowned Rat). Act 2 is built first, then Act 3 on top.
@@ -1277,6 +1281,7 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 
 | Date | Draft | Changes |
 |---|---|---|
+| 20 Nov 2026 | 2.27 | **A bigger debt and dearer losses** (open questions 1d and 1e decided). The debt is 750, doubled to 1,500 at Pell's dawn, collected in growing parts of 300 / 500 / 700 at Pike's, Agnes's and Jory's falls, then 250 every 7 nights; his ear halves each part. A lost boss stage (or boss fight) costs a tenth of the house's fans (30 / 70 / 120 / 180 / 250), and the stage stays reached. Code with item 12c |
 | 20 Nov 2026 | 2.26 | **The ladder.** The five Tarven houses are steps up the trade. The Cider Barn is a tavern just like hers (one man, no staff). Then come the Bakehouse (staff), the Watch Canteen (staff and the feed), the Toll-Gate Inn (plus the garrison on its gate) and the Copper Bell (everything, rooms and guild included). Each house's edge is what the one before unlocks: the beaten boss's parting word names it (*"You want to stand in this trade, you need hands"*), and their guide teaches it. Each war has a light check on the edge she just got (staff on shift, a post that week, signed on with the garrison, rooms let or a guild party in). The canteen's mini-bosses now fight for the feed. Code plan item 12c |
 | 20 Nov 2026 | 2.25 | **The boss shows her how.** After a boss's own fight, the beaten boss teaches the feature it unlocked in a short hands-on guide: 3 to 5 steps, each a line in their voice, an arrow or a glow on what to use, and waiting until she does it for real. Partner or Ruin changes the teacher's mood (proud with a small gift, or sulking), never the lesson. Skippable at every step, replayable from the journal, saved mid-way. The five guides written as steps: Hollin staff, Tansy the feed, Pike the garrison, Agnes the rooms and the guild, Jory the full house. Code plan item 12c |
 | 20 Nov 2026 | 2.24 | **Rivals are bosses, and beating them is the progression.** Each house's climb has 3 to 5 stage marks; at each, the boss comes in for a comic scene and sends a named mini-boss to brawl her that night, and the last stage is the boss's own fight. A lost stage is fought again, never reset. Each boss beaten unlocks a feature: Hollin staff, Tansy the feed and the Lantern's road, Pike the garrison, Agnes the rooms and the guild, Jory the full house. The acts still run on fans, on their own track. Fan targets about 5× longer (Tarven 300 / 700 / 1,200 / 1,800 / 2,500, Act 1 at 0 / 150 / 500 / 1,000, the pass at 4,000 / 5,500 / 7,000, Act 2 to 7,500, the top house about 10,000), aiming at 40 to 50 nights for Chapter 1. Hollin's three scenes written as the example. Pass rivals and the Baron as bosses. Code plan item 12c; open questions 1d and 1e |

@@ -177,7 +177,8 @@ describe("the fingers' own bones in her look", () => {
       const active = activeTerms("Female", { [slider]: 1 });
       for (const bone of ["HandFingers_L", "HandTips_R", "HandThumb_L"]) expect(active.get(bone)?.length, `${slider} ${bone}`).toBeGreaterThan(0);
     }
-    expect(activeTerms("Male", { arms: 1 }).get("HandFingers_R")?.length).toBeGreaterThan(0);
+    // His arms and build are physique morphs now (MPFB shape keys, appearance.ts MALE_SLIDERS): no bones.
+    expect(activeTerms("Male", { muscle: 1, fat: 1 }).size).toBe(0);
   });
 });
 

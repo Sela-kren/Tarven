@@ -7,6 +7,10 @@ Paint on it (Single Image mode). Unpainted pixels stay clear, and there the game
 
 Send (core.export_master) takes the painted objects along: each object's Paint UVs go out moved right by 1 + its
 layer (so the game knows which picture), and the pictures plus public/models/paint/female.json go beside the model.
+
+A layer is painted over the material's colour by its alpha ("replace", the default), or, for an object marked
+paint_mode = "overlay" (her body's skin detail, skin_texture.py), multiplies her skin's colour by its RGB x 2 (0.5 grey
+leaves it as it is), so the look's skin tones still recolour her.
 """
 import json
 import os
@@ -116,6 +120,13 @@ def _join_corner_splits(mesh, game_uv, paint_uv):
     paint_uv.data.foreach_set("uv", paint.ravel())
 
 
+def paint_mode(obj):
+    """How the game lays an object's picture on: "replace" (over its colour, by alpha) or "overlay" (a detail map
+    multiplying her skin's colour)."""
+    mode = obj.get("paint_mode", "replace")
+    return mode if mode in ("replace", "overlay") else "replace"
+
+
 def save_all():
     """Saves every painted picture that has unsaved strokes."""
     for obj in painted_objects():
@@ -168,7 +179,7 @@ def send_pictures(glb_path, body="female"):
     for obj in objects:
         file = f"{body}_{obj.name}.png"
         shutil.copy2(image_path(obj), os.path.join(folder, file))
-        layers.append({"object": obj.name, "file": file})
+        layers.append({"object": obj.name, "file": file, "mode": paint_mode(obj)})
     with open(manifest, "w", encoding="utf8") as out:
         json.dump({"size": SIZE, "layers": layers}, out, indent=1)
     return len(layers)

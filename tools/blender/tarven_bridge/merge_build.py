@@ -12,7 +12,9 @@ was last made or merged) and the new build. For each of her objects:
   - both changed: the new build's object, with the user's moves (master - baseline) put on it, point for point when
     the points are the same, else from the nearest point of the baseline;
   - new in the build: added;  gone from the build: kept if the user changed it, else removed.
-Materials the user changed are kept; the rest follow the build. The armature follows the build.
+Materials the user changed are kept; the rest follow the build. The armature follows the build. An object marked
+"tarven_keep" (her hand-sculpted skin, swap_sculpt.py) is always the master's; clothes coming in from the build are
+then fitted to it (core.fit_clothes).
 Before writing, the master is backed up to ref/_sculpt_backups; the baseline becomes the new build.
 If the master is open in Blender, revert it there afterwards (File > Revert) without saving it first.
 """
@@ -164,6 +166,10 @@ def main():
         if n.type != "MESH":
             continue
         m, b = mine.get(name), base.get(name)
+        if m is not None and m.get("tarven_keep"):
+            # The user's own (her hand-sculpted skin): never taken from the build.
+            report["kept"].append(f"{name} (yours, marked to keep)")
+            continue
         if m is None:
             swaps.append((None, n))
             report["added"].append(name)
@@ -224,6 +230,12 @@ def main():
             n.hide_set(hidden)
         elif m is not None:
             bpy.data.objects.remove(m, do_unlink=True)
+    # Clothes and stains that came in from the build fitted to her skin as it is in the master (her own, fuller).
+    skin = master.all_objects.get("Female_Body")
+    fresh = [n for _m, n in swaps if n is not None and n.type == "MESH"]
+    if skin is not None and skin.get("tarven_keep") and fresh:
+        core.fit_clothes(skin, [o for o in fresh if o.name.startswith(("Female_Cloth", "Female_Hair"))],
+                         [o for o in fresh if "_CumOn" in o.name])
     # The rest of the appended files goes.
     for coll in (base_coll, new_coll):
         for obj in list(coll.all_objects):
