@@ -2314,6 +2314,11 @@ interface MeshSlot {
   restShapeFrom?: Float32Array;
   /** The user's sculpted fixes to the breasts at single cup sizes (the model's "_BUST_FIX_<cup>"), in bind space. */
   cupFixes?: { cup: number; delta: Float32Array }[];
+  /**
+   * A garment's cloth drape baked in Blender at single cup sizes (the model's "_CLOTH_DRAPE_<cup>", the Blender
+   * bridge's Cloth panel), in bind space: the simulated cloth less the game's own fit at that cup. Laid on last.
+   */
+  drapes?: { cup: number; delta: Float32Array }[];
 }
 
 /**
@@ -2502,7 +2507,7 @@ export function spanCleavage(
 const CLEAR_HALF_WIDTH = 0.45;
 const CLEAR_HEIGHT: readonly [number, number] = [0.7, 1.5];
 const CLEAR_GARMENT_TOP = 1.15;
-const CLEAR_GAP = 0.002;
+export const CLEAR_GAP = 0.002;
 /** Further inside than this, the nearest skin no longer tells which way is out: such points are left. */
 const CLEAR_DEPTH = 0.06;
 /** The skin is searched in cells this big, ring by ring round the cell a point is in, out to CLEAR_DEPTH. */
@@ -3471,6 +3476,8 @@ export class Dresser {
   private readonly reshapedRest: boolean;
   /** True while the clothes are taken off to see the body; a preview, never part of the look. */
   private undressed = false;
+  /** Leaves the baked cloth drapes off: the Blender bridge bakes against the game's fit without them. */
+  drapesOff = false;
   /** Down to her smallclothes, to see them while shaping her: everything else off, those left on. */
   private underwear = false;
   /** How firmly what she has on holds her bust, as last shaped. */
@@ -3596,12 +3603,14 @@ export class Dresser {
       // The user's sculpted breast fixes, one per cup they sculpted at (see apply_sculpt_fixes in build_world.py).
       const cupFixes: { cup: number; delta: Float32Array }[] = [];
       const toBind = new Matrix3().setFromMatrix4(mesh.bindMatrix);
+      const drapes: { cup: number; delta: Float32Array }[] = [];
       for (const [attrName, attr] of Object.entries(mesh.geometry.attributes)) {
-        const letter = /^_bust_fix_([a-z])$/.exec(attrName)?.[1]?.toUpperCase();
+        const [, kind, lower] = /^_(bust_fix|cloth_drape)_([a-z])$/.exec(attrName) ?? [];
+        const letter = lower?.toUpperCase();
         if (!letter || attr.count !== position.count) continue;
         const delta = new Float32Array(attr.count * 3);
         for (let v = 0; v < attr.count; v++) point.fromBufferAttribute(attr, v).applyMatrix3(toBind).toArray(delta, v * 3);
-        cupFixes.push({ cup: stopValue(CUPS, CUPS.labels.indexOf(letter)), delta });
+        (kind === "bust_fix" ? cupFixes : drapes).push({ cup: stopValue(CUPS, CUPS.labels.indexOf(letter)), delta });
       }
       if (part === "Cum") {
         mesh.material = stainMeshOf(mesh, body) ? stainRetroMaterial() : coatRetroMaterial();
@@ -3612,6 +3621,7 @@ export class Dresser {
       this.slots.push({
         mesh, part, original: material, worn: material, bind, follow: null, bodyStart: bodyCount, rest,
         cupFixes: cupFixes.length ? cupFixes : undefined,
+        drapes: drapes.length ? drapes : undefined,
       });
       if (part === "Body") bodyCount += position.count;
       mesh.skeleton.bones.forEach((bone, i) => {
@@ -4147,6 +4157,20 @@ export class Dresser {
     // His penis likewise, from where its tube and sack lie on his skin.
     const penisSkin = this.penis ? this.penis.slots.map(onSkinOf) : [];
     this.shapePenis(penisSkin, moves.map((m) => m.total));
+
+    // The cloth drapes baked in Blender for the outfit she has on, last, so at a baked cup she wears the simulated
+    // cloth exactly; between baked cups they blend as the user's breast fixes do.
+    if (!this.drapesOff) {
+      const worn = outfitOf(this.body, look).mesh;
+      for (const [i, slot] of this.slots.entries()) {
+        if (!slot.drapes || (slot.part === "Cloth" && outfitMeshOf(slot.mesh, this.body) !== worn)) continue;
+        const { total } = moves[i];
+        for (const drape of slot.drapes) {
+          const amount = cupFixAmount(drape.cup, look.sliders.bust ?? 0);
+          if (amount > 0) for (let k = 0; k < total.length; k++) total[k] += drape.delta[k] * amount;
+        }
+      }
+    }
 
     // Longer or shorter legs would lift the feet off the floor or sink them into it, and heels reach below it: the
     // whole body moves to match, standing on the shoes she has on.

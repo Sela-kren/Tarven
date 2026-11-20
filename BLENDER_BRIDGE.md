@@ -18,6 +18,7 @@ the game's own `Dresser` and `face.ts`, and shows Blender what the game would sh
 | **Game view** | **Start server** runs `npm run bridge` (or run it yourself). Every game slider, the outfit, hair, bust shape, posed/undressed, **Start look** (what the player sees first) and **As built**. The GameView meshes sit beside the master and are never exported or saved. **Master shows the same** hides the master's other outfits, hair and shoes, as the game does. |
 | **Face** | Expression → **Load** fills the 30 face sliders from `face.ts`. **Save to game** writes the numbers back into that expression's line in `face.ts`, keeping the file's comments and layout. **Fit face to my sculpt**: sculpt her face on the game view (Edit game view), and the server finds the face numbers that make the game's face code shape it that way. It is a bounded least-squares fit; the points you moved count, the rest only hold lightly. It sets the sliders, and then you Save. |
 | **Edit game view** | Sculpt or move points on the game view at any slider setting (e.g. J cup in the tee). **Apply edits to master** carries the moves onto the master, sends, re-shapes and refines (up to 3 passes, aiming for under 0.5 mm; the test came to 0.57 mm). |
+| **Cloth (drape)** | Blender's cloth simulation, baked for the game. **Preview drape** simulates the garment she has on at the game view's cup and shows it there; nothing is stored. **Bake drape** Sends first, then simulates at each chosen cup (default A,C,F,J,M,Q,U,Z): the garment is welded and dropped over her game-shaped body as a collider, with the top of each piece and her sleeves pinned and her legwear left out. It stores the cloth's move from the game's own fit as `_CLOTH_DRAPE_<cup>` on the master garment, then Sends again. The game lays these on last, blended by the bust slider like the bust fixes, so at a baked cup it shows the simulated cloth exactly (checked: 0.000 mm at J). About 70 s per cup. **Clear drapes** removes them. |
 | **Paint (2K)** | **Paint this object** gives the selected object (or her body) a second UV map, `Paint`, and a clear 2048 px picture `art/paint/P_<object>.png`, then opens Texture Paint. Clear pixels show the game's own colour, recolours included. Painted pixels show the paint. |
 | **Game look** | Flat, diffuse Solid shading with her blocky textures, plus a `GameCamera` with the game's 32° view from (0, 10, 10). |
 | **Game shot** | The open game page (`npm run dev`, in a browser) draws her from the scene's camera with its full screen pass and sends the frame back. It loads as the image `GameShot`. The relay is in `vite.config.ts` (`/__tarven/view`, `/__tarven/shot`) and the game side in `src/game/devview.ts`. |
@@ -64,9 +65,19 @@ D:/blender/blender.exe -b art/female_master.blend --python tools/blender/tarven_
     the tee by 9 mm.
   - In the browser, a test mark shows on her face exactly where it was painted.
 
+## Cloth drape notes (2026-11-20)
+- Free sleeves crumple, as in every drape tried on this tee. That's why **Pin sleeves past** (0.14 m from her middle)
+  is on by default.
+- Shrink and strong gravity bunch the turned-under hem.
+- The defaults (quality 8, 40 frames, stiffness 15, bending 0.5) settle the tee over a J cup with a straight front.
+- Other sliders (hips, waist) and poses still move the cloth the game's way, with the baked drape riding on top.
+- A drape is a still shape that follows the bust slider. Cloth that sways while she walks would be a separate,
+  in-game feature.
+
 ## Known gaps
 - The Game look is close, not exact. The game's vertex snap, dither and skin glow only show in a **Game shot**.
-- In the game view, recoloured skin shows flat, without the faint mottle the game keeps.
+- In the game view, recoloured skin shows flat, without the faint mottle the game keeps. The underwear and pubic
+  patches are hidden there: the game draws pictures on them, and shown flat they covered her like a white sheet.
 - Recoloured materials and face fits (2026-11-20):
   - Dirndl colours checked against its preset.
   - Fitting the smile, angry and surprised faces from other faces lands within 0.01–0.04 mm on average.

@@ -191,6 +191,9 @@ def _new_mesh_object(entry, coll, root):
     return obj
 
 
+# Patches the game draws pictures on (lingerie.ts, its pubic hair): hidden in the game view.
+DRAWN_PATCHES = re.compile(r"T_(lingerie|pubic)")
+
 # What the server last shaped each game view mesh to, by key: an edit is the difference from it.
 _last = {}
 
@@ -245,6 +248,13 @@ def write_meshes(entries):
             obj.data.update()
         _last[entry["key"]] = (positions.copy(), entry.get("object"))
         obj.hide_select = not scene.tarven_gv.editable
+        if DRAWN_PATCHES.search(entry["key"]) or DRAWN_PATCHES.search(entry.get("material") or ""):
+            # Drawn on by the game (her underwear, her pubic hair): see-through but for the drawing, which isn't
+            # made here; shown flat, they covered her as a solid sheet.
+            obj.hide_viewport = True
+            obj.hide_render = True
+            shown.add(entry["key"])
+            continue
         wanted = material_for(entry)
         if obj.data.materials and obj.data.materials[0] != wanted:
             obj.data.materials[0] = wanted

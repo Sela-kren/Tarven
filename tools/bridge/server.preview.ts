@@ -21,7 +21,7 @@ import { join } from "node:path";
 import { test } from "vitest";
 import { Color, Material, Mesh, MeshStandardMaterial, Object3D, SkinnedMesh, Vector3 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { CUPS, Dresser, LOOK_OPTIONS, sliderTop, startLook, stopValue, wearOutfit, type Look } from "../../src/game/appearance";
+import { CLEAR_GAP, CUPS, Dresser, LOOK_OPTIONS, sliderTop, smoothTopGap, startLook, stopValue, wearOutfit, type Look } from "../../src/game/appearance";
 import { EXPRESSIONS, EXPRESSIONS_LIST, FACE_KEYS, REST_FACE, UNSIGNED, type Expression, type FaceShape } from "../../src/game/face";
 import { Body } from "../../src/game/player";
 import { softHeft } from "../../src/game/heft";
@@ -43,6 +43,8 @@ interface ShapeJob {
   nude?: boolean;
   posed?: boolean;
   known?: string[];
+  /** Her clothes without the cloth drapes baked in Blender (what a new bake is measured against). */
+  noDrape?: boolean;
 }
 
 interface Loaded {
@@ -188,6 +190,7 @@ function shape(state: Loaded, job: ShapeJob) {
   const look = lookFor(job);
   const { dresser } = state;
   dresser.setUndressed(false);
+  dresser.drapesOff = !!job.noDrape;
   dresser.apply(look);
   if (job.nude) dresser.setUndressed(true);
   const face: FaceShape = { ...REST_FACE, ...(job.expression ? EXPRESSIONS[job.expression] : {}), ...(job.face ?? {}) };
@@ -203,7 +206,12 @@ function shape(state: Loaded, job: ShapeJob) {
     }
   }
   const meshes = meshesOut(state, new Set(job.known ?? []));
-  return { meshes, outfit: look.outfit ?? null, ms: Math.round(performance.now() - started) };
+  const bust = look.sliders.bust ?? 0;
+  return {
+    meshes, outfit: look.outfit ?? null, ms: Math.round(performance.now() - started),
+    // How far the game keeps her clothes off her skin at this bust: fitted tops, and the rest.
+    gaps: { top: smoothTopGap(bust), cloth: CLEAR_GAP },
+  };
 }
 
 /** Face numbers that only colour or draw on her (no point moves), left out of a fit. */

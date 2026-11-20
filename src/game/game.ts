@@ -1986,8 +1986,9 @@ export class Game {
     this.signTurn = MathUtils.clamp(this.signTurn + (wanted ? step : -step), 0, 1);
     this.signSince += dt;
     this.signBoard.rotation.y = Math.PI * MathUtils.smoothstep(this.signTurn, 0, 1);
+    // Still once the swing's died away (and never sin(Infinity), which is NaN and would hide the board).
     const fade = Math.max(0, 1 - this.signSince / 1.6);
-    this.signBoard.rotation.z = Math.sin(this.signSince * 9) * SIGN_SWING * fade * fade;
+    this.signBoard.rotation.z = fade > 0 ? Math.sin(this.signSince * 9) * SIGN_SWING * fade * fade : 0;
   }
 
   private listeningTo(): number | null {
