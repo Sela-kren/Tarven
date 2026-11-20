@@ -25,6 +25,7 @@ Updated 18 Nov 2026. Read this first to find the right doc. Every doc stays in t
 | [FEED_STAR.md](FEED_STAR.md) | Her side job on the town feed, as rules (`feedstar.ts`) | Wiring into the game; the art |
 | [EXPRESSION_STUDY.md](EXPRESSION_STUDY.md) | Her expressions (`face.ts`) against KP's face presets: how KP builds and picks faces, the part vocabulary, every preset | §5's proposals: stamina steps, pools, smaller mouths, eye art |
 | [POSES_TODO.md](POSES_TODO.md) | The list of art still owed to the built systems above: poses, props, models | That's the list |
+| [BLENDER_BRIDGE.md](BLENDER_BRIDGE.md) | Her master .blend ↔ the game 1:1: Send to game, the game view (game sliders, face and recolours run by the game's code), edits back, face fit from sculpt, game shots, merging code builds, 2K paint layers (room and close-ups) | Exact screen look only in Game shots |
 
 ## Plans (not built)
 

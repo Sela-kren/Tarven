@@ -204,7 +204,7 @@ export const VARIANTS: Readonly<Record<Expression, readonly Partial<FaceShape>[]
 };
 
 /** The controls that can't go below 0 (the rest go both ways). */
-const UNSIGNED: readonly (keyof FaceShape)[] = [
+export const UNSIGNED: readonly (keyof FaceShape)[] = [
   "browNear", "lidUpper", "lidLower", "open", "round", "bare", "lift", "cup", "press", "tongue", "blush", "crease", "wet",
   "tears", "heart", "sweat",
 ];

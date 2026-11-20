@@ -3,7 +3,7 @@ import type { LewdPart } from "./brawlai";
 import { LEER_SHARE, talkGain } from "./lewdtalk";
 /** Her dom side that unlocks KP's Deny Ejaculation in a brawl. */
 const DENY_UNLOCK = 10;
-import { growthOf, rentRooms, RIOT_AFTER, RIOT_PUT_DOWN, RIOT_TROUBLE, runShow, type Growth } from "./sidejobs";
+import { DANCE_CALLS, growthOf, rentRooms, RIOT_AFTER, RIOT_PUT_DOWN, RIOT_TROUBLE, runShow, type Growth } from "./sidejobs";
 import { TRINKET_BY_ID, TRINKET_SLOTS, TRINKETS, trinketsOwned } from "./trinkets";
 import { crowdFactor, defeatFor, defeatLine, defeatPlay, DEFEATS, defeatWords, type DefeatId } from "./defeat";
 import type { ScenePoseName } from "./sexpose";
@@ -60,6 +60,21 @@ import {
   SOBER_NIGHT_SERVED,
   TRAY_DROP_LINES,
   trayDropChance,
+  DEAD_DRUNK_AT,
+  DRINK_NAMES,
+  DRINK_PUSHES,
+  DRINK_STRENGTHS,
+  drinkAskChance,
+  drinkOf,
+  DRUNK_AT,
+  DRUNK_FATIGUE,
+  DRUNK_SHOW_NEED,
+  drunkLevel,
+  drunkTier,
+  refuseDrinkCost,
+  strongestDrink,
+  TIPSY_AT,
+  type DrinkKind,
 } from "./barwork";
 import { arrivalFeelings, arrivalMood, feltMood, HIGH_RESPECT, LOW_RESPECT, MOOD_LABELS, STRONG_LUST, moodAfterDrink, moodAfterReply, moodWhenServed, moodWhileWaiting, MOOD_BEHAVIOUR, type Mood } from "./mood";
 import {
@@ -486,8 +501,8 @@ import {
   type UpstairsAct,
 } from "./passives";
 import { GUEST_KIND_LIST, ROLES, ROLES_OF, roleLabel, rollStats, statsOf, type GuestRole, type RoleStats } from "./guestroles";
-import { ALLOW_WILL, DRINK_WILL, LEAN_WILL, maxWillpower, NAP_RESTORE, refuseCost, STEADY_WILL } from "./willpower";
-import { applyFields, captureFields } from "./moment";
+import { ALLOW_WILL, DARE_BOLDNESS, DRINK_WILL, GRAB_BOLDNESS, LEAN_WILL, maxWillpower, NAP_RESTORE, refuseCost, STEADY_WILL, temptTier } from "./willpower";
+import { applyFields, captureFields, fillFrom, readFields } from "./moment";
 import {
   BRAWL_HERE_LOG,
   crowdOf,
@@ -543,6 +558,12 @@ import {
  * the player did and reads the state back, which keeps the rules unit-testable.
  */
 
+/** A brawl or sex fight in progress, as plain data (Tavern.devCaptureBattle), for the dev resume after a reload. */
+export interface DevBattle {
+  kind: "fight" | "duel";
+  fields: Record<string, unknown>;
+}
+
 /** The drinks bought by the bottle and poured at the shelf behind the bar, on top of the ale on tap. */
 export type Bottle = "wine" | "mead" | "vodka";
 export type Item = "ale" | Bottle | "bread" | "stew" | "cask";
@@ -552,7 +573,7 @@ export type Station = "tap" | "shelf" | "bread" | "pot" | "barrel" | "bin" | "wa
 export type Ware = "cup" | "dish";
 /** What can be in your hands: something to serve, or a stack of dirty dishes on the way to the tub. */
 export type Held = Item | "dirty";
-/** A day: closed while it's light, "dusk" once the bell rings and the tavern waits for nightfall, then
+/** A day: closed while it's light, "dusk" once the sign is turned to Open and the tavern waits for nightfall, then
  * the night's service and last call. "bedtime" is the closed tavern after last call, until you go to bed,
  * and "dawn" is the morning after. The world clock, not the tavern, decides when night falls. */
 export type Phase = "day" | "dusk" | "service" | "lastcall" | "bedtime" | "dawn" | "ended";
@@ -572,7 +593,7 @@ export type Target =
   | { kind: "station"; station: Station }
   | { kind: "guest"; id: number }
   | { kind: "mess"; id: number }
-  | { kind: "bell" }
+  | { kind: "sign" }
   | { kind: "bed" }
   | { kind: "door" }
   | { kind: "desk" }
@@ -643,8 +664,8 @@ const FAME_DEEDS = [-6, 8, -3];
 const RESPECT_DEEDS = [-2, 2, -1];
 /** This drunk in front of the customers, and they stop taking you seriously. */
 /**
- * Too drunk to say yes to anything (GAME_PATH.MD, consent rule): the 8th drink in a row (DRINK_STRENGTH 1/8). The 7th
- * is her last clear drink (barwork.ts), and the 9th puts her under the table.
+ * Too drunk to say yes to anything (GAME_PATH.MD, consent rule): past KP's dead drunk. Ten ales in a row (five vodkas);
+ * the one before is her last clear drink (barwork.ts), and the one after puts her under the table.
  */
 const SLOPPY_DRUNK = 0.95;
 /** Staff (staff.ts, STAFF.md §1): mid game from this much gold or this night index; late from this fame. */
@@ -676,6 +697,8 @@ const KEPT_ON_LIFT: ReadonlySet<string> = new Set(["girdle"]);
 export const TIP_DRINK_LABEL = "Drink the one they bought you";
 const TIP_DRINK_TOO_DRUNK = "Drink the one they bought you (you've had more than enough)";
 export const TIP_DRINK_DECLINE = "Not now, thanks";
+/** Turning a drink down with too little willpower left to do it (KP: she can't refuse, so she drinks). */
+export const TIP_DRINK_NO_WILL = "Not now, thanks (no willpower left to say no)";
 /** Bar work: served this many with nobody walking out is a smooth night; this many at all, a busy one. */
 const SMOOTH_NIGHT_SERVED = 8;
 const BUSY_NIGHT_SERVED = 15;
@@ -742,6 +765,8 @@ export const grabDice: { roll: (() => number) | null } = { roll: Math.random };
 export const showDice: { roll: (() => number) | null } = { roll: Math.random };
 /** Where every new tavern's adult play is rolled from (Tavern.adultRandom); the tests' setup sets it to null. */
 export const adultDice: { roll: (() => number) | null } = { roll: Math.random };
+/** Where every new tavern's pushed drinks are rolled from (Tavern.drinkRandom); the tests' setup sets it to null. */
+export const drinkDice: { roll: (() => number) | null } = { roll: Math.random };
 
 // Who comes in. Each night has its own guests (NIGHTS), but the road isn't the same twice (rollArrivals).
 /** Guests walking in on top of the night's own are never more than this. */
@@ -812,8 +837,7 @@ export const TRAY_SIZE = 3;
 
 // Drinking. Drunkenness runs from 0 (sober) to 1 (can barely stand).
 export const DRUNK_MAX = 1;
-/** How much one drink with a table adds. */
-const DRINK_STRENGTH = 0.125;
+/** How much one drink adds depends on what it is (barwork.ts DRINK_STRENGTHS, Karryn's Prison's alcohol strengths). */
 
 // ---- Desire, pleasure and corruption (see passives.ts) ----
 /** What a touch she lets happen adds to its own meter; the rest of her gets a third. Leaning in, half again. */
@@ -865,10 +889,13 @@ const CORRUPT_PER_GREED = 4;
 const CORRUPT_PER_SOLD = 10;
 const CORRUPT_PER_INFORM = 8;
 const CORRUPT_PER_COLD = 3;
-/** How fast you sober up, per second. One drink wears off in about half a minute. */
-const SOBER_RATE = 0.01;
-/** How many drinks one table will pour for you. */
-const DRINKS_PER_TABLE = 2;
+/**
+ * How fast you sober up, per second (Tarven's real-time answer to KP's breather): an ale wears off in a little over
+ * a minute, a vodka in two.
+ */
+const SOBER_RATE = 0.0015;
+/** How many drinks one table will pour for you: a mug's worth, like KP's (ale holds 8 sips, 2 a drink). */
+const DRINKS_PER_TABLE = 4;
 /** Past this, nobody pours you another. */
 const TOO_DRUNK = SLOPPY_DRUNK;
 /** What each guest at a table pays towards a jug of ale. */
@@ -915,11 +942,11 @@ const you = (text: string): TalkLine => ({ speaker: "You", text });
 
 /** A word for how drunk the player is, or "" when sober. */
 export function drunkLabel(level: number): string {
-  // Eight drinks to the top (DRINK_STRENGTH): tipsy at two, drunk at four, very drunk at six, too drunk at eight.
+  // KP's steps (barwork.ts): tipsy, drunk, dead drunk; then too drunk to say yes. In ales: 2, 4, 7, 10.
   if (level >= SLOPPY_DRUNK) return "Hammered";
-  if (level >= 0.7) return "Very drunk";
-  if (level >= 0.45) return "Drunk";
-  if (level >= 0.2) return "Tipsy";
+  if (level >= DEAD_DRUNK_AT) return "Dead drunk";
+  if (level >= DRUNK_AT) return "Drunk";
+  if (level >= TIPSY_AT) return "Tipsy";
   return "";
 }
 /** Serving with more than this share of patience left earns the tip. */
@@ -1422,6 +1449,8 @@ interface TipChat {
   guestId: number;
   /** Their offer of a drink, and how they are: what opens the talk. */
   lines: TalkLine[];
+  /** What they're buying her: what they're drinking themselves (barwork.ts drinkOf). Ale in older saves. */
+  drink?: DrinkKind;
   /** What they say once she's taken the drink or turned it down: a dare, a compliment or a favor to answer. */
   ask: TalkLine[];
   replies: Reply[];
@@ -1781,6 +1810,7 @@ const MOMENT_SKIP = [
   "grabRandom",
   "showRandom",
   "adultRandom",
+  "drinkRandom",
   "storyBeats",
   "takeOrders",
   "touchSettings",
@@ -2056,7 +2086,43 @@ export class Tavern {
     this.raise("breasts", show.desire);
     this.records.shows++;
     this.say(`${show.line} (+${show.gold} gold)`);
+    this.danceCall(men);
     return true;
+  }
+
+  /**
+   * KP's dance requests: the keenest man watching calls up for more, asked as a look (showOptions), so she picks what
+   * she shows him, or says no, with willpower when part of her wants to (willpower.ts). Not if he's had far too much.
+   */
+  private danceCall(men: readonly Guest[]): void {
+    if (this.inConversation) return;
+    const keen = men.filter((g) => feltMood(g) !== "drunk" || g.lust < STRONG_LUST).sort((a, b) => b.lust - a.lust)[0];
+    if (!keen) return;
+    // The dance works him up: he asks one step bolder than he would over his cup.
+    const part = partToSee(keen.stats.prefers, this.nerveOf(keen) + 1);
+    const pick = <T>(lines: readonly T[]) => lines[Math.floor(this.random() * lines.length) % lines.length];
+    const ask = this.guestSays(keen, pick(DANCE_CALLS[part]).replaceAll("{gold}", String(this.showGold(part, part))));
+    this.showChat = { guestId: keen.id, part, lines: [ask, you(pick(SHOW_THOUGHTS))], answered: false, reply: [] };
+    if (this.consentOff) this.autoShow(this.showChat, keen);
+  }
+
+  /**
+   * Consent off, a look (KP's flash, RemtairyKarrynWaitress.js waitressBattle_flashRequirementMet): no question. Her
+   * desire for what they asked to see decides, a drink or three making it easier: ready, and she shows them; not,
+   * and she won't, but being asked stirs that part of her (KP: +3 to 5 desire).
+   */
+  private autoShow(chat: ShowChat, guest: Guest): void {
+    const options = this.showOptions(chat);
+    const asked = options[SHOW_PARTS.indexOf(chat.part)];
+    if (asked && !asked.disabled) {
+      asked.run();
+      return;
+    }
+    chat.answered = true;
+    this.records.showsRefused++;
+    this.raise(SHOW_METER[chat.part], 3 + Math.floor(this.random() * 3));
+    const pick = <T>(lines: readonly T[]) => lines[Math.floor(this.random() * lines.length) % lines.length];
+    chat.reply = [you(this.herBar("lookNo")), this.guestSays(guest, pick(SHOW_AFTER.no))];
   }
 
   /** Whether she can let the rooms tonight: at last call or bedtime, once a night. */
@@ -3798,6 +3864,8 @@ export class Tavern {
   showRandom: (() => number) | null = showDice.roll;
   /** Where whether a guest who reaches goes for adult play is rolled from (adultplay.ts). Null: nobody does. */
   adultRandom: (() => number) | null = adultDice.roll;
+  /** Where whether a guest pushes a drink on her as she serves them is rolled from (maybeAskToDrink). Null: nobody does. */
+  drinkRandom: (() => number) | null = drinkDice.roll;
   /** Tonight's guests, in the order they come: the night's own list, rolled as the night begins. */
   private arrivals: Arrival[] = [];
   /** Tonight's guests, as rolled when the night began. */
@@ -3884,8 +3952,8 @@ export class Tavern {
 
   /**
    * A new game's first morning: the tavern has stood shut since Grandma Wren died, so there are cobwebs up in
-   * the corners and dust all over the floor. Cleaning them is how she learns to clean, and the bell won't ring
-   * until it's done. Only on the first day, and only once.
+   * the corners and dust all over the floor. Cleaning them is how she learns to clean, and the sign won't turn to
+   * Open until it's done. Only on the first day, and only once.
    */
   settleIn(): void {
     if (this.nightIndex !== 0 || this.phase !== "day" || this.messes.length > 0) return;
@@ -3899,11 +3967,11 @@ export class Tavern {
       "Day 1. Nobody has opened the place since Grandma died. Cobwebs hang high on the walls, and dust lies all over the floor.",
     );
     this.say(
-      "Clean it before you open. Walk up to a cobweb and press E to brush it down, then sweep the dust the same way. The bell on the bar rings once it's all done.",
+      "Clean it before you open. Walk up to a cobweb and press E to brush it down, then sweep the dust the same way. The sign by the front door turns to Open once it's all done.",
     );
   }
 
-  /** The first morning's cleaning still isn't done: the bell waits for it. */
+  /** The first morning's cleaning still isn't done: the sign waits for it. */
   get settlingIn(): boolean {
     return this.nightIndex === 0 && this.phase === "day" && this.messes.some((m) => m.kind === "cobweb" || m.kind === "dust");
   }
@@ -3914,7 +3982,7 @@ export class Tavern {
     this.seatTables = tables;
   }
 
-  /** Rings the bell to open for the night. The night's guests start coming once night has fallen. */
+  /** Turns the sign by the front door to Open for the night. The night's guests start coming once night has fallen. */
   open(): void {
     if (this.phase !== "day" || this.settlingIn) return;
     this.phase = "dusk";
@@ -3929,8 +3997,8 @@ export class Tavern {
     }
     this.say(
       this.messes.length > 0
-        ? "You ring the bell and open up, mess and all. Guests won't wait as long in a dirty room."
-        : "You ring the bell and open up. The sun goes down over Tarven.",
+        ? "You turn the sign to Open, mess and all. Guests won't wait as long in a dirty room."
+        : "You turn the sign to Open. The sun goes down over Tarven.",
     );
   }
 
@@ -3940,6 +4008,8 @@ export class Tavern {
     this.phase = "dawn";
     // A night's sleep takes some of the wear off her (7k).
     this.tire(-FATIGUE_REST.sleep);
+    // Going to bed drunk, she wakes up feeling it (barwork.ts, KP's fatigue for ending a shift tipsy, drunk or dead drunk).
+    this.tire(DRUNK_FATIGUE[drunkTier(this.drunk)]);
     this.drunk = 0;
     this.overLimit = 0;
     // A revel night not yet held (the night closed early) is held now, without her scene; an offer she slept on lapses.
@@ -4355,7 +4425,7 @@ export class Tavern {
     this.restoreWill(Math.round(this.maxWillpower * NAP_RESTORE));
     this.energySpent = Math.max(0, this.energySpent - Math.round(this.maxEnergy * NAP_ENERGY));
     this.tire(-FATIGUE_REST.nap);
-    this.say("You wake up in the late afternoon. Ring the bell when you're ready.");
+    this.say("You wake up in the late afternoon. Turn the sign to Open when you're ready.");
   }
 
   get plan(): NightPlan {
@@ -5313,6 +5383,8 @@ export class Tavern {
     this.cue(tipped ? "tip" : "serve");
     // A promise come due, or a favor returned, before anything else they'd say.
     if (!this.startFollowUp(guest) && tipped && this.random() < TIP_CHAT_CHANCE) this.startTipChat(guest);
+    // Nothing to say beyond it: they may want her to drink with them (KP's asked-to-drink).
+    if (!this.tipChat) this.maybeAskToDrink(guest);
     // Nothing else to say: they may grab her as she sets it down, or reach for her.
     // On a lit night, a lustful guest may ask for company upstairs instead (lantern.ts): one of the girls, never her.
     if (!this.tipChat && !this.maybeGrab(guest) && !this.maybeAskToSee(guest) && !this.lantern.maybeAsk(guest, this.lanternHost)) {
@@ -5395,7 +5467,52 @@ export class Tavern {
       return;
     }
     this.talkingTo = null;
-    this.tipChat = { speaker, guestId: guest.id, lines, ask, replies, offered: false, drank: false, answered: false, reply: [] };
+    this.tipChat = { speaker, guestId: guest.id, drink: drinkOf(guest.order), lines, ask, replies, offered: false, drank: false, answered: false, reply: [] };
+  }
+
+  /** Consent off (KP): a strip dare after the drink is answered by her state, warm enough or not, with no question. */
+  private autoTipDare(chat: TipChat): void {
+    if (!this.consentOff || chat.answered || !chat.replies.some((r) => r.strip)) return;
+    const before = chat.reply;
+    const want = this.dareTier > 0 ? chat.replies.findIndex((r) => r.strip) : chat.replies.findIndex((r) => r.id === "strip.no");
+    this.tipOptions(chat)[want]?.run();
+    chat.reply = [...before, ...chat.reply];
+  }
+
+  /** What turning down a drink costs her tonight (barwork.ts, KP's reject-alcohol cost). */
+  private get refuseDrinkWill(): number {
+    return refuseDrinkCost(this.fatigueLevel);
+  }
+
+  /**
+   * Karryn's Prison's "asked to drink": a guest she's just served, with a drink of their own, wants her to have one
+   * with them. Just the drink, nothing after it: she takes it, or turns it down with willpower (tipOptions).
+   */
+  private maybeAskToDrink(guest: Guest): boolean {
+    if (!this.drinkRandom || this.inConversation || this.phase !== "service" || this.passingOut) return false;
+    if (guest.order === "bread" || guest.order === "stew" || guest.order === "cask") return false;
+    const mood = feltMood(guest);
+    const chance = drinkAskChance({ loose: mood === "drunk" || mood === "lust", drunk: this.drunk });
+    if (this.drinkRandom() >= chance) return false;
+    const label = MOOD_LABELS[mood];
+    const speaker = label ? `${this.nameOf(guest)} (${label})` : this.nameOf(guest);
+    const drink = drinkOf(guest.order);
+    const pick = <T>(lines: readonly T[]) => lines[Math.floor(this.random() * lines.length) % lines.length];
+    const line = (text: string): TalkLine => ({ speaker, text, guestId: guest.id });
+    this.talkingTo = null;
+    this.tipChat = {
+      speaker,
+      guestId: guest.id,
+      drink,
+      lines: [line(pick(DRINK_PUSHES).replaceAll("{drink}", DRINK_NAMES[drink]))],
+      ask: [],
+      replies: [],
+      offered: false,
+      drank: false,
+      answered: true,
+      reply: [],
+    };
+    return true;
   }
 
   /** The next piece of clothing guests would go for, or null once there's nothing left you'd lose. */
@@ -5522,15 +5639,15 @@ export class Tavern {
   }
 
   /** You took a drink with a guest. */
-  private takeDrink(with_: readonly Guest[] = []): void {
-    const strength = this.drinkStrength;
+  private takeDrink(with_: readonly Guest[] = [], drink: DrinkKind = "ale"): void {
+    const strength = this.drinkStrength(drink);
     // Drunk enough, and a guest could get her down on a table (adultplay.ts; too drunk still blocks every yes).
     const wasOpen = this.tableOpen;
     // Her last clear drink: one more and she's too drunk to say yes to anything (barwork.ts).
     const lastClear = this.drunk < SLOPPY_DRUNK && this.drunk + 2 * strength >= SLOPPY_DRUNK && this.drunk + strength < SLOPPY_DRUNK;
     // Past the top of drunk, it piles up as over the limit (barwork.ts).
     this.overLimit += Math.max(0, this.drunk + strength - DRUNK_MAX);
-    this.drunk = Math.min(DRUNK_MAX, this.drunk + strength);
+    this.drunk = Math.min(DRUNK_MAX, Math.round((this.drunk + strength) * 1e9) / 1e9);
     this.shift({ drinks: 1, fame: 1, respect: this.drunk >= SLOPPY_DRUNK ? -1 : 0 });
     this.raiseAll(DRINK_DESIRE + this.effects.drinkMeters);
     this.spendWill(DRINK_WILL);
@@ -5544,14 +5661,16 @@ export class Tavern {
       const keen = [...with_].filter((g) => aroused(g.lust, g.mood === "drunk")).sort((a, b) => b.lust - a.lust)[0];
       if (keen) this.lastClearFrom = keen.id;
     }
-    const limit = passOutLimit(strength, this.effects.holdLiquor);
-    if (this.phase === "service" && this.overLimit >= limit) this.passingOut = true;
-    else if (this.overLimit + strength >= limit) this.say(ONE_MORE_WARNING);
+    // How far past the top she can go is counted in ales, whatever she's drinking.
+    const limit = passOutLimit(this.drinkStrength("ale"), this.effects.holdLiquor);
+    // A hair of slack, so ten tenths make a whole (floating point).
+    if (this.phase === "service" && this.overLimit >= limit - 1e-9) this.passingOut = true;
+    else if (this.overLimit + strength >= limit - 1e-9) this.say(ONE_MORE_WARNING);
   }
 
-  /** How drunk one drink makes her, after her passives. */
-  private get drinkStrength(): number {
-    return DRINK_STRENGTH * (1 - Math.min(0.9, this.effects.drunkRate));
+  /** How drunk one drink makes her, after her passives: by what it is (barwork.ts, KP's alcohol strengths). */
+  private drinkStrength(drink: DrinkKind): number {
+    return DRINK_STRENGTHS[drink] * (1 - Math.min(0.9, this.effects.drunkRate));
   }
 
   /** She's drunk herself under the table: the night's over, and the room saw it. */
@@ -6104,7 +6223,83 @@ export class Tavern {
     return cost === 0 ? 0 : Math.max(1, Math.round(cost * Math.max(0, 1 - this.effects.refuseEase)));
   }
 
+  /** What saying no to an ask (a look, a grab, a strip dare) costs, on its button: as a touch's, " · 3 will". */
+  private askWillNote(tier: number, boldness: number): string {
+    const cost = this.refuseWill(tier, boldness);
+    if (cost === 0) return "";
+    return this.willpower >= cost ? ` · ${cost} will` : " (no willpower left: it'll show)";
+  }
+
+  /**
+   * She says no to an ask, as she would to a touch (willpower.ts): it costs willpower when part of her wanted it, and
+   * steadies her when not. With too little left she still says no, always, but it shows: true when she wavered.
+   */
+  private refuseAsk(tier: number, boldness: number): boolean {
+    const cost = this.refuseWill(tier, boldness);
+    if (cost === 0) {
+      this.restoreWill(STEADY_WILL);
+      return false;
+    }
+    if (tier > 0) this.letters.temptedNo++;
+    if (this.willpower < cost) {
+      this.spendWill(this.willpower);
+      return true;
+    }
+    this.spendWill(cost);
+    this.gainXp("mind", 1);
+    return false;
+  }
+
+  /** How tempted she is to show a guest this (willpower.ts temptTier): by how far past what it takes she is. */
+  private showTier(part: ShowPart): 0 | 1 | 2 {
+    return this.drunk >= SLOPPY_DRUNK ? 0 : temptTier(this.showMargin(part), 0);
+  }
+  /** How bold showing a part is, on a touch's scale (a part that takes 3 desire is as bold as a level-4 touch). */
+  private showBoldness(part: ShowPart): number {
+    return SHOW_NEED[part] + 1;
+  }
+
+  /** How tempted she is to let a guest keep hold of her: her Body desire against a grab's boldness. */
+  private get grabTier(): 0 | 1 | 2 {
+    return this.drunk >= SLOPPY_DRUNK ? 0 : temptTier(Math.min(10, this.meters.body / 10), desireNeeded(GRAB_BOLDNESS));
+  }
+
+  /** How bold a strip dare is: bolder for every piece already off. */
+  private get dareBoldness(): number {
+    return Math.min(10, DARE_BOLDNESS + this.stripped);
+  }
+  /** How tempted she is to let them have the next piece: her Body desire and her exhibition passives. */
+  private get dareTier(): 0 | 1 | 2 {
+    if (this.drunk >= SLOPPY_DRUNK) return 0;
+    const shown = Math.min(2, [...this.passives].filter((id) => PASSIVE_BY_ID.get(id)?.group === "exhibition").length);
+    return temptTier(Math.min(10, this.meters.body / 10 + shown), desireNeeded(this.dareBoldness));
+  }
+
   /** A brawl with nobody in the room, from the B key in development, to try the fight screen. */
+  /**
+   * Development only (devresume.ts): the brawl or the sex fight in progress as plain data, so a page reload can put
+   * it back. Everything but the dice; her stats go with it, and get their functions back from a fresh set on resume.
+   */
+  devCaptureBattle(): DevBattle | null {
+    if (this.fight) return { kind: "fight", fields: captureFields(this.fight, ["random"]) };
+    if (this.duel) return { kind: "duel", fields: captureFields(this.duel, ["random"]) };
+    return null;
+  }
+
+  /** Development only: puts back a battle `devCaptureBattle` took, on the same turn. Throws on a broken one. */
+  devResumeBattle(battle: DevBattle): void {
+    const fields = readFields(battle.fields);
+    const fresh: object = battle.kind === "fight" ? this.fighterStats() : this.duelistStats();
+    const stats = fillFrom(fields.stats, fresh);
+    if (battle.kind === "fight") {
+      this.fight = Object.assign(Object.create(Fight.prototype) as Fight, fields, { random: this.random, stats });
+      this.duel = null;
+    } else {
+      this.duel = Object.assign(Object.create(Duel.prototype) as Duel, fields, { random: this.random, stats });
+      this.fight = null;
+    }
+  }
+
   startTestFight(): void {
     if (this.fight) return;
     const kind = GUEST_KIND_LIST[Math.floor(this.random() * GUEST_KIND_LIST.length) % GUEST_KIND_LIST.length];
@@ -6247,6 +6442,18 @@ export class Tavern {
       .map((g) => ({ guestId: g.id, kind: g.kind, drunk: g.mood === "drunk", rolled: g.stats, prefers: g.stats.prefers, horny: female && g.lust >= STRONG_LUST }));
   }
 
+  /** Her levels with the drink in her (barwork.ts, KP's waitressParamRate): Mind, Agility and Strength come down. */
+  private drunkLevels(): Record<StatId, number> {
+    const levels = this.statLevels();
+    if (this.drunk <= 0) return levels;
+    return {
+      ...levels,
+      mind: drunkLevel(levels.mind, "mind", this.drunk),
+      agility: drunkLevel(levels.agility, "agility", this.drunk),
+      strength: drunkLevel(levels.strength, "strength", this.drunk),
+    };
+  }
+
   /** Her side of a brawl: her levels, what her passives add, and the willpower she has left. */
   private fighterStats(): FighterStats {
     const e = this.effects;
@@ -6260,7 +6467,7 @@ export class Tavern {
       // KP's Deny Ejaculation comes with her dom side: 10 slaps and stands, all told.
       denyOk: this.records.slapped + this.records.domWins >= DENY_UNLOCK,
       foeScale: DIFFICULTIES[this.touchSettings.difficulty ?? "normal"].foes,
-      levels: this.statLevels(),
+      levels: this.drunkLevels(),
       // Her garrison rank's sword (knight.ts).
       damage: e.fightDamage + this.knightBrawlDamage,
       dodge: e.fightDodge,
@@ -7294,6 +7501,11 @@ export class Tavern {
     const adultAuto = adult && s.autoTouch && s.agreed && (answers.includes("allow") || sloppy) && aroused(guest.lust, guestSloppy);
     // Consent off, mid-brawl (KP): their hands just land. Struggling free in a scene is still hers.
     const forced = brawl && s.autoTouch && s.agreed;
+    // Consent off at the bar (KP's waitress petting, RemtairyKarryn.js canGet…Petted): no question and no push
+    // against her hold. Her desire for that part decides: high enough, and it lands; not, and they can't. Being drunk
+    // doesn't stop it (KP), and there's no limit on how bold, only her desire; a guest who's had far too much still can't.
+    const kpBar = !adult && !brawl && s.autoTouch && s.agreed && !guestSloppy;
+    const kpLands = kpBar && (answers.includes("allow") || (sloppy && desire >= desireNeeded(touch.level)));
     // Consent off: weigh them against her. Worked out every time, so the dev panel can show it either way.
     const facts = { ...this.impulseFacts(guest, guestNerve, touch), held: held !== null };
     // Further in is bolder: her hold is that much the stronger for it.
@@ -7335,7 +7547,7 @@ export class Tavern {
     // If her hold stands, she's asked like any other time.
     const who = (guest.stats.label ?? guest.kind).toLowerCase();
     const talk = KINK_TALK[this.kink];
-    if (adult ? adultAuto : forced || (covered && s.agreed && check.lands)) {
+    if (adult ? adultAuto : forced || kpLands) {
       // Adult play keeps what they said to ask; a touch is just the reach.
       chat.lines = [...(adult ? lines.slice(0, 1) : []), { ...narrate(reachText), guestId: guest.id }];
       chat.impulse = true;
@@ -7352,14 +7564,15 @@ export class Tavern {
       chat.reply.unshift(narrate(oneOf(IMPULSE_LINES, this.random())), this.guestSays(guest, crow), you(sub));
       const why = adult ? "(her state: ready, and they're aroused)" : `(push ${check.push} vs hold ${check.hold})`;
       this.say(`${this.nameOf(guest)}: "${crow}" You: ${sub} ${why}`);
-    } else if (!adult && covered && s.agreed) {
-      // Dom talk: consent off, but their push fell short of her hold. She mocks them for trying, they're left
-      // sheepish, and they have to ask after all. Both in the log too. Her dom side: it counts toward sadism.
+    } else if (kpBar) {
+      // Dom talk: consent off, but she isn't ready for that (KP: they can't). She mocks them for trying and slips
+      // out of reach, and they're left sheepish. Both in the log too. Her dom side: it counts toward sadism.
       this.records.domWins++;
       const mock = oneOf(talk.dom, this.random()).replaceAll("{guest}", who);
       const sulk = oneOf(talk.guestFail, this.random()).replaceAll("{guest}", who);
       chat.lines.splice(1, 0, narrate(mock), this.guestSays(guest, sulk));
-      this.say(`${mock} ${this.nameOf(guest)}: "${sulk}" (push ${check.push} vs hold ${check.hold})`);
+      this.answerTouch(chat, "pull");
+      this.say(`${mock} ${this.nameOf(guest)}: "${sulk}" (not ready for that)`);
     }
     // How the grab went comes first; or, a tablemate joining in, how they came to.
     if (held) chat.lines.unshift(...held.prelude);
@@ -7425,7 +7638,8 @@ export class Tavern {
     if (this.playerBody !== "Female" || this.inConversation || !this.showRandom) return false;
     const guestNerve = this.nerveOf(guest);
     const mood = feltMood(guest);
-    const loose = mood === "drunk" || mood === "lust";
+    // KP: guests ask for a flash once she's tipsy, as well as when they are.
+    const loose = mood === "drunk" || mood === "lust" || drunkTier(this.drunk) >= 1;
     if (this.showRandom() >= showChance(guest.kind, guestNerve, loose, this.effects.showAsk)) return false;
     const part = partToSee(guest.stats.prefers, guestNerve);
     const pick = <T>(lines: readonly T[]) => lines[Math.floor(this.random() * lines.length) % lines.length];
@@ -7433,6 +7647,7 @@ export class Tavern {
     const ask = this.guestSays(guest, pick(SHOW_ASKS[part]).replaceAll("{gold}", String(offer)));
     this.showChat = { guestId: guest.id, part, lines: [ask, you(pick(SHOW_THOUGHTS))], answered: false, reply: [] };
     this.say(this.logLine(SHOW_OFFER_LOG, { guest: this.nameOf(guest).toLowerCase(), part: PART_WORDS[part] }));
+    if (this.consentOff) this.autoShow(this.showChat, guest);
     return true;
   }
 
@@ -7444,7 +7659,8 @@ export class Tavern {
   /** How far past what it takes to show this she is (desire ÷ 10, less what her exhibition passives take off). */
   private showMargin(part: ShowPart): number {
     const owned = [...this.passives].filter((id) => PASSIVE_BY_ID.get(id)?.group === "exhibition").length;
-    return this.meters[SHOW_METER[part]] / 10 + Math.min(2, owned) - SHOW_NEED[part];
+    // A drink or three and it takes less (barwork.ts, KP's flash requirement when tipsy, drunk, dead drunk).
+    return this.meters[SHOW_METER[part]] / 10 + Math.min(2, owned) - SHOW_NEED[part] * DRUNK_SHOW_NEED[drunkTier(this.drunk)];
   }
 
   /** How much of her clothes are off tonight, 0 to 1, for her face: the share of her outfit's strip ladder. */
@@ -7491,16 +7707,24 @@ export class Tavern {
         options.push({
           label: why ? `${label} ${why}` : `${label} (${asked}+${this.showGold(part, chat.part)} gold)`,
           disabled: why !== null,
-          run: () => this.showThem(chat, guest, part),
+          run: () => {
+            // Giving in wears her willpower down, as a touch she lets happen does.
+            this.spendWill(ALLOW_WILL);
+            this.showThem(chat, guest, part);
+          },
         });
       }
+      const tier = this.showTier(chat.part);
+      const bold = this.showBoldness(chat.part);
       options.push({
-        label: SHOW_NO_LABEL,
+        label: SHOW_NO_LABEL + this.askWillNote(tier, bold),
         disabled: false,
         run: () => {
           chat.answered = true;
           this.records.showsRefused++;
+          const wavered = this.refuseAsk(tier, bold);
           chat.reply = [you(this.herBar("lookNo")), this.guestSays(guest, pick(SHOW_AFTER.no))];
+          if (wavered) chat.reply.push(narrate(WAVERED));
         },
       });
       return options;
@@ -7558,26 +7782,34 @@ export class Tavern {
       ...(guest ? [this.guestSays(guest, pick(lines.they))] : []),
     ];
     if (!chat.answered && guest) {
+      // Breaking free costs willpower when part of her wants to stay held, as Pull away does (willpower.ts).
+      const tier = this.grabTier;
+      const note = this.askWillNote(tier, GRAB_BOLDNESS);
       options.push(
         {
           // Always works, like Pull away.
-          label: GRAB_TWIST,
+          label: GRAB_TWIST + note,
           disabled: false,
           run: () => {
             chat.answered = true;
+            const wavered = this.refuseAsk(tier, GRAB_BOLDNESS);
             chat.reply = answer(GRAB_TWIST_LINES);
+            if (wavered) chat.reply.push(narrate(WAVERED));
             this.records.grabsBroken++;
             this.gainXp("agility", 1);
           },
         },
         {
-          label: GRAB_SLAP,
+          label: GRAB_SLAP + note,
           disabled: false,
           run: () => {
             chat.answered = true;
+            const wavered = this.refuseAsk(tier, GRAB_BOLDNESS);
             chat.reply = answer(GRAB_SLAP_LINES);
             this.records.grabsBroken++;
-            this.shift({ respect: 1 });
+            // A slap that wobbles earns her nothing.
+            if (wavered) chat.reply.push(narrate(WAVERED));
+            else this.shift({ respect: 1 });
             // Some take it badly.
             if (this.random() < GRAB_SLAP_ANGERS) guest.mood = "angry";
           },
@@ -7586,6 +7818,7 @@ export class Tavern {
           label: GRAB_LET,
           disabled: false,
           run: () => {
+            this.spendWill(ALLOW_WILL);
             const prelude = answer(GRAB_LET_LINES);
             this.records.grabsAllowed++;
             this.shift({ fame: 1, flirt: 1 });
@@ -7954,16 +8187,21 @@ export class Tavern {
     const options: (TalkChoice & { run: () => void })[] = [];
     if (!chat.offered) {
       const tooDrunk = this.drunk >= TOO_DRUNK;
+      const drink = chat.drink ?? "ale";
+      // Karryn's Prison: a drink pushed on her is taken, or turned down with willpower (barwork.ts). Taking it costs
+      // a little; saying no costs more, more the more tired she is, and with too little left she can't say no.
+      const refuse = this.refuseDrinkWill;
+      const canRefuse = this.willpower >= refuse;
       options.push(
         {
           // Too drunk, it says so, but it's hers to drink: drink enough and she's under the table (barwork.ts).
-          label: tooDrunk ? TIP_DRINK_TOO_DRUNK : TIP_DRINK_LABEL,
+          label: `${tooDrunk ? TIP_DRINK_TOO_DRUNK : TIP_DRINK_LABEL} (${DRINK_NAMES[drink]}) · ${DRINK_WILL} will`,
           disabled: false,
           run: () => {
             chat.offered = true;
             chat.drank = true;
             const guest = this.guests.find((g) => g.id === chat.guestId);
-            this.takeDrink(guest ? [guest] : []);
+            this.takeDrink(guest ? [guest] : [], drink);
             this.gold += TIP_DRINK_BONUS;
             this.earned += TIP_DRINK_BONUS;
             this.changeMood(chat.guestId, (mood) => moodAfterDrink(mood, 1));
@@ -7972,28 +8210,39 @@ export class Tavern {
               narrate(`You drink with them. They're delighted, and add a coin for luck. (+${TIP_DRINK_BONUS} gold)`),
               ...chat.ask,
             ];
+            this.autoTipDare(chat);
           },
         },
         {
-          label: TIP_DRINK_DECLINE,
-          disabled: false,
+          label: canRefuse ? `${TIP_DRINK_DECLINE} · ${refuse} will` : TIP_DRINK_NO_WILL,
+          disabled: !canRefuse,
           run: () => {
             chat.offered = true;
+            this.spendWill(refuse);
             chat.reply = [you(this.playerBody === "Female" ? this.herBar("drinkNo") : "\"Not just now, thanks.\""), ...chat.ask];
+            this.autoTipDare(chat);
           },
         },
       );
+      // Walking off from a drink they've bought her is turning it down, so it's not there until she's answered.
+      return options;
     } else if (!chat.answered) {
+      // A strip dare among them: letting them wears her willpower, slapping them off costs it when tempted.
+      const dareNo = (reply: Reply) => reply.id === "strip.no";
+      const dareNote = chat.replies.some(dareNo) ? this.askWillNote(this.dareTier, this.dareBoldness) : "";
       for (const reply of chat.replies) {
         options.push({
-          label: reply.label,
+          label: dareNo(reply) ? reply.label + dareNote : reply.label,
           disabled: false,
           heat: reply.heat || undefined,
           run: () => {
             chat.answered = true;
+            let wavered = false;
+            if (dareNo(reply)) wavered = this.refuseAsk(this.dareTier, this.dareBoldness);
+            else if (reply.strip) this.spendWill(ALLOW_WILL);
             this.adjust(reply.gold, reply.trust, reply.heat);
             this.earned += Math.max(0, reply.gold);
-            this.shift(reply.persona);
+            this.shift(wavered ? { ...reply.persona, respect: 0 } : reply.persona);
             if ((reply.persona?.kindness ?? 0) > 0) this.shift({ respect: 1 });
             this.changeMood(chat.guestId, (mood) => moodAfterReply(mood, reply.persona?.flirt ?? 0, reply.persona?.kindness ?? 0));
             if (reply.strip) this.loseClothing();
@@ -8002,6 +8251,7 @@ export class Tavern {
             // You say your answer first, then what comes of it.
             const spoken = reply.say ?? (reply.label.startsWith("\"") ? reply.label : null);
             chat.reply = spoken ? [you(spoken), narrate(reply.result)] : [narrate(reply.result)];
+            if (wavered) chat.reply.push(narrate(WAVERED));
           },
         });
       }
@@ -8199,9 +8449,9 @@ export class Tavern {
   }
 
   private action(sibling: number, target: Target): Action | null {
-    if (target.kind === "bell") {
+    if (target.kind === "sign") {
       if (this.settlingIn) return { label: `Clean up before you open: ${messesLeftWords(this.messes)} left` };
-      if (this.phase === "day") return { label: "Ring the bell to open for the night", run: () => this.open() };
+      if (this.phase === "day") return { label: "Turn the sign to Open for the night", run: () => this.open() };
       return this.phase === "dusk" ? { label: "The sun is going down..." } : null;
     }
     if (target.kind === "door") {
@@ -8432,7 +8682,10 @@ export class Tavern {
       { label: jug, disabled: state.jug || this.tapLeft === 0 },
     ];
     // Someone at the table is going for your clothes.
-    if (state.dare) choices.push(...stripReplies(state.dare, this.stripped).map(({ label }) => ({ label, disabled: false })));
+    if (state.dare) {
+      const note = this.askWillNote(this.dareTier, this.dareBoldness);
+      choices.push(...stripReplies(state.dare, this.stripped).map(({ label, strip }) => ({ label: strip ? label : label + note, disabled: false })));
+    }
     choices.push({ label: "Get back to work", disabled: false });
     return choices;
   }
@@ -8477,7 +8730,8 @@ export class Tavern {
 
     if (index === 0) {
       state.drinks++;
-      this.takeDrink(members);
+      // She drinks what they're drinking: the strongest bottle on the table, or ale (barwork.ts).
+      this.takeDrink(members, strongestDrink(members.map((g) => g.order)));
       for (const guest of members) guest.mood = moodAfterDrink(guest.mood, state.drinks);
       if (state.drinks === 1) {
         // Drinking with people loosens their tongues. Village folk trust you more for it,
@@ -8510,6 +8764,12 @@ export class Tavern {
       if (dare) {
         state.dare = dare;
         this.talkReply.push(this.partySays(dare.dare));
+        // Consent off (KP): no question. Warm enough for it and the piece goes; not, and she slaps the hand away.
+        if (this.consentOff) {
+          const before = this.talkReply;
+          this.chooseTalk(this.dareTier > 0 ? 2 : 3);
+          this.talkReply = [...before, ...this.talkReply];
+        }
       }
     } else if (index === 1) {
       const pay = JUG_PAY * members.length;
@@ -8527,13 +8787,18 @@ export class Tavern {
       this.say(`+${pay} gold for a jug of ale.`);
     } else if (state.dare && (index === 2 || index === 3)) {
       const reply = stripReplies(state.dare, this.stripped)[index - 2];
+      // Letting them wears her willpower down; slapping them off costs it when part of her wanted to (willpower.ts).
+      let wavered = false;
+      if (reply.strip) this.spendWill(ALLOW_WILL);
+      else wavered = this.refuseAsk(this.dareTier, this.dareBoldness);
       state.dare = null;
       this.adjust(reply.gold, reply.trust, reply.heat);
       this.earned += reply.gold;
-      this.shift(reply.persona);
+      this.shift(wavered ? { ...reply.persona, respect: 0 } : reply.persona);
       for (const guest of members) guest.mood = moodAfterReply(guest.mood, reply.persona?.flirt ?? 0, 0);
       if (reply.strip) this.loseClothing();
       this.talkReply = [you(reply.say ?? reply.label), narrate(reply.result)];
+      if (wavered) this.talkReply.push(narrate(WAVERED));
     } else {
       this.talkingTo = null;
       this.talkReply = [];
@@ -9138,8 +9403,8 @@ export class Tavern {
     this.records.messesCleaned++;
     this.cue("wipe");
     if (firstMorning) {
-      // The first morning walks her through it: what's left, and the bell once it's done.
-      if (!this.settlingIn) this.say("The tavern is spotless, the way it was in Grandma's day. Ring the bell on the bar when you're ready to open.");
+      // The first morning walks her through it: what's left, and the sign once it's done.
+      if (!this.settlingIn) this.say("The tavern is spotless, the way it was in Grandma's day. Turn the sign by the front door to Open when you're ready.");
       else this.say(`${MESS_DONE[kind]} ${messesLeftWords(this.messes)} left.`);
       return;
     }
@@ -9643,8 +9908,8 @@ export class Tavern {
     this.partyState.clear();
     this.say(
       messes.length > 0
-        ? `Day ${this.nightIndex + 1}. Last night left a mess: dirty dishes, spilt ale and dust. Clean up and get ready, then ring the bell on the bar.`
-        : `Day ${this.nightIndex + 1}. The tavern is closed. Get ready, then ring the bell on the bar when you want the night to begin.`,
+        ? `Day ${this.nightIndex + 1}. Last night left a mess: dirty dishes, spilt ale and dust. Clean up and get ready, then turn the sign by the front door to Open.`
+        : `Day ${this.nightIndex + 1}. The tavern is closed. Get ready, then turn the sign by the front door to Open when you want the night to begin.`,
     );
     if (messes.some((m) => m.kind === "cobweb")) {
       this.say("Up on the wall, a spider has been busy. Mess left about overnight draws them back in.");

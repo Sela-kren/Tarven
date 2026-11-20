@@ -18,8 +18,6 @@ export interface TouchSettings {
   autoTouch: boolean;
   /** The player has said yes to it: on the offer, or by switching Consent off in Settings. */
   agreed: boolean;
-  /** The boldest touch it covers, 1 to AUTO_TOUCH_MAX. */
-  upTo: number;
   /** Karryn's Prison's switches: rimjob and footjob scenes in a brawl (brawlscenes.ts). On by default. */
   rimjob: boolean;
   footjob: boolean;
@@ -35,12 +33,11 @@ export const DIFFICULTIES: Readonly<Record<Difficulty, { name: string; foes: num
   hard: { name: "Hard", foes: 1.25, growth: 0.75 },
 };
 
-export const AUTO_TOUCH_MAX = 9;
 /** A lustful guest with at least this much nerve is impulsive enough to reach without waiting. */
 export const IMPULSE_NERVE = 5;
 
 export function defaultTouchSettings(): TouchSettings {
-  return { autoTouch: true, agreed: false, upTo: 5, rimjob: true, footjob: true, difficulty: "normal" };
+  return { autoTouch: true, agreed: false, rimjob: true, footjob: true, difficulty: "normal" };
 }
 
 /** A guest acting on impulse: lustful, and bold enough to just do it. */
@@ -49,11 +46,11 @@ export function impulsive(mood: Mood, nerve: number): boolean {
 }
 
 /**
- * Whether a touch is one the setting can cover: one she could say yes to anyway, within the boldness chosen. A
- * garment counts too, weighed harder in the check (STRIP_HOLD). Adult play has its own state check instead.
+ * Whether a touch is one the setting can cover: one she could say yes to anyway, however bold (Karryn's Prison has no
+ * limit, only her desire). A garment counts too. Adult play has its own state check instead.
  */
-export function autoTouchFits(settings: TouchSettings, touch: TouchDef, answers: readonly TouchAnswer[]): boolean {
-  return touch.level <= settings.upTo && touch.region !== "invite" && answers.includes("allow");
+export function autoTouchFits(_settings: TouchSettings, touch: TouchDef, answers: readonly TouchAnswer[]): boolean {
+  return touch.region !== "invite" && answers.includes("allow");
 }
 
 /** Her passive groups that count toward each part of her being touched. */
@@ -166,7 +163,6 @@ export function readTouchSettings(): TouchSettings {
       if (r.difficulty === "easy" || r.difficulty === "normal" || r.difficulty === "hard") settings.difficulty = r.difficulty;
       if (typeof r.rimjob === "boolean") settings.rimjob = r.rimjob;
       if (typeof r.footjob === "boolean") settings.footjob = r.footjob;
-      if (typeof r.upTo === "number") settings.upTo = Math.min(AUTO_TOUCH_MAX, Math.max(1, Math.round(r.upTo)));
     }
   } catch {
     // Blocked or broken storage: the defaults stand.

@@ -8,7 +8,7 @@ const COBWEB_SPOTS = 7;
 const idle = { listeningTo: null, night: true };
 const station = (s: Station): Target => ({ kind: "station", station: s });
 const messAt = (m: Mess): Target => ({ kind: "mess", id: m.id });
-const bell: Target = { kind: "bell" };
+const sign: Target = { kind: "sign" };
 
 function tavern(): Tavern {
   return new Tavern(TABLES.length, TABLES, DUST_SPOTS, COBWEB_SPOTS);
@@ -180,11 +180,11 @@ describe("the first morning in Grandma's tavern", () => {
     expect(later.messes).toHaveLength(0);
   });
 
-  it("won't let the bell ring until it's all cleaned, and walks her through it", () => {
+  it("won't let the sign turn until it's all cleaned, and walks her through it", () => {
     const t = settled();
     t.takeMessages();
-    expect(t.prompt(0, bell)?.actionable).toBe(false);
-    expect(t.prompt(0, bell)?.label).toContain("5 cobwebs and 6 patches of dust left");
+    expect(t.prompt(0, sign)?.actionable).toBe(false);
+    expect(t.prompt(0, sign)?.label).toContain("5 cobwebs and 6 patches of dust left");
     t.open();
     expect(t.phase).toBe("day");
 
@@ -195,9 +195,9 @@ describe("the first morning in Grandma's tavern", () => {
 
     cleanEverything(t);
     expect(t.messes).toHaveLength(0);
-    expect(t.takeMessages().at(-1)).toContain("Ring the bell");
-    expect(t.prompt(0, bell)?.actionable).toBe(true);
-    t.interact(0, bell);
+    expect(t.takeMessages().at(-1)).toContain("Turn the sign");
+    expect(t.prompt(0, sign)?.actionable).toBe(true);
+    t.interact(0, sign);
     expect(t.phase).toBe("dusk");
   });
 
@@ -211,6 +211,6 @@ describe("the first morning in Grandma's tavern", () => {
     const loaded = tavern();
     loaded.restore(t.snapshot());
     expect(loaded.messes.filter((m) => m.kind === "cobweb")).toHaveLength(5);
-    expect(loaded.prompt(0, bell)?.actionable).toBe(false);
+    expect(loaded.prompt(0, sign)?.actionable).toBe(false);
   });
 });

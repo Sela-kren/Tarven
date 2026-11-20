@@ -100,3 +100,23 @@ export function applyFields(target: object, saved: unknown, skip: readonly strin
     }
   }
 }
+
+/**
+ * Captured fields back as plain values, without a target to put them on: for rebuilding a class instance that's
+ * never saved in a real save (a brawl in progress), which only the dev resume does (devresume.ts).
+ */
+export function readFields(saved: unknown): Fields {
+  if (!isPlain(saved)) throw new Error("Not saved fields");
+  return decode(saved) as Fields;
+}
+
+/**
+ * `saved` with whatever it's missing taken from `fresh`, all the way down: the functions a save leaves out (the dice,
+ * a lookup) come back from a freshly built copy, and every plain value keeps what was saved.
+ */
+export function fillFrom(saved: unknown, fresh: unknown): unknown {
+  if (!isPlain(saved) || !isPlain(fresh)) return saved === undefined ? fresh : saved;
+  const out: Fields = { ...saved };
+  for (const [key, value] of Object.entries(fresh)) out[key] = key in saved ? fillFrom(saved[key], value) : value;
+  return out;
+}

@@ -160,7 +160,7 @@ describe("saved layouts", () => {
 describe("the house plans desk", () => {
   const desk = { kind: "desk" } as const;
 
-  it("opens by day, and not once the bell has rung", () => {
+  it("opens by day, and not once the sign is turned", () => {
     const t = new Tavern(4, ["A", "A", "Bar", "Bar"]);
     expect(t.prompt(0, desk)?.actionable).toBe(true);
     t.open();

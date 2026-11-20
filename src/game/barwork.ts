@@ -86,12 +86,74 @@ export function roomNerve(f: { fame: number; horny: boolean; wet: boolean }): nu
   return fame + (f.horny ? HORNY_NERVE : 0) + (f.wet ? WET_NERVE : 0);
 }
 
+// ---------- Drinking, Karryn's Prison style ----------
+// KP (RemtairyKarrynWaitress.js): her drunkenness is alcohol taken over her max stamina; each time a guest gets her
+// to drink she takes two sips of what they're having, worth its strength (pale ale 5 … whiskey 20) × 1% each. Tipsy
+// past 20%, drunk past 40%, dead drunk past 70%. Turning a drink down costs willpower (15, more the more tired she
+// is); with too little left she can't, so a long shift wears her down into drinking. Being drunk takes off her Mind,
+// Agility and Strength, makes a flash easier, and costs fatigue at the end of the night. Tarven is real time, so
+// unlike KP she also sobers up slowly as the night goes on (tavern.ts SOBER_RATE).
+
+/** What she can be drinking: what's on the tap, or one of the bottles. */
+export type DrinkKind = "ale" | "mead" | "wine" | "vodka";
+/** How drunk one drink makes her (KP: strength × 2 sips × 1%): ale like KP's pale ale, vodka like its vodka. */
+export const DRINK_STRENGTHS: Readonly<Record<DrinkKind, number>> = { ale: 0.1, mead: 0.12, wine: 0.14, vodka: 0.2 };
+export const DRINK_NAMES: Readonly<Record<DrinkKind, string>> = { ale: "ale", mead: "mead", wine: "wine", vodka: "vodka" };
+
+/** What a guest's order means for a drink they'd pour her: their bottle, or ale for anything else. */
+export function drinkOf(order: string | null | undefined): DrinkKind {
+  return order === "mead" || order === "wine" || order === "vodka" ? order : "ale";
+}
+/** The strongest of what a table is drinking (ale if nobody's on the bottles). */
+export function strongestDrink(orders: readonly (string | null | undefined)[]): DrinkKind {
+  return orders.map(drinkOf).reduce((a, b) => (DRINK_STRENGTHS[b] > DRINK_STRENGTHS[a] ? b : a), "ale" as DrinkKind);
+}
+
+/** KP's three steps (ALCOHOL_TIPSY/DRUNK/DEAD_DRUNK_THRESHOLD), as how drunk she is (0 to 1). */
+export const TIPSY_AT = 0.2;
+export const DRUNK_AT = 0.4;
+export const DEAD_DRUNK_AT = 0.7;
+export type DrunkTier = 0 | 1 | 2 | 3;
+/** 0 sober, 1 tipsy, 2 drunk, 3 dead drunk. */
+export function drunkTier(drunk: number): DrunkTier {
+  return drunk >= DEAD_DRUNK_AT ? 3 : drunk >= DRUNK_AT ? 2 : drunk >= TIPSY_AT ? 1 : 0;
+}
+
+/** Turning a drink down (KP's WILLPOWER_REJECT_ALCOHOL_COST, on Tarven's smaller willpower scale), and taking one. */
+export const REFUSE_DRINK_WILL = 5;
+/** What saying no to a drink costs her: more for every level of fatigue (KP: +10% a level). */
+export function refuseDrinkCost(fatigueLevel: number): number {
+  return Math.round(REFUSE_DRINK_WILL * (1 + 0.1 * Math.max(0, fatigueLevel)));
+}
+
+/**
+ * The chance a guest she's just served pushes a drink on her (KP's asked-to-drink): when they've a drink of their own,
+ * more if they're drunk or worked up, more again once she's tipsy and looks like she'd say yes.
+ */
+export const DRINK_ASK = { base: 0.2, loose: 0.15, tipsy: 0.1 } as const;
+export function drinkAskChance(f: { loose: boolean; drunk: number }): number {
+  return DRINK_ASK.base + (f.loose ? DRINK_ASK.loose : 0) + (drunkTier(f.drunk) >= 1 ? DRINK_ASK.tipsy : 0);
+}
+
+/** What being drunk takes off her in a brawl (KP's waitressParamRate): Mind all of it, Agility ¾, Strength ½. */
+export const DRUNK_STAT_LOSS = { mind: 1, agility: 0.75, strength: 0.5 } as const;
+/** Her level in a stat with the drink in her: never below 1. */
+export function drunkLevel(level: number, stat: keyof typeof DRUNK_STAT_LOSS, drunk: number): number {
+  return Math.max(1, level * (1 - DRUNK_STAT_LOSS[stat] * Math.max(0, Math.min(1, drunk))));
+}
+
+/** A flash needs less of her once she's had a few (KP's flash requirement ×0.75 tipsy, ×0.66 drunk, ×0.5 dead drunk). */
+export const DRUNK_SHOW_NEED: Readonly<Record<DrunkTier, number>> = { 0: 1, 1: 0.75, 2: 0.66, 3: 0.5 };
+
+/** Fatigue a night's drinking leaves her with (KP: +1 tipsy, +2 drunk, +5 dead drunk, on its 0-100 scale ×3). */
+export const DRUNK_FATIGUE: Readonly<Record<DrunkTier, number>> = { 0: 0, 1: 3, 2: 6, 3: 15 };
+
 // ---------- Dead drunk ----------
 
 /**
  * How much she can drink past the top of drunk (DRUNK_MAX) before she's done for the night, in drinks. At the top
  * she's as drunk as she gets; what she drinks after that piles up as "over the limit" and wears off first. With
- * eight drinks to reach the top (too drunk to say yes at the 8th), she passes out on the 9th drink in a row. Passives add more
+ * ten ales to reach the top (too drunk to say yes at the 10th), she passes out on the 11th in a row. Passives add more
  * (`Effects.holdLiquor`).
  */
 export const PASS_OUT_DRINKS_PAST = 1;
@@ -157,4 +219,14 @@ export const REDRESS_LINES: readonly string[] = [
   "You drop low behind the bar and pull your {piece} into place, still throbbing. A groan of disappointment follows.",
   "You crouch behind the bar and ease back into your {piece}. Someone groans in disappointment.",
   "Behind the bar you wriggle your {piece} on again while someone sighs with regret.",
+];
+
+/** A guest pushing a drink on her as she serves them (KP's waitressEnemyAskingForWaitressToDrink). {drink} is theirs. */
+export const DRINK_PUSHES: readonly string[] = [
+  "\"Keeper! Have a {drink} with me. I hate drinking alone. I also hate drinking with my wife.\"",
+  "\"One {drink}, for the prettiest thing in this room. Not the stew. You.\"",
+  "\"You've been on your feet all night. Sit. Drink. That's an order, I'm a paying customer.\"",
+  "\"Go on, one {drink}. What's the worst that could happen?\" (He looks like he knows exactly.)",
+  "\"Down it, keeper! Down it! DOWN IT!\" The whole table is chanting now.",
+  "\"A toast! To you. And to me. Mostly me. Drink!\"",
 ];

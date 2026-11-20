@@ -41,6 +41,19 @@ export const SHOW_LINES = {
   bare: "You dance on the bar with next to nothing on, and the coins rain down.",
 } as const;
 
+/**
+ * KP's dance requests (RemtairyKarrynStripper.js stripperBattle_makeDanceRequest): mid-dance, the keenest man in the
+ * room calls up for more. It's asked as a look (show.ts), so she picks what she shows, or says no with willpower.
+ * Keyed by what he's shouting for; {gold} is his offer.
+ */
+export const DANCE_CALLS: Readonly<Record<"band" | "breasts" | "smalls" | "pussy" | "butt", readonly string[]>> = {
+  band: ["Top down, keeper! Let's see what's holding all that up! {gold} gold says you will!", "Pull that top down! {gold} gold!"],
+  breasts: ["GET 'EM OUT! GET 'EM OUT! {gold} gold for the pair!", "Off with the top, keeper! {gold} gold if they bounce!"],
+  smalls: ["Lift the skirt! What colour are they tonight? {gold} gold to find out!", "Show us your smalls, keeper! {gold} gold!"],
+  pussy: ["All of it, keeper! Everything off! {gold} gold, and I'm not joking!", "Squat down here and show us! {gold} gold!"],
+  butt: ["Turn round and bend over! {gold} gold for the view!", "Shake that arse at me! {gold} gold!"],
+};
+
 /** What a dance on the bar earns, and what it does. */
 export function runShow(s: ShowInput): ShowResult {
   const per = 1 + Math.floor(s.fame / 10) + Math.round(s.exposure * 3) + Math.floor(s.slutLevel / 2);

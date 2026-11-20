@@ -87,13 +87,17 @@ describe("parties", () => {
     expect(t.talkingTo).toBe(0);
     expect(t.talkLines.length).toBeGreaterThan(0);
     t.chooseTalk(0);
-    expect(t.drunk).toBeCloseTo(0.125);
+    // Ale (no bottles on this table): KP's pale ale, a tenth of the way to the top.
+    expect(t.drunk).toBeCloseTo(0.1);
     expect(t.trust).toBe(trust + 1);
     expect(t.talkLines.map((line) => line.text)).toContain(t.plan.parties[0].gossip);
     t.chooseTalk(0);
-    expect(t.drunk).toBeCloseTo(0.25);
+    expect(t.drunk).toBeCloseTo(0.2);
     expect(t.trust).toBe(trust + 1);
-    // Two drinks a table, then they stop pouring.
+    t.chooseTalk(0);
+    t.chooseTalk(0);
+    expect(t.drunk).toBeCloseTo(0.4);
+    // A mug's worth a table (four drinks, KP's ale), then they stop pouring.
     expect(t.talkChoices[0].disabled).toBe(true);
     t.chooseTalk(t.talkChoices.length - 1);
     expect(t.talkingTo).toBeNull();
@@ -138,7 +142,7 @@ describe("drinking", () => {
     t.chooseTalk(t.talkChoices.length - 1);
     t.drunk = 0.35;
     run(t, 10);
-    expect(t.drunk).toBeCloseTo(0.25);
+    expect(t.drunk).toBeCloseTo(0.335);
     expect(drunkLabel(t.drunk)).toBe("Tipsy");
     t.drunk = 0.9;
     t.phase = "bedtime";
@@ -198,23 +202,24 @@ describe("a drink as a tip", () => {
 
   const said = (t: Tavern) => t.talkLines.map((line) => line.text);
   /** Turns down the drink they offered, which brings on what they say next: a compliment, a favor or a dare. */
-  const pastDrink = (t: Tavern) => t.chooseTalk(t.talkChoices.findIndex((c) => c.label === TIP_DRINK_DECLINE));
+  const pastDrink = (t: Tavern) => t.chooseTalk(t.talkChoices.findIndex((c) => c.label.startsWith(TIP_DRINK_DECLINE)));
 
   it("opens a conversation with the guest, who offers you a drink", () => {
     const t = tipped();
     expect(t.inConversation).toBe(true);
     expect(t.talkLines[0].speaker).toMatch(/^Farmer/);
-    // First only the drink they offered is asked, right under their offer.
-    expect(t.talkChoices.map((c) => c.label)).toEqual([TIP_DRINK_LABEL, TIP_DRINK_DECLINE, "Get back to work"]);
+    // First only the drink they offered is asked, right under their offer: taken or turned down, both with willpower
+    // (KP), and walking off isn't there until she's answered it.
+    expect(t.talkChoices.map((c) => c.label)).toEqual([`${TIP_DRINK_LABEL} (ale) · 3 will`, `${TIP_DRINK_DECLINE} · 5 will`]);
     const gold = t.gold;
     t.chooseTalk(0);
-    expect(t.drunk).toBeCloseTo(0.125);
+    expect(t.drunk).toBeCloseTo(0.1);
     expect(t.gold).toBe(gold + 2);
     expect(t.persona.drinks).toBe(1);
     expect(t.talkReplyLines[0]).toEqual({ speaker: "You", text: "\"Cheers!\"" });
     // Then what they say next, with its own answers, and no drink among them.
     expect(t.talkReplyLines.at(-1)?.speaker).toMatch(/^Farmer/);
-    expect(t.talkChoices.map((c) => c.label)).not.toContain(TIP_DRINK_LABEL);
+    expect(t.talkChoices.some((c) => c.label.startsWith(TIP_DRINK_LABEL))).toBe(false);
     t.chooseTalk(t.talkChoices.length - 1);
     expect(t.inConversation).toBe(false);
   });
@@ -407,5 +412,31 @@ describe("guests going for your clothes", () => {
     t.nextNight();
     expect(t.stripped).toBe(0);
     expect(t.strippedPieces).toEqual([]);
+  });
+});
+
+describe("guests going for your clothes, Consent off (Karryn's Prison)", () => {
+  function satOff(bodyDesire: number): Tavern {
+    const t = atNight(0, 18);
+    t.playerBody = "Female";
+    t.touchSettings = { ...t.touchSettings, autoTouch: true, agreed: true };
+    t.meters.body = bodyDesire;
+    t.interact(0, at(partyOf(t, 0)[0]));
+    t.random = () => 0.99;
+    return t;
+  }
+
+  it("lets the piece go, unasked, when she's warm enough for it", () => {
+    const t = satOff(100);
+    t.chooseTalk(0);
+    expect(t.stripped).toBe(1);
+    expect(t.talkChoices.map((c) => c.label)).not.toContain("Slap their hand away");
+  });
+
+  it("slaps the hand away, unasked, when she isn't", () => {
+    const t = satOff(0);
+    t.chooseTalk(0);
+    expect(t.stripped).toBe(0);
+    expect(t.talkChoices.map((c) => c.label)).not.toContain("Slap their hand away");
   });
 });

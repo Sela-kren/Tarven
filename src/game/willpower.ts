@@ -56,6 +56,20 @@ export function refuseCost(tier: number, boldness: number): number {
   return tier * 3 + Math.ceil(boldness / 2);
 }
 
+/**
+ * How tempted she is by an ask that isn't a touch (a look, a grab, a strip dare, a move on the bar): 0 not ready,
+ * 1 torn, 2 wanting it, by how far her desire (0 to 10) is past what it needs. The same steps as a touch's
+ * (touch.ts thoughtTier), so saying no costs what it would for a touch as bold.
+ */
+export function temptTier(desire: number, need: number, margin = 2): 0 | 1 | 2 {
+  if (desire < need) return 0;
+  return desire < need + margin ? 1 : 2;
+}
+
+/** How bold a grab is, and a strip dare (bolder for every piece already off), on a touch's 1-to-10 scale. */
+export const GRAB_BOLDNESS = 3;
+export const DARE_BOLDNESS = 4;
+
 /** What she can afford, as a word, for the HUD and the status boards. */
 export function willLabel(now: number, max: number): string {
   const share = max > 0 ? now / max : 0;

@@ -405,6 +405,26 @@ export class Soundscape {
     }
   }
 
+  /** A wooden clack and a little jingle of the cords: the sign by the door spun round. */
+  playSignTurn(): void {
+    const { context, effectBus } = this;
+    if (!context || !effectBus) return;
+    const now = context.currentTime;
+    for (const [frequency, volume, length, at] of [[180, 0.3, 0.09, 0], [320, 0.14, 0.06, 0], [150, 0.22, 0.08, 0.32]]) {
+      const tone = context.createOscillator();
+      const gain = context.createGain();
+      tone.type = "triangle";
+      tone.frequency.setValueAtTime(frequency, now + at);
+      tone.frequency.exponentialRampToValueAtTime(frequency * 0.6, now + at + length);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.setValueAtTime(volume, now + at);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + at + length);
+      tone.connect(gain).connect(effectBus);
+      tone.start(now + at);
+      tone.stop(now + at + length + 0.02);
+    }
+  }
+
   private applySettings(): void {
     const { context, master, musicBus, effectBus, layerBus, settings } = this;
     if (!context || !master || !musicBus || !effectBus || !layerBus) return;

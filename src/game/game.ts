@@ -52,7 +52,9 @@ import {
   BEDROOM_DOOR_SHUT,
   BEDROOM_DOOR_SPOT,
   BEDROOM_FROM_X,
-  BELL_SPOT,
+  SIGN_BOARD_NAME,
+  SIGN_HOOK,
+  SIGN_SPOT,
   BIN_NAME,
   BIN_SPOT,
   CLOSET_NAME,
@@ -64,7 +66,8 @@ import {
   FRONT_DOOR_HINGE,
   FRONT_DOOR_NAME,
   FRONT_DOOR_OPEN_ANGLE,
-  makeBell,
+  makeSign,
+  roomMaterials,
   WASH_TUB_NAME,
   WASH_TUB_SPOT,
 } from "./furnishings";
@@ -117,7 +120,10 @@ import { Chatter } from "./chatter";
 import { DrinkComic } from "./comic";
 import { showJournal } from "./journalpanel";
 import { showBedChoice, showDuelTest, showFight, playAdultScene } from "./fightpanels";
-import { confirmMenu, showDevPanel, showLaws, showLoadMenu, showSaveMenu, showSettingsMenu } from "./menus";
+import { reloadToTitle } from "./devresume";
+import { showHelp } from "./helpscreen";
+import { addStreetLantern, BOOK_STAND_RANGE, BOOK_STAND_SPOT, bookCount, bookStandLines, syncStoryProps, type StoryPropsState } from "./storyprops";
+import { confirmMenu, showDebt, showDevPanel, showGuild, showKnight, showLaws, showLoadMenu, showSaveMenu, showSettingsMenu, showStaff } from "./menus";
 import { arcStageName } from "./lewd";
 import { isCardTitle } from "./tropes";
 import { PASSIVE_ICONS } from "./passiveicons";
@@ -156,7 +162,7 @@ import { BODY_SKILLS, STATS, type SkillId, type StatId } from "./skills";
 import { AiNarrator } from "./ainarrator";
 import { setFlavorSource } from "./flavor";
 import { SpeechBubbles, type Speaker } from "./speech";
-import { buildStreet, type Street } from "./street";
+import { buildStreet, TAVERN_DOOR, type Street } from "./street";
 import { MAX_PUSHERS } from "./grass";
 import { actEffect, outfitNoticed, walkOfShame, type SeenEffect, type SeenFacts } from "./beingseen";
 import type { RecruitOutfit } from "./recruits";
@@ -322,9 +328,14 @@ const SPRITE_TURN = 0.3;
 const FADE_SECONDS = 0.45;
 /** Where she stands to go out of the front door by day, how near she must be, and where she comes back in. */
 const FRONT_DOOR_SPOT = new Vector3(-1.5, 0, -4.4);
+/** In front of the middle of the bar, on the room's side, where she climbs up to dance; and how near she has to be. */
+const BAR_DANCE_SPOT = new Vector3(3.1, 0, -2.25);
+const BAR_DANCE_RANGE = 1.1;
+/** How near the foot of the stairs she has to be to let the rooms. */
+const ROOMS_LET_RANGE = 1.4;
 const FRONT_DOOR_RANGE = 1.3;
 const BACK_INSIDE: Vec2 = { x: -1.5, z: -3.8 };
-/** Out in the street, the hour she's reminded to head home, before the bell at five (AFTERNOON_HOLD_HOUR). */
+/** Out in the street, the hour she's reminded to head home, before the sign turns at five (AFTERNOON_HOLD_HOUR). */
 const STREET_REMIND_HOUR = 16;
 /** How much further back the camera stands in the street than in the room. */
 const STREET_ZOOM = 1.25;
@@ -351,9 +362,11 @@ const BED_RANGE = 1.6;
 const BED_ARROW_HEIGHT = 1.7;
 /** Outline around whatever E would use, in world units. */
 const TARGET_OUTLINE_WIDTH = 0.022;
-/** How long the bell rocks after it rings, and how far. */
-const BELL_RING_SECONDS = 0.8;
-const BELL_ROCK = 0.22;
+/** How long the sign takes to spin round to its other side, and how far it swings on its cords after. */
+const SIGN_TURN_SECONDS = 0.55;
+const SIGN_SWING = 0.12;
+/** How high over the floor the arrow over the sign floats. */
+const SIGN_ARROW_HEIGHT = 2.3;
 /** The barrels the barrel station takes casks from. */
 const BARRELS = ["Barrel_0", "Barrel_1", "Barrel_2"];
 /** Room objects the game outlines or moves, which the room must keep whole instead of merging. */
@@ -969,8 +982,13 @@ export class Game {
     0,
   );
   private readonly trayMaterial = solidRetroMaterial("T_tray", TRAY_COLOR);
-  private readonly bell: Object3D;
-  private bellRinging = 0;
+  /** The Open/Closed sign by the front door, and its board, which spins on the hook. */
+  private readonly sign: Object3D;
+  private readonly signBoard: Object3D;
+  /** 0 shows CLOSED to the room, 1 shows OPEN; it eases toward whichever the tavern is. */
+  private signTurn = 0;
+  /** Seconds since the sign last started turning, for its swing on the cords. */
+  private signSince = Infinity;
   private readonly bedroomDoor: Object3D;
   /** The floor upstairs at play: the Lantern's room, its lamp and door (upstairs.ts). */
   private readonly upstairs: Upstairs;
@@ -1099,9 +1117,10 @@ export class Game {
     // Brawls and duels take their colour lines from the same bank.
     setFlavorSource((key, guest) => this.narrator.draw(key, guest));
     this.keyNav = new KeyNav(input);
-    this.bell = makeBell();
-    this.bell.position.copy(BELL_SPOT);
-    assets.props.add(this.bell);
+    this.sign = makeSign();
+    this.sign.position.copy(SIGN_HOOK);
+    this.signBoard = this.sign.getObjectByName(SIGN_BOARD_NAME)!;
+    assets.props.add(this.sign);
 
     applyRetroLook(assets.male);
     applyRetroLook(assets.female);
@@ -1125,6 +1144,8 @@ export class Game {
     scene.add(this.messLayer.group);
     this.street = buildStreet(assets.streetKit ?? null);
     scene.add(this.street.root);
+    // Wren's red lantern on the front wall outside too, once it's hung (storyprops.ts).
+    addStreetLantern(this.street.root, roomMaterials(world.root), TAVERN_DOOR.x, TAVERN_DOOR.z);
     this.checkpoint = this.tavern.snapshot();
 
     const { props } = assets;
@@ -1193,7 +1214,7 @@ export class Game {
               : [requireNode(props, STATION_NODES[station])];
       this.targetOutlines.set(targetKey({ kind: "station", station }), outline(objects));
     }
-    this.targetOutlines.set(targetKey({ kind: "bell" }), outline([this.bell]));
+    this.targetOutlines.set(targetKey({ kind: "sign" }), outline([this.sign]));
     this.targetOutlines.set(targetKey({ kind: "bed" }), outline([piece(BED_NAME)]));
     this.bedroomDoor = piece(BEDROOM_DOOR_NAME);
     this.targetOutlines.set(targetKey({ kind: "door" }), outline([this.bedroomDoor]));
@@ -1850,7 +1871,7 @@ export class Game {
             : [FLOOR_MESS_ARROW_HEIGHT, FLOOR_MESS_RANGE];
       consider({ kind: "mess", id: mess.id }, nearest, height, range);
     }
-    consider({ kind: "bell" }, BELL_SPOT, STATION_ARROW_HEIGHT, STATION_RANGE);
+    consider({ kind: "sign" }, SIGN_SPOT, SIGN_ARROW_HEIGHT, STATION_RANGE);
     consider({ kind: "bed" }, BED_SPOT, BED_ARROW_HEIGHT, BED_RANGE);
     consider({ kind: "door" }, BEDROOM_DOOR_SPOT, STATION_ARROW_HEIGHT, BEDROOM_DOOR_RANGE);
     consider({ kind: "desk" }, DESK_SPOT, STATION_ARROW_HEIGHT, DESK_RANGE);
@@ -1858,6 +1879,15 @@ export class Game {
     consider({ kind: "bath" }, BATH_SPOT, STATION_ARROW_HEIGHT, BATH_RANGE);
     consider({ kind: "closet" }, CLOSET_SPOT, STATION_ARROW_HEIGHT, CLOSET_RANGE);
     consider({ kind: "street", place: "out", label: "" }, FRONT_DOOR_SPOT, STATION_ARROW_HEIGHT, FRONT_DOOR_RANGE);
+    // Her side work, where it happens rather than only in Settings: up on the bar during service, and the rooms let
+    // from the foot of the stairs at last call.
+    if (this.tavern.canDance) consider({ kind: "street", place: "dance", label: "Dance on the bar (18+, once a night)" }, BAR_DANCE_SPOT, STATION_ARROW_HEIGHT, BAR_DANCE_RANGE);
+    if (this.tavern.canRentRooms) consider({ kind: "street", place: "rooms", label: "Let the rooms upstairs for the night" }, STAIRS_FOOT, STATION_ARROW_HEIGHT, ROOMS_LET_RANGE);
+    // Wren's book stand, once the red book's on her mind: what she holds, and where the rest is.
+    if (this.bookKnown) {
+      const held = bookCount(this.storyProps());
+      consider({ kind: "street", place: "redbook", label: `Look at Wren's red book (${held} of 4 parts)` }, BOOK_STAND_SPOT, STATION_ARROW_HEIGHT, BOOK_STAND_RANGE);
+    }
     return best;
   }
 
@@ -1944,12 +1974,20 @@ export class Game {
     this.targetOutlines.get(key)?.forEach((outline) => outline.show(this.targetOutline));
   }
 
-  /** Rocks the bell for a moment after it rings. */
-  private updateBell(dt: number): void {
-    if (this.bellRinging <= 0) return;
-    this.bellRinging = Math.max(0, this.bellRinging - dt);
-    const fade = this.bellRinging / BELL_RING_SECONDS;
-    this.bell.rotation.z = Math.sin(this.bellRinging * 45) * BELL_ROCK * fade * fade;
+  /**
+   * Spins the sign round to OPEN once she's turned it (dusk, service and last call) and back to CLOSED once the
+   * night's done, then lets it swing a little on its cords.
+   */
+  private updateSign(dt: number): void {
+    const { phase } = this.tavern;
+    const wanted = phase === "dusk" || phase === "service" || phase === "lastcall" ? 1 : 0;
+    if (wanted !== Math.round(this.signTurn) && (this.signTurn === 0 || this.signTurn === 1)) this.signSince = 0;
+    const step = dt / SIGN_TURN_SECONDS;
+    this.signTurn = MathUtils.clamp(this.signTurn + (wanted ? step : -step), 0, 1);
+    this.signSince += dt;
+    this.signBoard.rotation.y = Math.PI * MathUtils.smoothstep(this.signTurn, 0, 1);
+    const fade = Math.max(0, 1 - this.signSince / 1.6);
+    this.signBoard.rotation.z = Math.sin(this.signSince * 9) * SIGN_SWING * fade * fade;
   }
 
   private listeningTo(): number | null {
@@ -2393,8 +2431,8 @@ export class Game {
     );
   }
 
-  /** Fades out, clears the room, and opens the saved night. */
-  loadGame(data: SaveData): void {
+  /** Fades out, clears the room, and opens the saved night; `after` runs once it's open (the dev resume's brawl). */
+  loadGame(data: SaveData, after?: () => void): void {
     this.closePanel();
     this.fadeTo(() => {
       this.selectEl.classList.remove("open");
@@ -2439,7 +2477,31 @@ export class Game {
       this.log.clear();
       this.narrator.clear();
       this.enterTavern(moment);
+      after?.();
     });
+  }
+
+  /** What the story has put in the tavern to see (storyprops.ts): the red lantern, and the red book's parts. */
+  private storyProps(): StoryPropsState {
+    const { lantern, act2, phase } = this.tavern;
+    return {
+      lantern: !lantern.hung ? "none" : phase === "service" || phase === "lastcall" ? "lit" : "hung",
+      cover: act2.book.cover === "held",
+      silver: act2.book.silver === "held",
+      routes: act2.book.routes === "held",
+      lastPages: act2.flags.includes("lastPages"),
+    };
+  }
+
+  /** Whether she's heard of the red book's parts yet (Act 2): until then the book stand is just an empty stand. */
+  private get bookKnown(): boolean {
+    const { act2 } = this.tavern;
+    return Object.values(act2.book).some((status) => status !== "unknown") || act2.flags.includes("lastPages");
+  }
+
+  /** Whether a game is under way: past the title, the character select and the story, and in the tavern. */
+  get inGame(): boolean {
+    return !this.staging;
   }
 
   /** Back to the very moment a save was made: the clock where it was, she where she stood, the guests sat down. */
@@ -2448,7 +2510,7 @@ export class Game {
     this.screen = "play";
     const day = Math.floor(moment.time / 24);
     this.clock.setTime(day, moment.time - day * 24);
-    // The day runs on to the late afternoon; a bell just rung takes the sun down; the night holds where it is.
+    // The day runs on to the late afternoon; a sign just turned to Open takes the sun down; the night holds where it is.
     const { phase } = this.tavern;
     if (phase === "day" && this.clock.hour < AFTERNOON_HOLD_HOUR) this.clock.run(DAY_HOURS_PER_SECOND, AFTERNOON_HOLD_HOUR);
     else if (phase === "dusk") this.clock.transitionTo(NIGHT_HOUR, SUNSET_SECONDS);
@@ -2528,6 +2590,27 @@ export class Game {
       this.goOutside();
       return;
     }
+    if (place === "redbook") {
+      this.clearTarget();
+      const { act2 } = this.tavern;
+      this.openMenu("Wren's red book", bookStandLines(act2.book, act2.flags.includes("lastPages")), [], () => {
+        this.closePanel();
+        this.screen = "play";
+      });
+      return;
+    }
+    if (place === "dance") {
+      this.clearTarget();
+      if (this.tavern.danceOnBar()) this.audio.play("cheers");
+      // Someone in the room calls up for more (KP's dance requests): asked like a look.
+      if (this.tavern.inConversation) this.showTalk();
+      return;
+    }
+    if (place === "rooms") {
+      this.clearTarget();
+      if (this.tavern.rentOutRooms()) this.audio.play("cheers");
+      return;
+    }
     if (place.startsWith("folk:")) {
       this.streetTalk?.talkTo(Number(place.slice(5)), this.townFacts());
       return;
@@ -2586,7 +2669,7 @@ export class Game {
     if (tavern.silasCrossed) text.push("Half the stalls belong to Silas's cousins. Their prices went up the day you crossed him.");
     text.push(
       closed
-        ? "It's past five: the stalls are packing up and the square is emptying. Head home and ring the bell."
+        ? "It's past five: the stalls are packing up and the square is emptying. Head home and turn the sign to Open."
         : `${formatHour(this.clock.hour)}. You have ${tavern.gold} gold. Everything here takes time.`,
     );
     if (note) text.push(note);
@@ -2644,7 +2727,7 @@ export class Game {
     const text = [...info.describe(tavern.townState)];
     text.push(
       hoursLeft <= 0
-        ? "It's past five. Whatever this is, it'll keep till tomorrow: head home and ring the bell."
+        ? "It's past five. Whatever this is, it'll keep till tomorrow: head home and turn the sign to Open."
         : `${formatHour(this.clock.hour)}. You have ${tavern.gold} gold.`,
     );
     if (note) text.push(note);
@@ -2665,6 +2748,17 @@ export class Game {
     });
     // The Reeve's board hangs on the cross (townhall.ts).
     if (place === "townhall" && tavern.politics.reeve) buttons.push({ label: "The Law board", onPick: () => showLaws(this, () => this.openTownPlace(place)) });
+    // The things that live in Settings' side menus, reachable where they happen too: the notice board for hiring and
+    // the guild's quests, the garrison for signing on and for Pell's debt (he keeps the Baron's books at the keep).
+    const again = () => this.openTownPlace(place);
+    if (place === "board") {
+      buttons.push({ label: "Staff: who's asking for work, and wages", onPick: () => showStaff(this, again) });
+      buttons.push({ label: "The Adventurers' Guild: quests and your party", onPick: () => showGuild(this, again) });
+    }
+    if (place === "garrison") {
+      buttons.push({ label: "The garrison: sign on, drill, rank and oaths", onPick: () => showKnight(this, again) });
+      buttons.push({ label: "The Baron's debt: pay Pell what you owe", onPick: () => showDebt(this, again) });
+    }
     buttons.push({
       label: "Back to the street",
       onPick: () => {
@@ -3022,7 +3116,7 @@ export class Game {
       player.position.setX(this.street.spawn.x).setZ(this.street.spawn.z);
       player.face(this.street.spawnHeading);
       this.screen = "play";
-      this.log.add(`Out on Tarven's high street. It's ${formatHour(this.clock.hour)}: be back to ring the bell by five.`);
+      this.log.add(`Out on Tarven's high street. It's ${formatHour(this.clock.hour)}: be back to turn the sign to Open by five.`);
       // Out before noon still wearing last night: the walk of shame (beingseen.ts).
       const shame = walkOfShame(this.seenFacts(), this.tavern.random());
       if (shame) {
@@ -3089,7 +3183,7 @@ export class Game {
     }
     if (this.streetReminders < 2 && hour >= AFTERNOON_HOLD_HOUR - 0.01) {
       this.streetReminders = 2;
-      this.log.add("Five o'clock. The tavern won't open itself: head home and ring the bell.");
+      this.log.add("Five o'clock. The tavern won't open itself: head home and turn the sign to Open.");
     }
   }
 
@@ -3170,10 +3264,11 @@ export class Game {
         { label: "Resume (Esc)", onPick: () => this.resume() },
         { label: "Save game", onPick: () => showSaveMenu(this, back) },
         { label: "Load game", disabled: !latestSave(), onPick: () => showLoadMenu(this, back) },
-        { label: "Settings", onPick: () => showSettingsMenu(this, back) },
+        { label: "Settings (also staff, feed, knight, guild, the debt)", onPick: () => showSettingsMenu(this, back) },
+        { label: "Where things are (keys and help)", onPick: () => showHelp(this, back) },
         {
           label: "Quit to the title",
-          onPick: () => confirmMenu(this, "Quit to the title?", "Anything you have not saved will be lost.", () => location.reload(), back),
+          onPick: () => confirmMenu(this, "Quit to the title?", "Anything you have not saved will be lost.", reloadToTitle, back),
         },
       ],
     );
@@ -3731,7 +3826,7 @@ export class Game {
     return portrait;
   }
 
-  /** Sleeps away the rest of the day: wakes in the late afternoon, where the day waits for the bell. */
+  /** Sleeps away the rest of the day: wakes in the late afternoon, where the day waits for the sign. */
   private takeNap(): void {
     this.clearTarget();
     this.audio.play("cloth");
@@ -3973,7 +4068,7 @@ export class Game {
         ending.title,
         [ending.text, `Night ${tavern.nightIndex + 1}. Gold ${tavern.gold}, Trust ${tavern.trust}, Heat ${tavern.heat}.`],
         [
-          { label: "Play again", onPick: () => location.reload() },
+          { label: "Play again", onPick: reloadToTitle },
           { label: "Load game", disabled: !latestSave(), onPick: () => showLoadMenu(this, () => this.advanceNight()) },
         ],
       );
@@ -4179,11 +4274,10 @@ export class Game {
         this.useStreet(found.target.place);
         return;
       }
-      // Ringing the bell opens the tavern and sends the world clock on to nightfall.
-      if (found.target.kind === "bell" && tavern.phase === "dusk") {
+      // Turning the sign to Open opens the tavern and sends the world clock on to nightfall.
+      if (found.target.kind === "sign" && tavern.phase === "dusk") {
         this.clock.transitionTo(NIGHT_HOUR, SUNSET_SECONDS);
-        this.bellRinging = BELL_RING_SECONDS;
-        this.audio.playBell();
+        this.audio.playSignTurn();
       }
       if (found.target.kind === "desk") {
         this.openBuild();
@@ -4738,9 +4832,12 @@ export class Game {
     this.updateShake(dt);
     this.syncGuests(dt);
     this.messLayer.sync(this.tavern.messes, dt);
-    this.updateBell(dt);
+    this.updateSign(dt);
     this.updateBedroomDoor(dt);
     this.updateUpstairs(dt);
+    const story = this.storyProps();
+    syncStoryProps(this.world.root, story);
+    syncStoryProps(this.street.root, story);
     this.updateFrontDoor(dt);
     this.syncCarried();
     this.syncStations();

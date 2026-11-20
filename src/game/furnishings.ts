@@ -17,6 +17,7 @@ import {
   Material,
   Mesh,
   MeshStandardMaterial,
+  PlaneGeometry,
   Object3D,
   RepeatWrapping,
   SRGBColorSpace,
@@ -25,8 +26,13 @@ import {
 } from "three";
 import type { Rect } from "./collision";
 
-/** Where the bell sits on the bar top. */
-export const BELL_SPOT = new Vector3(4.95, 1.1, -2.72);
+/**
+ * The Open/Closed sign's hook, on the north wall just left (west) of the front door, clear of the door's swing.
+ * The sign hangs from it and spins round on it to show the other side.
+ */
+export const SIGN_HOOK = new Vector3(-2.66, 1.86, -4.93);
+/** Where she stands to turn the sign: on the floor in front of it. */
+export const SIGN_SPOT = new Vector3(SIGN_HOOK.x, 0, -4.45);
 /** The middle of the bed, which the player stands beside to sleep. */
 export const BED_SPOT = new Vector3(10.17, 0, -1.35);
 /** The player counts as in the bedroom once past this line, and the camera moves to look at it. */
@@ -82,8 +88,6 @@ const DOOR_HALF_WIDTH = 0.6;
 const DOOR_HEIGHT = 2.3;
 /** The south wall is a low sill, like the tavern's, so it never hides the player. */
 const SILL_HEIGHT = 0.35;
-
-const BELL_SCALE = 1.8;
 
 const COLORS = {
   linen: 0xd9cfb6,
@@ -734,26 +738,71 @@ export function addBakery(root: Object3D): void {
   corner.into(root);
 }
 
-/** A brass service bell on a wooden foot, standing at the origin. */
-export function makeBell(): Object3D {
-  const brass = flat("T_brass", COLORS.brass);
-  const wood = flat("T_bell_foot", 0x4a2e1a);
-  const bell = new Group();
-  bell.name = "Bell";
-  bell.add(new Mesh(new CylinderGeometry(0.085, 0.09, 0.025, 8).translate(0, 0.0125, 0), wood));
-  const dome = [
-    new Vector2(0.075, 0),
-    new Vector2(0.072, 0.02),
-    new Vector2(0.058, 0.055),
-    new Vector2(0.036, 0.085),
-    new Vector2(0.012, 0.097),
-    new Vector2(0, 0.099),
-  ];
-  bell.add(new Mesh(new LatheGeometry(dome, 8).translate(0, 0.025, 0), brass));
-  bell.add(new Mesh(new CylinderGeometry(0.008, 0.008, 0.03, 4).translate(0, 0.135, 0), brass));
-  bell.add(new Mesh(new CylinderGeometry(0.016, 0.016, 0.01, 6).translate(0, 0.152, 0), brass));
-  bell.traverse((object) => (object.name ||= "Bell_Part"));
-  // Larger than life, like the carried dishes, so it reads from the camera.
-  bell.scale.setScalar(BELL_SCALE);
-  return bell;
+/** One face of the sign: a word painted on a plank, OPEN in green or CLOSED in red. */
+function signFaceTexture(word: string, ink: string): CanvasTexture {
+  const [w, h] = [256, 112];
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const g = canvas.getContext("2d");
+  if (!g) throw new Error("No 2D canvas for the sign");
+  g.fillStyle = "#c9a46a";
+  g.fillRect(0, 0, w, h);
+  // Grain, and a painted border.
+  for (let y = 6; y < h; y += 9) {
+    g.fillStyle = y % 2 ? "rgba(90,55,20,0.12)" : "rgba(255,235,190,0.1)";
+    g.fillRect(0, y, w, 2);
+  }
+  g.strokeStyle = ink;
+  g.lineWidth = 7;
+  g.strokeRect(9, 9, w - 18, h - 18);
+  g.fillStyle = ink;
+  g.font = "bold 58px Georgia, 'Times New Roman', serif";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText(word, w / 2, h / 2 + 3);
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  return texture;
+}
+
+/** The sign's plank, kept as its own object so it can spin round on its hook. */
+export const SIGN_BOARD_NAME = "Sign_Board";
+
+/**
+ * A wooden OPEN / CLOSED sign hanging on two cords from an iron hook, with its origin at the hook. CLOSED faces the
+ * room at rest; turn its board (SIGN_BOARD_NAME) half a turn about Y and OPEN faces the room.
+ */
+export function makeSign(): Object3D {
+  const [halfW, top, bottom, depth] = [0.42, -0.18, -0.54, 0.03];
+  const wood = flat("T_sign_wood", 0x6b4425);
+  const iron = flat("T_sign_iron", 0x2b2b2e);
+  const cord = flat("T_sign_cord", 0x8a7350);
+  const face = (word: string, ink: string) =>
+    new MeshStandardMaterial({ name: `T_sign_${word.toLowerCase()}`, map: signFaceTexture(word, ink), roughness: 0.9 });
+  const sign = new Group();
+  sign.name = "Sign";
+  // The hook: a nail into the wall with a little upturned tip.
+  sign.add(new Mesh(new CylinderGeometry(0.012, 0.012, 0.07, 5).rotateX(Math.PI / 2).translate(0, 0, -0.01), iron));
+  sign.add(new Mesh(new CylinderGeometry(0.009, 0.009, 0.03, 5).translate(0, 0.012, 0.022), iron));
+
+  const board = new Group();
+  board.name = SIGN_BOARD_NAME;
+  // The two cords, from the hook down to either top corner.
+  for (const side of [-1, 1]) {
+    const [x, y] = [side * (halfW - 0.05), top];
+    const length = Math.hypot(x, y);
+    const strand = new CylinderGeometry(0.006, 0.006, length, 4).rotateZ(Math.atan2(x, -y)).translate(x / 2, y / 2, 0);
+    board.add(new Mesh(strand, cord));
+  }
+  board.add(new Mesh(box([-halfW, bottom, -depth / 2], [halfW, top, depth / 2], { tile: 2 }), wood));
+  // The painted faces, a hair proud of the plank: CLOSED toward the room (+Z), OPEN on the back.
+  const [faceW, faceH] = [halfW * 2 - 0.03, top - bottom - 0.03];
+  const middle = (top + bottom) / 2;
+  const closed = new Mesh(new PlaneGeometry(faceW, faceH).translate(0, middle, depth / 2 + 0.002), face("CLOSED", "#8e1f17"));
+  const open = new Mesh(new PlaneGeometry(faceW, faceH).rotateY(Math.PI).translate(0, middle, -depth / 2 - 0.002), face("OPEN", "#2f6b2a"));
+  board.add(closed, open);
+  sign.add(board);
+  sign.traverse((object) => (object.name ||= "Sign_Part"));
+  return sign;
 }

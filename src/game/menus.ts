@@ -1,4 +1,5 @@
 /** The settings, save and load menus, and the yes/no question they ask before overwriting or losing progress. */
+import { devResumeOn, setDevResume } from "./devresume";
 import type { Button, Game } from "./game";
 import { CUT_INS, type CutKind } from "./cutin";
 import { SCENE_POSE_LIST } from "./sexpose";
@@ -8,7 +9,7 @@ import { MANUAL_SLOTS, readSave, slotName, SLOTS } from "./save";
 import { desirePenalties, horny, WET_PLEASURE, type DesirePenalties } from "./desire";
 import { KINK_NAMES } from "./kinktalk";
 import { METER_NAMES, METERS, PASSIVE_BY_ID, PASSIVE_GROUPS } from "./passives";
-import { AUTO_TOUCH_MAX, DIFFICULTIES, HOLD_BASE, PREFER_PUSH, writeTouchSettings, type Difficulty } from "./touchsettings";
+import { DIFFICULTIES, HOLD_BASE, PREFER_PUSH, writeTouchSettings, type Difficulty } from "./touchsettings";
 import { FRIEND_AT, FRIEND_PERK, FRIEND_RARITY, POSTING_FEE, RARITY_NAME, STAFF_BY_ID, STAFF_PERK_BY_ID, staffStage, staffStageLine, staffTier, type StaffMember } from "./staff";
 import { GUILD_COUNTER_COST, REVEL_HALL_COST } from "./tavern";
 import * as Feed from "./feedstar";
@@ -132,15 +133,6 @@ export function showSettingsMenu(game: Game, back: () => void): void {
     showToggle();
     game.audio.play("click");
   });
-  const boldness = ranged(
-    "Up to boldness",
-    touch.upTo,
-    { min: 1, max: AUTO_TOUCH_MAX, step: 1, format: (value) => `${value}/10` },
-    (value) => {
-      touch.upTo = value;
-      save();
-    },
-  );
   // Karryn's Prison's switches for two of the brawl scenes (brawlscenes.ts).
   const sceneToggle = (which: "rimjob" | "footjob", name: string) => {
     const button = document.createElement("button");
@@ -207,7 +199,7 @@ export function showSettingsMenu(game: Game, back: () => void): void {
   const guild = sideMenu("Guild (quests and party)", (g, b) => showGuild(g, b));
   const debt = sideMenu(game.tavern.owed > 0 ? `The Baron's debt (pay Pell: ${game.tavern.owed} owed)` : "The Baron's debt (paid)", (g, b) => showDebt(g, b));
   // Revel nights only once the Revel Hall's built and she's ready for it (revelOpen); till then it's hidden.
-  const rows = [heading, note, toggle, boldness, rimjob, footjob, difficulty, trinkets, work, staff, ...(game.tavern.revelOpen ? [revel] : []), feed, knight, guild, debt];
+  const rows = [heading, note, toggle, rimjob, footjob, difficulty, trinkets, work, staff, ...(game.tavern.revelOpen ? [revel] : []), feed, knight, guild, debt];
   for (const row of rows) box.insertBefore(row, menu);
 }
 
@@ -258,7 +250,7 @@ export function showDevPanel(game: Game, back: () => void): void {
   const s = tavern.touchSettings;
   const consentOff = s.autoTouch && s.agreed;
   const her: string[] = [
-    `Consent: ${consentOff ? "Off: touches that push past her hold play out on their own" : "On: every touch asks"} · up to boldness ${s.upTo}`,
+    `Consent: ${consentOff ? "Off: Karryn's Prison, her desire decides every touch" : "On: every touch asks"}`,
     `Desires: ${METERS.map((m) => `${METER_NAMES[m]} ${Math.floor(tavern.meters[m])}`).join(" · ")}`,
     `Clothing: ${tavern.strippedPieces.length === 0 ? "dressed" : `${tavern.strippedPieces.length} off (${tavern.strippedPieces.join(", ")})`}`,
     `Passives: ${passiveCounts(tavern.passives)}`,
@@ -305,6 +297,12 @@ export function showDevPanel(game: Game, back: () => void): void {
       { label: "Cut-in tester", onPick: () => showCutInTester(game, back) },
       { label: "Scene pose tester", onPick: () => showScenePoseTester(game, back) },
       { label: "Quest map tester", onPick: () => showQuestTester(game, back) },
+      {
+        label: devResumeOn()
+          ? "Resume after reload is On: a reload brings you back here (switch Off)"
+          : "Resume after reload is Off: a reload goes to the title (switch On)",
+        onPick: () => (setDevResume(!devResumeOn()), showDevPanel(game, back)),
+      },
       { label: "Refresh", onPick: () => showDevPanel(game, back) },
     ],
     back,

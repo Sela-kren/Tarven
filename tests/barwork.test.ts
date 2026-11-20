@@ -11,8 +11,21 @@ import {
   roomNerve,
   SOBER_NIGHT_SERVED,
   trayDropChance,
+  DEAD_DRUNK_AT,
+  DRINK_STRENGTHS,
+  drinkAskChance,
+  drinkOf,
+  DRUNK_AT,
+  DRUNK_FATIGUE,
+  drunkLevel,
+  drunkTier,
+  REFUSE_DRINK_WILL,
+  refuseDrinkCost,
+  strongestDrink,
+  TIPSY_AT,
+  type DrinkKind,
 } from "../src/game/barwork";
-import { Tavern, type Guest } from "../src/game/tavern";
+import { Tavern, TIP_DRINK_NO_WILL, type Guest } from "../src/game/tavern";
 import { METERS } from "../src/game/passives";
 
 /** Her desire caps all lifted (passives.ts desireCap): a heroine far enough along for the boldest things. */
@@ -148,11 +161,11 @@ describe("dead drunk", () => {
     return n;
   };
 
-  it("takes nine drinks in a row, and two more with Hollow Legs", () => {
-    expect(drinksToPassOut(serving())).toBe(9);
+  it("takes eleven ales in a row, and two more with Hollow Legs", () => {
+    expect(drinksToPassOut(serving())).toBe(11);
     const t = serving();
     t.effects.holdLiquor = 2;
-    expect(drinksToPassOut(t)).toBe(11);
+    expect(drinksToPassOut(t)).toBe(13);
   });
 
   it("wears off over the limit first, before she sobers", () => {
@@ -193,8 +206,8 @@ describe("her last clear drink", () => {
     guest.lust = 9;
     guest.mood = "lust";
     if (consentOff) t.touchSettings = { ...t.touchSettings, autoTouch: true, agreed: true };
-    // Six drinks in: the 7th is her last clear one.
-    t.drunk = 0.75;
+    // Eight ales in: the 9th is her last clear one.
+    t.drunk = 0.8;
     (t as unknown as { takeDrink(w: Guest[]): void }).takeDrink([guest]);
     t.tick(0.1, idle);
     return { t, guest };
@@ -217,7 +230,7 @@ describe("her last clear drink", () => {
     guest.mood = "lust";
     openCaps(t);
     t.meters.cock = 100;
-    t.drunk = 0.75;
+    t.drunk = 0.8;
     (t as unknown as { takeDrink(w: Guest[]): void }).takeDrink([guest]);
     t.tick(0.1, idle);
     expect(t.talkLines.some((l) => LAST_CLEAR_LINES.includes(l.text))).toBe(true);
@@ -238,7 +251,7 @@ describe("her last clear drink", () => {
     openCaps(t);
     t.meters.cock = 100;
     t.touchSettings = { ...t.touchSettings, autoTouch: true, agreed: true };
-    t.drunk = 0.75;
+    t.drunk = 0.8;
     (t as unknown as { takeDrink(w: Guest[]): void }).takeDrink([guest]);
     t.tick(0.1, idle);
     expect((t as unknown as { touchChat: { impulse: boolean } }).touchChat.impulse).toBe(true);
@@ -249,14 +262,14 @@ describe("her last clear drink", () => {
     const guest = t.guests[0];
     guest.lust = 9;
     guest.mood = "drunk";
-    t.drunk = 0.75;
+    t.drunk = 0.8;
     (t as unknown as { takeDrink(w: Guest[]): void }).takeDrink([guest]);
     t.tick(0.1, idle);
     expect(touchOf(t)).toBeNull();
     const again = lastClear().t;
     t.drunk = 0;
     (again as unknown as { touchChat: null }).touchChat = null;
-    again.drunk = 0.75;
+    again.drunk = 0.8;
     (again as unknown as { takeDrink(w: Guest[]): void }).takeDrink([again.guests[0]]);
     again.tick(0.1, idle);
     expect(again.records.lastClearAsks).toBe(1);
@@ -287,5 +300,80 @@ describe("fixing her clothes", () => {
     expect(t.shownPieces).toEqual(off);
     t.tick(REDRESS_SECONDS * REDRESS_ON_AT + 0.05, idle);
     expect(t.shownPieces.length).toBeLessThan(off.length);
+  });
+});
+
+describe("drinking, Karryn's Prison style", () => {
+  type Drinker = { takeDrink(with_?: Guest[], drink?: DrinkKind): void; maybeAskToDrink(g: Guest): boolean; willSpent: number; fatigue: number };
+  const drinker = (t: Tavern) => t as unknown as Drinker;
+  const labels = (t: Tavern) => t.talkChoices.map((c) => c.label);
+
+  it("goes by what's poured: ale is KP's pale ale, vodka twice as strong", () => {
+    expect(DRINK_STRENGTHS.ale).toBeCloseTo(0.1);
+    expect(DRINK_STRENGTHS.vodka).toBeCloseTo(0.2);
+    expect(drinkOf("stew")).toBe("ale");
+    expect(drinkOf("wine")).toBe("wine");
+    expect(strongestDrink(["ale", "vodka", "stew"])).toBe("vodka");
+    const t = serving();
+    drinker(t).takeDrink([], "vodka");
+    expect(t.drunk).toBeCloseTo(0.2);
+  });
+
+  it("has KP's three steps: tipsy past a fifth, drunk past two fifths, dead drunk past seven tenths", () => {
+    expect(drunkTier(0.19)).toBe(0);
+    expect(drunkTier(TIPSY_AT)).toBe(1);
+    expect(drunkTier(DRUNK_AT)).toBe(2);
+    expect(drunkTier(DEAD_DRUNK_AT)).toBe(3);
+  });
+
+  it("costs willpower to turn down, more when she's tired, and with too little left she has to drink", () => {
+    expect(refuseDrinkCost(0)).toBe(REFUSE_DRINK_WILL);
+    expect(refuseDrinkCost(5)).toBeGreaterThan(REFUSE_DRINK_WILL);
+    const t = serving();
+    t.drinkRandom = () => 0;
+    const guest = t.guests[0];
+    expect(drinker(t).maybeAskToDrink(guest)).toBe(true);
+    // Just the drink: take it or turn it down, no walking off from it.
+    expect(labels(t)).toHaveLength(2);
+    const will = t.willpower;
+    t.chooseTalk(1);
+    expect(t.willpower).toBe(will - REFUSE_DRINK_WILL);
+    expect(t.drunk).toBe(0);
+
+    const spent = serving();
+    spent.drinkRandom = () => 0;
+    drinker(spent).willSpent = spent.maxWillpower;
+    drinker(spent).maybeAskToDrink(spent.guests[0]);
+    expect(labels(spent)[1]).toBe(TIP_DRINK_NO_WILL);
+    expect(spent.talkChoices[1].disabled).toBe(true);
+    spent.chooseTalk(1);
+    expect(spent.inConversation).toBe(true);
+    spent.chooseTalk(0);
+    expect(spent.drunk).toBeGreaterThan(0);
+  });
+
+  it("is pushed more by drunk or worked-up guests, and once she's tipsy", () => {
+    const calm = drinkAskChance({ loose: false, drunk: 0 });
+    expect(drinkAskChance({ loose: true, drunk: 0 })).toBeGreaterThan(calm);
+    expect(drinkAskChance({ loose: false, drunk: TIPSY_AT })).toBeGreaterThan(calm);
+  });
+
+  it("takes Mind, Agility and Strength off her in a brawl, never below 1", () => {
+    expect(drunkLevel(5, "mind", 0.5)).toBeCloseTo(2.5);
+    expect(drunkLevel(5, "agility", 0.5)).toBeCloseTo(3.125);
+    expect(drunkLevel(5, "strength", 0.5)).toBeCloseTo(3.75);
+    expect(drunkLevel(1, "mind", 1)).toBe(1);
+  });
+
+  it("leaves her tired the morning after a drunk night", () => {
+    const sober = serving();
+    const drunk = serving();
+    drunk.drunk = DEAD_DRUNK_AT;
+    for (const t of [sober, drunk]) {
+      drinker(t).fatigue = 50;
+      t.phase = "bedtime";
+      t.sleep();
+    }
+    expect(drinker(drunk).fatigue - drinker(sober).fatigue).toBe(DRUNK_FATIGUE[3]);
   });
 });

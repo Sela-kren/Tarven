@@ -90,7 +90,7 @@ describe("a favor coming back", () => {
       t.random = () => (rolls++ < 4 ? 0 : 0.7);
     });
     t.interact(0, at(guest));
-    t.chooseTalk(t.talkChoices.findIndex((c) => c.label === TIP_DRINK_DECLINE));
+    t.chooseTalk(t.talkChoices.findIndex((c) => c.label.startsWith(TIP_DRINK_DECLINE)));
     // The farmer's favors on the first night all have something to follow; agreeing is the first answer.
     t.chooseTalk(0);
     expect(t.favorsDue.length).toBe(1);

@@ -64,7 +64,7 @@ describe("a guest asking for a look", () => {
       expect(options[i]).toMatch(/^Show them your .+ \(.*\+\d+ gold\)$/);
       expect(t.talkChoices[i].disabled).toBe(false);
     });
-    expect(options.at(-1)).toBe(SHOW_NO_LABEL);
+    expect(options.at(-1)?.split(" · ")[0]).toBe(SHOW_NO_LABEL);
     // Exactly one is what they asked for, and it pays a little more.
     expect(options.filter((l) => l.includes(SHOW_ASKED_MARK)).length).toBe(1);
     const part = askedFor(t);
@@ -326,5 +326,77 @@ describe("broken cups and dishes", () => {
     const loaded = new Tavern(TABLES.length, TABLES);
     loaded.restore(t.snapshot());
     expect(loaded.broken).toEqual({ cup: 0, dish: 2 });
+  });
+});
+
+describe("saying no to a look, with willpower", () => {
+  const no = (t: Tavern) => t.chooseTalk(t.talkChoices.length - 1);
+
+  it("costs willpower when part of her wants to show them, and shows it on the button", () => {
+    const { t } = asked(10);
+    expect(labels(t).at(-1)).toMatch(/ · \d+ will$/);
+    const will = t.willpower;
+    no(t);
+    expect(t.willpower).toBeLessThan(will);
+  });
+
+  it("is free, and steadies her, when she isn't ready at all", () => {
+    const { t } = asked(0, (tv) => {
+      (tv as unknown as { willSpent: number }).willSpent = 5;
+    });
+    // Her band takes no desire, so only a guest asking for more finds her cold.
+    const part = (t as unknown as { showChat: { part: ShowPart } }).showChat.part;
+    if (part === "band") return;
+    expect(labels(t).at(-1)).toBe(SHOW_NO_LABEL);
+    const will = t.willpower;
+    no(t);
+    expect(t.willpower).toBeGreaterThan(will);
+  });
+
+  it("still says no with nothing left, but it shows", () => {
+    const { t } = asked(10, (tv) => {
+      (tv as unknown as { willSpent: number }).willSpent = tv.maxWillpower;
+    });
+    expect(labels(t).at(-1)).toContain("no willpower left");
+    no(t);
+    expect(t.talkLines.some((l) => l.text.includes("wobbles"))).toBe(true);
+  });
+});
+
+describe("dancing on the bar", () => {
+  it("has the keenest man watching call up for more, asked as a look she can say no to", () => {
+    const { t, guest } = asked(10);
+    // Done with the first ask; then she dances.
+    t.chooseTalk(t.talkChoices.length - 1);
+    t.chooseTalk(t.talkChoices.length - 1);
+    guest.status = "eating";
+    // Only the men in the room call up (the dance works the men up, sidejobs.ts).
+    (guest as { female: boolean }).female = false;
+    expect(t.inConversation).toBe(false);
+    expect(t.danceOnBar()).toBe(true);
+    expect(t.inConversation).toBe(true);
+    expect(t.talkLines[0].text).toMatch(/gold/);
+    expect(labels(t).at(-1)?.split(" · ")[0]).toBe(SHOW_NO_LABEL);
+  });
+});
+
+describe("a look, Consent off (Karryn's Prison's flash)", () => {
+  const off = (t: Tavern) => (t.touchSettings = { ...t.touchSettings, autoTouch: true, agreed: true });
+
+  it("shows them, unasked, once her desire's there", () => {
+    const { t } = asked(10, off);
+    expect(labels(t)).toEqual(["Get back to work"]);
+    expect(t.records.showsRefused).toBe(0);
+  });
+
+  it("won't when it isn't, and being asked stirs her", () => {
+    const { t } = asked(0, off);
+    const part = (t as unknown as { showChat: { part: ShowPart } }).showChat.part;
+    // Her band takes nothing, so only a guest asking for more finds her cold.
+    if (part === "band") return;
+    expect(labels(t)).toEqual(["Get back to work"]);
+    expect(t.records.showsRefused).toBe(1);
+    const meter = part === "breasts" ? "breasts" : part === "butt" ? "butt" : "pussy";
+    expect(t.meters[meter]).toBeGreaterThan(0);
   });
 });

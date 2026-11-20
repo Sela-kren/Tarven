@@ -5,7 +5,7 @@ import { formatHour } from "./time";
 import { BOTTLE_KINDS, UPGRADES, type Mess, type MessKind, type TavernSave, type UpgradeId, type Ware } from "./tavern";
 
 /** Bump when the saved shape changes; older saves are then ignored rather than misread. */
-const SAVE_VERSION = 1;
+export const SAVE_VERSION = 1;
 const KEY_PREFIX = "tarven.save.";
 
 /** The autosave, taken whenever a night opens, and three slots the player saves to. */
@@ -76,7 +76,7 @@ function readMoment(raw: unknown): Moment | undefined {
 }
 
 /** Accepts only a save this version of the game can load. */
-function validate(raw: unknown): SaveData | null {
+export function validate(raw: unknown): SaveData | null {
   if (!raw || typeof raw !== "object") return null;
   const data = raw as Partial<SaveData>;
   const tavern = data.tavern as Partial<TavernSave> | undefined;

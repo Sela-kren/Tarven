@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "play": "vite build && vite preview --open",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bridge": "vitest run -c tools/bridge/vitest.config.ts",
+    "send": "D:/blender/blender.exe -b art/female_master.blend --python tools/blender/tarven_bridge/export_master.py"
   },
   "dependencies": {
     "three": "^0.187.0"

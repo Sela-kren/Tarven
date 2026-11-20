@@ -1,7 +1,7 @@
 # Last Call at Tarven: Story
 
 > The story design document. It replaces the story parts of GAME_CONCEPT.md (sections 1, 8.2, 9 and 11) once it is approved.
-> **Draft 2.24, 20 Nov 2026.** See the changelog at the bottom. **New in 2.24:** rivals are bosses. Each one's climb has 3 to 5 **stages**: at each fan mark the boss comes in for a comic scene and sends a mini-boss to brawl her that night, and the last stage is the boss's own fight. Beating a boss is what **unlocks the next feature** (staff, the feed, the garrison, the rooms and the guild, the full house). The acts still run on fans as before. The fan targets are about 5× longer (section 7).
+> **Draft 2.26, 20 Nov 2026.** See the changelog at the bottom. **New in 2.26:** the five houses are a ladder. Each is one step further along in the trade, and each beaten boss warns her what the next house has that she doesn't, which is what the win unlocks (section 7, "The ladder"). **New in 2.25:** each beaten boss shows her how the feature they unlocked works, in a short hands-on guide (section 7, "The boss shows her how"). **New in 2.24:** rivals are bosses. Each one's climb has 3 to 5 **stages**: at each fan mark the boss comes in for a comic scene and sends a mini-boss to brawl her that night, and the last stage is the boss's own fight. Beating a boss is what **unlocks the next feature** (staff, the feed, the garrison, the rooms and the guild, the full house). The acts still run on fans as before. The fan targets are about 5× longer (section 7).
 
 **House rules stay in force.** Tarven is an adult game, and it's written **raw and hard**, as explicit as Karryn's Prison: cocks, cunts, cum and all of it, said plainly, by her, the guests and the room. Every character is an adult (18+), and the game says so. Consent is the player's switch (GAME_PATH.MD, the consent rule, which is the source of truth): with **Consent on** (the default) every touch asks first, Slap and Pull away always work, being too drunk blocks every yes, and a lost brawl only offers, with Stop always there. With **Consent off** it plays like Karryn's Prison: in a brawl their hands land and they tear her clothes off, at drink 8 the table can happen whether she's ready or not, a lost brawl just happens with no Stop, and easing the ache at night can draw someone in. Whatever the switch, **nothing ever happens to her while she's passed out**, and nobody roaring drunk takes her.
 
@@ -515,6 +515,31 @@ Kept small on purpose, so it's easy to build and balance:
 | 2nd | **The Toll-Gate Inn** (beds for travellers at the village gate) | **Agnes Crale** (58) | 1,800 | Safety | Keep travellers and fugitives safe | Tell her guests she reports them, and empty her rooms | She writes down every traveller for Pell. Proof that Pell has eyes everywhere |
 | 1st | **The Copper Bell** (the big tavern on the square) | **Jory Bell** (39), the Baron's friend | 2,500 | Secrets, Ale | Keep secrets better than he does, and win Silas's crew | Expose Pell's office in his back room | Pell's drafts of Wren's debt note: the first proof the debt is forged |
 
+### The ladder: each house is one step up the trade (2.26)
+
+The five houses aren't just bigger and bigger numbers. **Each one is a step further along in the business than the last**, and that step is its **edge**. The first is a tavern just like hers. Each one after has one more thing she hasn't got yet. When she beats a house, its boss, humbled, tells her straight what the next house has that she doesn't (*"If you want to last in this trade, you'll need…"*). That is exactly what the win unlocks, and the beaten boss's guide teaches it ("The boss shows her how", below). So she always walks into the next war with the same tools as the house she's fighting, and she always knows why she's fighting it.
+
+**The comedy tropes:**
+- **The rival who becomes the reluctant teacher:** every boss she beats ends up teaching her, sulking or proud.
+- **The gym-leader ladder:** each house is a level, and each level adds one thing.
+- **The edge as a running gag:** each boss can't stop showing off their edge in every stage scene, until it's hers too.
+
+| Rung | House | What it is | Its edge (what she hasn't got yet) | How the boss shows it off in the stage scenes | The boss's word when beaten | Unlocks |
+|---|---|---|---|---|---|---|
+| 1 | **Hollin's Cider Barn** | **A tavern just like hers.** One man, one barn, one cider press. He pours, serves, sweeps and keeps the books himself | None. He's her mirror: what she'd be in thirty years if nothing changed | Hollin is exhausted, and dozes off mid-threat. *"I'd come over myself, but who'd mind the barn?"* His fighters are regulars and family, not staff | *"You beat me because there's one of me and I'm fifty-five. Tansy's got lads. You'll never keep up with her alone. You want to stand in this trade, you need hands."* | **Staff** |
+| 2 | **The Bakehouse** | **The first house with staff.** Pip and Crumb serve while Tansy runs the room and the gossip | **Staff** | *"My lads have served three tables while you're still pouring one, dear."* Her mini-bosses are her own staff (the baker's lads) and her gossip table | *"Hands fill cups. Talk fills seats. Everyone in Tarven reads about Pike's canteen on the feed, and nobody's read a word about you."* | **The feed** (and the Lantern's road, from her Wren stories) |
+| 3 | **The Watch Canteen** | **Staff, and famous.** Corporal Wace streams every drill and the canteen trends every week | **The feed** | Pike posts about her. *"Nobb and Lurk, on a dare, for the feed."* The drill squad's fight is live, and the room reads the comments | *"Fame brings trouble, and trouble wants muscle with a badge. Agnes has the garrison on her gate. You've got a cudgel under the bar."* | **The garrison** |
+| 4 | **The Toll-Gate Inn** | **Staff, famous, and protected.** The Baron's soldiers stand at her gate, and the law's on her side | **The garrison** | Agnes reads out every rule she's broken, with dates, and the soldiers at her gate enforce them. *"Assault on a licensed house, Miss: that's a fine."* They cheer for her porters | *"A bar sells a drink for an evening. A bed sells the whole night, and the road brings travellers who pay for it. Jory's got rooms, and the guild drinks upstairs."* | **The rooms and the guild** |
+| 5 | **The Copper Bell** | **Everything:** staff, the feed, the garrison's goodwill, rooms, the guild upstairs, and a stage with dancers | **The rooms and the guild** (and a stage) | Jory's charm offensive. Every scene shows off another part of the Bell: the stage, the rooms, the adventurers upstairs. *"You're doing so well, sweetheart. For a barn."* | *"Nothing left to teach you. Except that the pass is bigger than this square, and the Gilded Stag's been watching you."* | **The full house.** First in Tarven |
+
+**The edge in play:** each war has one light check on the edge she's just unlocked, so the new feature matters at once. It is a small push either way, never a wall:
+- **Tansy's war:** on a stage night, with nobody on shift Pip and Crumb poach 2 more walk-ins. With at least one hand working, they don't.
+- **Pike's war:** with a post made that week, the room cheers for her in the stage brawl (fame +1 if she wins). With none, the room cheers for the canteen.
+- **Agnes's war:** signed on with the garrison, the gate soldiers stay out of it. If not, one of them joins Agnes's porters.
+- **Jory's war:** with the rooms let that night, or a guild party in, the crowd is hers for Jory's bell (the bell's call against her fails once).
+
+**Partner or Ruin** changes how the warning is said, never what it says. A partnered boss gives it as advice. A ruined one spits it out as a curse: *"…and I hope Tansy's lads eat you alive."*
+
 ### A rival war: how a boss is beaten (2.24)
 
 Every house is beaten the same way, so the player learns it once on Hollin and knows what to do for every boss after. **The boss lasts the whole climb to its fans, not a fight at the end.** Its stages sit at fan marks along the way: at each one the boss walks in for a comic scene, then sends a **mini-boss** to brawl her that night. The last stage, at the house's own fan count, is the boss's own fight. A boss takes about 8 to 10 nights of play, more with lost stages.
@@ -532,7 +557,7 @@ Every house is beaten the same way, so the player learns it once on Hollin and k
 - **Dirty work by day** (the "Beat it dirty" column) takes **one mini-boss off** the war, at the usual price: corruption, heat and a Ledger entry with the boss as the victim. Once a war, never the boss's own fight.
 - **The room takes sides.** Her fans of the house's tag cheer, and once she has a doorman (after Hollin, STAFF.md) he takes one foe off her in a stage with more than one. *(Later: fans who join the brawl on her side.)*
 
-**4. The boss's own fight (the last stage, at the house's fans).** The longest scene, then the boss in person, or the boss and their champion. Win it, and the next morning the boss comes in beaten, with the **Partner or Ruin** card as before, gives up their clue, and the **unlock** card pops (`unlocktoast.ts`): what's new, and where to find it.
+**4. The boss's own fight (the last stage, at the house's fans).** The longest scene, then the boss in person, or the boss and their champion. Win it, and the next morning the boss comes in beaten, with the **Partner or Ruin** card as before, gives up their clue, and the **unlock** card pops (`unlocktoast.ts`): what's new, and where to find it. Then **the boss shows her how it works**, step by step, in their own voice (below, "The boss shows her how").
 
 **The bosses, their stages and their mini-bosses:**
 
@@ -540,7 +565,7 @@ Every house is beaten the same way, so the player learns it once on Hollin and k
 |---|---|---|---|
 | **Hollin's Cider Barn** (3 stages) | 100 / 200 / 300 | 1. **Wat and Will, the cider twins**, two farmhands who've never paid for a drink in their lives. They fight as a pair, and the drunker one hits harder. 2. **Old Mother Gorse**, 70 and owed money by half the valley, with a walking stick and no shame | 3. **Hollin and Big Bram**, his eldest, the strongest back in the valley (*Big*). Hollin "supervises" from behind his son |
 | **The Bakehouse** (3 stages) | 450 / 575 / 700 | 1. **The baker's lads, Pip and Crumb**, flour on their fists (a puff of flour blinds her for a turn). 2. **The gossip table**, three of Tansy's women, who fight with their tongues as much as their hands (the talk moves) | 3. **Goodwife Tansy and her brother Dobb the miller**, who's never lost an arm-wrestle. Tansy brings a pie for whoever wins |
-| **The Watch Canteen** (4 stages) | 825 / 950 / 1,075 / 1,200 | 1. **Privates Nobb and Lurk**, off duty and on a dare. 2. **The drill squad**, three at once, in step. 3. **Corporal Wace**, sober, by the book, and reads her the regulations while he fights | 4. **Sergeant Pike himself**, scar and all. A sanctioned war (Pike's wager), so throwing his soldiers out costs no heat |
+| **The Watch Canteen** (4 stages) | 825 / 950 / 1,075 / 1,200 | 1. **Privates Nobb and Lurk**, off duty and on a dare, for the feed. 2. **The drill squad**, three at once, in step, fought live on the canteen's stream. 3. **Corporal Wace**, sober and by the book, who films it himself and reads her the regulations and the comments while he fights | 4. **Sergeant Pike himself**, scar and all. A sanctioned war (Pike's wager), so throwing his soldiers out costs no heat |
 | **The Toll-Gate Inn** (4 stages) | 1,350 / 1,500 / 1,650 / 1,800 | 1. **Agnes's porters**, who carry luggage and grudges. 2. **The fugitive Quill**, sent to do her work because she has his name in her register. 3. **The Rook brothers**, road bandits who pay her for the travellers' routes (the first bandits she meets) | 4. **A hired sword, Dame Ottilie**, an adventurer Agnes pays by the hour and keeps reminding of it (warrior). Agnes watches through her spectacles and writes everything down |
 | **The Copper Bell** (5 stages) | 1,950 / 2,100 / 2,250 / 2,375 / 2,500 | 1. **The Bell's doormen, Clang and Dong** (they hate the names). 2. **Silas's rivals on the river**, smugglers Jory pays in his own ale. 3. **Pell's men**, in the Baron's colours (heat as usual if she throws them out). 4. **The young lords Fennick and Peregrine**, Jory's debtors, with dress swords they've never drawn | 5. **Jory Bell and his prize-fighter, Brass**, two at once. Jory fights dirty: rings on his fists, and the copper bell to call the room against her |
 
@@ -567,7 +592,7 @@ The house voice, played for laughs. Every boss has the same shape: the first sce
 > "And if I win?"
 > "Then you can have my regulars. And my barn cat, who's never liked me anyway."
 
-**When he's beaten:** the Partner or Ruin card as built, opening with his built line (*"Half my regulars drink at yours now. So. What's it to be between us?"*), then the unlock: *"Take Bram on, if he'll have you. He eats like three men, but he works like four."* **New: Staff.**
+**When he's beaten:** the Partner or Ruin card as built, opening with his built line (*"Half my regulars drink at yours now. So. What's it to be between us?"*), then the ladder's warning (2.26): *"You beat me because there's one of me and I'm fifty-five. Tansy's got lads. You want to stand in this trade, you need hands."* Then the unlock: *"Take Bram on, if he'll have you. He eats like three men, but he works like four."* **New: Staff.** Then Hollin walks her to the notice board and shows her how hiring works (his guide, below).
 
 The other four bosses keep the same shape. Tansy gossips and brings pies with a side of guilt, Pike sends formal written challenges with the spelling wrong, Agnes reads out every rule she's broken (with dates), and Jory is charming, then furious, then rings his bell at her.
 
@@ -589,6 +614,35 @@ Features no longer open on a night count, gold, fame or the act. **Beating a bos
 - **A locked feature says how to open it.** Its menu row, or its place in town, shows *"Locked: beat Hollin's Cider Barn"*, never just greyed out.
 - **The HUD's goal line** always reads the next step, for example *"Next: Hollin's Cider Barn — 212 / 300 fans"*, then *"Hollin's war — stage 2 of 3"*, and the journal's Ledger page shows every house, its stages, and its unlock.
 - **Old saves:** a house already fallen in an older save counts as beaten, and its unlock is open.
+
+### The boss shows her how (2.25)
+
+A new feature never just appears with a toast. **The boss who opened it teaches her to use it.** The morning after the boss's own fight, right after the Partner or Ruin card and the unlock toast, the beaten boss says *"Right. I'll show you how it's done, since it's yours now"* and walks her through it. It's a short hands-on guide, not a wall of text.
+
+**How a guide plays:**
+- **A few steps, 3 to 5,** each one thing to do. The boss says a line (their portrait on the talk card, the dialogue box as for any talk). An **arrow** points at what to use: the target arrow over a spot in the world (the notice board, the garrison gate, the stairs), or a **glow** on the menu row or button to press. The step waits until she actually does it, then the boss reacts and gives the next one.
+- **Learning by doing:** every step is the real feature, not a mock-up. Whatever she does in the guide counts: a hire is a real hire, a post is a real post.
+- **Short:** a guide fits in one day, a few minutes of play. A step that only works at night (the doorman at work, a room let at last call) waits for that night, and the boss turns up for it (*"Told you I'd be back. Watch him work."*).
+- **Her own gates still apply.** A guide shows the way to her own choices and never makes them for her. Tansy only mentions the Lantern's road. Jory shows her the bar stage, but dancing is hers to say yes to (the consent rule, GAME_PATH.MD). Nothing lewd happens in a guide unless she starts it.
+- **Skip or replay:** an *"I've got it"* button at every step ends the guide, and the feature is still unlocked. The journal's Ledger page has **"Ask (boss) to show you again"** for every house she has beaten.
+- **Saved mid-way:** a guide she's partway through is saved with the day, and picks up at the same step after a load.
+- **Old saves:** a house already fallen isn't guided at once. Its "Ask (boss) to show you" waits in the journal.
+
+**Partner or Ruin changes the teacher, never the lesson.** Every step is taught either way, so a player who ruins a house still learns the feature.
+- **Partner:** the boss is cheerful, a bit proud, and over-explains. At the end they add a small **partner's gift** (below).
+- **Ruin:** the boss teaches it anyway, sulking. They need the work, or it's the price of their grudge. The lines are sarcastic and there is no gift. Pike sends Corporal Wace instead, who reads the regulations aloud the whole way through.
+
+**The five guides:**
+
+| Boss | Teaches | The steps | Partner's gift | Their voice |
+|---|---|---|---|---|
+| **Hollin** | **Staff** | 1. Walk to the notice board by the door. 2. Open it, and hire someone (Big Bram is on it first). 3. Give them a post on the staff board (House Plans): barmaid, cook or doorman. 4. Set their wage. 5. That night: watch them work, with Hollin at the bar to comment | Bram's first week at half wage (*"He owes me money anyway"*) | *"People read notices, Miss. Some of them. Pin it at eye level, not yours, theirs."* Ruin: *"Board's there. Paper's there. Even you can manage."* |
+| **Goodwife Tansy** | **The feed** | 1. Open the Feed from the menu. 2. Make her first post: the shoot (outfit, prop, angle, the timing tap), with Tansy coaching. 3. Read her DMs. 4. Look at this week's trend. 5. Tansy mentions the stream (*"Later, love, when you're braver"*), and on the way out drops the Lantern's road hint: what the house used to be | Tansy's long table shares the first post (a little fame and fans) | *"Not that face. The pie face. Like you've just been handed a pie."* Ruin: she coaches, then posts about her instead (a gossip line in town) |
+| **Sergeant Pike** | **The garrison** | 1. Walk to the garrison gate in town. 2. Rhea signs her on as a volunteer, and Pike vouches. 3. One drill in the yard: Pike barks her through the brawl aim (face, gut, below, knees) and the guard meter's timing. 4. The patrol board. 5. When the weekly tourney is | Her first drill is free, with extra experience | *"Face. Gut. Below. Knees. PICK ONE, volunteer."* Ruin: Corporal Wace does it, reading the regulations aloud with the section numbers |
+| **Agnes Crale** | **The rooms and the guild** | 1. Up the stairs to the guest rooms. 2. The register: let a room (the receptionist job). 3. Turn a room for the next guest. 4. Kestrel comes in with the Guild card, and Agnes hands over to her for the quest board. 5. The new guests on the road: how to tell an adventurer from a bandit | Agnes's register: the first travellers come pre-booked | *"Name, coin, nights. In that order. Always that order."* Ruin: she leaves a written list of rules, with the dates she wrote them |
+| **Jory Bell** | **The full house** | 1. Staff up to 6: the new posts (dancer, devotee, clerk), on the notice board. 2. The bar stage: how dancing on the bar works (18+, once a night, during service), and that it's her call. 3. The Revel Hall on House Plans, which still has its own gates. 4. The farewell, which is the First in Tarven morning | The copper bell, hung over her bar (decor, and the room cheers when she rings last call) | *"Work the room, not the floor. The floor doesn't tip."* Ruin: he rings his bell once, sadly, and leaves it on her bar |
+
+Each guide's lines are written in the house voice like the boss scenes, with a Partner set and a Ruin set. Until the innkeeper models are built (below), the boss talks from a portrait card and the arrow does the pointing.
 
 ### The five innkeepers (they need models)
 
@@ -1157,6 +1211,19 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
     - **`ledger.ts`:** the new fan targets (houses 300 / 700 / 1,200 / 1,800 / 2,500; Act 1 beats 0 / 150 / 500 / 1,000; collections by fans at 1,200 / 1,800 / 2,500). Each `HouseDef` gets its `stages` (fan mark, mini-boss name, foe kind and count, prefix, its scene's lines and answers) and its `unlocks`. House beats come out of `BEATS`; the story beats stay.
     - **The war in `tavern.ts`:** the stage she's on per house (saved), the morning scene card when a mark is reached, tonight's mini-boss walking in during service as a brawl (the `sideFight` path, with a new `{ kind: "stage" }`), won / lost / night off, and the house falling after the boss's own fight (then the Partner or Ruin card as built).
     - **Unlocks:** one `unlocked(feature)` check read from the houses beaten, replacing `staffStage`'s night 6 / gold 150 / fame 60, `guildOpen`'s 300 fans, and the open-from-the-start garrison, feed, rooms and bar dance. The Lantern and revel keep their own gates on top. An unlock toast when a house falls.
+    - **The boss guides (2.25, section 7, "The boss shows her how"):** a new `src/game/bossguide.ts` with each house's guide as data. Each step has the boss's line (a Partner and a Ruin version), what to point at (a spot in the world for the target arrow, or a menu row or button to glow), and the event that finishes it (hired, posted, signed on, room let, and so on).
+        - **Events:** `tavern.ts` and the menus report those events. A step can wait for the night, and the boss turns up for it.
+        - **Runner in `game.ts`:** the boss's talk card, the arrow, and a CSS glow on the target row. It starts after the unlock toast, and every step has an *"I've got it"* skip.
+        - **Saving:** the guide in progress (house and step) is saved with the day.
+        - **Replay:** the journal's Ledger page gets "Ask (boss) to show you again" for every house she has beaten.
+        - **Partner gifts:** Bram's half wage, Tansy's shared post, Pike's free drill, Agnes's pre-booked travellers, Jory's copper bell.
+        - **Old saves:** a house already fallen gets its replay button, not a forced guide.
+        - **Tests:** `tests/bossguide.test.ts` checks that every guide has 3 to 5 steps and both line sets, that every step points at a real target and finishes on an event something actually reports, and that skipping leaves the feature unlocked.
+        - **Before the models:** the guides need the bosses' portraits; until the innkeeper models exist they talk from a portrait card.
+    - **The ladder (2.26):**
+        - Each `HouseDef` gets its `edge` and the boss's parting word, with a Partner and a Ruin version. The parting word comes on the fall card, before the unlock.
+        - The edge check runs on that war's stage nights: Tansy, staff on shift; Pike, a post that week; Agnes, garrison volunteer; Jory, rooms let or a guild party in.
+        - Tests: every house's edge is the feature the house before it unlocks (the Cider Barn has none), and each edge check moves only its small effect.
     - **The goal line:** the HUD and the journal's Ledger page show the next stage, its fans and its unlock; a locked menu row says which house opens it.
     - **Old saves:** houses already fallen count as beaten, with their unlocks open.
     - **Tests:** `tests/ledger.test.ts` for the stages and unlocks; the war wiring like `tests/guildwiring.test.ts`.
@@ -1165,6 +1232,25 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 14. **The Baron partnership:** a last-call choice on The last offer, plus the Master of the Pass and Baron's Partner endings.
 15. **Expand mode (later):** play continues after Last Call with new houses to win.
 16. **The Lantern (brothel setup):** Stage I is done (`lantern.ts`, `lanternplans.ts`; see section 12, "What's built now"). For the later stages: extend `houseMode` with a lit/dark choice each evening, and add Lantern builds to House Plans (rooms, parlour, Red Room, bathhouse, doorman). Also: a staff list in `save.ts` (appeal, charm, stamina, loyalty, knack, corruption, resolve, records), each girl's lewdness worked out from her own records (reuse `lewdnessOf` and `mindStage` from `passives.ts` and `lewd.ts`), a small set of girl passives, the nightly corruption drift toward the madam's (managers and partner bosses too), tier behaviours for the girls (purse-lifting, selling secrets, skimming, walking out), house rules, a booking card, a door-lamp timer per room, Lantern trouble events, and a Lantern line on the dawn report.
+17a. **The story you can see (audit 20 Nov 2026).** Most story objects are only words on a card.
+    - **Built (`storyprops.ts`):**
+        - Wren's red lantern shows inside the front door and on the tavern's front wall in town once it's hung, and is lit while the house is open.
+        - Wren's book stand stands under the bedroom window. Each red book part she holds appears on it: the cover with Oden's lock, Mara's silver pages, Silas's map, and the last pages. E at the stand lists what she holds and where to go for the rest.
+    - **Findability (`helpscreen.ts`, `game.ts`, 20 Nov 2026):**
+        - Built: a "Where things are" page in the pause menu, and E prompts for dancing on the bar (during service) and letting the rooms (at the foot of the stairs).
+        - Built: the notice board gets Staff and Guild rows, and the garrison yard gets Knight and the Baron's debt.
+        - Built: C, N, K and L are added to the game's keys (C to customize and N for the narrator were dead).
+    - **Still only words, to build:**
+        - **Wren's letters' hiding places** (letters.ts `where`): the cellar and its VINEGAR cask, the kitchen salt box, the bedroom shelf, the window seat's red cushion, the back door's coat peg, the strongbox, the cudgel under the bar, the poor box, the loose board and the hearthstone. Each could become a spot she searches (E) the morning its letter is due, instead of the letter appearing on the card.
+        - **The cellar** (letters, Ash hiding, the smuggler's shipment): it has no room yet.
+        - **Wren's stool:** the bar stools move with House Plans, so it needs its own piece.
+        - **Silas's salt crate** on the step.
+        - **The Watch Canteen** has no building, and **the pass rivals** (the Gilded Stag, the Velvet House, the Drowned Rat) aren't on the street map.
+        - **Mara's farm and its apple tree,** the old mill and the quarry: they're only road-end spots.
+        - **The keep's cells and the Baron's golden statue.**
+        - **Zane's phone and the feed's scrying crystal** (menus.ts says still to be drawn).
+        - **The Stag's card behind the bar and Sabine's velvet card.**
+        - **The innkeepers' models** (12a).
 17. **New guest factions:** add `adventurer`, `bandit` and `noble` to the guest kinds, each with its own looks (see the character-variety rule), moods, orders and table talk. They unlock by fans or by Ledger rank (section 5).
 
 ---
@@ -1191,6 +1277,8 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 
 | Date | Draft | Changes |
 |---|---|---|
+| 20 Nov 2026 | 2.26 | **The ladder.** The five Tarven houses are steps up the trade. The Cider Barn is a tavern just like hers (one man, no staff). Then come the Bakehouse (staff), the Watch Canteen (staff and the feed), the Toll-Gate Inn (plus the garrison on its gate) and the Copper Bell (everything, rooms and guild included). Each house's edge is what the one before unlocks: the beaten boss's parting word names it (*"You want to stand in this trade, you need hands"*), and their guide teaches it. Each war has a light check on the edge she just got (staff on shift, a post that week, signed on with the garrison, rooms let or a guild party in). The canteen's mini-bosses now fight for the feed. Code plan item 12c |
+| 20 Nov 2026 | 2.25 | **The boss shows her how.** After a boss's own fight, the beaten boss teaches the feature it unlocked in a short hands-on guide: 3 to 5 steps, each a line in their voice, an arrow or a glow on what to use, and waiting until she does it for real. Partner or Ruin changes the teacher's mood (proud with a small gift, or sulking), never the lesson. Skippable at every step, replayable from the journal, saved mid-way. The five guides written as steps: Hollin staff, Tansy the feed, Pike the garrison, Agnes the rooms and the guild, Jory the full house. Code plan item 12c |
 | 20 Nov 2026 | 2.24 | **Rivals are bosses, and beating them is the progression.** Each house's climb has 3 to 5 stage marks; at each, the boss comes in for a comic scene and sends a named mini-boss to brawl her that night, and the last stage is the boss's own fight. A lost stage is fought again, never reset. Each boss beaten unlocks a feature: Hollin staff, Tansy the feed and the Lantern's road, Pike the garrison, Agnes the rooms and the guild, Jory the full house. The acts still run on fans, on their own track. Fan targets about 5× longer (Tarven 300 / 700 / 1,200 / 1,800 / 2,500, Act 1 at 0 / 150 / 500 / 1,000, the pass at 4,000 / 5,500 / 7,000, Act 2 to 7,500, the top house about 10,000), aiming at 40 to 50 nights for Chapter 1. Hollin's three scenes written as the example. Pass rivals and the Baron as bosses. Code plan item 12c; open questions 1d and 1e |
 | 18 Nov 2026 | 2.23 | Section 4b: **Legend**, a lasting comic fifth stage past Known (the mind-break open question answered, played for laughs). Known plus Lewdness 160 and 3 wild nights in a row; back to Known after 3 quiet nights (a chapel day counts one). Cards (*The chant*, *By popular demand*, *Even legends have nights off*), touch asides, town talk, three passives, the journal's stage line; staff and Lantern girls get it too. Built. The consent rule is unchanged |
 | 18 Nov 2026 | 2.22 | Section 5: the six minor people named in Wren's letters (Abel, Mother Agathe, Brothers Cuthbert and Aldo, Lord Ambrose's boy, old Bet Holt) listed, kept as written |

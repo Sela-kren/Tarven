@@ -16,8 +16,12 @@ import { Input } from "./game/input";
 import { DayNightLighting } from "./game/lighting";
 import { DownloadTally, LoadScreen, nextPaint } from "./game/loadscreen";
 import { applyRetroLook, RetroPipeline } from "./game/retro";
+import { loadPaint } from "./game/paint";
 import { PALETTES, townLook } from "./game/palettes";
 import { WorldClock } from "./game/time";
+import { installDevResume } from "./game/devresume";
+import { DevView } from "./game/devview";
+import { addStoryProps, STORY_PIECES } from "./game/storyprops";
 import { addStairHall, addUpstairs } from "./game/upstairs";
 import { setupWorld } from "./game/world";
 
@@ -92,7 +96,10 @@ async function start(): Promise<void> {
         loading.show("download", tally.fraction, tally.megabytes);
         return file;
       });
+  // Her hand-painted layers from the Blender bridge, if any (paint.ts), alongside the models.
+  const painted = loadPaint(base, "female");
   const [worldFile, maleFile, femaleFile, propsFile] = await Promise.all(files.map(fetchModel));
+  await painted;
   // The town kit for the high street. The game still runs without it, with a plainer street.
   const streetKit = await loader
     .loadAsync(`${base}models/streetkit.glb`)
@@ -113,8 +120,10 @@ async function start(): Promise<void> {
   addWashTub(worldFile.scene);
   addBakery(worldFile.scene);
   addFrontDoorway(worldFile.scene);
+  // What the story has put in the tavern: Wren's red lantern, and her book stand with the red book's pieces.
+  addStoryProps(worldFile.scene);
   const claimed = claimFurniture(worldFile.scene);
-  const world = setupWorld(worldFile.scene, [...WHOLE_PIECES, ...claimed.whole]);
+  const world = setupWorld(worldFile.scene, [...WHOLE_PIECES, ...STORY_PIECES, ...claimed.whole]);
   scene.add(worldFile.scene);
   lighting.addSkyGlow(worldFile.scene, ["T_window"]);
 
@@ -133,6 +142,8 @@ async function start(): Promise<void> {
   }, camera, renderer, clock, audio);
   // For testing in the browser (development only): the game, reachable from the console.
   if (import.meta.env.DEV) (window as unknown as { __game?: Game }).__game = game;
+  // In development, a reload (every saved file) comes back to where it was, a brawl mid-turn and all (devresume.ts).
+  installDevResume(game);
 
   const focus = new Vector3();
   const updateCameraTarget = () => {
@@ -158,9 +169,24 @@ async function start(): Promise<void> {
   camera.position.copy(look).add(CAMERA_OFFSET);
   camera.lookAt(look);
 
+  // Development only: the Blender bridge's camera and screenshots (devview.ts).
+  const devView = import.meta.env.DEV ? new DevView(camera, game, renderer.domElement) : null;
   if (import.meta.env.DEV) {
     // town: its palette and lines can be swapped live (palettes.ts PALETTES) to compare looks.
-    Object.assign(window, { __tarven: { game, world, renderer, clock, audio, town, palettes: PALETTES } });
+    Object.assign(window, {
+      __tarven: {
+        game, world, renderer, clock, audio, town, palettes: PALETTES,
+        viewHer: devView!.viewHer.bind(devView), shot: devView!.shot.bind(devView),
+      },
+    });
+    // The Blender bridge's "Game shot" (vite.config.ts): look at her from Blender's camera and send the frame back.
+    import.meta.hot?.on("tarven:view", async (view: Parameters<DevView["viewHer"]>[0] & { shot?: boolean; keep?: boolean }) => {
+      devView!.viewHer(view);
+      if (!view?.shot) return;
+      const url = await devView!.shot();
+      await fetch("/__tarven/shot", { method: "POST", body: url });
+      if (!view.keep) devView!.viewHer(null);
+    });
   }
 
   // Every shader the first frames need, compiled now (in the background where the browser can), rather than
@@ -184,7 +210,9 @@ async function start(): Promise<void> {
 
     updateCameraTarget();
     const shot = game.closeup;
-    if (shot) {
+    if (devView?.apply()) {
+      // A Blender view of her (devview.ts) holds the camera.
+    } else if (shot) {
       // Hold the staged shot; the follow camera starts settled on the player afterwards.
       look.copy(focus);
       camera.position.copy(shot.eye);
@@ -209,6 +237,7 @@ async function start(): Promise<void> {
     pipeline.setPalette(game.outdoors ? town.palette : null);
     pipeline.setLines(game.outdoors ? town.lines : null);
     pipeline.render(scene, camera);
+    devView?.afterRender();
   });
 
   loading.finish();

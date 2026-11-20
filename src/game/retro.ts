@@ -22,6 +22,7 @@ import {
   WebGLRenderTarget,
 } from "three";
 import { addSkinDetail } from "./skindetail";
+import { addPaintTo } from "./paint";
 import { hexToOklab, hexToSrgb, MAX_PALETTE } from "./palettes";
 
 /** Target lines on screen. Toned down from the PS1's 480: on a ~1080p window this is full resolution. */
@@ -186,6 +187,8 @@ const SKIN_GLOW_GLSL = `{
 /** Adds the PS1's two rasterizer quirks: vertices snapped to a grid and affine (warping) textures. */
 function withPs1Rasterizer<T extends MeshLambertMaterial | MeshPhongMaterial>(material: T): T {
   material.onBeforeCompile = (shader) => {
+    // The Blender bridge's painted layers (paint.ts), first, so the glow and detail go over them.
+    addPaintTo(shader);
     if (SKIN_GLOW_NAMES.test(material.name)) {
       shader.fragmentShader = shader.fragmentShader.replace("#include <dithering_fragment>", SKIN_GLOW_GLSL);
     }

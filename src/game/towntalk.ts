@@ -952,7 +952,7 @@ const BASE_PASSING: readonly TownLine[] = [
   ...group("time.late", "time", (f) => f.hour >= 16, "calm", [
     "Shouldn't you be opening, keeper?",
     "Nearly five! Your doors open soon? I'm parched.",
-    "Bell's at five, keeper. Run!",
+    "Your sign turns at five, keeper. Run!",
     "Keeper! What are you still doing out here? I'm thirsty!",
   ]),
 

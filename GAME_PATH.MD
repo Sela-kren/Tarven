@@ -290,10 +290,15 @@ A lustful guest with the nerve for it (Nerve 5+) is **impulsive**; so is a worke
 
 | Setting (Settings › Consent) | Default | Meaning |
 |---|---|---|
-| Consent | **On** (always ask me) | On: every touch asks, at the bar and in a brawl. Off: impulsive guests' touches go to the check below |
-| Up to boldness | 5 | The boldest touch the check covers (1–9) |
+| Consent | **On** (always ask me) | On: every touch asks, at the bar and in a brawl. Off: Karryn's Prison, her desire decides (below) |
 
-**The check (Consent off): their push against her hold** (`impulseCheck`, `src/game/touchsettings.ts`):
+**Consent off at the bar is Karryn's Prison (since 20 Nov 2026):** no question and no push against her hold. As KP's waitress petting (`canGet…Petted`), **her desire for that part decides**: high enough for *Let it happen* and the touch lands; not, and they can't (she mocks them and slips out of reach, her dom side, unasked). Any guest, not only impulsive ones; no limit on how bold (KP has none, only her desire; the old *Up to boldness* setting is gone); being drunk doesn't stop it (KP), a guest who's had far too much still can't. The same goes for the rest of the bar's asks (`maybeReach`, `autoShow`, `autoTipDare` in `tavern.ts`):
+- **A look (7e):** KP's flash. Her desire for what they asked to see is there (a drink or three makes it easier): she shows them. It isn't: she won't, and being asked stirs that part of her (+3 to 5 desire). The dance-on-the-bar call is the same.
+- **A strip dare:** warm enough (Body desire and her exhibition passives against the dare, bolder each piece off) and the piece goes; not, and she slaps the hand away.
+- **A grab (7d):** it just happens, and what they try next goes by her desire like any touch.
+- **Drinks** ask either way (KP's): yes or no, with willpower.
+
+**The old check (kept for the dev panel only, no longer decides anything at the bar): their push against her hold** (`impulseCheck`, `src/game/touchsettings.ts`):
 
 | Their push (enemy) | Her hold (player) |
 |---|---|
@@ -304,10 +309,10 @@ A lustful guest with the nerve for it (Nerve 5+) is **impulsive**; so is a worke
 | | − body skill practice (up to 3) |
 | | − Exhibition passives, once something's off (up to 2) |
 
-- **Push at or past her hold:** it plays out as *Let it happen*: the guest's reach, an impulse line, the touch's own line, and *Get back to work* (or *Back to the fight*). The comic panel plays, and the Force bar rushes up (`fast`).
-- **Her hold stands:** she's asked like any other time.
+- **When it lands** (her desire's there): it plays out as *Let it happen*: the guest's reach, an impulse line, the touch's own line, and *Get back to work* (or *Back to the fight*). The comic panel plays, and the Force bar rushes up (`fast`).
+- **When it doesn't:** she mocks them and slips out of reach, with nothing to answer.
 - **The first time** an impulsive guest reaches with Consent still on, the touch freezes as usual with two extra answers on top: *"Let it happen, and let eager guests skip asking (Consent off)"* and *"Always ask me first"*. Every usual answer stays.
-- **It only covers touches she could already say yes to:** desire high enough for *Let it happen*, nobody too drunk, within the boldness chosen. Adult play isn't weighed by push and hold: her state decides it (7f). A garment counts, but she holds on to her clothes harder (+2 to her hold). Pull away still works on the next reach.
+- **It only covers touches she could already say yes to:** desire high enough for *Let it happen*, nobody too drunk, however bold. Adult play isn't weighed by push and hold: her state decides it (7f). A garment counts, but she holds on to her clothes harder (+2 to her hold). Pull away still works on the next reach.
 - The dev panel (**]**, dev builds only) shows both sides of the last check and why it played out or asked.
 - The settings live in the browser (`tarven.touch`), not in a save. The code is in `src/game/touchsettings.ts`, `tavern.ts` (`maybeReach`, `impulseFacts`, `touchOptions`), `menus.ts` (`showSettingsMenu`, `showDevPanel`) and `touchtalk-givein.ts` (`IMPULSE_LINES`). The tests are in `tests/touchsettings.test.ts`.
 
@@ -320,7 +325,7 @@ As she leans in to take a guest's order, or sets down what they ordered, they ma
   - *Twist free:* always works, like Pull away. Nothing comes off.
   - *Slap their hand away:* always works, +1 respect; about a third take it badly and turn angry.
   - *Let them hold you:* +1 fame. Only now do they go for her clothes, with the held strip tries (any kind: hand-in-the-piece tug L3, a fist in it L5, peeled off slow L7). That reach **asks like any other**, Pull away included.
-- **Consent off:** the grab just happens, with no answer to it ("You don't get the chance to pull away"). They go straight for her clothes, through the push-vs-hold check, with their grip adding +2 to their push. If her hold stands, she's asked as usual. A guest who isn't impulsive still asks.
+- **Consent off:** the grab just happens, with no answer to it ("You don't get the chance to pull away"). They go straight for her clothes, and that goes by her desire like any touch (Karryn's Prison, 7c): ready, it comes off; not, she slips their grip.
 - Nothing left to take, and they let go with a wink.
 - **Records and passives:** grabbed, broke their hold, let them hold you (journal, Records). *Slippery* (break 8 holds: grabbed 30% less). *Held Fast* (let 6 hold you: +2 gold each time; grabbed 25% more).
 - The tests are in `tests/grab.test.ts`; elsewhere the tests' setup turns grabs off (`grabDice.roll = null`).

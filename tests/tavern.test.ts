@@ -62,11 +62,11 @@ describe("the day", () => {
     expect(t.potState).toBe("ready");
   });
 
-  it("opens at the bell, then waits for nightfall before the night begins", () => {
+  it("opens at the sign, then waits for nightfall before the night begins", () => {
     const t = new Tavern(SEATS);
     t.takeMessages();
-    expect(t.prompt(0, { kind: "bell" })?.actionable).toBe(true);
-    t.interact(0, { kind: "bell" });
+    expect(t.prompt(0, { kind: "sign" })?.actionable).toBe(true);
+    t.interact(0, { kind: "sign" });
     expect(t.phase).toBe("dusk");
     run(t, 10, daytime);
     expect(t.phase).toBe("dusk");
@@ -74,7 +74,7 @@ describe("the day", () => {
     t.tick(0.1, idle);
     expect(t.phase).toBe("service");
     expect(t.takeMessages().at(-1)).toBe(t.plan.intro);
-    expect(t.prompt(0, { kind: "bell" })).toBeNull();
+    expect(t.prompt(0, { kind: "sign" })).toBeNull();
     expect(t.prompt(0, { kind: "bed" })).toBeNull();
   });
 });

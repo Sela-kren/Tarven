@@ -148,9 +148,9 @@ export function dayStory(s: DayState): string[] {
   const cobwebs = s.cobwebs ?? 0;
   if (s.day === 0 && s.messes > 0) {
     // The first morning: the place has stood shut since Grandma died, and cleaning it is the first lesson.
-    lines.push("The place has stood shut since Grandma died. Cobwebs hang in the corners and dust lies thick on the floor. Clean it all before you can ring the bell.");
+    lines.push("The place has stood shut since Grandma died. Cobwebs hang in the corners and dust lies thick on the floor. Clean it all before you can turn the sign to Open.");
   } else if (s.messes > cobwebs) {
-    lines.push("Last night left a mess on the floor. Clean it up before you ring the bell.");
+    lines.push("Last night left a mess on the floor. Clean it up before you turn the sign to Open.");
     if (cobwebs > 0) lines.push("A spider has spun a web up on the wall, too.");
   } else if (cobwebs > 0) {
     lines.push("A spider has spun a web up on the wall. Brush it down before the guests see it.");

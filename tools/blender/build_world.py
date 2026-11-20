@@ -21,7 +21,11 @@ from mathutils.kdtree import KDTree
 # TARVEN_ROOT sends the build somewhere else, such as a scratch folder to compare it with the game's models.
 ROOT = os.environ.get("TARVEN_ROOT") or r"C:\Game\Tarven"
 TEX_DIR = os.path.join(ROOT, "art", "textures")
-OUT_DIR = os.path.join(ROOT, "public", "models")
+# TARVEN_OUT sends only the exported GLBs elsewhere (textures and sculpt fixes still come from ROOT).
+OUT_DIR = os.environ.get("TARVEN_OUT") or os.path.join(ROOT, "public", "models")
+# TARVEN_SAVE_MASTER=<path.blend> also saves her rig, as built, as a .blend of its own: the Blender bridge's master
+# file (tools/blender/tarven_bridge), which the user edits and sends to the game.
+SAVE_MASTER = os.environ.get("TARVEN_SAVE_MASTER")
 SCENE_NAME = "TarvenWorld"
 HI = 512
 
@@ -11605,6 +11609,7 @@ def main():
     random_state = rng.bit_generator.state
     mats["silver"] = material("T_silver", tex_flat("T_silver", (0.82, 0.82, 0.86), variation=0.0))
     rng.bit_generator.state = random_state
+    rigs = {}
     for spec, blender_x in ((MALE, -0.6), (FEMALE, 0.6)):
         coll = bpy.data.collections.new(spec["name"] + "Rig")
         scene.collection.children.link(coll)
@@ -11612,6 +11617,7 @@ def main():
         export_collection(coll, os.path.join(OUT_DIR, spec["name"].lower() + ".glb"))
         # Exported at the origin; moved afterwards so they don't overlap in Blender.
         root.location.x = blender_x
+        rigs[spec["name"]] = (coll, root)
 
     for key, colour in (("foam", (0.88, 0.8, 0.6)), ("stew", (0.46, 0.24, 0.1)), ("bread", (0.74, 0.48, 0.2))):
         mats[key] = material("T_" + key, tex_flat("T_" + key, colour))
@@ -11620,5 +11626,38 @@ def main():
     build_props(props, mats)
     export_collection(props, os.path.join(OUT_DIR, "props.glb"))
 
+    if SAVE_MASTER:
+        save_master(SAVE_MASTER, *rigs[FEMALE["name"]])
 
-main()
+
+MASTER_COLLECTION = "FemaleRig"
+
+
+def save_master(path, coll, root):
+    """Saves her rig alone, as built and back at the origin, as the Blender bridge's master .blend: everything else
+    (the room, the male, the props, the factory scene) is removed first. Ends the build's scene as it was exported, so
+    exporting the master with export_collection gives the same female.glb."""
+    root.location.x = 0.0
+    scene = bpy.context.window.scene
+    keep = set(coll.all_objects)
+    for child in list(scene.collection.children):
+        if child != coll:
+            for obj in list(child.all_objects):
+                if obj not in keep:
+                    bpy.data.objects.remove(obj, do_unlink=True)
+            bpy.data.collections.remove(child)
+    for other in list(bpy.data.scenes):
+        if other != scene:
+            bpy.data.scenes.remove(other)
+    for obj in list(bpy.data.objects):
+        if obj not in keep and obj.users == 0:
+            bpy.data.objects.remove(obj)
+    bpy.ops.outliner.orphans_purge(do_recursive=True)
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(path), relative_remap=True)
+    print(f"master saved: {path} ({os.path.getsize(path) / 1024:.0f} KB, {len(keep)} objects)")
+
+
+# Run as a build (blender --python build_world.py); imported (the bridge's export) it only lends its functions.
+if __name__ == "__main__":
+    main()

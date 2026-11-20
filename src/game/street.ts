@@ -128,7 +128,7 @@ const YARD = rect(20, 32, -11, -4);
 /** The yard's gate onto the high street, a gap in the picket fence. */
 const YARD_GATE = { minX: 24.8, maxX: 27.2 };
 /** Her tavern's door, in the middle of its front. */
-const TAVERN_DOOR = { x: 26, z: -11 };
+export const TAVERN_DOOR = { x: 26, z: -11 };
 
 /**
  * The buildings: where each stands (its middle across, its front line), its footprint and height (the kit pieces'

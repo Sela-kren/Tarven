@@ -18,7 +18,7 @@ const byId = (id: string) => TOUCHES.find((t) => t.id === id)!;
 
 describe("eager guests touching without asking", () => {
   it("starts with Consent on (switched on but not agreed to), up to boldness 5", () => {
-    expect(defaultTouchSettings()).toEqual({ autoTouch: true, agreed: false, upTo: 5, rimjob: true, footjob: true, difficulty: "normal" });
+    expect(defaultTouchSettings()).toEqual({ autoTouch: true, agreed: false, rimjob: true, footjob: true, difficulty: "normal" });
     // No browser storage here: the defaults stand.
     expect(readTouchSettings()).toEqual(defaultTouchSettings());
   });
@@ -29,19 +29,18 @@ describe("eager guests touching without asking", () => {
     expect(impulsive("calm", 9)).toBe(false);
   });
 
-  it("only covers touches she could say yes to, within the boldness chosen, clothes too but never the invitation", () => {
-    const s: TouchSettings = { ...defaultTouchSettings(), agreed: true, upTo: 9 };
+  it("only covers touches she could say yes to, however bold (KP has no limit), clothes too but never the invitation", () => {
+    const s: TouchSettings = { ...defaultTouchSettings(), agreed: true };
     const waist = byId("waist");
     expect(autoTouchFits(s, waist, ["allow", "slap", "pull"])).toBe(true);
     // Not when she couldn't say yes anyway: her desire's too low, or someone's too drunk.
     expect(autoTouchFits(s, waist, ["slap", "pull"])).toBe(false);
-    expect(autoTouchFits({ ...s, upTo: waist.level - 1 }, waist, ["allow", "slap", "pull"])).toBe(false);
     // A garment goes to the check like any touch, as long as she could say yes to it.
     const strip = TOUCHES.find((t) => t.strip)!;
     expect(autoTouchFits(s, strip, ["allow", "slap", "pull"])).toBe(true);
     expect(autoTouchFits(s, strip, ["slap", "pull"])).toBe(false);
     const invite = TOUCHES.find((t) => t.region === "invite")!;
-    expect(autoTouchFits({ ...s, upTo: 10 }, invite, ["allow", "slap", "pull"])).toBe(false);
+    expect(autoTouchFits(s, invite, ["allow", "slap", "pull"])).toBe(false);
   });
 });
 
@@ -91,7 +90,7 @@ describe("in the tavern", () => {
     const t = new Tavern(TABLES.length, TABLES);
     t.random = () => 0;
     t.playerBody = "Female";
-    t.touchSettings = { ...defaultTouchSettings(), upTo: 9, ...settings };
+    t.touchSettings = { ...defaultTouchSettings(), ...settings };
     t.open();
     for (const m of METERS) t.meters[m] = 50;
     t.tick(0, idle);
@@ -153,18 +152,16 @@ describe("in the tavern", () => {
     expect(t.records.domWins).toBe(0);
   });
 
-  it("still asks when her hold stands", () => {
+  it("slips out of reach, unasked, when she isn't ready for it (KP: they can't)", () => {
     const t = served({ agreed: true }, (tavern) => {
-      // Weigh a bold touch she doesn't want against a guest with no taste for it.
-      const real = tavern.impulseFacts.bind(tavern);
-      tavern.impulseFacts = (...args) => ({ ...real(...args), level: 9, desire: 0, prefers: false });
+      // No desire for any of it: even the gentlest touch needs more than that.
+      tavern.desireFor = () => -1;
     });
-    expect(t.lastImpulse?.check.lands).toBe(false);
-    // She mocks them for trying, in the conversation and the log, and they have to ask after all.
+    // She mocks them for trying, in the conversation and the log, and it's over: nothing to answer.
     const mock = KINK_TALK.plain.dom[0].replaceAll("{guest}", t.lastImpulse!.guest.toLowerCase());
     expect(t.talkLines.map((line) => line.text)).toContain(mock);
     expect(t.takeMessages().some((line) => line.startsWith(mock))).toBe(true);
-    expect(labels(t).slice(-2)).toEqual(["Slap them", "Pull away"]);
+    expect(labels(t)).toEqual(["Get back to work"]);
     expect(t.landedTouch).toBeNull();
     // Her dom side: it counts, toward sadism.
     expect(t.records.domWins).toBe(1);
@@ -180,10 +177,10 @@ describe("in the tavern", () => {
     expect(progressOf("stingingCheeks", dom)).toEqual(progressOf("stingingCheeks", newRecords()));
   });
 
-  it("never lands without asking when she's too drunk to say yes", () => {
+  it("isn't stopped by drink, KP's way: drunk, it still goes by her desire", () => {
     const t = served({ agreed: true }, (tavern) => (tavern.drunk = 1));
-    expect(labels(t)).toEqual(["Slap them", "Pull away"]);
-    expect(t.landedTouch).toBeNull();
+    expect(labels(t)).toEqual(["Get back to work"]);
+    expect(t.landedTouch?.impulse).toBe(true);
   });
 
   it("does nothing when switched off", () => {

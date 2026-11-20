@@ -39,6 +39,7 @@ import { CUT_INS, cutKindFor, SPANK_LEVELS, spankLevel, type CutFormat, type Cut
 import { touchLands, type TouchAnswer, type TouchRegion } from "./touch";
 import { SMACK_TOUCHES } from "./touchtalk";
 import type { GuestKind } from "./tavern";
+import { addPaintTo } from "./paint";
 
 /**
  * The comic panel for a guest reaching for you, in the same dithered look as the drink panel: your own character,
@@ -1425,6 +1426,8 @@ function paintSkin(model: Object3D, shade: UnderShade): void {
       // Her inner lips and canal from both sides: seen from below, past the canal's walls is nothing to see through to.
       painted.side = SKIN_WET.test(material.name) ? DoubleSide : material.side;
       painted.onBeforeCompile = (shader) => {
+        // Her painted layers from the Blender bridge (paint.ts), as in the room.
+        addPaintTo(shader);
         Object.assign(shader.uniforms, shade);
         shader.vertexShader = `varying vec3 vShadeAt;
 ${shader.vertexShader}`.replace(

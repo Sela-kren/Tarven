@@ -17,7 +17,7 @@ function grabbed(settings: Partial<TouchSettings> = {}): Tavern {
   t.random = () => 0;
   t.grabRandom = () => 0;
   t.playerBody = "Female";
-  t.touchSettings = { ...defaultTouchSettings(), upTo: 9, ...settings };
+  t.touchSettings = { ...defaultTouchSettings(), ...settings };
   t.open();
   t.tick(0, idle);
   run(t, 4);
@@ -149,5 +149,25 @@ describe("its passives", () => {
     const gold = t.gold;
     choose(t, GRAB_LET);
     expect(t.gold).toBe(gold + 2);
+  });
+});
+
+describe("a grab, with willpower", () => {
+  it("costs nothing to break when she isn't tempted, and willpower once her Body desire is up", () => {
+    const cold = grabbed();
+    expect(cold.talkChoices[0].label).toBe(GRAB_TWIST);
+    const warm = grabbed();
+    warm.meters.body = 60;
+    expect(warm.talkChoices[0].label).toMatch(/ · \d+ will$/);
+    const will = warm.willpower;
+    choose(warm, GRAB_TWIST);
+    expect(warm.willpower).toBeLessThan(will);
+  });
+
+  it("wears her down a little when she lets them hold her", () => {
+    const t = grabbed();
+    const will = t.willpower;
+    choose(t, GRAB_LET);
+    expect(t.willpower).toBeLessThan(will);
   });
 });
