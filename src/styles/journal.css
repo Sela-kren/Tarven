@@ -566,6 +566,15 @@
   color: #7a6848;
 }
 
+/* Not started or not learned yet: faded, with how she'll come to it. */
+#panel .journal-book .skill.locked {
+  opacity: 0.55;
+}
+
+#panel .journal-book .skill.brawl:not(.locked) .skill-level {
+  color: #2e6a2a;
+}
+
 #panel .journal-book .skill-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

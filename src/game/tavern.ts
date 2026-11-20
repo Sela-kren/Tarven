@@ -231,6 +231,7 @@ import {
   TAVERN_RULE_BY_ID,
   type TavernRuleId,
 } from "./tavernrules";
+import { BRAWL_SKILL_BY_ID, BRAWL_SKILLS, brawlSkillsKnown, type BrawlSkillId } from "./brawlskills";
 import {
   earnsRegular,
   newMarks,
@@ -1861,6 +1862,8 @@ export class Tavern {
   private readonly nightMarks = new Map<number, { guest: Pick<Guest, "kind" | "role" | "female" | "look" | "stats" | "regular">; marks: NightMarks }>();
   /** The edicts she's enacted (tavernrules.ts), for good. */
   readonly rules = new Set<TavernRuleId>();
+  /** Brawl skills someone has taught her (brawlskills.ts), for good. Edicts teach the rest. */
+  readonly taught = new Set<BrawlSkillId>();
   worn: string[] = [START_TITLE];
   /** She eased the ache herself before sleeping last night. */
   eased = false;
@@ -5378,6 +5381,8 @@ export class Tavern {
   private fighterStats(): FighterStats {
     const e = this.effects;
     return {
+      // Only the moves she's learned (brawlskills.ts).
+      skills: this.brawlSkills,
       // KP's enemy prefixes (foeprefix.ts), and the difficulty.
       prefixOf: foePrefixFor,
       sceneEase: e.sceneEase,
@@ -7740,7 +7745,23 @@ export class Tavern {
     this.rules.add(id);
     this.cue("buy");
     this.refreshEffects();
-    this.say(`New edict in the tavern: ${def.name}.`);
+    this.say(def.branch === "brawl" ? `You learned ${def.name}. It's yours in your next brawl.` : `New edict in the tavern: ${def.name}.`);
+  }
+
+  /** The brawl skills she knows (brawlskills.ts): from her edicts, and from whoever's taught her. */
+  get brawlSkills(): Set<BrawlSkillId> {
+    return brawlSkillsKnown(this.rules, this.taught);
+  }
+
+  /**
+   * Someone teaches her a brawl skill (the garrison, the guild, one of her staff): hers for good, no edict needed.
+   * `by` is who, for the line in the log. Nothing calls this yet; it's the way in for special moves.
+   */
+  teachBrawlSkill(id: BrawlSkillId, by: string): void {
+    const def = BRAWL_SKILL_BY_ID.get(id);
+    if (!def || this.brawlSkills.has(id)) return;
+    this.taught.add(id);
+    this.say(`${by} taught you ${def.name}: ${def.does}.`);
   }
 
   /** Edict points she earns this morning: one, and one more once the tavern's famous. */
@@ -8227,6 +8248,7 @@ export class Tavern {
         rulesAdopted: [...this.rules],
         rules: [...this.rules],
         edictPoints: this.edictPoints,
+        taught: [...this.taught],
       },
       favors: { asked: [...this.askedFavors], due: this.favorsDue.map((d) => ({ ...d })) },
       ...(this.layout ? { layout: cloneLayout(this.layout) } : {}),
@@ -8354,6 +8376,10 @@ export class Tavern {
     this.rules.clear();
     for (const id of progress.rules ?? []) if (TAVERN_RULE_BY_ID.has(id)) this.rules.add(id as TavernRuleId);
     this.edictPoints = progress.edictPoints ?? EDICT_START_POINTS;
+    // Brawl skills she was taught. A save from before she had to learn them knew every move: it keeps them.
+    this.taught.clear();
+    const taught = progress.taught ?? BRAWL_SKILLS.map((s) => s.id);
+    for (const id of taught) if (BRAWL_SKILL_BY_ID.has(id)) this.taught.add(id as BrawlSkillId);
     // The brothel isn't saved: it opens again from what she's become.
     this.houseMode = { current: "tavern", unlocked: new Set(["tavern"]), brothel: 0 };
     this.unlockBrothel(true);

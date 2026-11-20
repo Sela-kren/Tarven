@@ -234,6 +234,24 @@ export const BUILD_ICONS = {
     ],
     PALETTE,
   ),
+  /** A brawl skill she can learn: a clenched fist. */
+  fist: pixelSvg(
+    [
+      "............",
+      "...KKKKKK...",
+      "..KHKHKHKK..",
+      ".KHHKHHKHHK.",
+      ".KHHKHHKHHK.",
+      ".KKKKKKKKHK.",
+      ".KHHHHHHHHK.",
+      ".KHHHHHHHDK.",
+      "..KHHHHHDK..",
+      "...KDDDDK...",
+      "...KKKKKK...",
+      "............",
+    ],
+    { K: OUTLINE, H: "#e2b088", D: "#b98462" },
+  ),
 } as const;
 
 /** The HUD's keg drawing, as rows, so the tap upgrade can put a badge on it. */

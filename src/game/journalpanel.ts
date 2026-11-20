@@ -133,7 +133,7 @@ export function showJournal(game: Game, page: JournalPage = "ledger"): void {
       })),
     });
   } else if (page === "skills") {
-    book = skillsBook({ xp: tavern.xp, bonus: tavern.effects.skill, touchable: tavern.playerBody === "Female" });
+    book = skillsBook({ xp: tavern.xp, bonus: tavern.effects.skill, touchable: tavern.playerBody === "Female", brawl: tavern.brawlSkills });
   } else {
     book = recordsBook({ facts });
   }

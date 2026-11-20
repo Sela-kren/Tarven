@@ -9,10 +9,11 @@
  *
  * Not the Lantern's "house rules" (lantern.ts), which are about the girls upstairs and stay switchable.
  */
+import { BRAWL_SKILL_BY_ID, type BrawlSkillId } from "./brawlskills";
 import type { Effects } from "./passives";
 import type { StaffJob } from "./staff";
 
-export type EdictBranch = "service" | "staff" | "conduct" | "order" | "house";
+export type EdictBranch = "service" | "staff" | "conduct" | "order" | "house" | "brawl";
 
 /** The branches, left to right on the plans. */
 export const EDICT_BRANCHES: readonly { id: EdictBranch; name: string }[] = [
@@ -21,6 +22,7 @@ export const EDICT_BRANCHES: readonly { id: EdictBranch; name: string }[] = [
   { id: "conduct", name: "Her Conduct" },
   { id: "order", name: "Order & Law" },
   { id: "house", name: "The House" },
+  { id: "brawl", name: "Brawling" },
 ];
 
 export type TavernRuleId =
@@ -36,7 +38,10 @@ export type TavernRuleId =
   // The House
   | "freshRushes" | "betterLamps" | "warmHearth" | "noticeBoard" | "feedCorner"
   // The House: what the board says about her (KP's Publish edicts, lewdtalk.ts)
-  | "postedProfile" | "postedFirsts" | "postedWeakSpots" | "postedRecords";
+  | "postedProfile" | "postedFirsts" | "postedWeakSpots" | "postedRecords"
+  // Brawling: the moves she learns (brawlskills.ts)
+  | "learnKick" | "learnShove" | "learnStare" | "learnGrapple" | "learnDirty" | "learnSteel" | "learnEye"
+  | "learnTackle" | "learnBreathing" | "learnHoldBack" | "learnFixClothes" | "learnStances" | "learnSecondWind";
 
 export interface TavernRuleDef {
   id: TavernRuleId;
@@ -422,7 +427,29 @@ export const TAVERN_RULES: readonly TavernRuleDef[] = [
       e.reach += 0.1;
     },
   },
+
+  // ---------- Brawling: the moves she learns (brawlskills.ts) ----------
+  brawlEdict("learnKick", "kick", 1, 1, 10),
+  brawlEdict("learnShove", "shove", 1, 1, 5),
+  brawlEdict("learnStare", "stare", 1, 1, 10),
+  brawlEdict("learnGrapple", "grapple", 2, 1, 15, ["learnShove"]),
+  brawlEdict("learnDirty", "dirty", 2, 1, 15, ["learnKick"]),
+  brawlEdict("learnSteel", "steel", 2, 1, 15, ["learnStare"]),
+  brawlEdict("learnEye", "eye", 2, 1, 20, ["learnStare"]),
+  brawlEdict("learnTackle", "tackle", 3, 2, 25, ["learnGrapple", "learnDirty"]),
+  brawlEdict("learnBreathing", "breathing", 3, 1, 20, ["learnSteel"]),
+  brawlEdict("learnHoldBack", "holdBack", 3, 1, 20, ["learnEye"]),
+  brawlEdict("learnFixClothes", "fixClothes", 3, 1, 15, ["learnSteel"]),
+  brawlEdict("learnStances", "stances", 4, 2, 30, ["learnBreathing"]),
+  brawlEdict("learnSecondWind", "secondWind", 4, 2, 30, ["learnBreathing"]),
 ];
+
+/** An edict on the Brawling branch: it teaches her a brawl skill, and its name and note are the skill's. */
+function brawlEdict(id: TavernRuleId, skill: BrawlSkillId, tier: number, points: number, cost: number, requires?: TavernRuleId[]): TavernRuleDef {
+  const def = BRAWL_SKILL_BY_ID.get(skill);
+  if (!def) throw new Error(`No brawl skill ${skill}`);
+  return { id, name: def.name, branch: "brawl", tier, points, cost, requires, does: `Learn ${def.name}: ${def.does}` };
+}
 
 export const TAVERN_RULE_BY_ID: ReadonlyMap<string, TavernRuleDef> = new Map(TAVERN_RULES.map((r) => [r.id, r]));
 

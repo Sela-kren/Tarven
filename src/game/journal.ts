@@ -38,6 +38,7 @@ import {
   type SkillId,
   type StatId,
 } from "./skills";
+import { BRAWL_SKILLS, howToLearn, type BrawlSkillDef, type BrawlSkillId } from "./brawlskills";
 
 export interface JournalState {
   name: string;
@@ -648,6 +649,26 @@ export interface SkillsState {
   bonus: Partial<Record<StatId | SkillId, number>>;
   /** Whether guests touch the player at all: the body skills only grow for the sister, for now. */
   touchable: boolean;
+  /** The brawl skills she's learned (brawlskills.ts). */
+  brawl: ReadonlySet<BrawlSkillId>;
+}
+
+/** A skill she hasn't started yet: its name kept back, and how she'll come to it. */
+function lockedLine(how: string): HTMLElement {
+  const line = el("div", "skill locked");
+  const head = el("div", "skill-head");
+  head.append(el("span", "skill-name", "???"), el("b", "skill-level", "Locked"));
+  line.append(head, el("p", "skill-does", how));
+  return line;
+}
+
+/** One brawl skill: learned (its moves and what it does), or not yet (and how she learns it). */
+function brawlLine(skill: BrawlSkillDef, known: boolean): HTMLElement {
+  const line = el("div", known ? "skill brawl" : "skill brawl locked");
+  const head = el("div", "skill-head");
+  head.append(el("span", "skill-name", skill.name), el("b", "skill-level", known ? "Learned" : "Not yet"));
+  line.append(head, el("p", "skill-does", known ? skill.does : howToLearn(skill)));
+  return line;
 }
 
 /** One stat or skill: its name and level, a bar to the next level, and what its level does. */
@@ -675,22 +696,37 @@ export function skillsBook(state: SkillsState): HTMLElement {
   const bonus = (id: StatId | SkillId) => state.bonus[id] ?? 0;
   const level = (id: StatId | SkillId) => levelOf(xp(id)) + bonus(id);
 
+  // A skill shows once she's started it (any experience, or a level from a passive); until then it's locked.
+  const started = (id: StatId | SkillId) => xp(id) > 0 || bonus(id) > 0;
+
   left.append(el("h1", "title", "Skills"));
   left.append(el("p", "role", "Everything gets better with practice."));
   left.append(el("h2", "", "Stats"));
   for (const stat of STATS) {
     left.append(skillLine(stat.name, xp(stat.id), bonus(stat.id), `${stat.does}. ${statBonusText(stat.id, level(stat.id))}.`));
   }
+  const learned = BRAWL_SKILLS.filter((s) => state.brawl.has(s.id)).length;
+  left.append(el("h2", "", `Brawl moves (${learned}/${BRAWL_SKILLS.length})`));
+  left.append(el("p", "note", "From the start: Strike, Dodge, Talk them down, Gather yourself, Throw them out."));
+  const brawl = el("div", "skill-grid");
+  for (const skill of BRAWL_SKILLS) brawl.append(brawlLine(skill, state.brawl.has(skill.id)));
+  left.append(brawl);
 
   right.append(el("h2", "", "Body"));
   if (!state.touchable) right.append(el("p", "note", "Guests keep their hands to themselves with you."));
   const body = el("div", "skill-grid");
-  for (const skill of BODY_SKILLS) body.append(skillLine(skill.name, xp(skill.id), bonus(skill.id), skillBonusText(skill.id, level(skill.id))));
+  for (const skill of BODY_SKILLS) {
+    body.append(started(skill.id) ? skillLine(skill.name, xp(skill.id), bonus(skill.id), skillBonusText(skill.id, level(skill.id))) : lockedLine("Comes with what guests are let do"));
+  }
   right.append(body);
-  right.append(el("h2", "", "Adult play skills"));
-  const acts = el("div", "skill-grid");
-  for (const skill of ACT_SKILLS) acts.append(skillLine(skill.name, xp(skill.id), bonus(skill.id), skillBonusText(skill.id, level(skill.id))));
-  right.append(acts);
+  // The adult play skills stay out of the book entirely until she's started one.
+  const acts = ACT_SKILLS.filter((skill) => started(skill.id));
+  if (acts.length > 0) {
+    right.append(el("h2", "", `Adult play skills (${acts.length}/${ACT_SKILLS.length})`));
+    const grid = el("div", "skill-grid");
+    for (const skill of acts) grid.append(skillLine(skill.name, xp(skill.id), bonus(skill.id), skillBonusText(skill.id, level(skill.id))));
+    right.append(grid);
+  }
   return book;
 }
 
