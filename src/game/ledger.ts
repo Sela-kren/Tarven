@@ -10,6 +10,8 @@
  * ending.
  */
 import type { LastCall } from "./tavern";
+import type { Act2BeatId, RivalId } from "./act2";
+import type { Act3BeatId } from "./act3";
 
 // ---- Fans ----
 
@@ -120,7 +122,12 @@ export function ordinal(n: number): string {
 export type Beat =
   | { id: string; fans: number; kind: "night"; night: number }
   | { id: string; fans: number; kind: "house"; house: HouseId; collect?: boolean }
-  | { id: string; fans: number; kind: "pell" };
+  | { id: string; fans: number; kind: "pell" }
+  /** Act 2 (act2.ts): a dawn card with her choices, and a pass rival she's pushed to the bottom of the Ledger. */
+  | { id: string; fans: number; kind: "act2"; beat: Act2BeatId }
+  | { id: string; fans: number; kind: "rival"; rival: RivalId }
+  /** Act 3 (act3.ts): Last Call's cards. */
+  | { id: string; fans: number; kind: "act3"; beat: Act3BeatId };
 
 export const BEATS: readonly Beat[] = [
   { id: "salt", fans: 0, kind: "night", night: 0 },

@@ -88,4 +88,7 @@ survives a GLB export**: no billboarding, no wind, no push, no toon shader. Don'
   sprite alpha cut, toon steps and clouds in the fragment shader. The node math in `build_grass.py` is the spec.
 - Light the grass with the world clock (`src/game/time.ts`, `sunHeight`), so the grass matches the time of day.
 
-This port hasn't been built yet. Ask the user before starting it.
+**The port is built (2026-11-20): `src/game/grass.ts`**, used by the town (`street.ts` `addGrass`, moved each frame
+from `game.ts`). Its `GRASS` and `GRASS_COLORS` settings mirror `CONFIG` here. It leaves out the toon steps and
+cloud shadows on purpose (lit by the scene's own lights, like the rest of the town) and the fake perspective. To
+change the game's grass, change `grass.ts`; this Blender builder is for renders and look tests.

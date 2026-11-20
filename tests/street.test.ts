@@ -29,7 +29,7 @@ describe("the town", () => {
 
   it("has every place she can walk up to, once each, standing in the open and reachable from her door", () => {
     const places: StreetPlace[] = [
-      "home", "market", "board", "chapel", "warmhouse", "copperbell", "garrison", "fields", "quarry", "ciderbarn", "bakehouse",
+      "home", "market", "board", "chapel", "warmhouse", "copperbell", "garrison", "fields", "quarry", "ciderbarn", "bakehouse", "tollgate", "townhall",
     ];
     expect(street.spots.map((s) => s.place).sort()).toEqual([...places].sort());
     for (const spot of street.spots) {

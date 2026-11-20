@@ -3,7 +3,7 @@
 > **Rating: Adults only (18+).**
 > This is a future content concept for *Last Call at Tarven*. All characters are adults (18+).
 > The heroine follows the consent rule in `GAME_PATH.MD` (Consent On / Off), like every other adult beat.
-> **Status: concept, not built.** Updated 2026-11-17 to fit the game as it is now (fans, the Lantern, Oden's story, the day in town).
+> **Status: partly built.** The first recruits (section 6) and her ranks as a day career (sections 5 and 7: `src/game/careers.ts`, TOWN_DAY.md step 7) are built, 2026-11-20. Still to come: the rank outfits on both bodies, scenes with priests, and the church in the tavern.
 
 ---
 

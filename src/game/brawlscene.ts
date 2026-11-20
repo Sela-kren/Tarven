@@ -6,16 +6,18 @@ import type { GuestKind } from "./tavern";
 import { SMACK_TOUCHES, type TouchRegion } from "./touchtalk";
 
 /**
- * Sex in the middle of a brawl, in the big picture, the way Karryn's Prison does it in battle (RemtairyPoses.js):
+ * Sex in the middle of a brawl, in the big picture, the way Karryn's Prison does it in battle (RemtairyPoses.js
+ * refreshPose returns early in a sex pose, so the pose is locked till the man who started it is done):
  *
  * - Her own moves (her hands on them, her mouth, riding them: fight.ts INTIMATE_MOVES) put her in a scene with the
  *   one she's fighting, and it holds through the turns, their swings and all, until she does something else.
- *   Her mouth on them again goes deeper; riding them again, she turns round.
+ *   Doing it again keeps the same pose (her mouth on them again goes deeper, once, and stays there).
  * - A touch she lets land (the touch screen, or Consent off's check) shows a moment of it, then she's back in the
  *   fight, unless she's already in a scene with them.
- *
- * - A foe starting a scene with her (GAME_PATH.MD 7i), once she's let him: the way his type has her, held the same,
- *   until he comes or she struggles free.
+ * - A foe starting a scene with her (GAME_PATH.MD 7i), once she's let him: the way his type has her, held the same
+ *   while he has her (fight.ts `taken`): through his coming while he's got more in him, a helper at her mouth or
+ *   hand coming and going, and her stamina running out. It ends when he lets go of her (spent, out of the fight,
+ *   or pulling out to come on her), she struggles free, or it's over.
  *
  * It only ever shows what she chose or let happen: who starts what is fight.ts and the touch screen's business.
  */
@@ -36,12 +38,24 @@ export function intimateOf(event: string): IntimateMove | null {
 
 /**
  * Whether a brawl event takes her out of a scene: a move of hers that isn't with them (fight.ts events), or
- * struggling free. Held in a scene a foe started, steeling herself or suppressing doesn't free her.
+ * struggling free. Her willpower (suppressing, steeling herself) is in her head, and doesn't move her (KP's mental
+ * phase leaves the pose be); held in a scene a foe started, only struggling free does.
  */
 function breaksScene(event: string, taken: boolean): boolean {
   if (event === "struggle:free" || event === "lost") return true;
   if (taken) return false;
-  return /^(strike|kick|shove|grab|headlock|hairpull|tackle|talk|stare|suppress):/.test(event) || ["dodge", "steel", "throw", "suppress"].includes(event);
+  return /^(strike|kick|shove|grab|headlock|hairpull|tackle|talk|stare):/.test(event) || ["dodge", "throw"].includes(event);
+}
+
+/**
+ * Whether his coming (`events[i]` is "their:come") ends the scene she's in with him: not if he's got more in him
+ * and keeps going ("their:again" before anyone else comes, KP's ejaculation stock); held by him, only once he's let
+ * go of her (`stillTaken` false at the turn's end).
+ */
+function comeEnds(events: readonly string[], i: number, taken: boolean, stillTaken: boolean | undefined): boolean {
+  if (taken) return stillTaken !== true;
+  for (let j = i + 1; j < events.length && events[j] !== "their:come"; j++) if (events[j] === "their:again") return false;
+  return true;
 }
 
 /** The part of her a foe has, if a brawl event is her letting him start a scene (fight.ts `taken:<area>`). */
@@ -63,11 +77,12 @@ export type IntimateRun = { move: IntimateMove; times: number } | null;
 
 /**
  * The scene an intimate move of hers puts her in with them. `times` is how many times running she's done it, this
- * one included: her mouth on them twice running goes deeper, and riding them she faces them, then turns round.
+ * one included: her mouth on them twice running goes deeper, and stays there; riding them she stays as she is (KP
+ * holds a pose, it doesn't flip it turn to turn).
  */
 export function intimateScene(move: IntimateMove, kind: GuestKind, female: boolean, times: number): ScenePoseName {
   if (!female && move === "mouth" && times >= 2) return "throat";
-  return sceneForEntry({ side: "her", move, kind }, female, times % 2 === 0) ?? "stroke";
+  return sceneForEntry({ side: "her", move, kind }, female) ?? "stroke";
 }
 
 /** The scene a touch she lets land mid-brawl shows for a moment, or null for one that doesn't make one (her clothes). */
@@ -102,8 +117,9 @@ export const TOUCH_SCENE_HOLD = 1.8;
  * A brawl turn's beats in the big picture (battlepose.ts turnBeats, with scenes): each event that gets a comic
  * moment (`hasShot`) takes `gap` seconds. An event that puts her in a scene (`sceneOf`: an intimate move of hers, or
  * a foe's she let him start) holds through what they do, a blow still flashing the picture, until she does something
- * else, struggles free, she's down, or it's over. `held` is the scene she came into the turn in, and `taken` whether
- * a foe started it; the one she's left in comes back with the beats.
+ * else, struggles free, he's done with her, or it's over (her going down doesn't end it: KP's sex pose stays). `held`
+ * is the scene she came into the turn in, `taken` whether a foe started it, and `stillTaken` whether a foe still has
+ * her once the turn's played (fight.ts `taken`); the one she's left in comes back with the beats.
  */
 export function brawlBeats(
   events: readonly string[],
@@ -113,15 +129,16 @@ export function brawlBeats(
   held: ScenePoseName | null,
   sceneOf: (event: string) => ScenePoseName | null,
   taken = false,
+  stillTaken?: boolean,
 ): { beats: BrawlBeat[]; held: ScenePoseName | null; taken: boolean } {
   const beats: BrawlBeat[] = [];
   let shots = 0;
-  for (const event of events) {
+  for (const [i, event] of events.entries()) {
     const scene = sceneOf(event);
     if (scene) {
       held = scene;
       taken = takenOf(event) !== null;
-    } else if (breaksScene(event, taken) || event === "their:come") {
+    } else if (breaksScene(event, taken) || (event === "their:come" && comeEnds(events, i, taken, stillTaken))) {
       held = null;
       taken = false;
     }
@@ -132,8 +149,13 @@ export function brawlBeats(
     if (held) beats.push({ pose: pose ?? "held", at, hurt: pose === "guard" || pose === "held", scene: held });
     else if (pose) beats.push({ pose, at, hurt: pose === "guard" || pose === "held" || pose === "down" });
   }
+  // A foe that still has her keeps her, whatever went on in the turn (a helper coming and going at her mouth); one
+  // that's let go of her, however it happened, doesn't.
+  if (taken && stillTaken === false) {
+    held = null;
+    taken = false;
+  }
   const end = Math.max(1, shots) * gap;
-  beats.push(held && rest !== "down" ? { pose: rest, at: end, hurt: false, scene: held } : { pose: rest, at: end, hurt: false });
-  const left = rest === "down" ? null : held;
-  return { beats, held: left, taken: left !== null && taken };
+  beats.push(held ? { pose: rest, at: end, hurt: false, scene: held } : { pose: rest, at: end, hurt: false });
+  return { beats, held, taken: held !== null && taken };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { REVEL_HALL_COST, Tavern } from "../src/game/tavern";
 import { PASSIVE_BY_ID, readProgress } from "../src/game/passives";
+import { revelSupplies } from "../src/game/lanternplans";
 
 /** A seeded roll (mulberry32). */
 function seeded(seed: number): () => number {
@@ -14,9 +15,16 @@ function seeded(seed: number): () => number {
   };
 }
 
-/** A late-game heroine far enough along, by day, with gold for the hall. */
-function late(): Tavern {
+/** In Act 3 (Act 2 done), by day. */
+function act3(): Tavern {
   const t = new Tavern(11);
+  t.act2.flags.push("act2Done");
+  return t;
+}
+
+/** An Act 3 heroine far enough along, by day, with gold for the hall. */
+function late(): Tavern {
+  const t = act3();
   t.random = seeded(5);
   t.playerBody = "Female";
   t.persona.fame = 60;
@@ -36,7 +44,7 @@ function revelReady(): Tavern {
 }
 
 describe("opening the Revel House", () => {
-  it("needs the late game, the hall and her history", () => {
+  it("needs Act 3, the hall and her history", () => {
     const t = new Tavern(11);
     expect(t.revelOpen).toBe(false);
     expect(t.setRevelTonight(true)).toBe(false);
@@ -47,6 +55,37 @@ describe("opening the Revel House", () => {
     expect(l.buildRevelHall()).toBe(true);
     expect(l.gold).toBe(300 - REVEL_HALL_COST);
     expect(l.revelOpen).toBe(true);
+  });
+
+  it("keeps the Hall hidden from the house plans till Act 3", () => {
+    // Late game and far enough along, but still in Act 2: nothing shows.
+    const t = late();
+    t.act2.flags = [];
+    expect(t.storyAct).toBeLessThan(3);
+    expect(t.revelReady).toBe(false);
+    expect(revelSupplies(t)).toEqual([]);
+    expect(t.buildRevelHall()).toBe(false);
+    expect(t.revelMissing()).toEqual([expect.stringContaining("Act 3"), expect.stringContaining("Revel Hall")]);
+  });
+
+  it("shows the Hall greyed out in Act 3, with what's still needed, till she's ready", () => {
+    const t = act3();
+    t.gold = 300;
+    const [hall] = revelSupplies(t);
+    expect(hall.name).toBe("The Revel Hall");
+    expect(hall.canBuy).toBe(false);
+    expect(hall.detail).toContain("Still needed: lewdness");
+    expect(hall.detail).toContain("table scenes");
+    expect(hall.detail).not.toContain("Revel Hall (house plans");
+    expect(t.buildRevelHall()).toBe(false);
+    // Ready: the Hall is there to build, and built, tonight's switch comes with it.
+    const l = late();
+    expect(l.revelReady).toBe(true);
+    expect(revelSupplies(l).map((r) => r.name)).toEqual(["The Revel Hall"]);
+    expect(revelSupplies(l)[0].canBuy).toBe(true);
+    expect(revelSupplies(l)[0].detail).not.toContain("Still needed");
+    l.buildRevelHall();
+    expect(revelSupplies(l).map((r) => r.name)).toEqual(["The Revel Hall", "No revel tonight"]);
   });
 
   it("cycles the settings by day only", () => {

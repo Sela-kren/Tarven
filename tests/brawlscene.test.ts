@@ -20,10 +20,27 @@ describe("sex mid-brawl, Karryn's Prison style", () => {
     expect(scene("ride")).toBe("cowgirl");
   });
 
-  it("her mouth again goes deeper; riding them again she turns round", () => {
+  it("her mouth again goes deeper and stays there; riding them again she stays as she is (KP holds the pose)", () => {
     expect(intimateScene("mouth", "farmer", false, 2)).toBe("throat");
-    expect(intimateScene("ride", "farmer", false, 2)).toBe("reverse");
+    expect(intimateScene("mouth", "farmer", false, 3)).toBe("throat");
+    expect(intimateScene("ride", "farmer", false, 2)).toBe("cowgirl");
     expect(intimateScene("ride", "farmer", false, 3)).toBe("cowgirl");
+  });
+
+  it("her willpower doesn't move her out of it, and going down doesn't either", () => {
+    expect(brawlBeats(["suppress", "their:miss"], shot, 1, "ready", "cowgirl", sceneOf).held).toBe("cowgirl");
+    const down = brawlBeats(["intimate:hands"], shot, 1, "down", null, sceneOf);
+    expect(down.held).toBe("stroke");
+    expect(down.beats.at(-1)).toMatchObject({ pose: "down", scene: "stroke" });
+  });
+
+  it("he keeps going if he came in her with more in him; done with her, it ends", () => {
+    // Her own scene: "their:again" (still in her) holds it; coming and catching his breath ends it.
+    expect(brawlBeats(["their:come", "their:again"], shot, 1, "ready", "cowgirl", sceneOf).held).toBe("cowgirl");
+    expect(brawlBeats(["their:come", "their:recover"], shot, 1, "ready", "cowgirl", sceneOf).held).toBeNull();
+    // A foe's scene: held while he still has her, whoever came; over once he's let go.
+    expect(brawlBeats(["their:come"], shot, 1, "ready", "missionary", sceneOf, true, true)).toMatchObject({ held: "missionary", taken: true });
+    expect(brawlBeats(["their:come"], shot, 1, "ready", "missionary", sceneOf, true, false)).toMatchObject({ held: null, taken: false });
   });
 
   it("the scene holds through their turn, a blow still landing on her", () => {
@@ -44,11 +61,11 @@ describe("sex mid-brawl, Karryn's Prison style", () => {
     expect(beats[0].pose).toBe("strike");
   });
 
-  it("down, or done, there's no scene left", () => {
-    expect(brawlBeats(["intimate:hands", "lost"], shot, 1, "down", null, sceneOf).held).toBeNull();
-    const last = brawlBeats(["intimate:hands"], shot, 1, "down", null, sceneOf).beats.at(-1);
-    expect(last?.pose).toBe("down");
-    expect(last?.scene).toBeUndefined();
+  it("done, there's no scene left", () => {
+    const lost = brawlBeats(["intimate:hands", "lost"], shot, 1, "down", null, sceneOf);
+    expect(lost.held).toBeNull();
+    expect(lost.beats.at(-1)).toMatchObject({ pose: "down" });
+    expect(lost.beats.at(-1)?.scene).toBeUndefined();
   });
 
   it("a touch she lets land shows for a moment: a kiss, a grope, a spank", () => {

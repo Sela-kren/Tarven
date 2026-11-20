@@ -83,16 +83,23 @@ export function lanternSupplies(tavern: Tavern): Supply[] {
   return rows;
 }
 
-/** The Revel Hall (revel.ts, REVEL_HOUSE.md): the build in the late game, then tonight's switch once a revel's open. */
+/**
+ * The Revel Hall (revel.ts, REVEL_HOUSE.md): hidden till Act 3, then shown, greyed out with what she still needs
+ * (lewd or corrupt enough, the table scenes) till she's ready to build it, then tonight's switch once a revel's open.
+ */
 export function revelSupplies(tavern: Tavern): Supply[] {
-  if (tavern.staffStage !== "late") return [];
+  if (!tavern.revelShown) return [];
+  const about =
+    "Cushions, drapes and the big table: on the nights you choose, the taproom becomes the pass's revel house (18+). Set the night up from Settings, Revel nights.";
+  // Before she's ready, the tile says what's still missing (all but the Hall itself, which this tile builds).
+  const missing = tavern.revelReady ? [] : tavern.revelMissing().filter((m) => !m.startsWith("the Revel Hall"));
   const rows: Supply[] = [
     {
       name: "The Revel Hall",
       icon: "cushions",
       group: "The Revel Hall",
       price: REVEL_HALL_COST,
-      detail: "Cushions, drapes and the big table: on the nights you choose, the taproom becomes the pass's revel house (18+). Set the night up from Settings, Revel nights.",
+      detail: tavern.revelHall || missing.length === 0 ? about : `${about} Still needed: ${missing.join("; ")}.`,
       owned: tavern.revelHall,
       canBuy: tavern.canBuildRevelHall,
       buy: () => tavern.buildRevelHall(),

@@ -205,7 +205,9 @@ export function showSettingsMenu(game: Game, back: () => void): void {
   const feed = sideMenu("Feed (posts, DMs, streams, sponsors)", (g, b) => showFeed(g, b));
   const knight = sideMenu("Knight (the garrison)", showKnight);
   const guild = sideMenu("Guild (quests and party)", (g, b) => showGuild(g, b));
-  for (const row of [heading, note, toggle, boldness, rimjob, footjob, difficulty, trinkets, work, staff, revel, feed, knight, guild]) box.insertBefore(row, menu);
+  // Revel nights only once the Revel Hall's built and she's ready for it (revelOpen); till then it's hidden.
+  const rows = [heading, note, toggle, boldness, rimjob, footjob, difficulty, trinkets, work, staff, ...(game.tavern.revelOpen ? [revel] : []), feed, knight, guild];
+  for (const row of rows) box.insertBefore(row, menu);
 }
 
 /** One number for the dev panel: whole numbers plain, the rest to one place. */
@@ -576,7 +578,7 @@ export function showRevel(game: Game, back: () => void): void {
     "Revel nights",
     [
       tavern.revelOpen ? "The Revel House is open to you. Choose by day; the hall opens as the tavern shuts." : `Not yet. Still needed: ${missing.join("; ")}.`,
-      `The Revel Hall: ${tavern.revelHall ? "built" : `not built (house plans, ${REVEL_HALL_COST} gold, late game)`}.`,
+      `The Revel Hall: ${tavern.revelHall ? "built" : `not built (house plans, ${REVEL_HALL_COST} gold, from Act 3)`}.`,
       "The hall, the groups around the room and the revel outfits are still to be drawn; for now the night plays out in the log.",
     ],
     [
@@ -843,7 +845,7 @@ export function showKnight(game: Game, back: () => void): void {
     buttons.push({ label: `Garrison rules: ${k.rules === "none" ? "none" : Knight.GARRISON_RULES[k.rules].name} (change)`, onPick: click(() => tavern.knightRules(nextRules)) });
   }
   const reeve = tavern.reeveCheck();
-  if (k.reeve) buttons.push({ label: "The Law board (Reeve)", onPick: () => showLaws(game, again) });
+  if (tavern.politics.reeve) buttons.push({ label: "The Law board (Reeve)", onPick: () => showLaws(game, again) });
   else buttons.push({ label: reeve.ok ? "Take the Reeve's chain" : `Reeve of Tarven (still needed: ${reeve.missing.join("; ")})`, disabled: !reeve.ok, onPick: click(() => tavern.becomeReeve()) });
   game.openMenu("Knight", paragraphs, buttons, back);
 }
@@ -897,14 +899,28 @@ function showRaids(game: Game, back: () => void): void {
   game.openMenu("Raid", buttons.length ? ["Pick a target and give the order."] : ["Nothing your rank can raid yet."], buttons, back);
 }
 
-/** The Law board: each law, and the levels she can put to the council. The town's side of it is still to come. */
-function showLaws(game: Game, back: () => void): void {
+/** What the board as it stands does, in a line (townhall.ts `lawEffects`). */
+function lawSummary(tavern: Game["tavern"]): string {
+  const e = tavern.lawEffects;
+  const parts = [
+    e.nightlyGold ? `${e.nightlyGold > 0 ? "+" : ""}${e.nightlyGold} gold a night` : "",
+    e.nightlyHeat ? `+${e.nightlyHeat} heat a night` : "",
+    e.bareLegal ? "being seen bare costs you nothing" : e.exposureRespect > 1 ? "being seen bare costs you double" : "",
+    e.veyraFaith ? "the Warm House recruits twice as fast" : "",
+    e.freeUse ? `free use (${e.freeUse === 2 ? "everyone" : "devotees"}): ${tavern.consentOff ? "hands land unasked in the street" : "they ask you first, and your no costs you with the devotees"}` : "",
+    e.publicAffection === 2 ? "sex anywhere in the streets" : e.publicAffection === 1 ? "touching allowed in the streets" : "",
+  ].filter(Boolean);
+  return parts.length ? `What the board does now: ${parts.join("; ")}.` : "The board as the Baron left it changes nothing yet.";
+}
+
+/** The Law board (townhall.ts): each law, and the levels she can put to the council, and what the board does now. */
+export function showLaws(game: Game, back: () => void): void {
   const tavern = game.tavern;
-  const k = tavern.knight;
-  if (!k) {
+  if (!tavern.politics.reeve) {
     back();
     return;
   }
+  const k = tavern.politics;
   const again = () => showLaws(game, back);
   const buttons: Button[] = [];
   for (const id of Object.keys(Knight.LAWS) as Knight.LawId[]) {
@@ -928,7 +944,7 @@ function showLaws(game: Game, back: () => void): void {
     [
       `Council support for you: ${tavern.councilSupport}.`,
       ...(Object.keys(Knight.LAWS) as Knight.LawId[]).map((id) => `${Knight.LAWS[id].name}: ${Knight.LAWS[id].levels[k.laws[id]]}. ${Knight.LAWS[id].changes}`),
-      "What the laws change in town is still to come; for now they're kept on the board.",
+      lawSummary(tavern),
     ],
     buttons,
     back,

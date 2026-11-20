@@ -54,22 +54,19 @@
 import {
   BoxGeometry,
   Box3,
-  Color,
   ConeGeometry,
   CylinderGeometry,
   Group,
-  InstancedMesh,
-  Matrix4,
   Mesh,
   MeshLambertMaterial,
   Object3D,
   PlaneGeometry,
-  Quaternion,
   SphereGeometry,
   Vector3,
 } from "three";
 import type { Rect, Vec2 } from "./collision";
 import type { TownActivity } from "./townsfolk";
+import { GrassField, grassGroundMaterial, plantGrass } from "./grass";
 import { solidRetroMaterial } from "./retro";
 
 /** Where the town's middle stands in the world: far north of the tavern, out of its camera's reach. */
@@ -78,7 +75,7 @@ export const STREET_ORIGIN = new Vector3(0, 0, -70);
 /** The places she can walk up to and use. */
 export type StreetPlace =
   | "home" | "market" | "board" | "chapel" | "warmhouse" | "copperbell" | "garrison" | "fields" | "quarry"
-  | "ciderbarn" | "bakehouse";
+  | "ciderbarn" | "bakehouse" | "tollgate" | "townhall";
 
 export interface StreetSpot {
   place: StreetPlace;
@@ -105,6 +102,8 @@ export interface Street {
   doors: Vec2[];
   /** The ground the townsfolk find their way over, in the world. */
   walkable: Rect;
+  /** The grass on the verges, the gardens and the fields (grass.ts): the game moves it each frame. */
+  grass: GrassField;
 }
 
 const rect = (minX: number, maxX: number, minZ: number, maxZ: number): Rect => ({ minX, maxX, minZ, maxZ });
@@ -420,7 +419,7 @@ export function buildStreet(kit: Object3D | null = null): Street {
   b.block((minX + maxX) / 2, minZ - 1, maxX - minX + 4, 2);
   b.block((minX + maxX) / 2, maxZ + 1, maxX - minX + 4, 2);
 
-  addGrass(b.root, rand);
+  const grass = addGrass(b.root, rand);
 
   b.root.position.copy(STREET_ORIGIN);
   b.root.updateMatrixWorld(true);
@@ -439,6 +438,10 @@ export function buildStreet(kit: Object3D | null = null): Street {
     { place: "bakehouse", label: "Go into the Bakehouse", at: at(bakehouse.x, bakehouse.front + 0.7), range: 1.5 },
     { place: "garrison", label: "Go to the garrison yard", at: at(KEEP.x, KEEP.front + 1.7), range: 1.6 },
     { place: "fields", label: "Walk out to Mara's fields", at: at(BOUNDS.minX + 0.7, 0), range: 1.6 },
+    // The council meets on the market cross's steps (townhall.ts).
+    { place: "townhall", label: "Climb the market cross steps, where the council meets", at: at(6.6, -8), range: 1.1 },
+    // The Toll-Gate Inn keeps the rooms in the gatehouse, its door on the town side, south of the road.
+    { place: "tollgate", label: "Knock at the Toll-Gate Inn in the gatehouse", at: at(BOUNDS.minX + 1.1, 3.6), range: 1.1 },
     { place: "quarry", label: "Take the quarry road", at: at(BOUNDS.maxX - 0.7, 0), range: 1.6 },
   ];
 
@@ -494,6 +497,7 @@ export function buildStreet(kit: Object3D | null = null): Street {
     activities,
     doors,
     walkable: { minX: BOUNDS.minX + o.x, maxX: BOUNDS.maxX + o.x, minZ: BOUNDS.minZ + o.z, maxZ: BOUNDS.maxZ + o.z },
+    grass,
     spawn: at(TAVERN_DOOR.x, TAVERN_DOOR.z + 1.1),
     spawnHeading: Math.PI,
     spots,
@@ -506,7 +510,8 @@ export function buildStreet(kit: Object3D | null = null): Street {
 
 /** The grass, the hills behind the keep, the roads, the market's cobbles, the lanes and paths. */
 function buildGround(b: Builder, rand: () => number): void {
-  const ground = new Mesh(new PlaneGeometry(150, 110), b.material(COLORS.grass));
+  // Painted in the grass's own colour patches (grass.ts), so the blades and the ground under them read as one.
+  const ground = new Mesh(new PlaneGeometry(150, 110), grassGroundMaterial());
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(0, 0, -20);
   ground.receiveShadow = true;
@@ -755,44 +760,18 @@ function buildEdges(b: Builder): void {
   for (const [tx, tz] of [[-12, 18], [26, 19], [8, 20]]) b.tree("pineTree", tx, tz, 1, false);
 }
 
-/** Tufts of grass and a few flowers off the paving, as instances so they cost one draw each. */
-function addGrass(root: Object3D, rand: () => number): void {
-  const tufts: Matrix4[] = [];
-  const flowers: { matrix: Matrix4; color: number }[] = [];
-  const up = new Vector3(0, 1, 0);
-  const place = (x: number, z: number, scale: number) =>
-    new Matrix4().compose(new Vector3(x, 0, z), new Quaternion().setFromAxisAngle(up, rand() * Math.PI), new Vector3(scale, scale * (0.8 + rand() * 0.6), scale));
-  // Off the paving and out of the buildings (her yard and the churchyard are grass).
+/**
+ * The grass (grass.ts, TOWN_DAY.md step 3): blades that bend in the wind and lean away from anyone walking through,
+ * with accents and flowers, over the verges, the gardens, her yard, the churchyard and Mara's fields past the gate.
+ * None on the paving or under the buildings.
+ */
+function addGrass(root: Object3D, rand: () => number): GrassField {
   const bare = [
     rect(-62, 62, -4.2, 2.8), ...OPEN.slice(1, 7), rect(-28.5, -14, -14.7, -12.1),
     rect(TAVERN_DOOR.x - 0.8, TAVERN_DOOR.x + 0.8, YARD.minZ, YARD.maxZ),
     ...Object.values(BUILDINGS).map((h) => rect(h.x - h.w / 2, h.x + h.w / 2, h.front - h.d, h.front)),
   ];
-  for (let i = 0; i < 2800; i++) {
-    const x = -50 + rand() * 100;
-    const z = -30 + rand() * 48;
-    if (bare.some((r) => x > r.minX && x < r.maxX && z > r.minZ && z < r.maxZ)) continue;
-    tufts.push(place(x, z, 0.5 + rand() * 0.5));
-    if (rand() < 0.08) flowers.push({ matrix: place(x + 0.1, z + 0.1, 1), color: [0xf4f0e8, 0xe88aa8, 0x8a9af0, 0xf0c838][Math.floor(rand() * 4)] });
-  }
-  const tuft = new InstancedMesh(new ConeGeometry(0.09, 0.35, 3), solidRetroMaterial("Street_tuft", COLORS.grassDark), tufts.length);
-  tufts.forEach((m, i) => tuft.setMatrixAt(i, m));
-  tuft.position.y = 0.17;
-  tuft.receiveShadow = true;
-  root.add(tuft);
-  const bloom = new InstancedMesh(new SphereGeometry(0.06, 6, 4), solidRetroMaterial("Street_flower", 0xffffff), flowers.length);
-  flowers.forEach((f, i) => {
-    f.matrix.elements[13] = 0.32;
-    bloom.setMatrixAt(i, f.matrix);
-    bloom.setColorAt(i, new Color(f.color));
-  });
-  root.add(bloom);
-  // Stems under the flowers, the grass's own colour.
-  const stems = new InstancedMesh(new CylinderGeometry(0.01, 0.01, 0.3, 3), solidRetroMaterial("Street_stem", COLORS.grassDark), flowers.length);
-  flowers.forEach((f, i) => {
-    const m = f.matrix.clone();
-    m.elements[13] = 0.15;
-    stems.setMatrixAt(i, m);
-  });
-  root.add(stems);
+  const field = new GrassField(plantGrass(rect(-62, 62, -30, 20), bare, rand));
+  root.add(field.root);
+  return field;
 }

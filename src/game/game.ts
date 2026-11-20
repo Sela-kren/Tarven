@@ -48,8 +48,6 @@ import {
   BED_SPOT,
   BEDROOM_DOOR_NAME,
   BEDROOM_DOOR_OPEN,
-  CLOSET_NAME,
-  CLOSET_SPOT,
   BEDROOM_DOOR_OPEN_ANGLE,
   BEDROOM_DOOR_SHUT,
   BEDROOM_DOOR_SPOT,
@@ -57,18 +55,37 @@ import {
   BELL_SPOT,
   BIN_NAME,
   BIN_SPOT,
-  FRONT_DOOR_HINGE,
-  FRONT_DOOR_NAME,
-  FRONT_DOOR_OPEN_ANGLE,
+  CLOSET_NAME,
+  CLOSET_SPOT,
   DESK_NAME,
   DESK_SPOT,
   JOURNAL_NAME,
   JOURNAL_SPOT,
+  FRONT_DOOR_HINGE,
+  FRONT_DOOR_NAME,
+  FRONT_DOOR_OPEN_ANGLE,
   makeBell,
   WASH_TUB_NAME,
   WASH_TUB_SPOT,
 } from "./furnishings";
+import {
+  atTopOfStairs,
+  atTopOfWell,
+  floorHeightAt,
+  isUpstairs,
+  LANDING,
+  LANDING_HEADING,
+  roomViewAt,
+  STAIRS_COLLIDERS,
+  STAIRS_FOOT,
+  STAIRS_FOOT_HEADING,
+  UP_THE_STAIRS,
+  Upstairs,
+  UPSTAIRS_CAMERA_LIMITS,
+  UPSTAIRS_WHOLE,
+} from "./upstairs";
 import { BuildMode, type BuildHost, type EdictView, type StaffBoard, type Supply } from "./buildmode";
+import type { Booking } from "./lantern";
 import { lanternSupplies, revelSupplies } from "./lanternplans";
 import { GuestActor, Walker } from "./guests";
 import { softHeft } from "./heft";
@@ -100,7 +117,7 @@ import { Chatter } from "./chatter";
 import { DrinkComic } from "./comic";
 import { showJournal } from "./journalpanel";
 import { showBedChoice, showDuelTest, showFight, playAdultScene } from "./fightpanels";
-import { confirmMenu, showDevPanel, showLoadMenu, showSaveMenu, showSettingsMenu } from "./menus";
+import { confirmMenu, showDevPanel, showLaws, showLoadMenu, showSaveMenu, showSettingsMenu } from "./menus";
 import { arcStageName } from "./lewd";
 import { isCardTitle } from "./tropes";
 import { PASSIVE_ICONS } from "./passiveicons";
@@ -140,6 +157,9 @@ import { AiNarrator } from "./ainarrator";
 import { setFlavorSource } from "./flavor";
 import { SpeechBubbles, type Speaker } from "./speech";
 import { buildStreet, type Street } from "./street";
+import { MAX_PUSHERS } from "./grass";
+import { actEffect, outfitNoticed, walkOfShame, type SeenEffect, type SeenFacts } from "./beingseen";
+import type { RecruitOutfit } from "./recruits";
 import { questMonsterId } from "./tavern";
 import { Townsfolk } from "./townsfolk";
 import { StreetTalk } from "./streettalk";
@@ -197,6 +217,7 @@ import {
   type AdultScene,
   type Trouble,
   type Bottle,
+  type Guest,
   type GuestKind,
   type Held,
   type Item,
@@ -353,6 +374,7 @@ export const WHOLE_PIECES = [
   WASH_TUB_NAME,
   BATH_NAME,
   CLOSET_NAME,
+  ...UPSTAIRS_WHOLE,
 ];
 /** How close you need to be to the middle of the bath to climb in. */
 const BATH_RANGE = 1.3;
@@ -386,6 +408,8 @@ const CAMERA_INSET_Z = 4;
 /** Places that must always be possible to walk to from the front door, whatever gets built. */
 const BEHIND_THE_BAR: Vec2 = { x: 3.2, z: -3.85 };
 const BY_THE_BEDROOM_DOOR: Vec2 = { x: 6.5, z: 0 };
+/** In the taproom by the stair hall's doorway in the west wall (upstairs.ts). */
+const BY_THE_STAIRS: Vec2 = UP_THE_STAIRS[0];
 
 /** The props.glb model of each item; the bottled drinks are the ale cup, recoloured (see DRINK_COLORS). */
 const ITEM_NODES: Record<Exclude<Item, Bottle>, string> = {
@@ -813,6 +837,8 @@ const STEW_REACH = 6;
 const CROWD_FULL = 6;
 const CROWD_BEDROOM_LEVEL = 0.3;
 const RUNNING_STEP_LOUDNESS = 1.6;
+/** How fast her feet follow the treads up or down the stairs, per second (eased), so she climbs rather than hops. */
+const STAIR_STEP_RATE = 14;
 
 /**
  * A hand between her legs in a cut-in finds her aroused and parted at least this much (KP's wet, open vulva):
@@ -882,6 +908,8 @@ export class Game {
   private readonly questHud = makeQuestHud();
   /** The reminders to head home she's had today out in the street: 1 at four, 2 at five. */
   private streetReminders = 0;
+  /** Seconds until the street next looks at what she's out in (beingseen.ts `outfitNoticed`). */
+  private seenCheck = 0;
   private readonly roomShot = { eye: new Vector3(), target: new Vector3() };
   /** True until the night starts; the camera holds the character select shot meanwhile. */
   private staging = true;
@@ -942,6 +970,16 @@ export class Game {
   private readonly bell: Object3D;
   private bellRinging = 0;
   private readonly bedroomDoor: Object3D;
+  /** The floor upstairs at play: the Lantern's room, its lamp and door (upstairs.ts). */
+  private readonly upstairs: Upstairs;
+  /** What the Lantern's room blocks right now, kept in the world's colliders while she's indoors. */
+  private upstairsBlock: Rect[] = [];
+  /** Guests coming back down the stairs from a booking, on their way out of the front door. */
+  private readonly comingDown: Walker[] = [];
+  /** The booking upstairs as last seen, so its end sends its guest back down the stairs. */
+  private watchedBooking: Booking | null = null;
+  /** How each guest who went up to a booking looked, so the same one comes back down. */
+  private readonly wentUp = new Map<number, { kind: GuestKind; female: boolean; look: number; role: GuestRole | undefined }>();
   /** The rectangle the bedroom door blocks right now, kept in the world's colliders. */
   private bedroomDoorBlock: Rect | null = null;
   /** Outlines around each thing you can use, keyed by `targetKey`. */
@@ -1068,7 +1106,9 @@ export class Game {
     applyRetroLook(assets.props);
 
     this.houseView = new HouseView(world);
-    this.staticColliders = [...world.colliders];
+    // The stairs' handrail, the well's banister and the open doors upstairs block too (upstairs.ts).
+    this.staticColliders = [...world.colliders, ...STAIRS_COLLIDERS];
+    this.upstairs = new Upstairs(world.pieces);
     this.defaultLayout = emptyLayout(assets.furniture);
     this.plan = new HousePlan(cloneLayout(this.defaultLayout));
     this.nav = this.applyPlan();
@@ -1290,10 +1330,20 @@ export class Game {
     return this.outdoors ? STREET_ZOOM : 1;
   }
 
+  /**
+   * Where the camera holds in her rooms, the stair hall and upstairs (upstairs.ts roomViewAt), written into `out`; null in the
+   * taproom and out of doors, where the follow camera goes by cameraLimits.
+   */
+  roomView(out: Vector3): Vector3 | null {
+    if (this.outdoors || this.questMap) return null;
+    return roomViewAt(this.focus, out);
+  }
+
   /** How far the follow camera may go, so all of a bigger house can be seen. */
   get cameraLimits(): Rect {
     if (this.questMap) return this.questMap.cameraLimits;
     if (this.outdoors) return this.street.cameraLimits;
+    if (isUpstairs(this.focus)) return UPSTAIRS_CAMERA_LIMITS;
     const { minX, maxX, minZ, maxZ } = this.plan.bounds();
     return {
       minX: Math.min(-CAMERA_LIMIT_X, minX + CAMERA_INSET_X),
@@ -1322,6 +1372,7 @@ export class Game {
     colliders.length = 0;
     colliders.push(...this.staticColliders, ...this.planColliders());
     if (this.bedroomDoorBlock) colliders.push(this.bedroomDoorBlock);
+    colliders.push(...this.upstairsBlock);
 
     const nav = new NavGrid(colliders, GUEST_CLEARANCE, this.plan.bounds());
     seats.length = 0;
@@ -1343,6 +1394,7 @@ export class Game {
       ["the scrap bin", this.spots.bin],
       ["the wash tub", this.spots.wash],
       ["the bedroom", BY_THE_BEDROOM_DOOR],
+      ["the stairs", BY_THE_STAIRS],
       ["the middle of the room", VISITOR_STOP],
     ];
     const cut = places.find(([, place]) => !nav.findPath(DOOR, place));
@@ -1408,7 +1460,7 @@ export class Game {
    * A guest's body: their group's plain clothes, or the outfit their type wears (an archer's kit, a brute's
    * scarf, a maid's apron), in one of its colourings.
    */
-  private makeGuestBody(kind: GuestKind | "visitor", female: boolean, look = 0, role?: GuestRole): Body {
+  private makeGuestBody(kind: GuestKind | "visitor", female: boolean, look = 0, role?: GuestRole, dressed?: RecruitOutfit | null): Body {
     const body: BodyName = female ? "Female" : "Male";
     const model = cloneSkinned(female ? this.guestModels.female : this.guestModels.male);
     const outfit = OUTFITS[kind];
@@ -1426,7 +1478,11 @@ export class Game {
     const person = look > 0 ? guestPersonColors(look) : { [slots.hair]: hex(outfit.hair) };
     // Their own hairstyle too, from the same look.
     const hairstyle = guestHairstyle(body, look);
-    if (own) {
+    if (dressed) {
+      // A Warm House recruit (recruits.ts): the outfit their stage puts them in, in its colours.
+      const preset = LOOK_OPTIONS[body].outfits.find((o) => o.id === dressed.id)?.preset ?? {};
+      dressColors(model, body, { ...preset, ...dressed.colors, ...person }, dressed.id, undefined, hairstyle);
+    } else if (own) {
       dressColors(model, body, { ...guestOutfitColors(body, own, look), ...person }, own, undefined, hairstyle);
     } else {
       const plain = PLAIN_CLOTHES[kind] ?? [];
@@ -1591,7 +1647,7 @@ export class Game {
         const wait = this.doorQueue;
         this.doorQueue += ENTRY_GAP_SECONDS;
         actor = new GuestActor(
-          this.makeGuestBody(guest.kind, guest.female, this.guestLook(guest), guest.role),
+          this.makeGuestBody(guest.kind, guest.female, this.guestLook(guest), guest.role, tavern.recruitOutfitOf(guest)),
           guest,
           this.world.seats[guest.seat],
           this.nav,
@@ -1604,13 +1660,65 @@ export class Game {
         actors.set(guest.id, actor);
         this.guestLayer.add(actor.group);
       }
+      // Off to a booking or a rented room: out by the stairs, not the front door.
+      actor.exitWay = this.goingUpstairs(guest) ? UP_THE_STAIRS : null;
       if (actor.update(dt, tavern, this.focus)) {
         if (this.highlighted === targetKey({ kind: "guest", id: guest.id })) this.highlight(null);
         this.guestLayer.remove(actor.group);
         actors.delete(guest.id);
         tavern.guestLeft(guest.id);
+        continue;
       }
+      // Up the stairs, they climb the treads.
+      if (actor.walking) actor.group.position.y = floorHeightAt(actor.group.position.x, actor.group.position.z);
     }
+    this.syncComingDown(dt);
+  }
+
+  /** Whether a guest leaving goes up the stairs: to tonight's Lantern booking, or to a room they've taken. */
+  private goingUpstairs(guest: Guest): boolean {
+    if (this.tavern.lantern.booking?.guestId === guest.id) {
+      if (!this.wentUp.has(guest.id)) {
+        this.wentUp.set(guest.id, { kind: guest.kind, female: guest.female, look: this.guestLook(guest), role: guest.role });
+      }
+      return true;
+    }
+    return this.tavern.roomGuests.includes(guest.id);
+  }
+
+  /**
+   * A booking that's over sends its guest back down: they appear at the top of the stairs, come down them, and go
+   * out of the front door. Moves everyone on their way down.
+   */
+  private syncComingDown(dt: number): void {
+    const booking = this.tavern.lantern.booking;
+    const done = this.watchedBooking;
+    this.watchedBooking = booking;
+    if (done && done !== booking) this.sendDown(done);
+    for (const walker of [...this.comingDown]) {
+      if (walker.walk(dt)) {
+        this.guestLayer.remove(walker.group);
+        this.comingDown.splice(this.comingDown.indexOf(walker), 1);
+        continue;
+      }
+      walker.group.position.y = floorHeightAt(walker.group.position.x, walker.group.position.z);
+    }
+  }
+
+  private sendDown(booking: Booking): void {
+    const seen = this.wentUp.get(booking.guestId);
+    this.wentUp.delete(booking.guestId);
+    const body = seen ? this.makeGuestBody(seen.kind, seen.female, seen.look, seen.role) : this.makeGuestBody(booking.kind, false);
+    const walker = new Walker(body);
+    const down = [...UP_THE_STAIRS].reverse();
+    const doorstep = ENTRANCE[ENTRANCE.length - 1];
+    const across = this.nav.findPath(down[down.length - 1], doorstep) ?? [doorstep];
+    walker.setPath([...down, ...across, ...[...ENTRANCE].reverse()]);
+    const top = down[0];
+    walker.group.position.set(top.x, floorHeightAt(top.x, top.z), top.z);
+    walker.face(Math.PI);
+    this.comingDown.push(walker);
+    this.guestLayer.add(walker.group);
   }
 
   /** Ale is carried on a tray with its cups on top; anything else is held on its own. */
@@ -1756,7 +1864,8 @@ export class Game {
     const near = ({ x, z }: Vec2) => Math.hypot(x - FRONT_DOORWAY.x, z - FRONT_DOORWAY.z) < FRONT_DOOR_REACH;
     const wanted =
       (this.visitor !== null && this.visitorWalking && near(this.visitor.group.position)) ||
-      [...this.actors.values()].some((actor) => actor.walking && near(actor.group.position));
+      [...this.actors.values()].some((actor) => actor.walking && near(actor.group.position)) ||
+      this.comingDown.some((walker) => near(walker.group.position));
     const step = dt / FRONT_DOOR_SWING_SECONDS;
     this.frontDoorOpen = MathUtils.clamp(this.frontDoorOpen + (wanted ? step : -step), 0, 1);
     this.frontDoorHinge.rotation.y = FRONT_DOOR_OPEN_ANGLE * MathUtils.smoothstep(this.frontDoorOpen, 0, 1);
@@ -1775,6 +1884,40 @@ export class Game {
     if (this.bedroomDoorBlock) colliders.splice(colliders.indexOf(this.bedroomDoorBlock), 1);
     colliders.push(block);
     this.bedroomDoorBlock = block;
+  }
+
+  /** Shows the Lantern's room as tonight has it, and keeps what it blocks among the world's colliders. */
+  private updateUpstairs(dt: number): void {
+    const { lantern } = this.tavern;
+    if (!this.upstairs.update(dt, lantern.room, lantern.busy)) return;
+    // Out of doors the room's walls aren't in the colliders; applyPlan puts these back on the way in.
+    const { colliders } = this.world;
+    if (!this.outdoors) {
+      for (const rect of this.upstairsBlock) {
+        const index = colliders.indexOf(rect);
+        if (index >= 0) colliders.splice(index, 1);
+      }
+    }
+    this.upstairsBlock = this.upstairs.blockers;
+    if (!this.outdoors) colliders.push(...this.upstairsBlock);
+  }
+
+  /** Keeps her feet on the stairs as she climbs, and takes her up or down when she reaches the top. True as it fades. */
+  private followStairs(player: Sibling, dt: number): boolean {
+    if (this.outdoors) return false;
+    const { position } = player;
+    const floor = floorHeightAt(position.x, position.z);
+    position.y += (floor - position.y) * (1 - Math.exp(-STAIR_STEP_RATE * dt));
+    const goingUp = atTopOfStairs(position);
+    if (!goingUp && !atTopOfWell(position)) return false;
+    this.clearTarget();
+    this.audio.play("step");
+    this.fadeTo(() => {
+      position.copy(goingUp ? LANDING : STAIRS_FOOT);
+      player.face(goingUp ? LANDING_HEADING : STAIRS_FOOT_HEADING);
+      this.screen = "play";
+    });
+    return true;
   }
 
   /** Outlines what E would use, or nothing. */
@@ -2256,6 +2399,9 @@ export class Game {
       this.removeVisitor();
       for (const actor of this.actors.values()) this.guestLayer.remove(actor.group);
       this.actors.clear();
+      for (const walker of this.comingDown) this.guestLayer.remove(walker.group);
+      this.comingDown.length = 0;
+      this.wentUp.clear();
       this.doorQueue = 0;
       this.chatter.reset();
       this.tavern.restore(data.tavern);
@@ -2269,6 +2415,9 @@ export class Game {
           moment = null;
         }
       }
+      // Nobody's on the stairs in a loaded game, and no booking that was running ends with a guest coming down.
+      this.tavern.roomGuests = [];
+      this.watchedBooking = this.tavern.lantern.booking;
       this.plan = new HousePlan(cloneLayout(data.tavern.layout ?? this.defaultLayout));
       this.nav = this.applyPlan();
       this.tavern.setSeats(this.world.seats.map((seat) => seat.table));
@@ -2496,7 +2645,8 @@ export class Game {
         : `${formatHour(this.clock.hour)}. You have ${tavern.gold} gold.`,
     );
     if (note) text.push(note);
-    const buttons: Button[] = info.actions.map((action) => {
+    const state = tavern.townState;
+    const buttons: Button[] = info.actions.filter((action) => !action.hidden?.(state)).map((action) => {
       const why = tavern.townBlocked(place, action.id, hoursLeft);
       return {
         label: `${action.label}: ${costLabel(action)}${why ? ` (${why})` : ""}`,
@@ -2510,6 +2660,8 @@ export class Game {
         },
       };
     });
+    // The Reeve's board hangs on the cross (townhall.ts).
+    if (place === "townhall" && tavern.politics.reeve) buttons.push({ label: "The Law board", onPick: () => showLaws(this, () => this.openTownPlace(place)) });
     buttons.push({
       label: "Back to the street",
       onPick: () => {
@@ -2558,8 +2710,10 @@ export class Game {
       heat: tavern.heat,
       lantern: tavern.lantern.lit ? "lit" : tavern.lantern.hung ? "dark" : "none",
       plot: tavern.plotFlags,
-      // Her standing (TOWN_DAY.md 6.1). Careers aren't built yet; a lit Lantern makes her its madam.
-      role: tavern.lantern.lit ? "madam" : "keeper",
+      // Her standing (TOWN_DAY.md 6.1): the garrison, the Warm House, the Lantern, the guild (Tavern.herRole).
+      role: tavern.herRole,
+      // The laws she's passed (townhall.ts), for the street's talk about them.
+      laws: tavern.politics.reeve ? { freeUse: tavern.politics.laws.freeUse, publicAffection: tavern.politics.laws.publicAffection, dressCode: tavern.politics.laws.dressCode } : undefined,
       consentOff: tavern.consentOff,
     };
   }
@@ -2845,6 +2999,16 @@ export class Game {
         const chatPairs = activities.flatMap((a, i) => (a.pair !== undefined && i < a.pair ? [[i, a.pair] as const] : []));
         this.streetTalk = new StreetTalk(townPerson, chatPairs, (thought) => this.log.add(thought));
         this.streetTalk.onHeat = (moment) => this.applyHeat(moment);
+        // What's done with a word (a photo, a yes, a hand) counts for something (beingseen.ts).
+        this.streetTalk.onAct = (_index, act, answer) => {
+          // Under the Free use law her no still counts (TOWN_DAY.md 6.3), and costs her with the devotees.
+          if (act === "proposition" && answer === "no" && this.tavern.lawEffects.freeUse > 0) {
+            this.tavern.refusedUnderFreeUse();
+            this.log.add("(The devotees by the well tut. Under your own law, a no costs you a little.)");
+          }
+          const effect = actEffect(act, answer, this.seenFacts(), this.tavern.random());
+          if (effect) this.applySeen(effect);
+        };
       }
       this.streetReminders = this.clock.hour >= STREET_REMIND_HOUR ? 1 : 0;
       // The street's walls take the room's place until she comes back in.
@@ -2856,7 +3020,45 @@ export class Game {
       player.face(this.street.spawnHeading);
       this.screen = "play";
       this.log.add(`Out on Tarven's high street. It's ${formatHour(this.clock.hour)}: be back to ring the bell by five.`);
+      // Out before noon still wearing last night: the walk of shame (beingseen.ts).
+      const shame = walkOfShame(this.seenFacts(), this.tavern.random());
+      if (shame) {
+        this.applySeen(shame.effect);
+        this.openPanel(shame.title, [...shame.lines], [
+          {
+            label: "Keep walking",
+            onPick: () => {
+              this.closePanel();
+              this.screen = "play";
+            },
+          },
+        ]);
+      }
+      this.seenCheck = 2;
     });
+  }
+
+  /** What the street sees of her, for beingseen.ts: her stage, what she's out in, last night on her, the hour. */
+  private seenFacts(): SeenFacts {
+    const facts = this.townFacts();
+    const law = this.tavern.lawEffects;
+    return {
+      arc: facts.arc,
+      dress: facts.dress,
+      outfit: facts.outfit,
+      messy: facts.messy,
+      hour: this.clock.hour,
+      today: this.tavern.townDoneToday,
+      exposureRespect: law.exposureRespect,
+      bareLegal: law.bareLegal,
+    };
+  }
+
+  /** The town has seen her: the tavern applies it, and the log says so. */
+  private applySeen(effect: SeenEffect): void {
+    if (this.tavern.townDoneToday.has(effect.mark)) return;
+    this.tavern.beSeen(effect);
+    if (effect.line) this.log.add(effect.line);
   }
 
   /** Back in through the front door, standing just inside it. */
@@ -3513,10 +3715,11 @@ export class Game {
     // Guests are drawn standing, fresh from a body of the same kind, rather than as they sit.
     const female = guest.female;
     const look = this.guestLook(guest);
-    const key = `${guest.role}:${female}:${look}`;
+    const dressed = this.tavern.recruitOutfitOf(guest);
+    const key = `${guest.role}:${female}:${look}:${dressed?.id ?? ""}:${JSON.stringify(dressed?.colors ?? {})}`;
     let portrait = this.guestPortraits.get(key);
     if (!portrait) {
-      const body = this.makeGuestBody(guest.kind, female, look, guest.role);
+      const body = this.makeGuestBody(guest.kind, female, look, guest.role, dressed);
       body.pose(0, 0);
       portrait = renderPortrait(this.renderer, body.root, SPRITE_TURN);
       this.guestPortraits.set(key, portrait);
@@ -3813,8 +4016,11 @@ export class Game {
             { label: `Partner with ${card.house.boss}`, onPick: () => answer(() => tavern.answerHouse("partner")) },
             { label: `Ruin ${card.house.name} (corruption, heat)`, onPick: () => answer(() => tavern.answerHouse("ruin")) },
           ]
-        : // Pell's answers change with who she's become (STORY.md 4b): two more for some of her.
-          tavern.pellChoices.map((c) => ({ label: c.label, onPick: () => answer(() => tavern.answerPell(c.answer)) }));
+        : tavern.beatChoices.length > 0
+          ? // Act 2's cards and the pass rivals at her door (act2.ts).
+            tavern.beatChoices.map((c) => ({ label: c.label, onPick: () => answer(() => tavern.answerBeat(c.id)) }))
+          : // Pell's answers change with who she's become (STORY.md 4b): two more for some of her.
+            tavern.pellChoices.map((c) => ({ label: c.label, onPick: () => answer(() => tavern.answerPell(c.answer)) }));
       this.openPanel(card.title, card.lines, buttons);
       return;
     }
@@ -3875,6 +4081,7 @@ export class Game {
     if (player.acted) player.rest(dt);
     else if (player.move(dt, input, this.world.colliders, tavern.drunk)) tavern.stumble(this.active);
     if (footfalls(strideBefore, player.strideAngle) > 0) this.audio.play("step", input.run ? RUNNING_STEP_LOUDNESS : 1);
+    if (this.followStairs(player, dt)) return;
 
     // O steps the sister's walk through its five styles, whoever is being played.
     if (input.pressed("KeyO")) {
@@ -3932,6 +4139,21 @@ export class Game {
       this.townsfolk.update(dt);
       const her = this.siblings[this.active].position;
       this.streetTalk?.update(dt, this.townsfolk.people(), her, this.townFacts());
+      // Now and then the street takes in what she's out in (each step further, once a day).
+      this.seenCheck -= dt;
+      if (this.seenCheck <= 0 && this.screen === "play") {
+        this.seenCheck = 1;
+        const noticed = outfitNoticed(this.seenFacts(), this.tavern.random());
+        if (noticed) this.applySeen(noticed);
+      }
+      // The grass bends in the wind and leans away from her and the townsfolk nearest her (grass.ts).
+      const near = this.townsfolk
+        .people()
+        .filter((p) => p.visible)
+        .map((p) => ({ x: p.position.x, z: p.position.z, d: p.position.distanceToSquared(her) }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, MAX_PUSHERS - 1);
+      this.street.grass.update(this.time, [{ x: her.x, z: her.z }, ...near]);
     }
     const found = this.findTarget();
     if (found && found.prompt.actionable && input.pressed("KeyE") && found.target.kind === "bed" && (tavern.restless || tavern.duelOffer())) {
@@ -4307,7 +4529,7 @@ export class Game {
       this.brawlRun = { move, times };
       return intimateScene(move, with_.kind, female, times);
     };
-    const { beats, held, taken } = brawlBeats(events, (event) => this.hasFightShot(event), FIGHT_MOMENT_GAP, rest, this.brawlHeld, sceneOf, this.brawlTaken);
+    const { beats, held, taken } = brawlBeats(events, (event) => this.hasFightShot(event), FIGHT_MOMENT_GAP, rest, this.brawlHeld, sceneOf, this.brawlTaken, fight.taken !== null);
     this.brawlHeld = held;
     this.brawlTaken = taken;
     if (!held) this.brawlRun = null;
@@ -4404,7 +4626,8 @@ export class Game {
 
     // The room is only heard once you are in it. The stew pot hangs over the hearth, so both are heard from there.
     const fromHearth = focus.distanceTo(this.spots.pot);
-    const inBedroom = focus.x > BEDROOM_FROM_X;
+    // In her bedroom behind the east door, or upstairs, the room is heard faintly.
+    const inBedroom = focus.x > BEDROOM_FROM_X || isUpstairs(focus);
     const crowd = tavern.phase === "service" ? Math.sqrt(Math.min(1, tavern.guests.length / CROWD_FULL)) : 0;
     const bubbling = tavern.potState === "cooking" || tavern.potState === "ready";
     const fire = inBedroom ? FIRE_BEDROOM_LEVEL : Math.max(FIRE_ROOM_LEVEL, falloff(fromHearth, FIRE_REACH));
@@ -4509,6 +4732,7 @@ export class Game {
     this.messLayer.sync(this.tavern.messes, dt);
     this.updateBell(dt);
     this.updateBedroomDoor(dt);
+    this.updateUpstairs(dt);
     this.updateFrontDoor(dt);
     this.syncCarried();
     this.syncStations();

@@ -9,18 +9,7 @@ import {
 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { Soundscape } from "./game/audio";
-import {
-  addBakery,
-  addBedroom,
-  addBin,
-  addFrontDoorway,
-  addWashTub,
-  BATHROOM_FROM_X,
-  BATHROOM_VIEW,
-  BEDROOM_FROM_X,
-  BEDROOM_SOUTH_Z,
-  BEDROOM_VIEW,
-} from "./game/furnishings";
+import { addBakery, addBedroom, addBin, addFrontDoorway, addWashTub } from "./game/furnishings";
 import { Game, WHOLE_PIECES } from "./game/game";
 import { claimFurniture } from "./game/houseview";
 import { Input } from "./game/input";
@@ -29,6 +18,7 @@ import { DownloadTally, LoadScreen, nextPaint } from "./game/loadscreen";
 import { applyRetroLook, RetroPipeline } from "./game/retro";
 import { PALETTES, townLook } from "./game/palettes";
 import { WorldClock } from "./game/time";
+import { addStairHall, addUpstairs } from "./game/upstairs";
 import { setupWorld } from "./game/world";
 
 // 3/4 view: looking 45 degrees down, so both tops and fronts of things show.
@@ -114,7 +104,11 @@ async function start(): Promise<void> {
 
   loading.show("world", 0);
   await nextPaint();
+  // Her bedroom behind the taproom's east door, the stair hall through the west wall, and the floor upstairs (the
+  // Lantern's room and the guest rooms).
   addBedroom(worldFile.scene);
+  addStairHall(worldFile.scene);
+  addUpstairs(worldFile.scene);
   addBin(worldFile.scene);
   addWashTub(worldFile.scene);
   addBakery(worldFile.scene);
@@ -146,11 +140,9 @@ async function start(): Promise<void> {
       focus.copy(game.buildFocus);
       return;
     }
-    // The bedroom and the bathroom past it are off the side of the main room's shot, so the camera moves over.
-    if (!game.outdoors && game.focus.x > BEDROOM_FROM_X && game.focus.z < BEDROOM_SOUTH_Z) {
-      focus.copy(game.focus.x > BATHROOM_FROM_X ? BATHROOM_VIEW : BEDROOM_VIEW);
-      return;
-    }
+    // Her bedroom and the stair hall are off the side of the main room's shot, and upstairs is a floor of its own: the
+    // camera holds on the room she's in there, or follows her along the corridor (upstairs.ts roomViewAt).
+    if (game.roomView(focus)) return;
     const limits = game.cameraLimits;
     focus.set(
       MathUtils.clamp(game.focus.x, limits.minX, limits.maxX),

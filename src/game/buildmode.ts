@@ -193,6 +193,8 @@ export class BuildMode {
   private readonly tabsEl = document.createElement("div");
   private readonly barEl = document.createElement("div");
   private readonly noteEl = document.createElement("div");
+  /** What the tile under the pointer is and does, in a box just above it, so it's read where the eye already is. */
+  private readonly tipEl = document.createElement("div");
 
   constructor(
     root: HTMLElement,
@@ -204,7 +206,11 @@ export class BuildMode {
     this.tabsEl.className = "tabs";
     this.barEl.className = "bar";
     this.noteEl.className = "note";
+    // The tip lives on the page, not in the tray: the tray's drop-shadow filter would make "fixed" mean the tray.
+    this.tipEl.className = "build-tip";
+    this.tipEl.setAttribute("role", "tooltip");
     root.append(this.tabsEl, this.barEl, this.noteEl);
+    document.body.append(this.tipEl);
 
     this.grid = this.makeGrid();
     this.buyable.position.y = OVERLAY_HEIGHT;
@@ -264,6 +270,7 @@ export class BuildMode {
     }
     this.active = false;
     this.dragging = false;
+    this.hideTip();
     this.overlay.visible = false;
     this.root().classList.remove("open");
     this.host.leave();
@@ -328,8 +335,8 @@ export class BuildMode {
   }
 
   /**
-   * One square on the bar: a picture, with a price tag or a count in its corner. Its name, and what it does,
-   * show in the note line while the pointer is on it.
+   * One square on the bar: a picture, with a price tag or a count in its corner and its name written under it. What
+   * it does shows in a box just above it while the pointer (or the keyboard) is on it.
    */
   private tile(
     parent: HTMLElement,
@@ -346,7 +353,7 @@ export class BuildMode {
       owned?: boolean;
       /** Edict points it costs, in a badge in the top corner. */
       points?: number;
-      /** A name written under the picture, where a row of the same picture needs telling apart. */
+      /** The name written under the picture; the full name if not given. */
       caption?: string;
       /** Extra classes: "locked" or "excluded" on the edict tree, "slot" for an empty post. */
       classes?: string[];
@@ -363,11 +370,21 @@ export class BuildMode {
       points.textContent = `${options.points} EP`;
       el.append(points);
     }
-    if (options.caption) {
+    // The name goes under the tile, outside it: the tile's clipped corners would cut off anything hanging below.
+    // An empty staff place keeps its word inside its dashed square.
+    const captionText = options.caption ?? options.name;
+    const inside = options.classes?.includes("slot") ?? false;
+    let cell: HTMLElement | null = null;
+    if (captionText) {
       const caption = document.createElement("span");
       caption.className = "caption";
-      caption.textContent = options.caption;
-      el.append(caption);
+      caption.textContent = captionText;
+      if (inside) el.append(caption);
+      else {
+        cell = document.createElement("div");
+        cell.className = "tile-cell";
+        cell.append(caption);
+      }
     }
     const art = document.createElement("span");
     art.className = "art";
@@ -407,17 +424,54 @@ export class BuildMode {
     const words = [options.name, cost].filter(Boolean).join(" · ");
     el.setAttribute("aria-label", words);
     el.addEventListener("click", options.onPick);
-    // The name and what it does show in the note line while the pointer is on it; the note goes back after.
-    el.addEventListener("pointerenter", () => {
-      this.noteEl.textContent = options.hint ? `${words}: ${options.hint}` : words;
-    });
-    el.addEventListener("pointerleave", () => this.render());
-    parent.append(el);
+    // The name, the cost and what it does show in a box over the tile while the pointer or the keyboard is on it.
+    const show = () => this.showTip(el, options.name, cost, options.hint);
+    el.addEventListener("pointerenter", show);
+    el.addEventListener("focus", show);
+    el.addEventListener("pointerleave", () => this.hideTip());
+    el.addEventListener("blur", () => this.hideTip());
+    if (cell) {
+      cell.prepend(el);
+      parent.append(cell);
+    } else parent.append(el);
     return el;
+  }
+
+  /** Fills the tip box and stands it over the tile, kept on screen. */
+  private showTip(tile: HTMLElement, name: string, cost: string, hint?: string): void {
+    const tip = this.tipEl;
+    tip.replaceChildren();
+    const head = document.createElement("div");
+    head.className = "tip-name";
+    head.textContent = name;
+    if (cost) {
+      const price = document.createElement("span");
+      price.className = cost === "owned" ? "tip-owned" : "tip-cost";
+      price.textContent = cost === "owned" ? "Owned" : cost;
+      head.append(price);
+    }
+    tip.append(head);
+    if (hint) {
+      const body = document.createElement("div");
+      body.className = "tip-text";
+      body.textContent = hint;
+      tip.append(body);
+    }
+    tip.classList.add("on");
+    const box = tile.getBoundingClientRect();
+    const margin = 8;
+    const left = Math.min(Math.max(margin, box.left + box.width / 2 - tip.offsetWidth / 2), window.innerWidth - tip.offsetWidth - margin);
+    tip.style.left = `${left}px`;
+    tip.style.top = `${Math.max(margin, box.top - tip.offsetHeight - margin)}px`;
+  }
+
+  private hideTip(): void {
+    this.tipEl.classList.remove("on");
   }
 
   private render(): void {
     if (!this.active) return;
+    this.hideTip();
     this.barEl.replaceChildren();
     const supplies = this.host.supplies();
     const tabOf = (supply: Supply): PlanTab => supply.tab ?? "upgrades";

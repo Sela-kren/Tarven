@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { newRecruits } from "../src/game/recruits";
+import { newCareers } from "../src/game/careers";
 import { TOWN_PLACES, type TownPlaceId, type TownState } from "../src/game/townplaces";
 import { Tavern } from "../src/game/tavern";
 import type { ArcStage } from "../src/game/lewd";
 
 const TABLES = ["A", "A", "B", "B", "C", "C", "C", "Bar", "Bar", "Bar", "Bar"];
 const ARCS: ArcStage[] = ["sheltered", "curious", "willing", "known"];
-const base: TownState = { arc: "sheltered", corruption: 0, fame: 0, respect: 0, flirt: 0, heat: 0, trust: 0, fatigueLevel: 0, flags: new Set(), houses: {} };
+const base: TownState = { arc: "sheltered", corruption: 0, fame: 0, respect: 0, flirt: 0, heat: 0, trust: 0, fatigueLevel: 0, flags: new Set(), houses: {}, fans: 0, nights: 0, done: {}, recruits: newRecruits(), careers: newCareers() };
 
 function day(): Tavern {
   const t = new Tavern(TABLES.length, TABLES);
@@ -117,7 +119,7 @@ describe("the town's places, version 1", () => {
   });
 
   it("knows every place on the street", () => {
-    const ids: TownPlaceId[] = ["board", "chapel", "warmhouse", "copperbell", "bakehouse", "ciderbarn", "garrison", "fields", "quarry"];
+    const ids: TownPlaceId[] = ["board", "chapel", "warmhouse", "copperbell", "bakehouse", "ciderbarn", "garrison", "fields", "quarry", "tollgate", "townhall"];
     expect(Object.keys(TOWN_PLACES).sort()).toEqual([...ids].sort());
   });
 });

@@ -916,12 +916,18 @@
   background: linear-gradient(#8ef0a8, #2a9a52);
 }
 
+#panel .guard-rail {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+
 #panel .guard-needle {
   position: absolute;
   top: -2px;
   bottom: -2px;
   left: 0;
-  will-change: transform;
   width: 4px;
   margin-left: -2px;
   background: #fff;

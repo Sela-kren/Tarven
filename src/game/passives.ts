@@ -322,6 +322,8 @@ export interface Records {
   seenBy: number;
   sightPleasure: number;
   sightClimaxes: number;
+  /** What she's done in town, ever ("place:action"), and how far along a route ("oden:route"): townplaces.ts. */
+  town: Record<string, number>;
 }
 
 export function newRecords(): Records {
@@ -433,6 +435,7 @@ export function newRecords(): Records {
     seenBy: 0,
     sightPleasure: 0,
     sightClimaxes: 0,
+    town: {},
   };
 }
 
@@ -3597,6 +3600,12 @@ export function readProgress(raw: unknown): ProgressSave {
       rec[key] = Math.floor(num(src[key]));
     }
     rec.upstairsKinds = kindList(src.upstairsKinds);
+    if (src.town && typeof src.town === "object") {
+      for (const [key, value] of Object.entries(src.town as Record<string, unknown>)) {
+        const n = Math.floor(num(value, 10000));
+        if (/^[a-z]+:[a-zA-Z_]+$/.test(key) && n > 0) rec.town[key] = n;
+      }
+    }
     if (src.kinds && typeof src.kinds === "object") {
       for (const [region, list] of Object.entries(src.kinds as Record<string, unknown>)) {
         if (region in METER_OF) rec.kinds[region as TouchRegion] = kindList(list);

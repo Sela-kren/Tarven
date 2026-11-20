@@ -1,7 +1,8 @@
 /**
- * Parts of the tavern built in code rather than in Blender: the service bell on the bar and the
- * bedroom through the east wall. They use the room's own materials, so they look like the rest of it,
- * and are added before the room is set up, so they are merged, lit and collided with like everything else.
+ * Parts of the tavern built in code rather than in Blender: the service bell on the bar, the bedroom through the
+ * east wall, and the helpers the stair hall and the floor upstairs are built with (upstairs.ts). They use the room's
+ * own materials, so they look like the rest of it, and are added before the room is set up, so they are merged, lit
+ * and collided with like everything else.
  *
  * Positions are in game space: +X east, -Z north (the window wall), Y up.
  */
@@ -91,7 +92,7 @@ const COLORS = {
 };
 
 /** Each face gets texture coordinates from its own size, so a texture tiles at the same scale everywhere. */
-interface Surface {
+export interface Surface {
   /** Repeats of the texture per metre. */
   tile?: number;
   /** Stretch the whole texture once across each face instead, for pictures like the rug and window. */
@@ -122,7 +123,7 @@ export function box(min: [number, number, number], max: [number, number, number]
 }
 
 /** One named object of the room, made of shapes that may use different materials. */
-class Piece {
+export class Piece {
   readonly group = new Group();
 
   constructor(name: string, collide = false) {
@@ -143,7 +144,7 @@ class Piece {
   }
 }
 
-function flat(name: string, color: number): MeshStandardMaterial {
+export function flat(name: string, color: number): MeshStandardMaterial {
   return new MeshStandardMaterial({ name, color, roughness: 0.95 });
 }
 
@@ -164,7 +165,7 @@ export function roomMaterials(root: Object3D): (name: string) => Material {
 }
 
 /** A candle in a dish, with the anchor its light is hung from. */
-function candle(root: Object3D, name: string, at: Vector3, m: (name: string) => Material): void {
+export function candle(root: Object3D, name: string, at: Vector3, m: (name: string) => Material): void {
   const piece = new Piece(name);
   piece.add(new CylinderGeometry(0.07, 0.07, 0.015, 6).translate(at.x, at.y + 0.0075, at.z), m("T_iron"));
   piece.add(new CylinderGeometry(0.03, 0.03, 0.13, 5).translate(at.x, at.y + 0.08, at.z), m("T_wax"));
@@ -632,7 +633,7 @@ function scaleUv(geometry: BufferGeometry, u: number, v: number): BufferGeometry
 }
 
 /** A shape turned round the upright axis, from (radius, height) pairs listed bottom to top. */
-function turned(profile: [number, number][], sides: number): LatheGeometry {
+export function turned(profile: [number, number][], sides: number): LatheGeometry {
   return new LatheGeometry(profile.map(([r, y]) => new Vector2(r, y)), sides);
 }
 

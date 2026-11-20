@@ -402,50 +402,67 @@ function needleMeterEl(opts: {
     z.style.width = `${(b - a) * 100}%`;
     track.append(z);
   }
+  // The needle rides a rail the width of the bar, and the browser sweeps the rail itself (a transform animation, off
+  // the main thread): it stays smooth however slowly the scene behind it is drawing.
+  const rail = document.createElement("span");
+  rail.className = "guard-rail";
   const needle = document.createElement("span");
   needle.className = "guard-needle";
+  rail.append(needle);
   const word = document.createElement("span");
   word.className = "guard-word";
-  track.append(needle, word);
+  track.append(rail, word);
   const legend = document.createElement("div");
   legend.className = "guard-legend";
   legend.innerHTML = opts.legend;
   el.append(track, legend);
-  const start = performance.now();
-  let pos = 0;
+  const cross = 1000 / opts.speed;
+  const sweep = rail.animate([{ transform: "translateX(0%)" }, { transform: "translateX(100%)" }], {
+    duration: cross,
+    delay: GUARD_WINDUP * 1000,
+    iterations: opts.sweeps,
+    direction: "alternate",
+    easing: "linear",
+    fill: "both",
+  });
   let done = false;
   const finish = (at: number) => {
     if (done) return;
     done = true;
+    window.removeEventListener("keydown", onKey, true);
     const said = opts.word(at);
     word.textContent = said.text;
     word.style.left = `${Math.max(0, at) * 100}%`;
     el.classList.add("stopped", said.cls);
     window.setTimeout(() => opts.onStop(at), GUARD_SHOW_MS);
   };
-  // The needle moves with transform (no layout each frame), so it stays smooth while the scene draws behind it.
-  const place = (at: number) => {
-    needle.style.transform = `translateX(${at * track.clientWidth}px)`;
+  // Left alone for all its sweeps, it stops itself.
+  sweep.finished.then(() => finish(-1)).catch(() => undefined);
+  // Where the needle was at `when` (the press's own time, not the next frame's): worked out from when the sweep
+  // started, so a slow frame doesn't move it. The needle's frozen right there.
+  const stop = (when = performance.now()) => {
+    if (done || sweep.startTime === null) return;
+    const ms = when - Number(sweep.startTime);
+    const t = ms / 1000 - GUARD_WINDUP;
+    // Before the needle's moving, a press doesn't count.
+    if (t < 0) return;
+    sweep.pause();
+    sweep.currentTime = ms;
+    finish(needleAt(opts.speed, t));
   };
-  const frame = (now: number) => {
-    if (done || !el.isConnected) return;
-    const t = (now - start) / 1000 - GUARD_WINDUP;
-    pos = needleAt(opts.speed, t);
-    place(pos);
-    if (t * opts.speed >= opts.sweeps) {
-      finish(-1);
+  // Space (or Enter/E) straight off the keyboard, timed when it was pressed.
+  const onKey = (e: KeyboardEvent) => {
+    if (!el.isConnected) {
+      window.removeEventListener("keydown", onKey, true);
       return;
     }
-    requestAnimationFrame(frame);
+    if (e.repeat || (e.code !== "Space" && e.code !== "Enter" && e.code !== "KeyE")) return;
+    e.preventDefault();
+    stop(e.timeStamp);
   };
-  requestAnimationFrame(frame);
-  // Before the needle's moving, a press doesn't count.
-  const stop = () => {
-    if ((performance.now() - start) / 1000 < GUARD_WINDUP) return;
-    finish(pos);
-  };
-  track.addEventListener("pointerdown", stop);
-  return { el, stop };
+  window.addEventListener("keydown", onKey, true);
+  track.addEventListener("pointerdown", (e) => stop(e.timeStamp));
+  return { el, stop: () => stop() };
 }
 
 /**

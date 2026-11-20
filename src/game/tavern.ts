@@ -282,6 +282,26 @@ import {
   type FlyerFacts,
 } from "./errands";
 import { blockedReason, TOWN_PLACES, type TownOutcome, type TownPlaceId, type TownState } from "./townplaces";
+import type { SeenEffect } from "./beingseen";
+import { CAREERS, newCareers, nightlyPay, readCareers } from "./careers";
+import * as Hall from "./townhall";
+import * as Act2 from "./act2";
+import * as Act3 from "./act3";
+import { biggestFanGroup } from "./chapter1";
+import {
+  BAR_CHANCE,
+  churchDay,
+  DEVOTEE_FANS,
+  helpRecruit,
+  newRecruits,
+  readRecruits,
+  RECRUIT_IDS,
+  recruitCard,
+  RECRUITS,
+  warnRecruit,
+  type RecruitId,
+  type RecruitOutfit,
+} from "./recruits";
 import {
   CENTREPIECE_MAX,
   centrepieceCrowd,
@@ -945,6 +965,8 @@ export interface Arrival {
   hired?: boolean;
   /** A named regular coming back (regulars.ts): they come as themselves, sheet and all. */
   regular?: string;
+  /** One of the Warm House's recruits (recruits.ts), as far up the hill as they've gone. */
+  recruit?: RecruitId;
 }
 
 /** A group of guests who come in together and talk over a table. */
@@ -1323,6 +1345,8 @@ export interface Guest {
   mood: Mood;
   /** A named regular (regulars.ts), by id. */
   regular?: string;
+  /** One of the Warm House's recruits (recruits.ts), by id. */
+  recruit?: RecruitId;
 }
 
 /**
@@ -1509,6 +1533,14 @@ export interface TavernSave {
   lantern?: LanternSave;
   /** Named regulars (regulars.ts). Older saves have none. */
   regulars?: Regular[];
+  /** The Warm House's recruits (recruits.ts); older saves have none, and start them fresh. */
+  recruits?: unknown;
+  /** Her careers by day (careers.ts); older saves have none. */
+  careers?: unknown;
+  /** Act 2 (act2.ts): the Pass Ledger, the red book, the act's flags; older saves have none. */
+  act2?: unknown;
+  /** The town hall (townhall.ts); older saves have none, or kept it in the knight's state. */
+  politics?: unknown;
   /** Her staff (staff.ts), the applicants waiting, and her friendship with the roster. Older saves have none. */
   staff?: { members: StaffMember[]; applicants: StaffMember[]; applicantsNight: number; nextApplicant: number; friendship: Record<string, number> };
   /** The Revel House (revel.ts): the hall, the night's settings and whether tonight's one. Older saves have none. */
@@ -1930,6 +1962,17 @@ export class Tavern {
   edictPoints = EDICT_START_POINTS;
   /** Named regulars (regulars.ts), and what's happened with each guest tonight, settled at the end of the night. */
   regulars: Regular[] = [];
+  /** The Warm House's recruits (recruits.ts): how far up the hill each has gone, and what she's done about it. */
+  recruits = newRecruits();
+  /** Her careers by day (careers.ts): rank (-1 until she joins) and jobs done on each. */
+  careers = newCareers();
+  /** The town hall (townhall.ts): the Reeve's chain, the Law board, and what she's won the town's blocs with. */
+  politics = Hall.newPolitics();
+  /** Act 2 (act2.ts): the Pass Ledger, the red book's pieces, and the act's own flags and beats done ("beat:<id>"). */
+  act2 = Act2.readAct2(undefined);
+  /** Tonight Grig's men come to break her furniture (the first Ledger), and her brawls won before it. */
+  private ratBrawlTonight = false;
+  private ratBrawlFrom = -1;
   private readonly nightMarks = new Map<number, { guest: Pick<Guest, "kind" | "role" | "female" | "look" | "stats" | "regular">; marks: NightMarks }>();
   /** The edicts she's enacted (tavernrules.ts), for good. */
   readonly rules = new Set<TavernRuleId>();
@@ -1970,6 +2013,8 @@ export class Tavern {
    */
   private showTonight = false;
   private roomsTonight = false;
+  /** The guests who took a room tonight: they go up the stairs when they leave, not out of the door. */
+  roomGuests: number[] = [];
   riot = false;
   private riotWins = 0;
   hairNights = 0;
@@ -2016,8 +2061,9 @@ export class Tavern {
   rentOutRooms(): boolean {
     if (!this.canRentRooms) return false;
     this.roomsTonight = true;
-    const stayers = this.guests.filter((g) => g.status !== "leaving" && g.mood !== "angry").map((g) => g.lust).sort((a, b) => b - a);
-    const result = rentRooms(stayers, STRONG_LUST);
+    const staying = this.guests.filter((g) => g.status !== "leaving" && g.mood !== "angry").sort((a, b) => b.lust - a.lust);
+    const result = rentRooms(staying.map((g) => g.lust), STRONG_LUST);
+    this.roomGuests = staying.slice(0, result.rented).map((g) => g.id);
     this.gold += result.gold;
     this.records.roomsRented += result.rented;
     this.records.roomAsks += result.asked;
@@ -2619,7 +2665,33 @@ export class Tavern {
 
   /** The story's act, for the ladder: 2 once Chapter 1's done (First in Tarven). Act 3 is still to come (STORY.md). */
   get storyAct(): number {
+    if (this.act2.flags.includes("act2Done")) return 3;
     return this.beatsDone.has("copperBell") ? 2 : 1;
+  }
+
+  /** Her story flags, Act 1's and Act 2's together, for the rules that read either. */
+  get storyFlags(): ReadonlySet<string> {
+    return new Set<string>([...this.plotFlags, ...this.act2.flags]);
+  }
+
+  /** What the red book's ways read off her (act2.ts). */
+  bookFacts(): Act2.BookFacts {
+    return {
+      trust: this.trust,
+      gold: this.gold,
+      arc: this.arcStage,
+      brawlsWon: this.records.fightsWon,
+      flags: this.storyFlags,
+      odenRoute: this.records.town["oden:route"] ?? 0,
+      maraTalks: this.records.town["fields:mara"] ?? 0,
+      smugglerRank: this.careers.smuggler.rank,
+    };
+  }
+
+  /** The Pass Ledger as lines, and the book she holds, for the Ledger cards. */
+  private passLedgerLines(): string[] {
+    const held = Act2.PIECE_IDS.filter((id) => this.act2.book[id] === "held").length;
+    return [...Act2.ledgerLines(this.act2.pass, this.fans), `The red book: ${held} of ${Act2.PIECE_IDS.length} pieces in your hands.`];
   }
 
   /** What the ladder reads off the rest of the game. TODO: Rhea's doubts, the Baron's fall and the town vote (faction moods) once the story has them. */
@@ -2784,34 +2856,91 @@ export class Tavern {
     return r.ok;
   }
 
-  /** Reeve of Tarven (§6): whether she can be, and taking the chain. */
-  reeveCheck(): { ok: boolean; route: "baronFell" | "vote" | null; missing: string[] } {
-    return this.knight ? Knight.mayorEligible(this.knight, this.knightFacts()) : { ok: false, route: null, missing: ["Sign up at the garrison"] };
+  /** What the town hall's blocs read off the rest of the game (townhall.ts). */
+  hallFacts(): Hall.HallFacts {
+    const fate = (id: HouseId) => this.houses[id];
+    const fates = Object.values(this.houses);
+    return {
+      trust: this.trust,
+      respect: this.persona.respect,
+      fame: this.persona.fame,
+      corruption: this.corruption,
+      fans: this.fans,
+      knightRank: this.knight?.rank ?? null,
+      clergyRank: this.careers.clergy.rank,
+      helped: RECRUIT_IDS.reduce((n, id) => n + (this.recruits[id].helped > 0 ? 1 : 0), 0),
+      warned: RECRUIT_IDS.reduce((n, id) => n + (this.recruits[id].warnings > 0 ? 1 : 0), 0),
+      partners: fates.filter((f) => f === "partner").length,
+      ruins: fates.filter((f) => f === "ruin").length,
+      ciderPartner: fate("cider") === "partner",
+      ciderRuined: fate("cider") === "ruin",
+      canteenPartner: fate("canteen") === "partner",
+      canteenRuined: fate("canteen") === "ruin",
+      odenShut: this.plotFlags.has("odenShut"),
+      maraArrested: this.plotFlags.has("maraArrested"),
+      odenRoute: this.records.town["oden:route"] ?? 0,
+      lanternLit: this.lantern.lit,
+      seat: this.beatsDone.has("copperBell"),
+      baronFallen: this.act2.flags.includes("book:auditor"),
+    };
   }
 
+  /** Her share of the town's vote, 0 to 1. */
+  get voteShare(): number {
+    return Hall.voteShare(this.hallFacts(), this.politics);
+  }
+
+  /** Reeve of Tarven (TOWN_DAY.md 6.2): whether she can stand, and what she still lacks. */
+  reeveCheck(): { ok: boolean; missing: string[] } {
+    const missing = Hall.reeveMissing(this.hallFacts(), this.politics);
+    return { ok: !this.politics.reeve && missing.length === 0, missing };
+  }
+
+  /** She stands, and the town votes her in: the chain is hers. By day, with the seat and over half the vote. */
   becomeReeve(): boolean {
-    if (!this.knight) return false;
-    const r = Knight.becomeReeve(this.knight, this.knightFacts());
-    this.knight = r.state;
-    if (r.ok) this.say("The town hall's chain goes round your neck. Reeve of Tarven.");
-    return r.ok;
+    if (this.phase !== "day" || !this.reeveCheck().ok) return false;
+    this.politics = { ...this.politics, reeve: true };
+    if (this.knight) this.knight = { ...this.knight, reeve: true };
+    this.say("The town hall's chain goes round your neck on the market cross steps. Reeve of Tarven.");
+    return true;
   }
 
-  /** The council's support for her laws: her respect, roughly. TODO: the council and faction moods (TOWN_DAY.md §6.2). */
+  /** The council's support for her laws: her share of the vote and her Respect (townhall.ts). */
   get councilSupport(): number {
-    return clamp(Math.round(40 + this.persona.respect / 2), 0, 100);
+    return Hall.councilSupport(this.hallFacts(), this.politics);
   }
 
-  /** Puts a law to the council (Reeve only). The laws are kept; what they do to the town is still to come. */
+  /** What the laws as they stand do to the town (townhall.ts `lawEffects`). */
+  get lawEffects(): Hall.LawEffects {
+    return Hall.lawEffects(this.politics.laws, this.lantern.lit);
+  }
+
+  /** Puts a law to the council (Reeve only, by day). Passed, it costs its gold and the blocs answer. */
   passLaw(law: Knight.LawId, level: Knight.LawLevel): boolean {
-    if (!this.knight || this.phase !== "day") return false;
-    const cost = Knight.lawCost(this.knight.laws[law], level);
+    if (!this.politics.reeve || this.phase !== "day") return false;
+    const cost = Knight.lawCost(this.politics.laws[law], level);
     if (this.gold < cost.gold) return false;
-    const r = Knight.passLaw(this.knight, law, level, this.councilSupport);
-    this.knight = r.state;
-    if (r.passed) this.adjust(-r.gold, 0, 0);
+    const asKnight = { ...(this.knight ?? Knight.newKnightState()), reeve: true, laws: this.politics.laws };
+    const r = Knight.passLaw(asKnight, law, level, this.councilSupport);
+    if (r.passed) {
+      this.politics = Hall.shiftByLaw(this.politics, law, level, r.factions);
+      if (this.knight) this.knight = { ...this.knight, laws: { ...this.politics.laws } };
+      this.adjust(-r.gold, 0, 0);
+    }
     this.say(r.line);
     return r.passed;
+  }
+
+  /** A day's canvassing of one of the town's blocs (townhall.ts): it costs its gold, and wins them a little. */
+  canvass(faction: Knight.Faction): void {
+    this.politics = Hall.canvass(this.politics, faction);
+  }
+
+  /** She said no to someone under the Free use law (TOWN_DAY.md 6.3): her no counts, and the devotees tut. */
+  refusedUnderFreeUse(): void {
+    if (this.lawEffects.freeUse === 0) return;
+    const was = this.politics.campaign.devotees ?? 0;
+    this.politics = { ...this.politics, campaign: { ...this.politics.campaign, devotees: Math.max(-Hall.CANVASS_MOST, was - Hall.REFUSAL_COST) } };
   }
 
   /** What her knight work does to her and the tavern (the career's own share is applied in knight.ts). */
@@ -3440,9 +3569,9 @@ export class Tavern {
   /** The offer waiting at bedtime is the revel's, not a brawl winner's (no defeat is counted). */
   private revelScene = false;
 
-  /** Whether she can build the Revel Hall now: by day, late game, with the gold. */
+  /** Whether she can build the Revel Hall now: by day, in Act 3 and ready for it, with the gold. */
   get canBuildRevelHall(): boolean {
-    return this.phase === "day" && !this.revelHall && this.staffStage === "late" && this.gold >= REVEL_HALL_COST;
+    return this.phase === "day" && !this.revelHall && this.revelReady && this.gold >= REVEL_HALL_COST;
   }
 
   buildRevelHall(): boolean {
@@ -3463,16 +3592,34 @@ export class Tavern {
     };
   }
 
-  /** Whether a revel night is open to her: the late game, and revel.ts's own conditions. */
+  /** Whether the Revel Hall shows on the house plans: from Act 3 (Last Call, act3.ts) on. */
+  get revelShown(): boolean {
+    return this.storyAct >= 3 || this.revelHall;
+  }
+
+  /**
+   * Whether she's ready to build the Revel Hall: Act 3, her lewdness or corruption, and the table scenes, all but the
+   * Hall itself. From Act 3 the Hall shows on the house plans, greyed out with what's missing till she's ready.
+   */
+  get revelReady(): boolean {
+    const f = this.revelFacts;
+    return (
+      this.storyAct >= 3 &&
+      (f.lewdness >= REVEL_UNLOCK.lewdness || f.corruption >= REVEL_UNLOCK.corruption) &&
+      (f.tableScenes >= REVEL_UNLOCK.tableScenes || f.taproomPartners >= REVEL_UNLOCK.partners)
+    );
+  }
+
+  /** Whether a revel night is open to her: Act 3, and revel.ts's own conditions. */
   get revelOpen(): boolean {
-    return this.staffStage === "late" && revelUnlocked(this.revelFacts);
+    return this.storyAct >= 3 && revelUnlocked(this.revelFacts);
   }
 
   /** What's still missing before she can hold a revel night, in words (empty once it's open). */
   revelMissing(): string[] {
     const f = this.revelFacts;
     const out: string[] = [];
-    if (this.staffStage !== "late") out.push("the late game (the chapter's end, or fame 60)");
+    if (this.storyAct < 3) out.push("Act 3, Last Call (after Act 2's second Ledger)");
     if (f.lewdness < REVEL_UNLOCK.lewdness && f.corruption < REVEL_UNLOCK.corruption) out.push(`lewdness ${REVEL_UNLOCK.lewdness} or corruption ${REVEL_UNLOCK.corruption}`);
     if (f.tableScenes < REVEL_UNLOCK.tableScenes && f.taproomPartners < REVEL_UNLOCK.partners) out.push(`${REVEL_UNLOCK.tableScenes} table scenes or ${REVEL_UNLOCK.partners} partners there (${f.tableScenes}, ${f.taproomPartners})`);
     if (!this.revelHall) out.push(`the Revel Hall (house plans, ${REVEL_HALL_COST} gold)`);
@@ -3814,6 +3961,7 @@ export class Tavern {
     this.hairNights++;
     this.showTonight = false;
     this.roomsTonight = false;
+    this.roomGuests = [];
     // Maxed is as high as her cap let it go tonight (KP's max desire); the best a meter's ever reached lifts its cap.
     for (const m of METERS) if (this.peak[m] >= this.desireCap(m)) r.maxed[m] = (r.maxed[m] ?? 0) + 1;
     for (const m of METERS) r.best[m] = Math.max(r.best[m] ?? 0, Math.round(this.peak[m]));
@@ -3837,6 +3985,20 @@ export class Tavern {
     this.lantern.endNight(this.lanternHost);
     // Her staff: paid, their night, their dawn lines (staff.ts).
     this.settleStaff();
+    // What the laws do to her takings every night (townhall.ts): the ale tax, the curfew, the brothel law.
+    if (this.politics.reeve) {
+      const law = this.lawEffects;
+      if (law.nightlyGold || law.nightlyHeat) {
+        this.adjust(law.nightlyGold, 0, law.nightlyHeat);
+        if (law.nightlyGold > 0) this.earned += law.nightlyGold;
+      }
+    }
+    // What her careers pay every night (careers.ts): the crew's cut, the devotees' tithe.
+    const careerPay = nightlyPay(this.careers);
+    if (careerPay.gold || careerPay.heat) {
+      this.adjust(careerPay.gold, 0, careerPay.heat);
+      this.earned += careerPay.gold;
+    }
     const nightly = this.effects.perNight;
     this.adjust(nightly.gold, nightly.trust, nightly.heat);
     if (nightly.respect) this.shift({ respect: nightly.respect });
@@ -3848,6 +4010,8 @@ export class Tavern {
     this.settleRegulars();
     this.awardPassives();
     this.arcDawn();
+    // The story's own clock: off in the tests' setup, whose nights go by number.
+    if (this.storyBeats) this.recruitsDawn();
     this.countFans();
     this.lettersAtDawn();
     // A night gone off every debuff that lasts for nights.
@@ -3877,6 +4041,48 @@ export class Tavern {
       this.tierSeen = tier.seen;
       this.news.push(...cardLines(tier.card));
     }
+  }
+
+  /**
+   * The Warm House's recruits at dawn (recruits.ts): each may have gone up the hill yesterday, and a stage made is its
+   * story card in the church's voice and the town's gossip. One she helped all the way brings her their fans.
+   * With Oden's chapel shut, Veyra fills the empty faith: every visit counts double.
+   */
+  private recruitsDawn(): void {
+    const shut = this.plotFlags.has("odenShut") || this.lawEffects.veyraFaith;
+    for (const id of RECRUIT_IDS) {
+      const { state, stepped } = churchDay(this.recruits[id], this.random(), shut);
+      this.recruits[id] = state;
+      if (!stepped || state.stage === 0) continue;
+      const def = RECRUITS[id];
+      const stage = state.stage as 1 | 2 | 3;
+      this.news.push(...cardLines(recruitCard(def, stage)), def.gossip[stage - 1]);
+      if (stage === 3 && state.helped > 0) {
+        this.errandFans += DEVOTEE_FANS;
+        this.news.push(`${def.short} sends ${DEVOTEE_FANS} devotees your way: "the keeper who sent me up the hill."`);
+      }
+    }
+  }
+
+  /**
+   * Her standing in town (towntalk.ts RoleId), the most public first: the garrison's ranks, a Priestess of Veyra or
+   * higher, the Lantern's madam, a guild adventurer, else the keeper. The smuggler's ladder is never public.
+   */
+  get herRole(): string {
+    if (this.politics.reeve) return "reeve";
+    const k = this.knight?.rank;
+    if (k === "captain" || k === "commander") return "knightCaptain";
+    if (k === "knight") return "knight";
+    if (k === "squire") return "squire";
+    if (this.careers.clergy.rank >= 2) return "priestess";
+    if (this.lantern.lit) return "madam";
+    if (this.guild) return "adventurer";
+    return "keeper";
+  }
+
+  /** What a recruit guest wears tonight: their stage's outfit (recruits.ts), or null for anyone else. */
+  recruitOutfitOf(guest: Pick<Guest, "recruit">): RecruitOutfit | null {
+    return guest.recruit ? RECRUITS[guest.recruit].outfits[this.recruits[guest.recruit].stage] : null;
   }
 
   /**
@@ -3999,7 +4205,36 @@ export class Tavern {
    */
   private rivalNight(arrivals: Arrival[]): void {
     this.rivalMove = null;
+    // The first Ledger's brawl night (act2.ts): Grig's men come to break her furniture, whatever else happens.
+    if (this.ratBrawlTonight) {
+      this.ratBrawlTonight = false;
+      this.ratBrawlFrom = this.records.fightsWon;
+      const last = Math.max(EXTRA_FIRST + 1, ...arrivals.map((a) => a.at));
+      for (let i = 0; i < 2; i++) arrivals.push({ at: Math.max(EXTRA_FIRST, last / 2) + i, kind: "bandit", order: "ale", hired: true });
+      arrivals.sort((a, b) => a.at - b.at);
+      this.say("Grig's men from the Drowned Rat are here, and they haven't come to drink.");
+    }
     const dice = this.crowdRandom;
+    // On the pass (act2.ts), the rival just above her on the Ledger fights back the same way.
+    const passAbove = !this.houseAbove && this.act2.pass.open ? Act2.rivalAbove(this.act2.pass, this.fans) : null;
+    if (passAbove && this.storyBeats && dice && dice() < RIVAL_MOVE_CHANCE * (this.act2.pass.desperate ? 1.5 : 1)) {
+      const moves: RivalMove[] = ["poach", "rumor", "thug"];
+      const move = moves[Math.floor(dice() * moves.length) % moves.length];
+      this.rivalMove = move;
+      if (move === "poach") {
+        for (let i = 0; i < POACHED; i++) {
+          const at = arrivals.findIndex((a) => a.party === undefined && !a.rumor && !a.hired);
+          if (at >= 0) arrivals.splice(at, 1);
+        }
+      } else if (move === "rumor") this.adjust(0, 0, 1);
+      else {
+        const last = Math.max(0, ...arrivals.map((a) => a.at));
+        arrivals.push({ at: Math.max(EXTRA_FIRST, last / 2), kind: "bandit", order: "ale", hired: true });
+        arrivals.sort((a, b) => a.at - b.at);
+      }
+      this.say(Act2.PASS_RIVALS[passAbove].fights);
+      return;
+    }
     const house = this.houseAbove;
     if (!this.storyBeats || !house || !dice || dice() >= RIVAL_MOVE_CHANCE) return;
     const moves: RivalMove[] = ["poach", "rumor", "thug"];
@@ -4151,6 +4386,215 @@ export class Tavern {
     }
     const chapterDone = this.beatsDone.has("copperBell");
     if (chapterDone && this.owed > 0 && this.nightIndex % LATE_EVERY === 0) this.collect();
+    if (chapterDone) this.act2Morning();
+  }
+
+  /**
+   * Act 2's morning (act2.ts): a night on the pass for the rivals, Grig's brawl night settled, the partners' share,
+   * then at most one card: a rival pushed to the bottom of the Ledger at her door, or the act's next beat.
+   */
+  private act2Morning(): void {
+    const a = this.act2;
+    if (a.pass.open) {
+      a.pass = Act2.passNight(a.pass, () => this.random());
+      const share = Act2.RIVAL_IDS.filter((id) => a.pass.rivals[id].fate === "partner").length * Act2.RIVAL_TERMS.partner.nightly;
+      if (share) {
+        this.adjust(share, 0, 0);
+        this.earned += share;
+      }
+    }
+    if (this.ratBrawlFrom >= 0) {
+      if (this.records.fightsWon > this.ratBrawlFrom && !a.flags.includes("heldTheRoom")) {
+        a.flags.push("heldTheRoom");
+        this.news.push("You held the room against Grig's men. Silas's map of the toll routes is yours to claim, on the quarry road.");
+      }
+      this.ratBrawlFrom = -1;
+    }
+    if (this.pendingBeat) return;
+    // A rival beaten in its showdown (act3.ts) is at her door, as one pushed to the bottom would be.
+    const beaten = Act2.RIVAL_IDS.find((id) => a.pass.rivals[id].fallen && a.pass.rivals[id].fate === null);
+    if (beaten) {
+      this.pendingBeat = { id: `rival:${beaten}`, fans: this.fans, kind: "rival", rival: beaten };
+      return;
+    }
+    const bottom = Act2.bottomRival(a.pass, this.fans);
+    if (bottom) {
+      a.pass.rivals[bottom].fallen = true;
+      this.pendingBeat = { id: `rival:${bottom}`, fans: this.fans, kind: "rival", rival: bottom };
+      return;
+    }
+    const next = Act2.nextAct2Beat(new Set(a.flags.filter((f) => f.startsWith("beat:")).map((f) => f.slice(5))));
+    if (next && this.fans >= next.fans) {
+      a.flags.push(`beat:${next.id}`);
+      this.pendingBeat = { id: next.id, fans: next.fans, kind: "act2", beat: next.id };
+      return;
+    }
+    if (a.flags.includes("act2Done")) this.act3Morning();
+  }
+
+  /**
+   * Act 3's morning (act3.ts): its next card, once her fans reach it, one a morning. Father's trail, put off, comes
+   * round again a few nights later.
+   */
+  private act3Morning(): void {
+    const a = this.act2;
+    if (a.flags.includes("act3Done")) return;
+    const next = Act3.nextAct3Beat(new Set(a.flags.filter((f) => f.startsWith("beat3:")).map((f) => f.slice(6))));
+    if (!next || this.fans < next.fans) return;
+    const retry = a.flags.find((f) => f.startsWith("trailRetry:"));
+    if (next.id === "fathersTrail" && retry && this.nightIndex < Number(retry.slice(11))) return;
+    a.flags.push(`beat3:${next.id}`);
+    this.pendingBeat = { id: next.id, fans: next.fans, kind: "act3", beat: next.id };
+  }
+
+  /** What Act 3 reads off her (act3.ts). */
+  act3Facts(): Act3.Act3Facts {
+    const a = this.act2;
+    const held = Act2.PIECE_IDS.filter((id) => a.book[id] === "held");
+    const left = Act2.standing(a.pass);
+    const closest = left.sort((x, y) => Math.abs(a.pass.rivals[x].fans - this.fans) - Math.abs(a.pass.rivals[y].fans - this.fans))[0] ?? null;
+    return {
+      gold: this.gold,
+      trust: this.trust,
+      respect: this.persona.respect,
+      fame: this.persona.fame,
+      corruption: this.corruption,
+      informed: this.persona.informed,
+      brawlsWon: this.records.fightsWon,
+      arcKnown: arcIndex(this.arcStage) >= arcIndex("known"),
+      flags: new Set<string>([...this.storyFlags, ...held.map((id) => `${id}:held`)]),
+      passRank: Act2.passRank(a.pass, this.fans),
+      closest,
+      pieces: held.length + (a.flags.includes("lastPages") ? 1 : 0),
+      guild: this.guild?.rank ?? null,
+      lanternHung: this.lantern.hung,
+      girlGone: this.lantern.girls.some((g) => g.quit),
+      owed: this.owed,
+      crown: biggestFanGroup(this.fanGroups),
+      owned: Act2.housesOwned(a.pass).length,
+      ledger: this.passLedgerLines(),
+    };
+  }
+
+  /** Her ending, once Act 3's final Ledger has been read (act3.ts `ENDINGS`), or null before. */
+  get passEnding(): Act3.EndingId | null {
+    const flag = this.act2.flags.find((f) => f.startsWith("ending:"));
+    return flag ? (flag.slice(7) as Act3.EndingId) : null;
+  }
+
+  /** What an Act 2 card reads off her (act2.ts). */
+  private beatFacts(): Act2.BeatFacts {
+    return { gold: this.gold, trust: this.trust, respect: this.persona.respect, messes: this.messes.length, flags: this.storyFlags, ledger: this.passLedgerLines() };
+  }
+
+  /** Her answers to the morning's Act 2 card or fallen rival: [] for Chapter 1's own cards (Pell, a house). */
+  get beatChoices(): { id: string; label: string }[] {
+    const beat = this.pendingBeat;
+    if (beat?.kind === "act2") {
+      const f = this.beatFacts();
+      return Act2.ACT2_CARDS[beat.beat].choices.filter((c) => !c.hidden?.(f)).map((c) => ({ id: c.id, label: c.label }));
+    }
+    if (beat?.kind === "act3") {
+      const f = this.act3Facts();
+      return Act3.ACT3_CARDS[beat.beat].choices(f).filter((c) => !c.hidden?.(f)).map((c) => ({ id: c.id, label: c.label }));
+    }
+    if (beat?.kind === "rival") {
+      const r = Act2.PASS_RIVALS[beat.rival];
+      return [
+        ...(this.gold >= r.price ? [{ id: "bought", label: `Buy ${r.name} (${r.price} gold)` }] : []),
+        { id: "partner", label: `Partner with ${r.boss}` },
+        { id: "ruin", label: `Ruin ${r.name} (corruption, heat)` },
+      ];
+    }
+    return [];
+  }
+
+  /** Her answer to the morning's Act 2 card, or to a fallen rival: applied, and what it brought on the news. */
+  answerBeat(choice: string): void {
+    const beat = this.pendingBeat;
+    if (!beat || !this.beatChoices.some((c) => c.id === choice)) return;
+    this.pendingBeat = null;
+    if (beat.kind === "rival") {
+      this.answerRival(beat.rival, choice as Act2.RivalFate);
+      return;
+    }
+    if (beat.kind === "act3") {
+      const f = this.act3Facts();
+      this.applyAct3Effect(Act3.ACT3_CARDS[beat.beat].choices(f).find((c) => c.id === choice)!.run(f));
+      return;
+    }
+    if (beat.kind !== "act2") return;
+    const card = Act2.ACT2_CARDS[beat.beat];
+    const e = card.choices.find((c) => c.id === choice)!.run(this.beatFacts());
+    this.applyBeatEffect(e);
+  }
+
+  private applyBeatEffect(e: Act2.BeatEffect): void {
+    const a = this.act2;
+    this.news.push(...e.lines);
+    this.adjust(e.gold ?? 0, e.trust ?? 0, e.heat ?? 0);
+    if (e.corruption) this.corruption += e.corruption;
+    this.shift({ respect: e.respect ?? 0, fame: e.fame ?? 0, kindness: e.kindness ?? 0 });
+    if (e.fans) {
+      this.fans += e.fans;
+      this.fanGroups[e.group ?? "keeper"] += e.fans;
+    }
+    if (e.rival) a.pass.rivals[e.rival.id].fans = Math.max(0, a.pass.rivals[e.rival.id].fans + e.rival.fans);
+    for (const flag of e.flags ?? []) if (!a.flags.includes(flag)) a.flags.push(flag);
+    if (e.heard && a.book[e.heard] === "unknown") {
+      a.book[e.heard] = "heard";
+      const piece = Act2.PIECES[e.heard];
+      this.news.push(`(The red book: ${piece.rumour} ${piece.holder} has ${piece.name}.)`);
+    }
+    if (e.openPass) a.pass.open = true;
+    if (e.desperate) a.pass.desperate = true;
+    if (e.brawlNight) this.ratBrawlTonight = true;
+  }
+
+  /** What an Act 3 choice does (act3.ts), and at the final Ledger, her ending. */
+  private applyAct3Effect(e: Act3.Act3Effect): void {
+    const a = this.act2;
+    this.news.push(...e.lines);
+    this.adjust(e.gold ?? 0, e.trust ?? 0, e.heat ?? 0);
+    if (e.corruption) this.corruption += e.corruption;
+    this.shift({ respect: e.respect ?? 0, fame: e.fame ?? 0 });
+    for (const flag of e.flags ?? []) if (!a.flags.includes(flag)) a.flags.push(flag);
+    if (e.rivalFalls) a.pass.rivals[e.rivalFalls].fallen = true;
+    if (e.rivalGains) a.pass.rivals[e.rivalGains.id].fans += e.rivalGains.fans;
+    if (e.retry) {
+      // Father's trail comes round again in a few nights.
+      a.flags = a.flags.filter((f) => f !== "beat3:fathersTrail" && !f.startsWith("trailRetry:"));
+      a.flags.push(`trailRetry:${this.nightIndex + Act3.TRAIL_RETRY}`);
+    }
+    if (a.flags.includes("act3Done") && !this.passEnding) {
+      const id = Act3.pickEnding(this.act3Facts());
+      a.flags.push(`ending:${id}`);
+      const end = Act3.ENDINGS[id];
+      this.news.push(...cardLines({ title: end.title, lines: end.lines }), "(The nights go on: the tavern is still yours to run.)");
+    }
+  }
+
+  /** A pass rival at her door, beaten: bought, partnered or ruined (STORY.md 7, "Winning a rival"). */
+  private answerRival(id: Act2.RivalId, fate: Act2.RivalFate): void {
+    const r = Act2.PASS_RIVALS[id];
+    const terms = Act2.RIVAL_TERMS[fate];
+    const state = this.act2.pass.rivals[id];
+    const gained = Math.floor(state.fans * terms.fans);
+    this.act2.pass.rivals[id] = { ...state, fate, fallen: false };
+    if (fate === "bought") this.adjust(-r.price, 0, 0);
+    if (terms.corruption) this.corruption += terms.corruption;
+    if (terms.heat) this.adjust(0, 0, terms.heat);
+    this.fans += gained;
+    this.fanGroups[r.group] += gained;
+    const capital = `${r.name[0].toUpperCase()}${r.name.slice(1)}`;
+    this.news.push(
+      fate === "bought"
+        ? `${capital} is yours, bought outright. You put a manager in. +${gained} fans come with it.`
+        : fate === "partner"
+          ? `You shake on it with ${r.boss}. ${capital} stays open as your partner house: ${r.partner}. +${gained} fans, and a share every night.`
+          : `${capital} closes for good. +${gained} of its fans find their way to you, and ${r.boss} will remember it.`,
+      r.clue,
+    );
   }
 
   /** The words for a beat waiting on her answer this morning: who's at the door, and what they say. */
@@ -4161,6 +4605,21 @@ export class Tavern {
       // He reads who she's become (STORY.md 4b): his opening changes with her arc and her corruption.
       const [arrives, ...terms] = PELL_LINES;
       return { title: "Pell at dawn", lines: [arrives, pellOpening(this.lateArc, this.corruption >= SHADY_AT), ...terms] };
+    }
+    if (beat.kind === "act2") {
+      const card = Act2.ACT2_CARDS[beat.beat];
+      return { title: card.title, lines: card.lines(this.beatFacts()) };
+    }
+    if (beat.kind === "act3") {
+      const card = Act3.ACT3_CARDS[beat.beat];
+      return { title: card.title, lines: card.lines(this.act3Facts()) };
+    }
+    if (beat.kind === "rival") {
+      const r = Act2.PASS_RIVALS[beat.rival];
+      return {
+        title: `${r.name[0].toUpperCase()}${r.name.slice(1)} falls`,
+        lines: [`You've pushed ${r.name} to the bottom of the Pass Ledger.`, ...this.passLedgerLines(), r.arrives],
+      };
     }
     if (beat.kind === "house") {
       const house = HOUSE_BY_ID.get(beat.house)!;
@@ -4460,6 +4919,13 @@ export class Tavern {
       // A regular comes as themselves: the sheet, body and look they've always had (regulars.ts).
       const regular = next.regular ? this.regulars.find((r) => r.id === next.regular) : undefined;
       const stats = regular ? structuredClone(regular.stats) : rollStats(role, this.rollRandom);
+      // A recruit far enough up the hill tips more and stays longer, and comes in wanting it (CHURCH_RECRUITMENT.md).
+      const recruit = next.recruit ? RECRUITS[next.recruit] : undefined;
+      const recruitStage = next.recruit ? this.recruits[next.recruit].stage : 0;
+      if (recruitStage >= 2) {
+        stats.tip = Math.round(stats.tip * 1.5);
+        stats.patience *= 1.3;
+      }
       const order = this.chooseOrder(role, next.order);
       const maxPatience =
         stats.patience *
@@ -4475,8 +4941,8 @@ export class Tavern {
         role,
         stats,
         ordered: !this.takeOrders,
-        female: regular ? regular.female : this.rollRandom() < 0.5,
-        look: regular ? regular.look : 1 + Math.floor(this.rollRandom() * GUEST_LOOK_SEEDS),
+        female: regular ? regular.female : recruit ? recruit.female : this.rollRandom() < 0.5,
+        look: regular ? regular.look : recruit ? recruit.look : 1 + Math.floor(this.rollRandom() * GUEST_LOOK_SEEDS),
         order,
         seat,
         status: "arriving",
@@ -4486,13 +4952,15 @@ export class Tavern {
         rumor: Boolean(rumor),
         listened: 0,
         party: party ?? null,
-        lust,
+        lust: recruitStage >= 2 ? Math.max(lust, 6 + recruitStage) : lust,
         desires,
         mood: next.hired ? "angry" : arrivalMood(context, filth, this.random, lust),
         ...(next.hired ? { hired: true } : {}),
         ...(regular ? { regular: regular.id } : {}),
+        ...(next.recruit ? { recruit: next.recruit } : {}),
       });
       this.cue("guestIn");
+      if (recruit) this.say(recruit.atBar[recruitStage]);
       if (regular) {
         const lines = REGULAR_RETURNS[regular.last];
         this.say(lines[Math.floor(this.random() * lines.length) % lines.length].replaceAll("{name}", regular.name));
@@ -4734,6 +5202,7 @@ export class Tavern {
         const drawn = this.errandArrivals(arrivals);
         if (drawn > 0) this.say(`Your flyers and posts worked: ${drawn} ${drawn === 1 ? "guest says" : "guests say"} they came because of them.`);
         this.regularsTonight(arrivals);
+        this.recruitsTonight(arrivals);
         this.rivalNight(arrivals);
         this.plotNight(arrivals);
         // A lit lantern changes who walks in, and what the night costs her (lantern.ts).
@@ -8321,6 +8790,22 @@ export class Tavern {
       fatigueLevel: this.fatigueLevel,
       flags: this.plotFlags,
       houses: this.houses,
+      fans: this.fans,
+      nights: this.nightIndex,
+      done: this.records.town,
+      recruits: this.recruits,
+      careers: this.careers,
+      body: this.playerBody === "Male" ? "Male" : "Female",
+      knightRank: this.knight?.rank ?? null,
+      guildRank: this.guild?.rank ?? null,
+      hall: {
+        seat: this.beatsDone.has("copperBell"),
+        reeve: this.politics.reeve,
+        vote: this.voteShare,
+        missing: this.reeveCheck().missing,
+        campaign: this.politics.campaign,
+      },
+      book: { status: this.act2.book, facts: this.bookFacts() },
     };
   }
 
@@ -8342,6 +8827,26 @@ export class Tavern {
     const action = TOWN_PLACES[place].actions.find((a) => a.id === id)!;
     const o = action.run(this.townState, () => this.random());
     this.townDoneToday.add(`${place}:${id}`);
+    // What she's ever done in town, and how far along a route, for the places that remember (Oden, the rivals).
+    const town = this.records.town;
+    town[`${place}:${id}`] = (town[`${place}:${id}`] ?? 0) + 1;
+    if (o.mark) town[o.mark] = (town[o.mark] ?? 0) + 1;
+    if (o.book) {
+      this.act2.book[o.book.piece] = "held";
+      this.act2.won[o.book.piece] = o.book.way;
+    }
+    if (o.hall?.canvass) this.canvass(o.hall.canvass);
+    if (o.hall?.stand) this.becomeReeve();
+    if (o.career) {
+      const c = this.careers[o.career.id];
+      if (o.career.act === "join") c.rank = Math.max(c.rank, 0);
+      else if (o.career.act === "promote") c.rank = Math.min(CAREERS[o.career.id].ranks.length - 1, c.rank + 1);
+      else c.jobs++;
+    }
+    if (o.recruit) {
+      const was = this.recruits[o.recruit.id];
+      this.recruits[o.recruit.id] = (o.recruit.act === "help" ? helpRecruit(was) : warnRecruit(was)) ?? was;
+    }
     this.adjust((o.gold ?? 0) - (action.cost ?? 0), o.trust ?? 0, o.heat ?? 0);
     this.errandGuests = Math.min(MAX_ERRAND_GUESTS, this.errandGuests + (o.guests ?? 0));
     this.errandFans += o.fans ?? 0;
@@ -8357,6 +8862,25 @@ export class Tavern {
     }
     if ((o.gold ?? 0) > 0) this.cue("buy");
     return o;
+  }
+
+  /**
+   * The town has seen her (beingseen.ts): a photo, a yes, a hand, what she's out in, the walk of shame. Marked for
+   * today so it's counted once, then applied: her name, heat, fans and guests, and her desire (to the part a hand
+   * found, or her strongest).
+   */
+  beSeen(e: SeenEffect): void {
+    if (this.townDoneToday.has(e.mark)) return;
+    this.townDoneToday.add(e.mark);
+    shiftPersona(this.persona, { respect: e.respect ?? 0, fame: e.fame ?? 0, lust: e.lust ?? 0, flirt: e.flirt ?? 0 });
+    if (e.heat) this.adjust(0, 0, e.heat);
+    this.errandGuests = Math.min(MAX_ERRAND_GUESTS, this.errandGuests + (e.guests ?? 0));
+    this.errandFans += e.fans ?? 0;
+    if (e.touched) this.records.grabbed++;
+    if (e.desire) {
+      const meter: Meter = e.touched ?? (this.playerBody === "Female" ? "pussy" : "cock");
+      this.meters[meter] = Math.max(0, Math.min(this.desireCap(meter), this.meters[meter] + e.desire));
+    }
   }
 
   canHandOutFlyers(): boolean {
@@ -8493,6 +9017,20 @@ export class Tavern {
       if (this.random() >= returnChance(regular)) continue;
       arrivals.push({ at: EXTRA_FIRST + this.random() * (last - EXTRA_FIRST), kind: regular.kind, order: "ale", role: regular.role, regular: regular.id });
       coming++;
+    }
+    arrivals.sort((a, b) => a.at - b.at);
+  }
+
+  /** The Warm House's recruits come in for a drink some nights, more often the further up the hill they've gone. */
+  private recruitsTonight(arrivals: Arrival[]): void {
+    // Rolled with the crowd: without its dice (the tests' setup), the night is as written. Not the first night
+    // either, the salt night, which is written too: they start coming in once she's open for business.
+    const dice = this.crowdRandom;
+    if (!dice || this.nightIndex === 0) return;
+    const last = Math.max(EXTRA_FIRST + 1, ...arrivals.map((a) => a.at));
+    for (const id of RECRUIT_IDS) {
+      if (dice() >= BAR_CHANCE[this.recruits[id].stage]) continue;
+      arrivals.push({ at: EXTRA_FIRST + dice() * (last - EXTRA_FIRST), kind: RECRUITS[id].kind, order: "ale", recruit: id });
     }
     arrivals.sort((a, b) => a.at - b.at);
   }
@@ -8638,6 +9176,14 @@ export class Tavern {
       ...(this.layout ? { layout: cloneLayout(this.layout) } : {}),
       ...(this.lantern.hung ? { lantern: this.lantern.save() } : {}),
       ...(this.regulars.length > 0 ? { regulars: structuredClone(this.regulars) } : {}),
+      ...(this.careers.smuggler.rank >= 0 || this.careers.clergy.rank >= 0 ? { careers: structuredClone(this.careers) } : {}),
+      ...(this.act2.pass.open || this.act2.flags.length ? { act2: structuredClone(this.act2) } : {}),
+      ...(this.politics.reeve || Object.keys(this.politics.campaign).length || Object.keys(this.politics.lawShift).length
+        ? { politics: structuredClone(this.politics) }
+        : {}),
+      ...(RECRUIT_IDS.some((id) => this.recruits[id].stage > 0 || this.recruits[id].helped || this.recruits[id].warnings)
+        ? { recruits: structuredClone(this.recruits) }
+        : {}),
       ...(this.staff.length > 0 || this.applicants.length > 0 || Object.keys(this.friendship).length > 0
         ? {
             staff: {
@@ -8732,6 +9278,9 @@ export class Tavern {
     this.titles = new Set([START_TITLE, ...(progress.titles ?? []).filter((id) => TITLE_BY_ID.has(id))]);
     this.worn = (progress.worn ?? [START_TITLE]).filter((id, i, all) => this.titles.has(id) && all.indexOf(id) === i);
     this.regulars = readRegulars(save.regulars);
+    this.recruits = readRecruits(save.recruits);
+    this.careers = readCareers(save.careers);
+    this.act2 = Act2.readAct2(save.act2);
     // Staff (staff.ts): older saves have none.
     const staffSave = save.staff;
     this.staff = (staffSave?.members ?? []).map(readStaffMember).filter((m): m is StaffMember => m !== null);
@@ -8899,6 +9448,8 @@ export class Tavern {
         laws: { ...base.laws, ...(state.laws ?? {}) },
       };
     } else this.knight = null;
+    // The town hall: its own save, or (older saves) the Reeve's chain and laws she kept as a knight.
+    this.politics = Hall.readPolitics(save.politics, this.knight);
     this.knightFlags = Array.isArray(k?.flags) ? k.flags.filter((x): x is string => typeof x === "string") : [];
     this.knightTourneyWeek = Math.floor(n(k?.tourneyWeek, -1));
     this.knightDoneToday.clear();

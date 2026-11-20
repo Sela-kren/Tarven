@@ -1,6 +1,14 @@
 import type { ArcStage } from "./lewd";
 import type { PlotFlag } from "./plot";
 import type { HouseId } from "./ledger";
+import { rivalActions, ruinedLine } from "./rivalvisits";
+import { HELP, RECRUIT_IDS, RECRUITS, WARN, type RecruitId, type RecruitState } from "./recruits";
+import { careerActions, careerTitle, type CareerId, type CareerState } from "./careers";
+import { HOUSES } from "./ledger";
+import { RIVAL_PLANS } from "./rivalvisits";
+import { CANVASS, CANVASS_MOST, FACTIONS } from "./townhall";
+import type { Faction } from "./knight";
+import { PIECES, type BookFacts, type PieceId, type PieceStatus } from "./act2";
 
 /**
  * Tarven by day, version 1 (TOWN_DAY.md §3): something to do at every place on the high street, so the day is a
@@ -9,9 +17,11 @@ import type { HouseId } from "./ledger";
  *
  * - **Notice board:** day jobs for gold (§5): honest work from day 1, the painter at Curious, lewder work at
  *   Willing and Known.
- * - **Chapel:** Oden (talk, a candle for Wren, confession that costs something, STORY.md §8).
+ * - **Chapel:** Oden (talk, a candle for Wren, confession that costs something, STORY.md §8). Talking to him is his
+ *   route (TOWN_DAY.md step 4, ODEN_ROUTE): Wren's past, the salt under his floor, his doubts, one talk at a time.
  * - **Warm House:** a first look at the Church of Veyra (CHURCH_CONCEPT.md): a ribbon, a blessing, a session.
- * - **Copper Bell:** scouting the rival house (the Ledger), fair or dirty.
+ * - **The rival houses** (the Copper Bell, the Bakehouse, the Cider Barn, the garrison's Watch Canteen and the
+ *   Toll-Gate Inn): the Village Ledger's fight by day, scout it, beat it fairly or dirty (rivalvisits.ts).
  * - **Bakehouse, Cider Barn:** honest work, pies, gossip, the farmers' trust.
  * - **Garrison yard:** sparring, laundry, a drink with Rhea that cools the heat.
  * - **Mara's fields, the quarry road:** the harvest and Mara; hauling stone and Silas's crates.
@@ -21,7 +31,8 @@ import type { HouseId } from "./ledger";
  * work she picks herself, written as non-graphic cards; the consent rule (GAME_PATH.MD) is untouched.
  */
 
-export type TownPlaceId = "board" | "chapel" | "warmhouse" | "copperbell" | "bakehouse" | "ciderbarn" | "garrison" | "fields" | "quarry";
+export type TownPlaceId =
+  | "board" | "chapel" | "warmhouse" | "copperbell" | "bakehouse" | "ciderbarn" | "garrison" | "fields" | "quarry" | "tollgate" | "townhall";
 
 /** What the town sees of her when she picks something to do. */
 export interface TownState {
@@ -37,6 +48,25 @@ export interface TownState {
   flags: ReadonlySet<PlotFlag>;
   /** The Village Ledger's houses she's beaten (partner, ruined, fallen). */
   houses: Partial<Record<HouseId, string>>;
+  /** Her fans (ledger.ts), set against a rival house's. */
+  fans: number;
+  /** Nights she's opened the doors: the first of them was the salt night. */
+  nights: number;
+  /** How many times she's ever done each thing in town ("place:action"), and how far along a route ("oden:route"). */
+  done: Readonly<Record<string, number>>;
+  /** The Warm House's recruits (recruits.ts), and how far up the hill each has gone. */
+  recruits: Readonly<Record<RecruitId, RecruitState>>;
+  /** Her careers by day (careers.ts): the smuggler's and the clergy's ladders. */
+  careers: Readonly<Record<CareerId, CareerState>>;
+  /** Which sibling is out (her titles by body); she, when left out. */
+  body?: "Female" | "Male";
+  /** Her garrison rank (knight.ts) and guild rank (guild.ts), or null when she hasn't joined. */
+  knightRank?: string | null;
+  guildRank?: string | null;
+  /** The town hall (townhall.ts): her seat, the chain, her share of the vote, what she still lacks, her canvassing. */
+  hall?: { seat: boolean; reeve: boolean; vote: number; missing: readonly string[]; campaign: Partial<Record<Faction, number>> };
+  /** The red book (act2.ts): which pieces she's heard of and holds, and what their ways read off her. */
+  book?: { status: Readonly<Record<PieceId, PieceStatus>>; facts: BookFacts };
 }
 
 /** What an action does. Everything is optional; gold can be earned (plus) or spent (minus). */
@@ -58,6 +88,16 @@ export interface TownOutcome {
   fatigue?: number;
   /** Added to her strongest desire meter (pussy, or cock for him), for tonight. */
   desire?: number;
+  /** A step on a route she's taken (counted in TownState.done under this name), such as "oden:route". */
+  mark?: string;
+  /** She helped a recruit up the hill, or warned them off (recruits.ts). */
+  recruit?: { id: RecruitId; act: "help" | "warn" };
+  /** A step on a career (careers.ts): joining it, a job done, or a rank up. */
+  career?: { id: CareerId; act: "join" | "job" | "promote" };
+  /** The town hall: a bloc canvassed, or she stands for Reeve (townhall.ts). */
+  hall?: { canvass?: Faction; stand?: boolean };
+  /** A piece of the red book won, and how (act2.ts). */
+  book?: { piece: PieceId; way: "trust" | "desire" | "coin" | "fists" };
 }
 
 export interface TownAction {
@@ -68,6 +108,8 @@ export interface TownAction {
   cost?: number;
   /** Why she can't, or null if she can. */
   locked?: (s: TownState) => string | null;
+  /** Left off the place's list altogether: it doesn't apply (a fight with a house she's beaten). */
+  hidden?: (s: TownState) => boolean;
   run: (s: TownState, rng: () => number) => TownOutcome;
 }
 
@@ -89,6 +131,160 @@ const pick = <T>(list: readonly T[], rng: () => number): T => list[Math.floor(rn
 /** Lines by her stage; a Legend has her own where they're written, else the Known ones. */
 type ArcLines = Record<Exclude<ArcStage, "legend">, readonly string[]> & { legend?: readonly string[] };
 const byArc = (s: TownState, lines: ArcLines, rng: () => number) => pick(s.arc === "legend" ? (lines.legend ?? lines.known) : lines[s.arc], rng);
+
+/**
+ * Oden's route (TOWN_DAY.md step 4, STORY.md: Oden "loved Wren once, hides Silas's salt, saw the night she died"):
+ * each talk with him moves it on a step, once that step's moment has come; until it has, he talks about the day.
+ * The last step only hints at what he saw the night Wren died: he tells it at Act 2's midpoint (STORY.md, "The
+ * nightshirt").
+ */
+interface OdenStep {
+  /** Whether it's time for this one yet. */
+  ready: (s: TownState) => boolean;
+  line: (s: TownState) => string;
+  effects?: Omit<TownOutcome, "line">;
+}
+
+export const ODEN_ROUTE: readonly OdenStep[] = [
+  {
+    ready: () => true,
+    line: () => "Oden pours you weak tea. \"You've her chin, you know. Wren's. She sat on that same bench the week she came up the mountain, with one bag and a black eye she wouldn't explain.\"",
+  },
+  {
+    ready: () => true,
+    line: () =>
+      "\"Your grandmother hung a red lantern in that window for twenty years,\" Oden says, \"and the whole valley pretended it was for travellers. The chapel brothers preached against her every midsummer. Then they came round the back door every winter.\" He sips his tea. \"She let them in. She wrote their names down, mind.\"",
+  },
+  {
+    // The salt night has been played: what she did there decides what he says.
+    ready: (s) => s.nights >= 1,
+    line: (s) =>
+      s.flags.has("silasOwes")
+        ? "Oden doesn't look up from his candles. \"Pell came asking about my floor. Somebody sent him to the quarry instead.\" He sets a candle in front of you, already lit. \"Wren would've done the same. She'd have charged Silas for it, mind.\""
+        : s.flags.has("silasAngry")
+          ? "\"Silas tells me somebody sold what's under my floor,\" Oden says. \"The Baron hasn't come for it yet. That means whoever bought it is saving it.\" He looks at you a long time. He doesn't ask."
+          : "Oden lowers his voice. \"You'll hear things in that bar. One of them will be about my floor. Silas keeps salt under it, and the salt feeds the valley in winter when the Baron's tolls don't.\" He doesn't ask you to keep quiet. He doesn't have to.",
+    effects: { trust: 1 },
+  },
+  {
+    ready: (s) => s.nights >= 3,
+    line: () =>
+      "Oden looks up at the Stone-Hearted's carving, its helmet shut. \"Forty years I've prayed to a god who keeps his visor down. The Warm House across the square gets answers in an afternoon.\" He laughs, not happily. \"Don't tell the Baron's chaplain I said that.\"",
+  },
+  {
+    ready: (s) => s.nights >= 5,
+    line: () =>
+      "\"I asked your grandmother to marry me once,\" Oden says, out of nowhere. \"The spring the lantern went up. She laughed so hard she fell off this bench. Then she kissed me, said no, and stayed my friend for forty years.\" He's smiling. \"Best no I ever got.\"",
+    effects: { kindness: 1 },
+  },
+  {
+    // Late in Act 1 (Pell has named the real price): he almost tells her.
+    ready: (s) => s.fans >= 250,
+    line: () =>
+      "Oden's hands stop on his beads. \"The night Wren died, I was up late with a sick lamb, and I saw something from the lane.\" He shakes his head. \"Not yet. When I'm braver. Or when you need it more than I need to keep quiet.\"",
+  },
+];
+
+/** Oden's everyday talk, by her stage, once his route is done or while its next step waits. */
+function odenEveryday(s: TownState, rng: () => number): string {
+  return byArc(s, {
+    sheltered: [
+      "Oden pours you weak tea and talks about the roof. It leaks. It has leaked since Wren was your age.",
+      "\"Your grandmother kept the best ale on the pass and the worst secrets,\" Oden says. \"I'll tell you about the ale.\"",
+    ],
+    curious: ["Oden notices you blush when a soldier passes the window. He pretends he didn't. \"Wren was shy too, once,\" he says. \"Once.\""],
+    willing: ["Oden sighs into his tea. \"They're saying things about your tavern. The same things they said about hers.\" He doesn't say it's wrong. He just says it."],
+    known: ["\"You don't need my blessing,\" Oden says. \"But you have it, for what it's worth. Wren had it too. Even with the lantern.\""],
+    legend: ["Oden pours the tea and doesn't mention the song, though he clearly knows the second verse. \"Sit a while,\" he says. \"Quiet's good for a body. Even a famous one.\" It is, annoyingly."],
+  }, rng);
+}
+
+/** Helping a recruit up the hill, or warning them off, at the Warm House door (recruits.ts): one of each per recruit. */
+function recruitActions(): TownAction[] {
+  return RECRUIT_IDS.flatMap((id): TownAction[] => {
+    const r = RECRUITS[id];
+    const committed = (s: TownState) => s.recruits[id].stage >= 3;
+    return [
+      {
+        id: `help_${id}`,
+        label: `Put in a word for ${r.name} with the priestesses`,
+        hours: 0.5,
+        hidden: committed,
+        run: (s) => ({
+          line:
+            s.recruits[id].stage === 0
+              ? `You tell a priestess about ${r.short}, ${r.who}, and how tight ${r.female ? "she" : "he"} looks. She writes the name down with a little smile. Tomorrow someone will knock.`
+              : `You tell the priestesses ${r.short} is nearly ready. They thank you warmly, and a deacon presses a ribbon into your own hand, \"for later.\"`,
+          ...HELP,
+          recruit: { id, act: "help" },
+        }),
+      },
+      {
+        id: `warn_${id}`,
+        label: `Warn ${r.name} off`,
+        hours: 0.5,
+        hidden: committed,
+        run: (s) => ({
+          line:
+            s.recruits[id].stage === 0
+              ? `You catch ${r.short} looking at the Warm House door and steer ${r.female ? "her" : "him"} off for a cider and a long talk. ${r.female ? "She" : "He"} laughs it off. ${r.female ? "She" : "He"} also walks home the long way.`
+              : `You take ${r.short} aside at the Warm House door. \"You don't have to go back.\" ${r.female ? "She" : "He"} looks at the ribbon a long time, then puts it in a pocket. Oden will hear you did this.`,
+          ...WARN,
+          recruit: { id, act: "warn" },
+        }),
+      },
+    ];
+  });
+}
+
+/** What she sees of the recruits at the Warm House door: each as far up the hill as they've gone. */
+function recruitsSeen(s: TownState): string[] {
+  return RECRUIT_IDS.map((id) => RECRUITS[id].atDoor[s.recruits[id].stage]);
+}
+
+/** A line naming her rank on a career at its place, once she's joined it. */
+function titleLine(s: TownState, id: CareerId, say: (title: string) => string): string[] {
+  const title = careerTitle(id, s.careers[id], s.body !== "Male");
+  return title ? [say(title)] : [];
+}
+
+/** The house directly above her on the Ledger that she hasn't beaten yet, or null when none is left. */
+function nextRival(s: TownState) {
+  return HOUSES.find((h) => !s.houses[h.id]) ?? null;
+}
+
+/**
+ * The red book's piece held at a place (act2.ts): once she's heard of it, each way of winning it that fits its holder,
+ * with what it still needs. Gone once she holds it.
+ */
+function bookActions(piece: PieceId): TownAction[] {
+  const def = PIECES[piece];
+  return def.ways.map((w): TownAction => ({
+    id: `book_${piece}_${w.way}`,
+    label: `The red book: ${w.label}`,
+    hours: 1,
+    cost: w.gold,
+    hidden: (s) => s.book?.status[piece] !== "heard",
+    locked: (s) => (s.book ? w.needs(s.book.facts) : "not yet"),
+    run: () => ({
+      line: `${w.line} (You have ${def.name}.)`,
+      heat: w.heat,
+      corruption: w.corruption,
+      respect: w.respect,
+      fatigue: w.fatigue,
+      book: { piece, way: w.way },
+    }),
+  }));
+}
+
+/** A rival house's own actions shut once she's ruined it. */
+function shutIfRuined(house: HouseId, actions: readonly TownAction[]): TownAction[] {
+  return actions.map((action) => ({
+    ...action,
+    locked: (s) => (s.houses[house] === "ruin" ? "it's shut" : (action.locked?.(s) ?? null)),
+    hidden: (s) => s.houses[house] === "ruin" || (action.hidden?.(s) ?? false),
+  }));
+}
 
 export const TOWN_PLACES: Record<TownPlaceId, TownPlace> = {
   board: {
@@ -150,6 +346,89 @@ export const TOWN_PLACES: Record<TownPlaceId, TownPlace> = {
           guests: knownUp(s) ? 2 : 0,
         }),
       },
+      // ---- The rest of the day-job ladder (TOWN_DAY.md section 5, build step 7) ----
+      {
+        id: "sacks",
+        label: "Carry flour sacks for the mill",
+        hours: 2,
+        locked: notTooTired,
+        run: () => ({ line: "Two hours of flour sacks up the mill's ladder. You come down white to the eyebrows. Five gold, and the miller's boys stop calling you \"the new girl.\"", gold: 5, fatigue: 3, trust: 1 }),
+      },
+      {
+        id: "rounds",
+        label: "Run the Bakehouse's bread round",
+        hours: 1,
+        locked: notTooTired,
+        run: () => ({ line: "Loaves to twenty doors. Every door wants to chat. Three gold, and twenty households now know where your tavern is.", gold: 3, fatigue: 1, fans: 1 }),
+      },
+      {
+        id: "lunch",
+        label: "Serve at a noble's lunch on the keep road",
+        hours: 2,
+        locked: atLeast("curious", "Curious"),
+        run: (s, rng) => ({
+          line: byArc(s, {
+            sheltered: [""],
+            curious: ["You pour wine for six nobles in a garden on the keep road. One keeps dropping his napkin so you'll bend for it. Twelve gold, and he'll be at your bar."],
+            willing: ["You serve the nobles' lunch in a borrowed apron and very little else under it, by request. Twelve gold, and the host asks for you by name next time."],
+            known: ["The nobles' lunch is mostly an excuse to look at you. You let them. Twelve gold, and three of them book a table tonight."],
+          }, rng),
+          gold: 12,
+          flirt: 1,
+          fame: 1,
+          guests: knownUp(s) ? 2 : 1,
+        }),
+      },
+      {
+        id: "shift",
+        label: "Work a shift behind a rival's bar",
+        hours: 3,
+        locked: (s) => atLeast("curious", "Curious")(s) ?? (nextRival(s) ? null : "no house left above you"),
+        run: (s) => {
+          const house = nextRival(s)!;
+          return {
+            line: `Three hours pulling pints at ${house.name} for ${house.boss}. Eight gold, sore feet, and you know exactly how they keep their regulars now: you've scouted it from the inside.`,
+            gold: 8,
+            fatigue: 2,
+            flirt: 1,
+            mark: `${RIVAL_PLANS[house.id].place}:scout_${house.id}`,
+          };
+        },
+      },
+      {
+        id: "bath",
+        label: "Attend at the bathhouse by the mill race",
+        hours: 2,
+        locked: atLeast("willing", "Willing"),
+        run: (_s, rng) => ({
+          line: pick(
+            [
+              "Two hours with a sponge and a lot of steam. The bathers are very clean by the end, and very grateful. Eighteen gold.",
+              "The bathhouse wants an attendant \"with a friendly touch.\" You have one. Eighteen gold, and you leave pink from more than the steam.",
+            ],
+            rng,
+          ),
+          gold: 18,
+          lust: 1,
+          respect: -1,
+          desire: 12,
+          fatigue: 1,
+        }),
+      },
+      {
+        id: "escort",
+        label: "Escort travellers down the pass (guild work)",
+        hours: 3,
+        locked: (s) => (s.guildRank ? notTooTired(s) : "a guild card"),
+        run: () => ({ line: "Three merchants and a nervous mule down the pass road. A wolf thinks about it and changes its mind. Twenty gold, and the merchants promise to stop at yours on the way back.", gold: 20, fatigue: 3, guests: 1, fans: 1 }),
+      },
+      {
+        id: "gate",
+        label: "Hold the gate for the garrison (guild work)",
+        hours: 2,
+        locked: (s) => (s.knightRank ? notTooTired(s) : "a place in the garrison"),
+        run: () => ({ line: "Two hours at the west gate with a spear and a list. You turn back one drunk and one goat. Ten gold, and Rhea's sergeant says you'll do.", gold: 10, fatigue: 2, heat: -1, respect: 1 }),
+      },
       {
         id: "delivery",
         label: "A \"private delivery\" for a lonely customer",
@@ -186,23 +465,15 @@ export const TOWN_PLACES: Record<TownPlaceId, TownPlace> = {
         label: "Talk to Brother Oden",
         hours: 0.5,
         locked: (s) => (s.flags.has("odenShut") ? "Oden's gone" : null),
-        run: (s, rng) => ({
-          line:
-            s.corruption >= 80
-              ? "Oden listens, and doesn't look at you. \"Wren sold secrets too, you know. She never sold people.\" He goes back to his candles."
-              : byArc(s, {
-                  sheltered: [
-                    "Oden pours you weak tea. \"You've her chin, you know. Wren's. She sat on that same bench the week she came up the mountain.\"",
-                    "\"Your grandmother kept the best ale on the pass and the worst secrets,\" Oden says. \"I'll tell you about the ale.\"",
-                  ],
-                  curious: ["Oden notices you blush when a soldier passes the window. He pretends he didn't. \"Wren was shy too, once,\" he says. \"Once.\""],
-                  willing: ["Oden sighs into his tea. \"They're saying things about your tavern. The same things they said about hers.\" He doesn't say it's wrong. He just says it."],
-                  known: ["\"You don't need my blessing,\" Oden says. \"But you have it, for what it's worth. Wren had it too. Even with the lantern.\""],
-                  legend: ["Oden pours the tea and doesn't mention the song, though he clearly knows the second verse. \"Sit a while,\" he says. \"Quiet's good for a body. Even a famous one.\" It is, annoyingly."],
-                }, rng),
-          kindness: 1,
-          respect: s.corruption < 40 ? 1 : 0,
-        }),
+        run: (s, rng) => {
+          const respect = s.corruption < 40 ? 1 : 0;
+          if (s.corruption >= 80) {
+            return { line: "Oden listens, and doesn't look at you. \"Wren sold secrets too, you know. She never sold people.\" He goes back to his candles.", kindness: 1 };
+          }
+          const step = ODEN_ROUTE[s.done["oden:route"] ?? 0];
+          if (step?.ready(s)) return { kindness: 1, respect, ...step.effects, line: step.line(s), mark: "oden:route" };
+          return { line: odenEveryday(s, rng), kindness: 1, respect };
+        },
       },
       {
         id: "candle",
@@ -224,6 +495,7 @@ export const TOWN_PLACES: Record<TownPlaceId, TownPlace> = {
           heat: 1,
         }),
       },
+      ...bookActions("cover"),
     ],
   },
 
@@ -235,6 +507,8 @@ export const TOWN_PLACES: Record<TownPlaceId, TownPlace> = {
       s.arc === "sheltered"
         ? "A priestess at the door smiles like she already knows exactly how tight you are, and offers you a ribbon."
         : "The priestess at the door greets you by name now, and doesn't bother offering the ribbon.",
+      ...recruitsSeen(s),
+      ...titleLine(s, "clergy", (t) => `You serve here as ${t} of Veyra. The priestesses kiss your cheek as you pass.`),
     ],
     actions: [
       {
@@ -285,54 +559,31 @@ export const TOWN_PLACES: Record<TownPlaceId, TownPlace> = {
           fatigue: 3,
         }),
       },
+      ...recruitActions(),
+      ...careerActions("clergy"),
     ],
   },
 
   copperbell: {
     id: "copperbell",
     title: "The Copper Bell",
-    describe: (s) =>
-      s.houses.copperBell
-        ? ["The Copper Bell is quieter since you beat it. Jory Bell nods to you across the room, half friend, half rival, all business."]
-        : ["The biggest tavern in Tarven, and it knows it. Jory Bell is polishing the same tankard he was polishing last week, and watching you count his customers."],
-    actions: [
-      {
-        id: "scout",
-        label: "Buy a drink and scout the room (2 gold)",
-        hours: 0.5,
-        cost: 2,
-        run: (_s, rng) => ({
-          line: pick(
-            [
-              "You nurse a cider and watch. Jory pours fast, waters the ale, and lets his regulars run a tab. You'll steal the fast pouring.",
-              "Two-for-One Thursdays, a bard who only knows three songs, and a cook who's actually good. You leave with ideas, and a few of his regulars ask where your place is.",
-            ],
-            rng,
-          ),
-          fans: 1,
-          guests: 1,
-        }),
-      },
-      {
-        id: "rumour",
-        label: "Whisper that Jory waters his ale",
-        hours: 0.5,
-        locked: (s) => (s.houses.copperBell ? "you've already beaten him" : null),
-        run: () => ({
-          line: "A word at the bar, a word at the door. By noon half the square \"always knew\" Jory watered his ale. It's true, which almost makes it worse. A few of his drinkers will try yours tonight.",
-          guests: 2,
-          corruption: 3,
-          kindness: -1,
-        }),
-      },
+    describe: (s) => [
+      ruinedLine("copperBell", s) ??
+        (s.houses.copperBell
+          ? "The Copper Bell is quieter since you beat it. Jory Bell nods to you across the room, half friend, half rival, all business."
+          : "The biggest tavern in Tarven, and it knows it. Jory Bell is polishing the same tankard he was polishing last week, and watching you count his customers."),
     ],
+    actions: rivalActions("copperBell"),
   },
 
   bakehouse: {
     id: "bakehouse",
     title: "The Bakehouse",
-    describe: () => ["Warm bread, pies cooling on the sill and one long table full of gossip. Goodwife Tansy runs the ovens and knows everyone's business, including yours."],
-    actions: [
+    describe: (s) => [
+      ruinedLine("bakehouse", s) ??
+        "Warm bread, pies cooling on the sill and one long table full of gossip. Goodwife Tansy runs the ovens and knows everyone's business, including yours.",
+    ],
+    actions: shutIfRuined("bakehouse", [
       {
         id: "ovens",
         label: "Help Tansy at the ovens",
@@ -366,16 +617,18 @@ export const TOWN_PLACES: Record<TownPlaceId, TownPlace> = {
           fans: 1,
         }),
       },
-    ],
+      ...rivalActions("bakehouse"),
+    ]),
   },
 
   ciderbarn: {
     id: "ciderbarn",
     title: "Hollin's Cider Barn",
-    describe: () => [
-      "Half the farmers in Tarven drink here on credit, sitting on hay bales. Hollin writes every cup in his little book, and the chickens wander in and out like paying customers.",
+    describe: (s) => [
+      ruinedLine("cider", s) ??
+        "Half the farmers in Tarven drink here on credit, sitting on hay bales. Hollin writes every cup in his little book, and the chickens wander in and out like paying customers.",
     ],
-    actions: [
+    actions: shutIfRuined("cider", [
       {
         id: "press",
         label: "Help press the apples",
@@ -397,14 +650,19 @@ export const TOWN_PLACES: Record<TownPlaceId, TownPlace> = {
           kindness: 1,
         }),
       },
-    ],
+      ...rivalActions("cider"),
+    ]),
   },
 
   garrison: {
     id: "garrison",
     title: "The Garrison Yard",
-    describe: () => [
+    describe: (s) => [
       "Soldiers drilling half-heartedly. Two of them are checking their phones under their helmets. Up on the keep's tower the relay stone glows: every message in town goes through it, and Pell reads them all.",
+      ruinedLine("canteen", s) ??
+        (s.houses.canteen
+          ? "Sergeant Pike's Watch Canteen is round the side of the yard, and his lads wave you over."
+          : "Round the side of the yard, Sergeant Pike's Watch Canteen: the garrison's own drinking room, and a rival of yours on the Ledger."),
     ],
     actions: [
       {
@@ -445,6 +703,7 @@ export const TOWN_PLACES: Record<TownPlaceId, TownPlace> = {
           trust: s.flags.has("rheaDoubts") ? 1 : 0,
         }),
       },
+      ...rivalActions("canteen"),
     ],
   },
 
@@ -486,14 +745,70 @@ export const TOWN_PLACES: Record<TownPlaceId, TownPlace> = {
           trust: 1,
         }),
       },
+      ...bookActions("silver"),
+    ],
+  },
+
+  tollgate: {
+    id: "tollgate",
+    title: "The Toll-Gate Inn",
+    describe: (s) => [
+      ruinedLine("tollgate", s) ??
+        (s.houses.tollgate
+          ? "The Toll-Gate Inn leans against the west gate, all clean sheets and lace. Agnes Crale lifts her pen from the register when you come in, and puts it down again."
+          : "The Toll-Gate Inn leans against the west gate, all clean sheets and lace. Agnes Crale sits by the door with a register, and writes down everyone who comes in. Everyone."),
+    ],
+    actions: rivalActions("tollgate"),
+  },
+
+  townhall: {
+    id: "townhall",
+    title: "The Market Cross",
+    describe: (s) => {
+      const hall = s.hall;
+      const lines = ["Tarven's council meets on the market cross's steps, as it has since before the Baron: six old men, two old women and a dog that votes with whoever feeds it."];
+      if (!hall?.seat) lines.push("You've no seat on it. The first house in Tarven gets one; you're not that yet.");
+      else if (hall.reeve) lines.push("The Reeve's chair at the top of the steps is yours. The Law board hangs on the cross behind it.");
+      else {
+        lines.push(`You've a seat on the steps now, First in Tarven. The town's vote stands at ${Math.round(hall.vote * 100)}% for you.`);
+        lines.push(hall.missing.length ? `To take the Reeve's chain you still need ${hall.missing.join(" and ")}.` : "The chain is yours for the asking: over half the town would vote for you.");
+      }
+      return lines;
+    },
+    actions: [
+      ...FACTIONS.map(
+        (f): TownAction => ({
+          id: `canvass_${f}`,
+          label: CANVASS[f].label,
+          hours: CANVASS[f].hours,
+          cost: CANVASS[f].cost,
+          hidden: (s) => !s.hall?.seat,
+          locked: (s) => ((s.hall?.campaign[f] ?? 0) >= CANVASS_MOST ? "they've heard all you have to say" : null),
+          run: () => ({ line: CANVASS[f].line, hall: { canvass: f } }),
+        }),
+      ),
+      {
+        id: "stand",
+        label: "Stand for Reeve",
+        hours: 1,
+        hidden: (s) => !s.hall?.seat || s.hall.reeve,
+        locked: (s) => (s.hall?.missing.length ? `needs ${s.hall.missing.join(", ")}` : null),
+        run: () => ({
+          line: "The town gathers round the cross. Hands go up, more than half of them, and the dog barks once. The old Reeve takes off his chain and hangs it round your neck. Reeve of Tarven.",
+          fame: 3,
+          respect: 1,
+          hall: { stand: true },
+        }),
+      },
     ],
   },
 
   quarry: {
     id: "quarry",
     title: "The Quarry Road",
-    describe: () => [
+    describe: (s) => [
       "The road climbs east toward the quarry and the high pass: stone dust, shouting, and men who don't ask questions. Up there the phones go quiet, which is exactly why Silas's crew likes it.",
+      ...titleLine(s, "smuggler", (t) => `Silas's crew nod to you on the road: their ${t}.`),
     ],
     actions: [
       {
@@ -526,6 +841,8 @@ export const TOWN_PLACES: Record<TownPlaceId, TownPlace> = {
           corruption: 3,
         }),
       },
+      ...careerActions("smuggler"),
+      ...bookActions("routes"),
     ],
   },
 };

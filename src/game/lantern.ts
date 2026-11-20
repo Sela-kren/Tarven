@@ -201,6 +201,8 @@ export function tamsin(): Girl {
 /** A booking in the room upstairs: who's up there with her, and for how long yet. */
 export interface Booking {
   girlId: string;
+  /** The guest who went up, so the game can walk them up the stairs and back down (upstairs.ts). */
+  guestId: number;
   /** What the guest is called, and their sort; they've left the table, so this is all that's kept. */
   label: string;
   kind: GuestKind;
@@ -553,7 +555,7 @@ export class Lantern {
       return;
     }
     girl.fatigue++;
-    this.booking = { girlId: girl.id, label: host.nameOf(guest), kind: guest.kind, timeLeft: BOOKING_TIME, price: chat.price, tired, rough, drunk };
+    this.booking = { girlId: girl.id, guestId: guest.id, label: host.nameOf(guest), kind: guest.kind, timeLeft: BOOKING_TIME, price: chat.price, tired, rough, drunk };
     chat.reply = [
       narrate(`${girl.name} looks them over and nods. "Give me a moment, then send them up."`),
       narrate("They climb the stairs. Up on the landing, the room's door lamp is lit."),

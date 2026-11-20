@@ -104,6 +104,11 @@ export interface TownFacts {
   role?: RoleId;
   /** The Consent switch (GAME_PATH.MD): off, hands may land without asking. Unset reads as On. */
   consentOff?: boolean;
+  /**
+   * The laws she's passed as Reeve (townhall.ts), 0 tame to 2 wild: Free use, Public affection, the Dress code. Unset
+   * before she's Reeve. For her, they follow the Consent switch (TOWN_DAY.md 6.3): On, they ask; Off, hands land.
+   */
+  laws?: { freeUse: number; publicAffection: number; dressCode: number };
   /** Passed out: nothing is said to her or done to her, whatever the switch. */
   passedOut?: boolean;
 }
@@ -2164,7 +2169,29 @@ const ADULT_PASSING: readonly TownLine[] = [
 ];
 
 /** What townsfolk call out to her as she walks by: the town's talk and the adult script together. */
-export const PASSING: readonly TownLine[] = [...BASE_PASSING, ...ADULT_PASSING];
+/** The town under her laws (townhall.ts, TOWN_DAY.md 6.2 and 6.3): what the street says, and does, once they pass. */
+const lawAt = (law: "freeUse" | "publicAffection" | "dressCode", level: number): When => (f) => (f.laws?.[law] ?? 0) >= level;
+const LAW_PASSING: readonly TownLine[] = [
+  ...group("law.freeUse", "role", lawAt("freeUse", 1), "lust", [
+    ["Free use, the crier says. Your law, Reeve. So I'm asking proper: may I?", { act: "proposition", ask: true }],
+    ["Devotees only, the law says. I've a ribbon. May I, Reeve?", { act: "proposition", ask: true }],
+    ["Everyone, the new law says. Everyone includes me, Reeve. May I?", { act: "proposition", ask: true, w: lawAt("freeUse", 2) }],
+    ["*squeezes your arse* It's the law now, Reeve. Your law. Ta!", { act: "grope", lands: true, w: lawAt("freeUse", 2) }],
+    ["*hand up your skirt* Free use! Don't mind me, Reeve!", { b: F, act: "grope", lands: true, w: lawAt("freeUse", 2) }],
+    ["*hand down your breeches* Free use! Don't mind me, Reeve!", { b: M, act: "grope", lands: true, w: lawAt("freeUse", 2) }],
+  ], "rep.freeUse"),
+  ...group("law.affection", "role", lawAt("publicAffection", 1), "lust", [
+    ["Touching's allowed now, Reeve. May I hold your hand? And then other bits?", { act: "proposition", ask: true }],
+    ["Two farmers at it behind the well! Legal now! Your law, Reeve!", { reply: ["(I did that. Oh gods, I did that.)", "(...Behind the well? Bold.)", "Good for them.", "Tell them to mind the bucket."] }],
+    ["Sex anywhere, eh, Reeve? The baker's doing it in the flour. Literally.", { w: lawAt("publicAffection", 2), reply: ["(I'm never eating bread again.)", "(In the flour? Really?)", "Then the bread's blessed.", "I'll have a loaf of that."] }],
+  ]),
+  ...group("law.bare", "dress", (f) => lawAt("dressCode", 2)(f) && f.dress !== "dressed", "lust", [
+    ["Bare's legal now, Reeve, and you're the first to use it. Bravo!", { reply: ["(It's still mortifying. Legally.)", "(Legal. Still blushing.)", "Somebody had to.", "Leading by example."] }],
+    ["The Reeve in the altogether! Is that a law or a promise?", { reply: ["(A mistake, mostly.)", "(A bit of both.)", "A promise.", "Both. Vote again and find out."] }],
+  ]),
+];
+
+export const PASSING: readonly TownLine[] = [...BASE_PASSING, ...ADULT_PASSING, ...LAW_PASSING];
 const LINE_BY_ID: ReadonlyMap<string, TownLine> = new Map(PASSING.map((line) => [line.id, line]));
 
 const ADULT_REPLIES: Readonly<Record<string, ReplyPool>> = {

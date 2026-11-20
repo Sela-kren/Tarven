@@ -1,7 +1,8 @@
 /*
  * The house plans: a blueprint tray along the bottom of the screen while build mode is open. Everything on it
  * is a picture tile, like a building game's catalogue: the tools, the furniture (rendered from the room's own
- * models), what's in storage and the upgrades. Names and prices show on hover in the note line underneath.
+ * models), what's in storage and the upgrades. Every tile has its name written under it, and what it does shows
+ * in a box just above it on hover, where the eye already is.
  * The board and plank colours come from pixel.css.
  */
 #build {
@@ -289,15 +290,15 @@ body.building #prompt {
   background: rgba(8, 20, 38, 0.85);
 }
 
-/* A name under the picture, for rows of the same picture. */
+/* The name under the picture, so a row of the same picture (the lantern and its switch, the house rules) reads apart. */
 #build .tile .caption {
   position: absolute;
-  left: -6px;
-  right: -6px;
-  top: calc(100% + 2px);
-  font: 400 11px/1.1 var(--font);
+  left: -9px;
+  right: -9px;
+  top: calc(100% + 3px);
+  font: 400 12px/1.15 var(--font);
   text-align: center;
-  color: var(--text);
+  color: var(--text-bright);
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -330,8 +331,65 @@ body.building #prompt {
   color: #9cc4f0;
 }
 
-/* Rows with captions under them need room for the names. */
-#build .tree .tiles,
-#build .tiles:has(.caption) {
-  padding-bottom: 26px;
+/* A tile with its name under it, outside the tile so its clipped corners don't cut the name off. */
+#build .tile-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 64px;
+}
+
+#build .tile-cell > .caption {
+  position: static;
+  width: 84px;
+}
+
+/* Wider gaps where names sit under the tiles, so neighbouring names don't touch. */
+#build .tiles:has(.tile-cell) {
+  column-gap: 26px;
+}
+
+/* ---------- The tip: what the tile under the pointer is and does, just above it ---------- */
+
+.build-tip {
+  position: fixed;
+  z-index: 60;
+  display: none;
+  max-width: 340px;
+  padding: 8px 11px 9px;
+  font: 400 14px/1.35 var(--font);
+  color: var(--text-bright);
+  background: rgba(8, 20, 38, 0.96);
+  box-shadow: inset 0 0 0 2px #4a6f9c, 3px 3px 0 rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.build-tip.on {
+  display: block;
+}
+
+.build-tip .tip-name {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  font: 700 15px/1.2 var(--font);
+}
+
+.build-tip .tip-cost {
+  font-weight: 400;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.build-tip .tip-owned {
+  font-weight: 400;
+  color: #7fd67a;
+  white-space: nowrap;
+}
+
+.build-tip .tip-text {
+  margin-top: 4px;
+  color: var(--text);
 }

@@ -61,6 +61,11 @@ const CORE = { minCol: -7, maxCol: 6, minRow: -5, maxRow: 4 };
 const EAST_WING_LAST_RESERVED_ROW = 2;
 /** The strip behind the chimney, which has to stay a wall. */
 const CHIMNEY = { col: -8, minRow: -2, maxRow: 0 };
+/**
+ * The stair hall west of the taproom, north of the chimney (upstairs.ts): its ground can't be built on, and the west
+ * wall leaves a doorway into it along this row.
+ */
+export const STAIR_HALL_LOT = { minCol: -13, maxCol: -8, minRow: -5, maxRow: -3, doorRow: -4 } as const;
 
 export const OUTER_WALL = 0.4;
 const DRAWN_WALL = 0.2;
@@ -182,8 +187,11 @@ const isCore = (col: number, row: number) =>
 
 const isBedroomSide = (col: number, row: number) => col > CORE.maxCol && row <= EAST_WING_LAST_RESERVED_ROW;
 
+const isStairHall = (col: number, row: number) =>
+  col >= STAIR_HALL_LOT.minCol && col <= STAIR_HALL_LOT.maxCol && row >= STAIR_HALL_LOT.minRow && row <= STAIR_HALL_LOT.maxRow;
+
 const isReserved = (col: number, row: number) =>
-  isBedroomSide(col, row) || (col === CHIMNEY.col && row >= CHIMNEY.minRow && row <= CHIMNEY.maxRow);
+  isBedroomSide(col, row) || isStairHall(col, row) || (col === CHIMNEY.col && row >= CHIMNEY.minRow && row <= CHIMNEY.maxRow);
 
 const NEIGHBOURS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
@@ -192,7 +200,17 @@ export class HousePlan {
   private readonly bought = new Set<string>();
 
   constructor(readonly layout: HouseLayout) {
+    // Floor bought before the stair hall stood there is taken back (an older save's), so the hall has its ground:
+    // walls drawn on it go, and furniture on it goes into storage.
+    const hall = layout.tiles.filter(([col, row]) => isStairHall(col, row));
+    if (hall.length > 0) layout.tiles = layout.tiles.filter(([col, row]) => !isStairHall(col, row));
     for (const [col, row] of layout.tiles) this.bought.add(key(col, row));
+    if (hall.length > 0) {
+      layout.walls = layout.walls.filter((edge) => this.wallSidesOwned(edge));
+      const inHall = (item: Placed) => isStairHall(Math.floor(item.x), Math.floor(item.z));
+      layout.stored.push(...layout.furniture.filter(inHall).map((item) => item.kind));
+      layout.furniture = layout.furniture.filter((item) => !inHall(item));
+    }
   }
 
   isOwned(col: number, row: number): boolean {
@@ -316,7 +334,8 @@ export class HousePlan {
         add({ minX, maxX, minZ: row - OUTER_WALL, maxZ: row }, isBedroomSide(col, row - 1) ? SILL_HEIGHT : WALL_HEIGHT);
       }
       if (!this.isOwned(col, row + 1)) add({ minX, maxX, minZ: row + 1, maxZ: row + 1 + OUTER_WALL }, SILL_HEIGHT);
-      if (!this.isOwned(col - 1, row)) {
+      const stairDoor = col === CORE.minCol && row === STAIR_HALL_LOT.doorRow;
+      if (!this.isOwned(col - 1, row) && !stairDoor) {
         add({ minX: col - OUTER_WALL, maxX: col, minZ: row, maxZ: row + 1 }, WALL_HEIGHT);
       }
       if (!this.isOwned(col + 1, row) && !(col === CORE.maxCol && row <= EAST_WING_LAST_RESERVED_ROW)) {

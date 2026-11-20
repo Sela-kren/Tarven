@@ -2279,17 +2279,25 @@ export class Fight {
     this.crowdSays("come");
     this.mateSays("come");
     this.comes++;
-    // More in him (KP's ejaculation stock): he's out of the scene, but not the fight, and slower to get there again.
+    // More in him (KP's ejaculation stock), slower to get there again. KP's rule (RemtairyEnemySex.js): came in her,
+    // he keeps going as he was, the scene held; pulled out to come on her, he lets go of her (a helper just leaves
+    // his slot), and he's back in the fight.
     if (this.foe.stock > 1) {
       this.foe.stock--;
       this.foe.pleasure = 0;
       this.foe.rate *= AFTER_COME_RATE;
+      const inHer = area === "mouth" || area === "pussy" || area === "butt";
+      const inScene = this.taken?.foe === this.actor || this.joined.some((j) => j.foe === this.actor);
+      if (inHer && inScene) {
+        this.say("their:again", `The ${this.name} isn't done yet. He doesn't even pull out, and keeps going.`);
+        return true;
+      }
       if (this.taken?.foe === this.actor) {
         this.taken = null;
         this.joined = [];
       }
       this.joined = this.joined.filter((j) => j.foe !== this.actor);
-      this.say("their:again", `The ${this.name} isn't done yet. He catches his breath and comes back for more.`);
+      this.say("their:recover", `The ${this.name} isn't done yet. He catches his breath and comes back for more.`);
       return true;
     }
     this.foeOut("spent");

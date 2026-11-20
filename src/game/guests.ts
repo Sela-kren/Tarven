@@ -123,6 +123,11 @@ export class GuestActor {
   private mode: Mode = "walking-in";
   private sitProgress = 0;
   private plate: Object3D | null = null;
+  /**
+   * Where they go when they leave, if not out of the front door: the way up the stairs to a room (upstairs.ts
+   * UP_THE_STAIRS), from its first point on. Gone at its end, as at the front door.
+   */
+  exitWay: readonly Vec2[] | null = null;
 
   constructor(
     body: Body,
@@ -241,8 +246,15 @@ export class GuestActor {
 
   /** Off out of the door from wherever they're standing (after a brawl that went either way). */
   private leaveFromHere(): void {
-    this.walker.setPath([...this.route(this.here, this.doorstep), ...[...this.entrance].reverse()]);
+    this.walker.setPath(this.wayOut(this.here));
     this.mode = "walking-out";
+  }
+
+  /** From here out of the front door, or up the stairs when that's where they're going. */
+  private wayOut(from: Vec2): Vec2[] {
+    const up = this.exitWay;
+    if (up) return [...this.route(from, up[0]), ...up.slice(1)];
+    return [...this.route(from, this.doorstep), ...[...this.entrance].reverse()];
   }
 
   /**
@@ -326,7 +338,7 @@ export class GuestActor {
         this.sitProgress = Math.max(0, this.sitProgress - dt / SIT_TIME);
         this.applySit();
         if (this.sitProgress === 0) {
-          this.walker.setPath([...this.route(this.seat.approach, this.doorstep), ...[...this.entrance].reverse()]);
+          this.walker.setPath(this.wayOut(this.seat.approach));
           this.mode = "walking-out";
         }
         break;

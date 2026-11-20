@@ -768,7 +768,12 @@ Letters are the story's reward for playing the systems. Each one unlocks at a mi
 
 ## 11. Act 2: The Red Book (later, after Tarven: 501 → 1,500 fans)
 
-> **Later.** Not part of the current scope. Act 2 starts after Chapter 1 ends at 501 fans. The fan numbers below are from before the Tarven chapter and will be redone when we get there. Some of its beats may move into Tarven (Sabine's visit, Oden and the nightshirt).
+> **Built (20 Nov 2026, `src/game/act2.ts`, `tests/act2.test.ts`).** Act 2 starts once Chapter 1 ends (First in Tarven), on the fan numbers below. What's in:
+> - **The beats** as dawn cards with her choices, one a morning by fans: New terms (600: the pass opens, she's 4th; Oden has the key), The velvet card (700: hear Sabine out, ask about Wren, or throw her out; Mara's pages), The nightshirt (850: Oden, or Silas if the chapel's shut, tells what he saw; expose Pell on Zane's feed (heat +4, corruption, fame), take it to Rhea (with her doubts), or keep it), The first Ledger (1,000: the Ledger read out; Grig's men come to break her furniture: hold the room (a brawl night: win a fight that night and Silas's map is hers to claim) or pay them off), The inspection (1,150: a clean room and Respect 0+ takes the Stag's diners, or a bribe does), The turn (1,300: Father's letter, by Ash if he's hidden: alive, married into an orc clan, sorry; the Baron's riders took the last pages at the border and they're in the keep's cells; the toll doubles and every rival's desperate), and the second Ledger (1,500), which ends the act (`storyAct` 3).
+> - **The Pass Ledger:** the Stag (1,200), the Velvet House (1,000) and the Rat (800) grow up to 15 a night (20 once desperate); the one above her fights back (poach, talk, a hired thug). One she pushes to the bottom comes to her door: buy it (400 / 300 / 200 gold, 40% of its fans), partner (30% and 8 gold a night) or ruin it (50%, corruption 15, heat 2), and its boss gives up their secret. Owned houses count for Master of the Pass.
+> - **The red book:** Oden's key (trust: his route at his doubts and trust 8; coin, only if the chapel's shut, from the Baron's men), Mara's silver pages (trust 10; desire, Willing and four talks; coin, if she's arrested, from the garrison's clerk; fists, 10 brawls won) and Silas's toll routes (trust, if he owes her or she's his partner; desire, Known and in his crew; coin, 100 gold; fists, if she held the room). Each is heard of at a beat and won by day at its holder's place. The last pages are Act 3's, in the keep's cells.
+>
+> **Not yet:** the journal's Book page (the Ledger cards say how many pieces she holds), Pell's fate after he's exposed carried into Act 3, managers for bought houses, and named rival bosses as guests.
 
 The debt is 300, paid in three instalments of 100 that Pell collects in Chapter 1 (at the Watch Canteen, the Toll-Gate Inn and the Copper Bell), or "forgotten" if she promises Pell the book. Missing one carries the shortfall into the next instalment and puts her in the Baron's debt (a debuff); it never ends the run. The rivals open their doors. Each beat carries a rumour about one piece of the book, won one of the four ways (section 6). Upstairs rooms open in House Plans. Nights between beats are free service nights, with the usual rumours and table talk.
 
@@ -954,6 +959,16 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 
 ## 13. Act 3: Last Call (later: 1,500 fans → top house)
 
+> **Built (20 Nov 2026, `src/game/act3.ts`, `tests/act3.test.ts`),** after Act 2, as dawn cards with her choices, one a morning:
+> - **Father's trail** (after the second Ledger): the last pages are in the keep's cells (decided: only his pages). Through Rhea (with her doubts, or after the nightshirt went to her), Silas's tunnel (if he owes her or she holds his map), Kestrel's adventurers (a guild card and 80 gold), or Pell's price (120 gold and a name, unless he was exposed). None open: it comes round again 3 nights later.
+> - **The rival night** (1,750): the standing rival closest to her on the Ledger. Fair (the Stag: Respect 2 and trust 8; the Velvet House: the Lantern hung and not rotten; the Rat: 15 brawls won and Silas's crew), dirty (laxatives and the silver let out; blackmailing the Velvet's clients; informing on Grig), or let it have the night (+80 fans to it). Beaten, it falls to her at dawn: buy, partner or ruin.
+> - **The auditor** (2,000): he lodges with her if she's first on the Pass Ledger; else Varn brings him to dinner (she'll want a favour), a bribed coachman (50 gold) does, or he stays away. Varn arrives the same night.
+> - **The last offer:** through Pell, or the widow Hesk if Pell was exposed. First on the pass with 3 of the book's 4 pieces: a partnership (accept, or refuse). Otherwise his last terms: refuse, or give him the book.
+> - **Last call:** the Baron at the back table, the room full of whoever her choices sent (Rhea's soldiers, Silas's crew, Mara's farmers, her girls). The book to the auditor (if she reached him and holds 3 pieces), to Varn (3 pieces), kept shut as his partner (if she accepted), or kept.
+> - **The final Ledger:** the last Pass Ledger, then her ending card (section 14). The nights go on after it.
+>
+> With the book in the auditor's hands the Baron falls, and the town hall's other road to the Reeve's chain opens: no vote needed (`townhall.ts`).
+
 | Fans | Beat | What happens |
 |---|---|---|
 | 1,500 | Father's trail | Getting the last pages means reaching Father in the cells. That needs Rhea's route, Silas's tunnels, Kestrel's adventurers (hired), or Pell's price |
@@ -965,6 +980,8 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 ---
 
 ## 14. Endings
+
+> **Built (20 Nov 2026, `act3.ts` `pickEnding`)**, the first that fits, in this order: Bought and Sold (the book to the Baron), the Baron's Partner (kept shut as his partner, on top), the Baroness's House (the book to Varn, on top), the Lantern Burns (Lantern hung, rotten, a girl gone), the New Baron (on top and rotten), the Village Rises (the book to the auditor, Keeper's crown, Mara free, trust 13), Master of the Pass (on top, two houses owned), the Red Lantern (book kept, Lantern crown, not rotten), Wren's Heir (book kept, Network crown, Informed 5), Lost to the Night (Known, Respect −3 or lower, no lantern), Paid in Full (nothing owed), else **Last Call** (a plain one: the pass goes on). The lovers' endings wait for the lovers' routes; Expand mode is still to come.
 
 | Ending | Needs | Epilogue |
 |---|---|---|
@@ -1038,9 +1055,9 @@ At dawn, the report adds a Lantern line: bookings, room takings, the girls' cut,
 1. Are the fan milestones right (501 to finish Tarven, 1,500 to finish Act 2, about 2,000 for the top house)? They set how long the game runs, and need playtesting against the rivals' growth.
 1b. ~~Should Act 1 also move by fans?~~ **Decided: yes.** Fans drive every beat, and nights are never the driver.
 1c. How fast do fans come? The rule in section 7 ("How fans are earned") gives about 40 to 75 on a good night, so Tarven takes about 8 to 12 good nights. Needs playtesting.
-2. Is Father alive in the cells, or is it only his pages that are?
+2. ~~Is Father alive in the cells, or is it only his pages that are?~~ **Decided (20 Nov 2026): only his pages.** The cells hold the last pages of the book he hid; Act 3's first beat is reaching them, not him.
 3. Should the player see the corruption number, or only the tier word?
-4. Three rivals, or two to keep the scope down?
+4. ~~Three rivals, or two to keep the scope down?~~ **Decided (20 Nov 2026): all three** (the Gilded Stag, the Velvet House, the Drowned Rat). Act 2 is built first, then Act 3 on top.
 5. ~~Force vs. "pulling away always works"?~~ **Decided: pulling away always works** (GAME_PATH.MD, consent rule). Force became **Give in**: an extra yes, offered beside the other answers once her desire runs well past the touch, never replacing Slap or Pull away. Its lines are in `touchtalk-givein.ts`. The Force bar is feedback only, after a yes.
 6. ~~The lantern gate is mind stage 2, but the letter that reveals the lantern unlocks at mind stage 3 (section 10). Which one moves?~~ **Decided (the proposed fix):** the letter moves to Willing (sections 4b and 10). Built.
 9. Should Rhea and Mara be romanceable with the brother too, or are the named regulars only for the sister for now (touches only reach the sister today)?

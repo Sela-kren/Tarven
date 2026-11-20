@@ -2,7 +2,7 @@
 
 > **Purpose:** A ready-to-use story and dialogue pack for recruiting ordinary townspeople who have never been inside the cult.  
 > All characters are adults (18+). The heroine follows the consent rule in `GAME_PATH.MD`. This document is flavour and NPC content.
-> **Status: concept, not built.** See `CHURCH_CONCEPT.md` for how it fits the game.
+> **Status: the first recruits are built (2026-11-20, `src/game/recruits.ts`, TOWN_DAY.md step 6).** See `CHURCH_CONCEPT.md` for how it fits the game.
 
 ---
 
