@@ -1,18 +1,19 @@
 /**
  * A face captured from video, played on hers. RGB MoCap (C:\Game\toyxyz_RGBMocap, Track Face then Export Face) writes
  * a real face's expression as Apple's 52 ARKit weights a frame, 0 to 1 each: jawOpen, eyeBlinkLeft, mouthSmileRight
- * and the rest. Her face doesn't have those. It has the controls in face.ts's FaceShape (open, lidUpper, smile...),
- * so this reads RGB MoCap's export (its own tab separated .txt, or the Unreal Live Link Face .csv), turns each frame's
- * weights into her controls (`capToFace`), steadies the camera tracker's jitter (`smoothTrack`), and gives back either
+ * and the rest. Her face doesn't have those. Her old rig's controls do (facerig.ts FaceControls: open, lidUpper,
+ * smile...), the numbers her shape keys are first baked from, so this reads RGB MoCap's export (its own tab separated
+ * .txt, or the Unreal Live Link Face .csv), turns each frame's weights into her controls (`capToFace`), steadies the
+ * camera tracker's jitter (`smoothTrack`), and gives back either
  * the whole performance to play (`sampleTrack`) or one face averaged from a stretch of it (`averageFace`), written out
- * as a line for face.ts's EXPRESSIONS (`presetLine`). tools/facecap runs it on a file.
+ * as a line for facerig.ts's EXPRESSION_CONTROLS (`presetLine`), to bake a key from. tools/facecap runs it on a file.
  *
  * What doesn't carry over: her eyes move together, so a wink becomes both eyes half shut; she has no puffed cheeks or
  * jaw sliding sideways; her smirk is only on her own left, so a smirk either side lands there. Her brows' arch and tips
  * (browArch, browTip) have no ARKit weight and stay at rest. Blush has none either: the game still flushes her itself.
  * RGB MoCap leaves tongueOut at zero.
  */
-import { FACE_KEYS, REST_FACE, type FaceShape } from "./face";
+import { CONTROL_KEYS as FACE_KEYS, REST_CONTROLS as REST_FACE, type FaceControls as FaceShape } from "./facerig";
 
 /** The 52 ARKit weights, in RGB MoCap's .txt column order (mocap/face_data.py CHANNELS). */
 export const ARKIT_CHANNELS = [

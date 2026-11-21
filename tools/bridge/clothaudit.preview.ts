@@ -45,7 +45,7 @@ test("audit", async () => {
       const cell = 0.01; const grid = new Map<string, number[]>();
       const key = (x: number, y: number, z: number) => `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`;
       for (let i = 0; i < bp.length / 3; i++) { const k = key(bp[i * 3], bp[i * 3 + 1], bp[i * 3 + 2]); (grid.get(k) ?? grid.set(k, []).get(k)!).push(i); }
-      let inside = 0, worst = 0; const torso = [0, 0];
+      let inside = 0, worst = 0; const torso = [0, 0]; const where: string[] = [];
       for (let j = 0; j < cloth.length / 3; j++) {
         const x = cloth[j * 3], y = cloth[j * 3 + 1], z = cloth[j * 3 + 2];
         let best = -1, bd = 1e9;
@@ -58,11 +58,11 @@ test("audit", async () => {
         }
         if (best < 0) continue;
         const depth = (x - bp[best * 3]) * bn[best * 3] + (y - bp[best * 3 + 1]) * bn[best * 3 + 1] + (z - bp[best * 3 + 2]) * bn[best * 3 + 2];
-        if (depth < -0.002) { inside++; worst = Math.min(worst, depth); if (y > 1.05 && y < 1.45) torso[0]++; }
+        if (depth < -0.002) { inside++; worst = Math.min(worst, depth); if (y > 1.05 && y < 1.45) { torso[0]++; torso[1] = Math.min(torso[1], depth); } else if (where.length < 3) where.push(`${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}`); }
       }
-      cells.push(`${letter}:${inside}${inside ? `(${(-worst * 1000).toFixed(0)}mm)` : ""}`);
+      cells.push(`${letter}: chest ${torso[0]}${torso[0] ? `(${(-torso[1] * 1000).toFixed(0)}mm)` : ""} other ${inside - torso[0]} ${where.slice(0, 2).join(" ")}`);
     }
-    rows.push(`${outfit.id.padEnd(10)} ${cells.join("  ")}`);
+    rows.push([outfit.id, ...cells.map((c) => "  " + c)].join(String.fromCharCode(10)));
     console.log(rows[rows.length - 1]);
   }
   writeFileSync("ref/_bridge/clothaudit.txt", rows.join("\n"));

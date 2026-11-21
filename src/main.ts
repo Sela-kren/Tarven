@@ -17,6 +17,7 @@ import { DayNightLighting } from "./game/lighting";
 import { DownloadTally, LoadScreen, nextPaint } from "./game/loadscreen";
 import { applyRetroLook, RetroPipeline } from "./game/retro";
 import { loadPaint } from "./game/paint";
+import { loadFaceKeys } from "./game/facekeys";
 import { PALETTES, townLook } from "./game/palettes";
 import { WorldClock } from "./game/time";
 import { installDevResume } from "./game/devresume";
@@ -98,8 +99,11 @@ async function start(): Promise<void> {
       });
   // Her hand-painted layers from the Blender bridge, if any (paint.ts), alongside the models.
   const painted = loadPaint(base, "female");
+  // Her face's shape keys (facekeys.ts), played as morph targets: without them her face stays at rest.
+  const faceKeys = loadFaceKeys(base, "Female");
   const [worldFile, maleFile, femaleFile, propsFile] = await Promise.all(files.map(fetchModel));
   await painted;
+  await faceKeys;
   // The town kit for the high street. The game still runs without it, with a plainer street.
   const streetKit = await loader
     .loadAsync(`${base}models/streetkit.glb`)

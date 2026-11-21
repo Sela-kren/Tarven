@@ -107,13 +107,18 @@ let coat: MeshPhongMaterial | null = null;
 let stain: MeshPhongMaterial | null = null;
 
 /**
- * How far the coat is drawn towards the camera, and further still the clothes that should cover it. Flat amounts
- * only: one that grows with the slope would pull each layer of a skirt and apron by a different amount.
+ * How far the coat is drawn towards the camera, and further still the clothes that should cover it. The clothes
+ * also by their slope (factor: times their change in depth per pixel of the picture): the vertex snapping moves each
+ * point up to half a snap step (a step is 1 to 2 of the picture's pixels), skin and cloth each their own way, so a
+ * surface seen at a slant moves in depth by its slope times that, far more than the 3 mm between her leggings and her skin. Skin showed through
+ * her leggings in patches from the tavern's camera (2026-11-21); the flat units alone are a tenth of a millimetre
+ * at room distance. Every piece of clothing takes the same factor, so layers lying together (a skirt and apron) keep
+ * their order.
  */
 const COAT_OFFSET = { factor: 0, units: -6 };
-const COVER_OFFSET = { factor: 0, units: -16 };
+const COVER_OFFSET = { factor: -2, units: -16 };
 /** The stains on her clothes, a little in front of the clothes they lie on. */
-const STAIN_OFFSET = { factor: 0, units: -20 };
+const STAIN_OFFSET = { factor: -2.5, units: -20 };
 
 /**
  * Draws clothing in front of the coat beneath it. The coat is pulled forwards so the vertex snapping never sinks

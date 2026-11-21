@@ -5,24 +5,27 @@
  *
  *   npm run bridge          (vitest runs this file and it serves until stopped; BRIDGE_PORT, default 8765)
  *
- * GET  /schema   the game's sliders (with ranges and steps), outfits, hairstyles, bust shapes, nipple types, face
- *                keys, expressions and her start look
+ * GET  /schema   the game's sliders (with ranges and steps), outfits, hairstyles, bust shapes, nipple types, the
+ *                face's numbers over its shape keys (faceKeys: blink, lookX...), each expression's, and her start look
  * POST /shape    { look?, sliders?, outfit?, hairstyle?, bustShape?, expression?, face?, nude?, posed?, known? }
+ *                (her face: the expression's shape keys as morph targets, from public/models/female_face.json, with
+ *                `face`'s numbers over it)
  *                -> { meshes: [{ key, name, material, color, map, count, positions, indices? }], ms }
  *                positions are her points in the world, Blender's Z-up, Float32 little-endian base64; the indices
  *                (Uint32 base64) and uvs (Float32, Blender's V) come only for keys not in `known`, so the add-on
  *                builds each mesh once.
  * POST /rest     the same meshes as built, nothing applied (for mapping Game view edits back to the master)
- * POST /reload   re-reads public/models/female.glb (after Send to game)
+ * POST /reload   re-reads public/models/female.glb and its face keys (after Send to game or Send face keys)
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { test } from "vitest";
 import { Color, Material, Mesh, MeshStandardMaterial, Object3D, SkinnedMesh, Vector3 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { CLEAR_GAP, CUPS, Dresser, LOOK_OPTIONS, sliderTop, smoothTopGap, startLook, stopValue, wearOutfit, type Look } from "../../src/game/appearance";
-import { EXPRESSIONS, EXPRESSIONS_LIST, FACE_KEYS, REST_FACE, UNSIGNED, type Expression, type FaceShape } from "../../src/game/face";
+import { EXPRESSIONS, EXPRESSIONS_LIST, FACE_NUMBERS, REST_FACE, type Expression, type FaceNumber, type FaceShape } from "../../src/game/face";
+import { setFaceKeys, type FaceKeysFile } from "../../src/game/facekeys";
 import { Body } from "../../src/game/player";
 import { softHeft } from "../../src/game/heft";
 import { stripImages } from "../posepreview/raster";
@@ -31,6 +34,7 @@ import { averageLinear } from "./png";
 const NAME = "Female";
 const PORT = Number(process.env.BRIDGE_PORT ?? 8765);
 const MODEL = process.env.BRIDGE_MODEL ?? join("public", "models", "female.glb");
+const FACE_KEYS = process.env.BRIDGE_FACE_KEYS ?? join("public", "models", "female_face.json");
 
 interface ShapeJob {
   look?: Look | null;
@@ -39,7 +43,8 @@ interface ShapeJob {
   hairstyle?: string | null;
   bustShape?: string | null;
   expression?: Expression | null;
-  face?: Partial<FaceShape> | null;
+  /** The face's numbers over the expression's keys (blink, lookX, lookY, pupil, blush...). */
+  face?: Partial<Record<FaceNumber, number>> | null;
   nude?: boolean;
   posed?: boolean;
   known?: string[];
@@ -75,6 +80,8 @@ function textureAverages(file: Buffer): Map<string, [number, number, number]> {
 }
 
 async function load(): Promise<Loaded> {
+  // Her face's shape keys, as the game loads them (main.ts), before her Dresser takes them.
+  setFaceKeys(NAME, existsSync(FACE_KEYS) ? (JSON.parse(readFileSync(FACE_KEYS, "utf8")) as FaceKeysFile) : null);
   const file = readFileSync(MODEL);
   const gltf = await new GLTFLoader().parseAsync(stripImages(file), "");
   const model = gltf.scene;
@@ -214,155 +221,6 @@ function shape(state: Loaded, job: ShapeJob) {
   };
 }
 
-/** Face numbers that only colour or draw on her (no point moves), left out of a fit. */
-const DRAWN_ONLY: readonly (keyof FaceShape)[] = ["blush", "crease", "wet", "tears", "heart", "sweat"];
-
-interface FitJob extends ShapeJob {
-  /** Where the user moved her face to on the game view: mesh key, point index, place (Blender Z-up). */
-  targets: { key: string; index: number; co: [number, number, number]; weight?: number }[];
-  /** The face numbers to search (all that move her face, if left out). */
-  keys?: (keyof FaceShape)[];
-}
-
-/**
- * Finds her face numbers for the shape the user sculpted on the game view, over the game's own face code. A bounded,
- * damped least-squares fit (Gauss-Newton on finite differences), pulled gently towards the face she had on so it
- * picks the simplest numbers that make the shape, and kept in each control's range (UNSIGNED ones from 0). Her brows
- * are matched across and up only, as the game lays them on her face wherever they go.
- */
-function fit(state: Loaded, job: FitJob) {
-  const started = performance.now();
-  shape(state, { ...job, face: job.face, expression: job.expression });
-  const byKey = new Map(state.meshes.map((m) => [m.key, m.mesh]));
-  const v = new Vector3();
-  const targets = job.targets
-    .map((t) => ({ ...t, mesh: byKey.get(t.key), brow: /\|T_hair_f/.test(t.key), w: Math.sqrt(t.weight ?? 1) }))
-    .filter((t) => t.mesh);
-  const size = targets.reduce((n, t) => n + (t.brow ? 2 : 3), 0);
-  /** Where the face lands against the targets, metres, one entry per matched axis. */
-  const residual = (face: FaceShape): Float64Array => {
-    state.dresser.setExpression(face);
-    state.model.updateMatrixWorld(true);
-    const out = new Float64Array(size);
-    let k = 0;
-    for (const t of targets) {
-      const mesh = t.mesh!;
-      if (mesh instanceof SkinnedMesh) mesh.getVertexPosition(t.index, v);
-      else v.fromBufferAttribute(mesh.geometry.getAttribute("position"), t.index);
-      v.applyMatrix4(mesh.matrixWorld);
-      out[k++] = (v.x - t.co[0]) * t.w;
-      if (!t.brow) out[k++] = (-v.z - t.co[1]) * t.w;
-      out[k++] = (v.y - t.co[2]) * t.w;
-    }
-    return out;
-  };
-  const report = (face: FaceShape) => {
-    const r = residual(face);
-    const off: number[] = [];
-    let k = 0;
-    for (const t of targets) {
-      const n = t.brow ? 2 : 3;
-      let d2 = 0;
-      for (let j = 0; j < n; j++) d2 += r[k + j] ** 2;
-      k += n;
-      // How far off the points the user moved are (the anchors only hold the rest).
-      if (t.w >= 1) off.push((Math.sqrt(d2) / t.w) * 1000);
-    }
-    return { meanMm: +(off.reduce((a, b) => a + b, 0) / Math.max(off.length, 1)).toFixed(2), maxMm: +Math.max(0, ...off).toFixed(2) };
-  };
-  const keys = job.keys?.length ? job.keys : FACE_KEYS.filter((k) => !DRAWN_ONLY.includes(k));
-  const low = (key: keyof FaceShape) => (UNSIGNED.includes(key) ? 0 : -1.5);
-  const HIGH = 1.5;
-  const start: FaceShape = { ...REST_FACE, ...(job.expression ? EXPRESSIONS[job.expression] : {}), ...(job.face ?? {}) };
-  // How strongly the numbers are held near where they started, against metres off squared per point.
-  const hold = 2e-9 * Math.max(targets.length, 1);
-  const cost = (face: FaceShape, r: Float64Array) => {
-    let c = 0;
-    for (const x of r) c += x * x;
-    for (const key of keys) c += hold * (face[key] - start[key]) ** 2;
-    return c;
-  };
-  let face = { ...start };
-  let r = residual(face);
-  let current = cost(face, r);
-  let damping = 1e-6;
-  const h = 0.02;
-  for (let iteration = 0; iteration < 40; iteration++) {
-    // The Jacobian, one column per control, by finite differences.
-    const columns = keys.map((key) => {
-      const step = face[key] + h <= HIGH ? h : -h;
-      const moved = residual({ ...face, [key]: face[key] + step });
-      const col = new Float64Array(size);
-      for (let i = 0; i < size; i++) col[i] = (moved[i] - r[i]) / step;
-      return col;
-    });
-    const n = keys.length;
-    const A = Array.from({ length: n }, () => new Float64Array(n));
-    const b = new Float64Array(n);
-    for (let a = 0; a < n; a++) {
-      for (let c = a; c < n; c++) {
-        let sum = 0;
-        for (let i = 0; i < size; i++) sum += columns[a][i] * columns[c][i];
-        A[a][c] = A[c][a] = sum;
-      }
-      let sum = 0;
-      for (let i = 0; i < size; i++) sum += columns[a][i] * r[i];
-      b[a] = -sum - hold * (face[keys[a]] - start[keys[a]]);
-    }
-    let accepted = false;
-    for (let tries = 0; tries < 8 && !accepted; tries++) {
-      const M = A.map((row, i) => {
-        const copy = Float64Array.from(row);
-        copy[i] += hold + damping * (row[i] + 1e-9);
-        return copy;
-      });
-      const delta = solve(M, Float64Array.from(b));
-      const trial = { ...face };
-      keys.forEach((key, i) => (trial[key] = Math.min(HIGH, Math.max(low(key), face[key] + delta[i]))));
-      const rt = residual(trial);
-      const ct = cost(trial, rt);
-      if (ct < current) {
-        face = trial;
-        r = rt;
-        current = ct;
-        damping = Math.max(damping / 4, 1e-9);
-        accepted = true;
-      } else damping *= 8;
-    }
-    if (!accepted) break;
-  }
-  for (const key of keys) face[key] = Math.round(face[key] * 100) / 100;
-  const result = { face, before: report(start), after: report(face), points: targets.length, ms: 0 };
-  state.dresser.setExpression(face);
-  result.ms = Math.round(performance.now() - started);
-  return result;
-}
-
-/** Solves M x = y (small, symmetric), Gaussian elimination with partial pivoting. */
-function solve(M: Float64Array[], y: Float64Array): Float64Array {
-  const n = y.length;
-  for (let c = 0; c < n; c++) {
-    let pivot = c;
-    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[pivot][c])) pivot = r;
-    [M[c], M[pivot]] = [M[pivot], M[c]];
-    [y[c], y[pivot]] = [y[pivot], y[c]];
-    const d = M[c][c] || 1e-12;
-    for (let r = c + 1; r < n; r++) {
-      const f = M[r][c] / d;
-      if (!f) continue;
-      for (let k = c; k < n; k++) M[r][k] -= f * M[c][k];
-      y[r] -= f * y[c];
-    }
-  }
-  const x = new Float64Array(n);
-  for (let r = n - 1; r >= 0; r--) {
-    let sum = y[r];
-    for (let k = r + 1; k < n; k++) sum -= M[r][k] * x[k];
-    x[r] = sum / (M[r][r] || 1e-12);
-  }
-  return x;
-}
-
 function schema() {
   const options = LOOK_OPTIONS[NAME];
   return {
@@ -379,8 +237,8 @@ function schema() {
     outfits: options.outfits.filter((o) => !o.guestOnly).map((o) => ({ id: o.id, label: o.label })),
     hairstyles: options.hairstyles.map((h) => ({ id: h.id, label: h.label })),
     bustShapes: options.bustShapes.map((b) => ({ id: b.id, label: b.label })),
-    faceKeys: FACE_KEYS,
-    expressions: Object.fromEntries(EXPRESSIONS_LIST.map((e) => [e, EXPRESSIONS[e]])),
+    faceKeys: FACE_NUMBERS,
+    expressions: Object.fromEntries(EXPRESSIONS_LIST.map((e) => [e, Object.fromEntries(FACE_NUMBERS.map((k) => [k, EXPRESSIONS[e][k]]))])),
     startLook: startLook(NAME),
   };
 }
@@ -419,7 +277,6 @@ test(
             posedLast = !!job.posed;
             return send(res, 200, shape(state, job));
           }
-          if (req.url === "/fit") return send(res, 200, fit(state, job as FitJob));
           if (req.url === "/rest") {
             const fresh = await load();
             return send(res, 200, { meshes: meshesOut(fresh, new Set(job.known ?? []), true) });

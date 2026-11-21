@@ -20,7 +20,7 @@ from . import gameview as gv
 TEMP = "TarvenDrape"
 # Fitted tops the game keeps further off a big bust (appearance.ts SMOOTH_TOPS): their collision gap is the game's.
 FITTED = ("T_tee", "T_halter", "T_lace")
-REVIEWED = ("A", "C", "F", "J", "M", "Q", "U", "Z")
+REVIEWED = tuple("ABCDEFGHIJKLMNO")  # every cup, A to O (the slider stops at O)
 
 
 def _floats(text, width):
@@ -259,7 +259,7 @@ class TarvenCloth(bpy.types.PropertyGroup):
                                       description="Points further than this from her middle (left or right) are held: "
                                                   "her sleeves. 0 lets them hang free")
     self_collision: bpy.props.BoolProperty(name="Self collision", default=False)
-    cups: bpy.props.StringProperty(name="Cups", default="A,C,F,J,M,Q,U,Z",
+    cups: bpy.props.StringProperty(name="Cups", default="A,B,C,D,E,F,G,H,I,J,K,L,M,N,O",
                                    description="The cup sizes to bake at; the game blends between them")
     send: bpy.props.BoolProperty(name="Send when baked", default=True)
     skip: bpy.props.StringProperty(name="Leave out", default="T_hose",

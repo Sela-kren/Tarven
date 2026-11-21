@@ -17,7 +17,9 @@ import {
   GLANS_MATERIAL, PENIS_MATERIAL, PENIS_TYPES, SCROTUM_MATERIAL, penisFrame, penisShape, readPenis, shapePenis, type PenisPatch,
   type PenisType,
 } from "./penis";
-import { FACE_EXTRAS, FACE_LINES, faceMove, faceMoved, faceRig, faceSurface, REST_FACE, type FacePart, type FaceRig, type FaceShape } from "./face";
+import { FACE_EXTRAS, FACE_LINES, faceKeyWeights, faceMoved, mouthPress, REST_FACE, type FaceShape } from "./face";
+import { attachFaceKeys, blenderObjectOf, faceKeysOf, restCount, setFaceKeyWeights } from "./facekeys";
+import { faceMove, faceRig, faceSurface, type FaceControls, type FacePart, type FaceRig } from "./facerig";
 import { coatRetroMaterial, coverCoat, solidRetroMaterial, stainRetroMaterial } from "./retro";
 import { keepSkinDetailOpaque } from "./skindetail";
 import { isBustFamily, isBustSoft } from "./bustbones";
@@ -2352,9 +2354,9 @@ interface MeshSlot {
  * The cup sizes the bust review lays out to sculpt on (tools/posepreview/bustexport.preview.ts): a fix sculpted at one
  * of them is whole there and fades out to nothing at the reviewed sizes either side.
  */
-export const REVIEWED_CUPS = ["A", "C", "F", "J", "M", "Q", "U", "Z"]
-  .filter((letter) => CUPS.labels.includes(letter))
-  .map((letter) => stopValue(CUPS, CUPS.labels.indexOf(letter)));
+// Every cup since 2026-11-21: each has its own sculpted key, and the cloth drapes are baked at each (bake_drapes.py), so
+// a drape shows fully at its own cup and fades out by the next one either side.
+export const REVIEWED_CUPS = CUPS.labels.map((_letter, index) => stopValue(CUPS, index));
 
 /** How much of a fix sculpted at cup slider value `at` the bust wears at slider value `cup`, 0 to 1. */
 export function cupFixAmount(at: number, cup: number): number {
@@ -2365,6 +2367,16 @@ export function cupFixAmount(at: number, cup: number): number {
   if (cup === at) return 1;
   if (cup < at) return below === undefined ? 1 : Math.max(0, (cup - below) / (at - below));
   return above === undefined ? 1 : Math.max(0, (above - cup) / (above - at));
+}
+
+/**
+ * A garment made with its own cup keys (her T-shirt, tools/blender/tarven_bridge/new_tee.py: built on her body at
+ * every cup in Blender): its keys make its cup size, exactly as made, so none of the fitting the game does for tops
+ * fitted over one cup (smoothing, hanging, her shell, nipple tenting, her cleavage's span) is done to it; it is only
+ * kept out of her skin (clearOfSkin), where her bra's hold reshapes her a little past it.
+ */
+function ownKeys(slot: MeshSlot): boolean {
+  return slot.part !== "Body" && slot.cupKeys !== undefined;
 }
 
 /**
@@ -3616,14 +3628,16 @@ export class Dresser {
    * where its points go, worked out from the body as last shaped, and is dropped when the body's reshaped.
    */
   private pull: { ids: readonly string[]; dir: "down" | "up"; side?: "left" | "right"; amount: number } | null = null;
-  /** Her face's expression now (face.ts), where her eyes, brows and mouth are on her as shaped, and how far it moves
-   * each point of each of her face's meshes. */
+  /** Her face's expression now (face.ts), and the meshes her face's shape keys move (as morph targets). */
   private faceShape: FaceShape = { ...REST_FACE };
+  private readonly faceKeyed: MeshSlot[] = [];
+  /**
+   * For baking only (controlMoves): her old face rig, where her eyes, brows and mouth are on her as shaped, found
+   * again once she's reshaped; and the front of her face round her brows, and how far in front of it each point of
+   * them is.
+   */
   private faceRig: FaceRig | null = null;
-  /** The shape her face's rig was found on, so it's only found again once she's reshaped. */
   private faceRigOn: unknown = null;
-  private readonly faceMoves = new Map<MeshSlot, Float32Array>();
-  /** The front of her face round her brows (on her as shaped), and how far in front of it each point of them is. */
   private browSurface: ((x: number, y: number) => number | null) | null = null;
   private browSurfaceOn: unknown = null;
   private readonly browOffsets = new Map<MeshSlot, Float32Array>();
@@ -3633,6 +3647,10 @@ export class Dresser {
   /** Each mesh's normals as built, and per mesh group the welded points and their smooth normals as built. */
   private readonly builtNormals = new Map<MeshSlot, Float32Array>();
   private readonly normalWelds = new Map<string, { ids: Int32Array[]; count: number; rest: Float32Array }>();
+  /** For skinWeightsOnto: which of skinSources each body point is in, those sources, and the bones her skin uses. */
+  private skinAt: Int32Array | null = null;
+  private readonly skinSources: { slot: MeshSlot; index: BufferAttribute; weight: BufferAttribute }[] = [];
+  private readonly skinBones = new Set<Object3D>();
 
   constructor(model: Object3D, readonly body: BodyName) {
     const root = model.getObjectByName(body);
@@ -3684,7 +3702,8 @@ export class Dresser {
       this.slots.push({
         mesh, part, original: material, worn: material, bind, follow: null, bodyStart: bodyCount, rest,
         cupFixes: cupFixes.length ? cupFixes : undefined,
-        cupKeys: cupKeys.length ? cupKeys : undefined,
+        // Only a piece its keys move: her leggings share the T-shirt's mesh, and carry its keys as zeros.
+        cupKeys: cupKeys.some((key) => key.delta.some((d) => d !== 0)) ? cupKeys : undefined,
         drapes: drapes.length ? drapes : undefined,
       });
       if (part === "Body") bodyCount += position.count;
@@ -3711,13 +3730,16 @@ export class Dresser {
     if (bustRest) for (const rest of this.bones) if (isBustSoft(rest.label)) rest.shapeAs = bustRest;
     this.bodyCount = bodyCount;
     this.reshapedRest = this.slots.some((slot) => slot.rest !== undefined);
+    // Her face's shape keys, as morph targets on the meshes they move (before anything reshapes her points: they're
+    // found by where they sit as built).
+    if (body === "Female") this.takeFaceKeys();
     // Her fitted tops, smoothed after each reshaping (see SMOOTH_TOPS), and lit smooth all over: the build left hard
     // edges inside the tee (its points at one spot with different normals), and one across the front at the top of its
     // hem band showed as a line across her. Each spot takes the average of its points' normals, before the lighting
     // keeps them as built (see refreshNormals).
     for (const slot of this.slots) {
       const { geometry } = slot.mesh;
-      if (slot.part !== "Cloth" || !geometry.index || !SMOOTH_TOPS.includes(slot.original.name)) continue;
+      if (slot.part !== "Cloth" || !geometry.index || !SMOOTH_TOPS.includes(slot.original.name) || ownKeys(slot)) continue;
       const table = smoothTable(slot.bind, geometry.index.array as ArrayLike<number>);
       this.smoothTops.set(slot, table);
       if (HANG_TOPS.includes(slot.original.name)) {
@@ -3763,13 +3785,17 @@ export class Dresser {
       const top = (slot.part === "Cloth" && SMOOTH_TOPS.includes(slot.original.name))
         || (slot.part === "Cum" && SMOOTH_TOPS.some((name) => slot.mesh.name.includes(`_${name}_`)));
       slot.follow = nearestBody(slot.bind, bodyPoints, top && bodyCount >= TOP_FOLLOW.k ? TOP_FOLLOW : undefined);
+      if (slot.part === "Cloth") {
+        const near = slot.follow.k === FOLLOW_POINTS ? slot.follow : nearestBody(slot.bind, bodyPoints);
+        this.skinWeightsOnto(slot, near);
+      }
     }
     // Her clothes, and what landed on them, stretch across her cleavage instead of following the skin into it.
     const hold = cleavageHold(bodyPoints);
     if (hold.at.length) {
       const spans = new Map<MeshSlot, ClothSpan>();
       for (const slot of this.slots) {
-        if (!slot.follow || !(slot.part === "Cloth" || (slot.part === "Cum" && stainMeshOf(slot.mesh, body)))) continue;
+        if (!slot.follow || ownKeys(slot) || !(slot.part === "Cloth" || (slot.part === "Cum" && stainMeshOf(slot.mesh, body)))) continue;
         // Only pieces that reach her chest, as in clearing (CLEAR_GARMENT_TOP): a breast hanging to her waist took
         // the span down with it, and pulled her leggings' waistband out to it in a wedge under her bust.
         if (reach(slot.bind) < CLEAR_GARMENT_TOP) continue;
@@ -3840,7 +3866,7 @@ export class Dresser {
       const riders = new Map<MeshSlot, Riders>();
       const tips = discs.map((disc) => discSlot.bind.subarray(disc.tip * 3, disc.tip * 3 + 3));
       for (const slot of this.slots) {
-        if (!slot.follow) continue;
+        if (!slot.follow || ownKeys(slot)) continue;
         const verts: number[] = [], which: number[] = [], from: number[] = [];
         for (let v = 0; v < slot.bind.length / 3; v++) {
           tips.forEach((tip, d) => {
@@ -4139,14 +4165,19 @@ export class Dresser {
         sum.add(joints).toArray(total, v * 3);
         joints.toArray(settled, v * 3);
       }
-      // Her sculpted cup keys make her cup size, blended for the slider.
-      if (slot.cupKeys) cupKeyMove(slot.cupKeys, look.sliders.bust ?? 0, total);
+      // Her sculpted cup keys make her cup size, blended for the slider (kept apart too: see ownKeys).
+      let keyed: Float32Array | undefined;
+      if (slot.cupKeys) {
+        keyed = new Float32Array(total.length);
+        cupKeyMove(slot.cupKeys, look.sliders.bust ?? 0, keyed);
+        for (let k = 0; k < total.length; k++) total[k] += keyed[k];
+      }
       // The user's sculpted fixes for the cup she's at, or the reviewed sizes either side of it.
       for (const fix of slot.cupFixes ?? []) {
         const amount = cupFixAmount(fix.cup, look.sliders.bust ?? 0);
         if (amount > 0) for (let k = 0; k < total.length; k++) total[k] += fix.delta[k] * amount;
       }
-      return { total, settled };
+      return { total, settled, keyed };
     });
 
     // The body's moves, in one list, for the clothes to copy.
@@ -4154,8 +4185,27 @@ export class Dresser {
     this.slots.forEach((slot, i) => {
       if (slot.part === "Body") bodyMoves.set(moves[i].total, slot.bodyStart * 3);
     });
+    // A garment with its own cup keys follows her skin for everything but her cup, which its keys make: her skin's
+    // moves without her keys, then its own.
+    let unkeyed: Float32Array | null = null;
+    if (shaping && this.slots.some(ownKeys)) {
+      unkeyed = bodyMoves.slice();
+      this.slots.forEach((slot, i) => {
+        const keyed = moves[i].keyed;
+        if (slot.part === "Body" && keyed) for (let k = 0; k < keyed.length; k++) unkeyed![slot.bodyStart * 3 + k] -= keyed[k];
+      });
+    }
     this.slots.forEach((slot, i) => {
-      if (slot.follow && shaping) this.follow(slot.follow, moves[i].total.slice(), moves[i].total, bodyMoves);
+      if (!slot.follow || !shaping) return;
+      const { total, keyed } = moves[i];
+      if (unkeyed && keyed && ownKeys(slot)) {
+        const own = total.slice();
+        for (let k = 0; k < own.length; k++) own[k] -= keyed[k];
+        this.follow(slot.follow, own, total, unkeyed);
+        for (let k = 0; k < total.length; k++) total[k] += keyed[k];
+      } else {
+        this.follow(slot.follow, total.slice(), total, bodyMoves);
+      }
     });
     if (this.cleavage && shaping) {
       for (const [slot, span] of this.cleavage.spans) {
@@ -4192,7 +4242,8 @@ export class Dresser {
       for (const [slot, verts] of order) {
         if (slot.part === "Cloth" && outfitMeshOf(slot.mesh, this.body) !== outfit) continue;
         const { total } = moves[this.slots.indexOf(slot)];
-        onShell(shell, verts, slot.bind, total);
+        // A garment with its own cup keys is only kept out of her skin (her bra's hold reshapes her a little past them).
+        if (!ownKeys(slot)) onShell(shell, verts, slot.bind, total);
         // A fitted top: smoothed once out on her shell, out on it again (smoothing pulls it in a little over her
         // curves), then kept out of her skin by more the bigger her bust (see SMOOTH_TOPS_GAP).
         const table = this.smoothTops.get(slot);
@@ -4367,16 +4418,43 @@ export class Dresser {
   }
 
   /**
-   * Puts an expression on her face (face.ts): her eyes, brows and the corners of her mouth move, and her cheeks
-   * flush. Only her face's meshes change, so it can follow her from moment to moment. Only her face is built for it.
+   * Puts an expression on her face (face.ts): its shape keys' weights on her face's morph targets (facekeys.ts), so
+   * the GPU moves her brows, eyes and mouth; and her cheeks flush and its lines show. Only her face is built for it.
    */
   setExpression(shape: FaceShape): void {
     if (!faceMoved(shape, this.faceShape)) return;
-    const lines = (f: FaceShape) => `${Math.round(f.blush * 10)}:${Math.round(f.press * 10)}:${this.faceLines(f).join(",")}`;
+    const lines = (f: FaceShape) => `${Math.round(f.blush * 10)}:${Math.round(mouthPress(f) * 10)}:${this.faceLines(f).join(",")}`;
     const blushed = lines(shape) !== lines(this.faceShape);
     this.faceShape = { ...shape };
     this.refreshFace();
     if (blushed) this.showPieces();
+  }
+
+  /** Her face's shape key weights on its meshes' morph targets, for her expression now. */
+  private refreshFace(): void {
+    if (!this.faceKeyed.length) return;
+    const weights = faceKeyWeights(this.faceShape);
+    for (const slot of this.faceKeyed) setFaceKeyWeights(slot.mesh, weights);
+  }
+
+  /** The meshes her face's shape keys move, given them as morph targets from her face keys (facekeys.ts). */
+  private takeFaceKeys(): void {
+    const file = faceKeysOf(this.body);
+    if (!file) return;
+    const seen = new Map<string, Uint8Array>();
+    for (const slot of this.slots) {
+      const object = blenderObjectOf(slot.mesh);
+      const entry = file.objects[object];
+      if (!entry) continue;
+      let marks = seen.get(object);
+      if (!marks) seen.set(object, (marks = new Uint8Array(restCount(entry))));
+      if (attachFaceKeys(slot.mesh, entry, undefined, marks) > 0) this.faceKeyed.push(slot);
+    }
+    for (const [object, marks] of seen) {
+      const missing = marks.length - marks.reduce((n, m) => n + m, 0);
+      // The model changed under the keys since they were made (rebuild art/female_face_keys.blend's rest from it).
+      if (missing > 0) console.warn(`face keys: ${missing} of ${marks.length} points of ${object} not found on the model`);
+    }
   }
 
   /** Which of the lines an expression draws on her face show for this face: her creases, and a blush's strokes. */
@@ -4394,11 +4472,15 @@ export class Dresser {
     return this.body === "Female" ? this.slots.filter((slot) => slot.part === "Body" && FACE_MATERIAL.test(slot.original.name)) : [];
   }
 
-  /** Finds her eyes, brows and mouth on her as shaped now, and moves her face's points for her expression. */
-  private refreshFace(): void {
+  /**
+   * How her old face rig (facerig.ts) would move her face's points for these controls, on her as shaped now, in bind
+   * space, per mesh: only to bake her shape keys from (tools/bridge/facebake.preview.ts). The game doesn't use it.
+   */
+  controlMoves(controls: FaceControls): Map<SkinnedMesh, Float32Array> {
+    const out = new Map<SkinnedMesh, Float32Array>();
     const { shaped } = this;
     const slots = this.faceSlots();
-    if (!shaped || !slots.length) return;
+    if (!shaped || !slots.length) return out;
     const totals = new Map(slots.map((slot) => [slot, shaped.totals[this.slots.indexOf(slot)]]));
     const shapedAt = (slot: MeshSlot, v: number) => {
       const total = totals.get(slot) ?? shaped.totals[this.slots.indexOf(slot)];
@@ -4454,16 +4536,15 @@ export class Dresser {
     const to = [0, 0, 0];
     for (const slot of slots) {
       const count = slot.bind.length / 3;
-      let moves = this.faceMoves.get(slot);
-      if (!moves) this.faceMoves.set(slot, (moves = new Float32Array(count * 3)));
-      moves.fill(0);
+      const moves = new Float32Array(count * 3);
+      out.set(slot.mesh, moves);
       const name = slot.original.name;
       const part: FacePart = EYE_PART[name] ??
         (name === BROW_MATERIAL ? "brow" : name === UPPER_TEETH_MATERIAL ? "teeth" : name === LOWER_TEETH_MATERIAL ? "lowerTeeth" : name === TONGUE_MATERIAL ? "tongue" : "skin");
       if (rig) {
         for (let v = 0; v < count; v++) {
           const p = shapedAt(slot, v);
-          const moved = faceMove(rig, this.faceShape, p, part, to);
+          const moved = faceMove(rig, controls, p, part, to);
           // Her brows: kept as far in front of her face as they were built, wherever they are.
           const offset = part === "brow" && surface ? this.browOffsets.get(slot)?.[v] : undefined;
           if (offset !== undefined && !Number.isNaN(offset)) {
@@ -4475,9 +4556,8 @@ export class Dresser {
           moves[v * 3 + 2] = to[2] - p[2];
         }
       }
-      const i = this.slots.indexOf(slot);
-      this.writePositions(slot, shaped.totals[i], shaped.settled[i]);
     }
+    return out;
   }
 
   /** The cloth meshes the pull takes: the pulled garments', of the outfit she has on. */
@@ -5015,6 +5095,76 @@ export class Dresser {
   }
 
   /**
+   * Clothing on her skin bends with the skin under it: each point takes the bone weights of the skin points it follows,
+   * blended as it follows them (fully within FOLLOW_NEAR, fading to its own by FOLLOW_FAR). The build's weights are a
+   * smoothed copy of the skin's, and once her hip bent in a step they parted from it by up to 13 mm, her leggings only
+   * 3 mm off her: skin showed through them in patches as she walked (2026-11-21). Points on bones her skin doesn't use
+   * (a skirt's panels) keep their own.
+   */
+  private skinWeightsOnto(slot: MeshSlot, near: FollowTable): void {
+    const geometry = slot.mesh.geometry;
+    const index = geometry.getAttribute("skinIndex");
+    const weight = geometry.getAttribute("skinWeight");
+    if (!index || !weight) return;
+    // Her skin's points by their place in the body's list, and the bones her skin uses (by object: the cloth shares them).
+    if (!this.skinAt) {
+      this.skinAt = new Int32Array(this.bodyCount).fill(-1);
+      this.slots.forEach((body) => {
+        if (body.part !== "Body") return;
+        const bi = body.mesh.geometry.getAttribute("skinIndex"), bw = body.mesh.geometry.getAttribute("skinWeight");
+        if (!bi || !bw) return;
+        this.skinAt!.fill(this.skinSources.length, body.bodyStart, body.bodyStart + bi.count);
+        this.skinSources.push({ slot: body, index: bi as BufferAttribute, weight: bw as BufferAttribute });
+        for (let v = 0; v < bi.count; v++) {
+          for (let k = 0; k < 4; k++) if (bw.getComponent(v, k) > 0) this.skinBones.add(body.mesh.skeleton.bones[bi.getComponent(v, k)]);
+        }
+      });
+    }
+    const skin = this.skinSources;
+    const bones = slot.mesh.skeleton.bones;
+    const slotOf = new Map(bones.map((bone, i) => [bone, i]));
+    const sum = new Map<number, number>();
+    for (let v = 0; v < index.count; v++) {
+      const keep = near.own[v];
+      if (keep >= 1) continue;
+      let foreign = false;
+      for (let k = 0; k < 4; k++) if (weight.getComponent(v, k) > 0 && !this.skinBones.has(bones[index.getComponent(v, k)])) foreign = true;
+      if (foreign) continue;
+      sum.clear();
+      for (let k = 0; k < 4; k++) {
+        const w = weight.getComponent(v, k) * keep;
+        if (w > 0) sum.set(index.getComponent(v, k), (sum.get(index.getComponent(v, k)) ?? 0) + w);
+      }
+      let missing = false;
+      for (let n = 0; n < near.k && !missing; n++) {
+        const at = near.points[v * near.k + n];
+        const share = near.weights[v * near.k + n] * (1 - keep);
+        const source = skin[this.skinAt[at]];
+        if (!source) { missing = true; break; }
+        const local = at - source.slot.bodyStart;
+        for (let k = 0; k < 4; k++) {
+          const w = source.weight.getComponent(local, k) * share;
+          if (w <= 0) continue;
+          const mine = slotOf.get(source.slot.mesh.skeleton.bones[source.index.getComponent(local, k)]);
+          if (mine === undefined) { missing = true; break; }
+          sum.set(mine, (sum.get(mine) ?? 0) + w);
+        }
+      }
+      if (missing) continue;
+      // The four heaviest, as the renderer takes.
+      const top = [...sum].sort((a, b) => b[1] - a[1]).slice(0, 4);
+      const total = top.reduce((s, [, w]) => s + w, 0);
+      if (total <= 0) continue;
+      for (let k = 0; k < 4; k++) {
+        index.setComponent(v, k, top[k]?.[0] ?? 0);
+        weight.setComponent(v, k, top[k] ? top[k][1] / total : 0);
+      }
+    }
+    index.needsUpdate = true;
+    weight.needsUpdate = true;
+  }
+
+  /**
    * Moves a mesh's points onto the body under them, by its table of the body points nearest each, from `own`, the
    * moves their own bones gave them, into `total`. Close to the body they follow it fully; further out they keep
    * more of their own.
@@ -5151,7 +5301,6 @@ export class Dresser {
     // A top pulled off her breasts: its points go that far towards where the pull takes them.
     const plan = this.pull ? this.pullPlans.get(slot) : undefined;
     const amount = this.pull?.amount ?? 0;
-    const face = this.faceMoves.get(slot);
     const one = (v: number) => {
       point.set(bind[v * 3] + total[v * 3], bind[v * 3 + 1] + total[v * 3 + 1], bind[v * 3 + 2] + total[v * 3 + 2]);
       const k = plan ? plan.at[v] : -1;
@@ -5160,12 +5309,6 @@ export class Dresser {
         point.x += (plan.target[k * 3] - point.x) * w;
         point.y += (plan.target[k * 3 + 1] - point.y) * w;
         point.z += (plan.target[k * 3 + 2] - point.z) * w;
-      }
-      // Her face, as her expression moves it.
-      if (face) {
-        point.x += face[v * 3];
-        point.y += face[v * 3 + 1];
-        point.z += face[v * 3 + 2];
       }
       point.x -= settled[v * 3];
       point.y -= settled[v * 3 + 1];
@@ -5359,7 +5502,7 @@ export class Dresser {
           return flushed > 0 ? base.lerp(BLUSHED, flushed) : round ? base : null;
         };
         // Her lips pressed thin: the upper one an ink line, the lower one gone into her skin.
-        const press = this.body === "Female" ? Math.round(this.faceShape.press * 10) / 10 : 0;
+        const press = this.body === "Female" ? Math.round(mouthPress(this.faceShape) * 10) / 10 : 0;
         const into = PRESSED_INTO[slot.original.name as keyof typeof PRESSED_INTO];
         let tone = toneOf(slot);
         if (press > 0 && into) {
@@ -5647,7 +5790,10 @@ export function applyPhysique(root: Object3D, body: BodyName, sliders: Record<st
     const names = mesh.morphTargetDictionary;
     const weights = mesh.morphTargetInfluences;
     if (!names || !weights) return;
-    weights.fill(0);
+    // Only its own morphs: her face's shape keys share the list (facekeys.ts).
+    for (const def of defs) {
+      for (const end of ["_p", "_n"]) if (names[`${def.morph}${end}`] !== undefined) weights[names[`${def.morph}${end}`]] = 0;
+    }
     for (const def of defs) {
       const value = clampSlider(sliders[def.id]);
       const plus = names[`${def.morph}_p`];

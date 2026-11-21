@@ -16,7 +16,7 @@ the game's own `Dresser` and `face.ts`, and shows Blender what the game would sh
 |---|---|
 | **Send to game** | Exports the `FemaleRig` collection with build_world's own `export_collection` to `public/models/female.glb`, together with the paint layers. Every piece goes out, hidden ones included. Takes about 20 s. Headless: `npm run send`. |
 | **Game view** | **Start server** runs `npm run bridge` (or run it yourself). Every game slider, the outfit, hair, bust shape, posed/undressed, **Start look** (what the player sees first) and **As built**. The GameView meshes sit beside the master and are never exported or saved. **Master shows the same** hides the master's other outfits, hair and shoes, as the game does. |
-| **Face** | Expression → **Load** fills the 30 face sliders from `face.ts`. **Save to game** writes the numbers back into that expression's line in `face.ts`, keeping the file's comments and layout. **Fit face to my sculpt**: sculpt her face on the game view (Edit game view), and the server finds the face numbers that make the game's face code shape it that way. It is a bounded least-squares fit; the points you moved count, the rest only hold lightly. It sets the sliders, and then you Save. |
+| **Face** | Expression picks one of the game's expressions and the game view shows it: its brows, eyes and mouth are her face's **shape keys** (below), with the face's numbers over them (blink, lookX, lookY, pupil, blush, crease, wet, tears, heart, sweat), which the sliders change. **Reset** puts the expression's own numbers back. (Before 2026-11-21 this panel edited 30 face numbers in `face.ts`, with Save and Fit; those are gone with the face rig they drove.) |
 | **Edit game view** | Sculpt or move points on the game view at any slider setting (e.g. J cup in the tee). **Apply edits to master** carries the moves onto the master, sends, re-shapes and refines (up to 3 passes, aiming for under 0.5 mm; the test came to 0.57 mm). |
 | **Cloth (drape)** | Blender's cloth simulation, baked for the game. **Preview drape** simulates the garment she has on at the game view's cup and shows it there; nothing is stored. **Bake drape** Sends first, then simulates at each chosen cup (default A,C,F,J,M,Q,U,Z): the garment is welded and dropped over her game-shaped body as a collider, with the top of each piece and her sleeves pinned and her legwear left out. It stores the cloth's move from the game's own fit as `_CLOTH_DRAPE_<cup>` on the master garment, then Sends again. The game lays these on last, blended by the bust slider like the bust fixes, so at a baked cup it shows the simulated cloth exactly (checked: 0.000 mm at J). About 70 s per cup. **Clear drapes** removes them. |
 | **Paint (2K)** | **Paint this object** gives the selected object (or her body) a second UV map, `Paint`, and a clear 2048 px picture `art/paint/P_<object>.png`, then opens Texture Paint. Clear pixels show the game's own colour, recolours included. Painted pixels show the paint. |
@@ -24,13 +24,14 @@ the game's own `Dresser` and `face.ts`, and shows Blender what the game would sh
 | **Game shot** | The open game page (`npm run dev`, in a browser) draws her from the scene's camera with its full screen pass and sends the frame back. It loads as the image `GameShot`. The relay is in `vite.config.ts` (`/__tarven/view`, `/__tarven/shot`) and the game side in `src/game/devview.ts`. |
 
 ## What's done where
-- `tools/bridge/server.preview.ts` (`npm run bridge`, port 8765): `/schema`, `/shape`, `/rest`, `/reload`, `/fit`.
-  Shaping takes about 1 s per change, and a face fit about 2 s. The server reads the GLB's own textures
+- `tools/bridge/server.preview.ts` (`npm run bridge`, port 8765): `/schema`, `/shape`, `/rest`, `/reload`. It loads her
+  face keys as the game does. Shaping takes about 1 s per change. The server reads the GLB's own textures
   (`tools/bridge/png.ts`), so the look's dyes and tones come out as in the game. Recoloured parts show in the game
   view as flat GV_ materials.
 - `tools/blender/tarven_bridge/`:
   - `core.py`: paths and the export.
-  - `gameview.py`: the game view, face write-back and edits back.
+  - `gameview.py`: the game view and edits back.
+  - `face_keys.py`, `face_keys_build.py`, `face_keys_out.py`: her face's shape keys (below).
   - `paint.py`: the paint layers.
   - `merge_build.py`: merging a new build into the master.
   - `glb_diff.py`: compares two GLBs.
@@ -41,6 +42,43 @@ the game's own `Dresser` and `face.ts`, and shows Blender what the game would sh
   the GLBs to a scratch folder. `main()` now only runs as a script, so the bridge can import its export.
 - `src/game/paint.ts` and `retro.ts`: the paint layers are one texture array shared by every retro material. A
   mesh's `uv1` u value says which layer it uses (1 + layer); a mesh without `uv1` isn't painted.
+
+## Her face's shape keys (2026-11-21)
+Her expressions are shape keys, the way Karryn's Prison layers a face: one expression's brows, another's eyes, a third's
+mouth. The game plays them as morph targets (`src/game/face.ts`, `facekeys.ts`); nothing in code moves her face's points
+any more.
+
+- **The file:** `art/female_face_keys.blend`. It holds her head (the master's `Female_Body` cut at the neck, z > 1.40 m) and
+  her face's pieces: `Brows`, `Mouth`, `Eye_L`, `Eye_R`, `Lash_L`, `Lash_R`. The master itself has no face keys.
+- **The keys (79), the same on every piece:**
+  - `Brow_<expression>`, `Eye_<expression>`, `Mouth_<expression>` for the 24 expressions. `neutral` is Basis.
+  - `Blink` (lids shut), `Look_Left/Right/Up/Down` (her own left/right; she faces +Y, her right is +X), and
+    `Pupil_Big/Small`.
+  - Every piece's key values follow `Face`'s (drivers). Tarven tab > **Face keys** > **Show** sets a whole expression.
+  - **Sculpt <key> on all pieces** pins that key on every piece for sculpting.
+- **To the game:** **Send face keys** writes `public/models/female_face.json` (only the points each key moves). The dev
+  server reloads the game, and the bridge server reloads. Headless:
+  `D:/blender/blender.exe -b art/female_face_keys.blend --python tools/blender/tarven_bridge/face_keys_out.py`.
+- **How the game finds the points:** by where they sit in Basis (to 0.002 mm), so the file doesn't depend on the GLB's
+  vertex order. Don't sculpt Basis. If the master's face is reshaped, the keys file has to be rebuilt on it, and the
+  game warns in the console about points it can't find.
+- **Where the first shapes came from:**
+  - Brows and mouths were baked from the old face rig (`src/game/facerig.ts`, `tools/bridge/facebake.preview.ts`); they
+    match what the game showed before to 0.001 mm.
+  - `Look_*` turn each eyeball 16° about its fitted centre.
+  - `Pupil_Big/Small` are the master eyes' own keys. The exporter never sent the master's eye keys (it writes Basis), so
+    the game hadn't had them before.
+  - **The `Eye_*` keys and `Blink` are empty.** The old rig closed the old face's separate lid pieces; her new lids are
+    her face skin, which it never moved. Sculpt them.
+- **Building it again:** `face_keys_build.py` never writes over an existing keys file unless `FORCE=1`, and backs it up
+  to `art/_backups` first. Rebuilding throws away sculpted keys. It is built from a bake of a GLB exported from the
+  current master:
+  ```
+  $env:FACEBAKE_MODEL="<that glb>"; $env:FACEBAKE_OUT="ref/_bridge/face_baked.json"; npx vitest run -c tools/bridge/facebake.config.ts
+  D:/blender/blender.exe -b art/female_master.blend --python tools/blender/tarven_bridge/face_keys_build.py -- ref/_bridge/face_baked.json
+  ```
+- **Checking:** `npx vitest run -c tools/bridge/facekeyscheck.config.ts` loads the model and keys as the game does. It
+  reports how far each expression has moved from the old rig.
 
 ## When the build code changes (keeping your edits)
 ```
@@ -80,10 +118,7 @@ D:/blender/blender.exe -b art/female_master.blend --python tools/blender/tarven_
 - The Game look is close, not exact. The game's vertex snap, dither and skin glow only show in a **Game shot**.
 - In the game view, recoloured skin shows flat, without the faint mottle the game keeps. The underwear and pubic
   patches are hidden there: the game draws pictures on them, and shown flat they covered her like a white sheet.
-- Recoloured materials and face fits (2026-11-20):
-  - Dirndl colours checked against its preset.
-  - Fitting the smile, angry and surprised faces from other faces lands within 0.01–0.04 mm on average.
-  - Brows can come out as different but equivalent numbers.
+- Recoloured materials (2026-11-20): dirndl colours checked against its preset.
 - Stopping the server from a terminal can leave its vitest worker running on the port; the panel's **Stop** kills
   the whole tree.
 - A dev server started before `vite.config.ts` existed has neither the auto reload nor the Game shot relay: restart

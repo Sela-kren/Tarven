@@ -14,8 +14,9 @@ function reloadOnModels(): Plugin {
     configureServer(server) {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const changed = (file: string) => {
-        // Her models, and the painted layers sent with them (public/models/paint).
-        if (!/[\\/]public[\\/]models[\\/]([^\\/]+\.glb|paint[\\/][^\\/]+\.(png|json))$/i.test(file)) return;
+        // Her models, the painted layers sent with them (public/models/paint), and her face's shape keys
+        // (female_face.json, the bridge's "Send face keys").
+        if (!/[\\/]public[\\/]models[\\/]([^\\/]+\.glb|[^\\/]+_face\.json|paint[\\/][^\\/]+\.(png|json))$/i.test(file)) return;
         // A GLB is written in one go (the bridge renames a finished temp file into place), but a build writes
         // several in a row: wait for the last before reloading once.
         clearTimeout(timer);

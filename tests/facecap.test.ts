@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EXPRESSIONS, FACE_KEYS, REST_FACE } from "../src/game/face";
+import { CONTROL_KEYS as FACE_KEYS, EXPRESSION_CONTROLS as EXPRESSIONS, REST_CONTROLS as REST_FACE } from "../src/game/facerig";
 import {
   ARKIT_CHANNELS,
   averageFace,

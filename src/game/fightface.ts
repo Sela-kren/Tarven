@@ -7,20 +7,22 @@
  * starts, and held.
  *
  * Her parts come from her own expressions (face.ts): a mouth gritted on her teeth from "strained", brows knitted
- * down from "angry". A pool names expressions, and the part takes just that expression's brow, eye or mouth values.
+ * down from "angry". A pool names expressions, and the part takes just that expression's brow, eye or mouth shape key.
  */
 import type { BattlePoseName } from "./battlepose";
-import { BEARING, EXPRESSIONS, REST_FACE, type Expression, type FaceShape } from "./face";
+import { BEARING, EXPRESSIONS, FACE_PARTS, REST_FACE, type Expression, type FaceNumber, type FacePart, type FaceShape } from "./face";
 
-/** The three parts of her face a fight face is put together from, as KP's layers are. */
-export type FacePart = "brows" | "eyes" | "mouth";
+export type { FacePart };
 
-export const PART_KEYS: Readonly<Record<FacePart, readonly (keyof FaceShape)[]>> = {
-  brows: ["brow", "browInner", "browArch", "browOuter", "browTip", "browNear", "browSpread", "crease"],
-  eyes: ["lidUpper", "lidLower", "wide", "pupil", "lookX", "lookY", "wet", "tears", "heart"],
-  mouth: ["smile", "smirk", "open", "round", "bare", "lift", "cup", "purse", "press", "mouthUp", "tongue"],
+/**
+ * What each part of a fight face takes from its expression besides its shape key: her brows the creases between them;
+ * her eyes where they look, her pupils, and wet eyes, tears and heart pupils. Blush and sweat are the deepest of the three.
+ */
+export const PART_KEYS: Readonly<Record<FacePart, readonly FaceNumber[]>> = {
+  brows: ["crease"],
+  eyes: ["lookX", "lookY", "pupil", "wet", "tears", "heart"],
+  mouth: [],
 };
-
 /** One of KP's face ids: a pool for each part. */
 export type FightPreset = Readonly<Record<FacePart, readonly Expression[]>>;
 
@@ -155,10 +157,13 @@ export interface FightFace {
   shape: FaceShape;
 }
 
-/** Her face out of its parts: each part's values from its own expression, and the deepest blush and sweat of the three. */
+/**
+ * Her face out of its parts: each part's shape key from its own expression (and what goes with it, PART_KEYS), and
+ * the deepest blush and sweat of the three.
+ */
 export function composeFace(parts: Readonly<Record<FacePart, Expression>>): FaceShape {
-  const shape: FaceShape = { ...REST_FACE };
-  for (const part of Object.keys(PART_KEYS) as FacePart[]) {
+  const shape: FaceShape = { ...REST_FACE, brows: { [parts.brows]: 1 }, eyes: { [parts.eyes]: 1 }, mouth: { [parts.mouth]: 1 } };
+  for (const part of FACE_PARTS) {
     for (const key of PART_KEYS[part]) shape[key] = EXPRESSIONS[parts[part]][key];
   }
   shape.blush = Math.max(...Object.values(parts).map((e) => EXPRESSIONS[e].blush));

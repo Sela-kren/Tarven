@@ -236,6 +236,32 @@ with a look) as OBJ, and render that the same way. In the game, open her closet 
 `window.__game.openCloset()` (dev build only) for a close-up. Reload instead of pressing Done, so the
 save isn't touched.
 
+## Clothes with their own cup keys (2026-11-21, her default T-shirt)
+
+Her cup slider is 15 sculpted keys (A–O, `_BUST_KEY_<cup>` on her body). A garment can carry its own keys and then
+matches Blender exactly at every cup: `tools/blender/tarven_bridge/new_tee.py` (run on the master, then `npm run send`)
+rebuilds the tee this way. It's the online "transfer shape keys to clothing" method (Surface Deform / MorphBridge /
+Diffeomorphic), done by rebuilding the garment on each cup's body instead of binding.
+- **Clean mesh, not copied skin**: a grid round her torso (columns by angle round her upright line, rows hem → crew
+  neck) with a rectangular armhole each side, and sleeve tubes from each armhole. Started on the convex outline of
+  her skin at each height, then (the user's call, 2026-11-21: "thinner", wrapped round each breast, underboob showing
+  on a big bust is fine) relaxed as a taut sheet while drawn onto her skin (WRAP), GAP 3 mm off it; hem fixed at the
+  crop at every cup; the hem and neckline rows are only kept off her (pulled on, they went wavy). Edges turned under.
+  The first, boxy version (6 mm, hanging off the bust, hem dropping at the front) was judged too thick.
+- **Arms raised 35° while it's made** (the A-pose trick): hanging, her arms press on her sides and nothing fits in the
+  armpit. Her skin is posed by its own weights, the shirt gets the skin's weights, and is put back down through them.
+- **Lessons**: the T_lingerie shell on her body spans her armpit, so leave it out of any fitting (T_bra is skin, keep it);
+  her deltoid is weighted to the arm, so only count arm skin more than 6 cm down the arm as "arm"; push the cloth off
+  her skin a little at a time and spread each push as a tent (one big push kinks a face over a nipple); spread sleeve
+  rings evenly round the arm towards the cuff (the armhole's bunched corners folded the sleeve); writing a bmesh back
+  REORDERS points, so tag new points with an int layer and read the tag back before writing per-point attributes.
+- **Game**: `ownKeys` in appearance.ts: a non-body piece with keys follows her skin without her keys, adds its own,
+  and skips the fitted-top fitting (SMOOTH_TOPS smoothing, HANG, shell, nipple riders, cleavage span); clearOfSkin still
+  runs on it (her bra's hold reshapes her a little past the keys, and skin showed at J and O). All-zero key
+  sets (the leggings sharing the tee's mesh) are dropped. The tee's old hem bakes (`_CLOTH_DRAPE_*`, hem_bake.py) are gone.
+- **Check**: export the game's shape (tools/bridge/clothobj.preview.ts) and measure against the build's preview OBJs
+  (`--preview DIR`): median 0.5 mm at A, C, F, J, O.
+
 ## Order of work for a new or improved garment
 
 1. Shape: copied skin faces lifted off the skin (as now), or a Shrinkwrap-style surface with an offset.
@@ -248,3 +274,16 @@ save isn't touched.
    Keep it small and crushed (`retro_crush`) like the rest.
 6. Check: split normals (none inside the garment), renders from three views, the bust slider at A, C, F and
    J, and her closet in the game.
+
+## Skin showing through clothes in the game (2026-11-21)
+
+Two causes, both fixed in the game, not the build:
+- **The vertex snapping** (retro.ts `withPs1Rasterizer`): every point jumps to a screen grid (1 to 2 picture pixels),
+  skin and cloth each their own way, so a surface seen at a slant moves in depth far more than the 3 mm between them.
+  From the tavern's high camera her leggings showed skin in patches. `COVER_OFFSET` (all worn clothes and shoes) now
+  has a slope part (`factor: -2`), and the stains a bit more (`-2.5`), so they stay in front of the clothes.
+- **Cloth weights parted from the skin's when she bent** (behind the knees mid-stride): the built weights are a smoothed
+  copy. `Dresser.skinWeightsOnto` gives each cloth point near her skin the weights of the skin points it follows
+  (fading to its own by FOLLOW_FAR; points on bones her skin doesn't use, a skirt's panels, keep theirs).
+To check a walk: pose with `Body` (`refreshRest`, then `advance` + `pose(stride, 1, 0, 0, 0)`) after `Dresser.apply`,
+and count cloth points behind the nearest skin point's normal (leave her vulva/canal/anus meshes out of the skin).

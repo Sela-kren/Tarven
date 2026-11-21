@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BATTLE_POSES, type BattlePoseName } from "../src/game/battlepose";
-import { BEARING, EXPRESSIONS, EXTRAS, FACE_KEYS, faceFor, FLUSH, type FaceCause } from "../src/game/face";
+import { BEARING, EXPRESSIONS, EXTRAS, FACE_NUMBERS, faceFor, FLUSH, type FaceCause } from "../src/game/face";
 import {
   AROUSED_FROM,
   BAND_FROM,
@@ -30,18 +30,20 @@ function partsOf(cause: FightFaceCause) {
 }
 
 describe("her face, put together from parts", () => {
-  it("between them, the parts, her blush and her sweat cover every point of her face, each once", () => {
-    const keys = [...PART_KEYS.brows, ...PART_KEYS.eyes, ...PART_KEYS.mouth, "blush", "sweat"];
+  it("between them, what goes with the parts, her blush and her sweat cover every number of her face but her blink, each once", () => {
+    const keys = [...PART_KEYS.brows, ...PART_KEYS.eyes, ...PART_KEYS.mouth, "blush", "sweat", "blink"];
     expect(new Set(keys).size).toBe(keys.length);
-    expect([...keys].sort()).toEqual([...FACE_KEYS].sort());
+    expect([...keys].sort()).toEqual([...FACE_NUMBERS].sort());
   });
 
-  it("takes each part from its own expression, and the deepest blush", () => {
+  it("takes each part's shape key from its own expression, and the deepest blush", () => {
     const shape = composeFace({ brows: "angry", eyes: "surprised", mouth: "strained" });
-    expect(shape.browInner).toBe(EXPRESSIONS.angry.browInner);
+    expect(shape.brows).toEqual({ angry: 1 });
+    expect(shape.eyes).toEqual({ surprised: 1 });
+    expect(shape.mouth).toEqual({ strained: 1 });
     expect(shape.crease).toBe(EXPRESSIONS.angry.crease);
-    expect(shape.wide).toBe(EXPRESSIONS.surprised.wide);
-    expect(shape.bare).toBe(EXPRESSIONS.strained.bare);
+    expect(shape.pupil).toBe(EXPRESSIONS.surprised.pupil);
+    expect(shape.tears).toBe(EXPRESSIONS.surprised.tears);
     expect(shape.blush).toBe(Math.max(EXPRESSIONS.angry.blush, EXPRESSIONS.surprised.blush, EXPRESSIONS.strained.blush));
   });
 });
@@ -152,7 +154,7 @@ describe("her face in a brawl", () => {
   it("gives way to a touch or a moment, and is just anger before one's been picked", () => {
     const face = composeFace({ brows: "confident", eyes: "confident", mouth: "smile" });
     expect(faceFor({ ...fighting, fightFace: face, reaction: "jolt" })).toEqual(faceFor({ ...fighting, reaction: "jolt" }));
-    expect(faceFor({ ...fighting, fightFace: face, moment: "refused" }).smile).toBe(EXPRESSIONS.angry.smile);
+    expect(faceFor({ ...fighting, fightFace: face, moment: "refused" }).mouth).toEqual(EXPRESSIONS.angry.mouth);
     expect(faceFor(fighting)).toEqual({ ...EXPRESSIONS.angry, sweat: EXTRAS.sweatFighting });
   });
 });

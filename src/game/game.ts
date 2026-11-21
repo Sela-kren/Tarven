@@ -712,11 +712,11 @@ const DEV_FACE: Expression | null = (() => {
 })();
 
 /**
- * Her blinks: how long one takes (seconds) and the share of it spent closing; how much her lower lid comes up with it;
+ * Her blinks (her face's "Blink" shape key, face.ts): how long one takes (seconds) and the share of it spent closing;
  * seconds between blinks (at least, at most), sooner when she's nervous, and how much slower (blinks and gaps) at her
  * most drunk or worn out.
  */
-const BLINK = { time: 0.16, down: 0.4, lower: 0.25, every: [2.5, 5.5] as const, nervousSooner: 0.5, heavySlower: 0.8 };
+const BLINK = { time: 0.16, down: 0.4, every: [2.5, 5.5] as const, nervousSooner: 0.5, heavySlower: 0.8 };
 /**
  * Her glances: how likely a pause ends in one, how far her eyes go (lookX, lookY), how long she holds it and how long
  * between, in seconds, and how fast her eyes get there.
@@ -3654,8 +3654,7 @@ export class Game {
       // Down fast, up a little slower.
       const t = this.blinkAt;
       const shut = t < BLINK.down ? t / BLINK.down : Math.max(0, 1 - (t - BLINK.down) / (1 - BLINK.down));
-      shape.lidUpper = Math.max(shape.lidUpper, shut);
-      shape.lidLower = Math.max(shape.lidLower, shut * BLINK.lower);
+      shape.blink = Math.max(shape.blink, shut);
       if (t >= 1) {
         this.blinkAt = null;
         const [lo, hi] = BLINK.every;

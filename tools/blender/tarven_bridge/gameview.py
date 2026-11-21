@@ -77,6 +77,8 @@ def _job(scene):
     sliders = {item.id: item.value for item in gv.sliders}
     face = {item.id: item.value for item in gv.face}
     job = {"sliders": sliders, "face": face, "nude": gv.nude, "posed": gv.posed}
+    if _schema and gv.expression:
+        job["expression"] = gv.expression
     if gv.outfit:
         job["outfit"] = gv.outfit
     if gv.hairstyle:
@@ -370,59 +372,6 @@ def clear_meshes():
             bpy.data.meshes.remove(data)
 
 
-# ---------------------------------------------------------------- face.ts write-back
-
-def face_ts_path():
-    return os.path.join(core.repo_root(), "src", "game", "face.ts")
-
-
-def _fmt(value):
-    text = f"{round(value, 2):.2f}".rstrip("0").rstrip(".")
-    return "0" if text in ("-0", "") else text
-
-
-def write_expression(name, values):
-    """Rewrites one EXPRESSIONS entry in face.ts (`name: face({ ... }),`), keeping the order of the keys it had and
-    the comments around it. Keys at 0 are left out, as the file writes them."""
-    path = face_ts_path()
-    text = open(path, encoding="utf8").read()
-    block = re.search(r"export const EXPRESSIONS\b[^=]*=\s*\{(.*?)\n\};", text, re.S)
-    if not block:
-        raise RuntimeError("EXPRESSIONS not found in face.ts")
-    entry = re.compile(r"(\n(\s*)" + re.escape(name) + r": face\(\{)(.*?)(\}\),)", re.S)
-    found = entry.search(text, block.start(1), block.end(1))
-    if not found:
-        raise RuntimeError(f"expression {name} not found in face.ts")
-    old = dict(re.findall(r"(\w+)\s*:\s*(-?[\d.]+)", found.group(3)))
-    if all(abs(float(old.get(k, 0)) - v) < 0.005 for k, v in values.items()):
-        return False  # unchanged: leave the file as it is
-    old_keys = list(old)
-    keys = [k for k in old_keys if k in values] + [k for k in values if k not in old_keys]
-    parts = [f"{k}: {_fmt(values[k])}" for k in keys if abs(values[k]) >= 0.005]
-    indent = found.group(2)
-    one_line = f"{indent}{name}: face({{ {', '.join(parts)} }}),"
-    was_one_line = "\n" not in found.group(3)
-    if not parts:
-        replacement = f"\n{indent}{name}: face({{}}),"
-    elif was_one_line:
-        # Kept on one line, as the file had it.
-        replacement = "\n" + one_line
-    else:
-        lines, line = [], ""
-        for part in parts:
-            if line and len(indent) + 2 + len(line) + len(part) + 2 > 130:
-                lines.append(line.rstrip())
-                line = ""
-            line += part + ", "
-        lines.append(line.rstrip())
-        inner = "\n".join(f"{indent}  {line}" for line in lines)
-        replacement = f"\n{indent}{name}: face({{\n{inner}\n{indent}}}),"
-    text = text[:found.start()] + replacement + text[found.end():]
-    with open(path, "w", encoding="utf8", newline="") as out:
-        out.write(text)
-    return True
-
-
 # ---------------------------------------------------------------- properties
 
 def _items(kind):
@@ -473,7 +422,8 @@ class TarvenGameView(bpy.types.PropertyGroup):
     outfit: bpy.props.EnumProperty(name="Outfit", items=_items("outfits"), update=_value_update)
     hairstyle: bpy.props.EnumProperty(name="Hair", items=_items("hairstyles"), update=_value_update)
     bust_shape: bpy.props.EnumProperty(name="Bust shape", items=_items("bustShapes"), update=_value_update)
-    expression: bpy.props.EnumProperty(name="Expression", items=_items("expression"))
+    expression: bpy.props.EnumProperty(name="Expression", items=_items("expression"),
+                                       update=lambda _self, context: _load_expression(context.scene))
     sliders: bpy.props.CollectionProperty(type=TarvenValue)
     face: bpy.props.CollectionProperty(type=TarvenValue)
     show_tab: bpy.props.EnumProperty(name="Tab", items=[("body", "Body", ""), ("face", "Face", ""), ("hair", "Hair", "")])
@@ -612,46 +562,28 @@ class TARVEN_OT_built(bpy.types.Operator):
         return {"FINISHED"}
 
 
+def _load_expression(scene):
+    """The face's numbers (blink, look, pupil, blush...) to the chosen expression's, as face.ts has them; its brows,
+    eyes and mouth are its shape keys (art/female_face_keys.blend), which the server lays on."""
+    global _suspend
+    gv = scene.tarven_gv
+    shape = _schema["expressions"].get(gv.expression, {}) if _schema else {}
+    _suspend = True
+    try:
+        for item in gv.face:
+            item.value = float(shape.get(item.id, 0.0))
+    finally:
+        _suspend = False
+    schedule()
+
+
 class TARVEN_OT_load_expression(bpy.types.Operator):
-    """Set the face sliders to the chosen expression, as face.ts has it"""
+    """Put the chosen expression's own numbers back (look, pupil, blush...)"""
     bl_idname = "tarven.load_expression"
-    bl_label = "Load"
+    bl_label = "Reset"
 
     def execute(self, context):
-        global _suspend
-        gv = context.scene.tarven_gv
-        shape = _schema["expressions"].get(gv.expression, {}) if _schema else {}
-        _suspend = True
-        try:
-            for item in gv.face:
-                item.value = float(shape.get(item.id, 0.0))
-        finally:
-            _suspend = False
-        schedule()
-        return {"FINISHED"}
-
-
-class TARVEN_OT_save_expression(bpy.types.Operator):
-    """Write the face sliders into face.ts as the chosen expression (the game reloads with it)"""
-    bl_idname = "tarven.save_expression"
-    bl_label = "Save to game"
-
-    def invoke(self, context, event):
-        return context.window_manager.invoke_confirm(self, event, title=f"Save as '{context.scene.tarven_gv.expression}' in face.ts?")
-
-    def execute(self, context):
-        gv = context.scene.tarven_gv
-        values = {item.id: item.value for item in gv.face}
-        try:
-            write_expression(gv.expression, values)
-        except Exception as error:  # noqa: BLE001
-            self.report({"ERROR"}, str(error))
-            return {"CANCELLED"}
-        # The server is sent the face's numbers with every job, so it needs no reload; the game's dev server
-        # picks the file up by itself.
-        if _schema:
-            _schema["expressions"][gv.expression] = values
-        self.report({"INFO"}, f"Saved '{gv.expression}' to src/game/face.ts")
+        _load_expression(context.scene)
         return {"FINISHED"}
 
 
@@ -747,69 +679,6 @@ class TARVEN_OT_game_look(bpy.types.Operator):
         context.scene.camera = cam
         context.scene.render.resolution_x, context.scene.render.resolution_y = 1280, 720
         self.report({"INFO"}, "Game look on; Numpad 0 looks through the game's camera")
-        return {"FINISHED"}
-
-
-# How much an unmoved face point counts in a face fit, against 1 for one you moved.
-ANCHOR = 0.02
-FACE_MATERIALS = re.compile(r"^T_(face_|lip|hair_f$|mouth|teeth|tongue|eye_)")
-
-
-class TARVEN_OT_fit_face(bpy.types.Operator):
-    """Find the face numbers that make the game shape her face as you sculpted it on the game view (Edit game
-    view first), and set the face sliders to them; Save to game then keeps them as the chosen expression"""
-    bl_idname = "tarven.fit_face"
-    bl_label = "Fit face to my sculpt"
-
-    def execute(self, context):
-        global _suspend
-        if context.mode != "OBJECT":
-            bpy.ops.object.mode_set(mode="OBJECT")
-        edits = {k: (list(map(int, moved)), d, n) for k, (moved, d, n) in edits_on_view().items()}
-        if not edits:
-            self.report({"WARNING"}, "Sculpt her face on the game view first (Edit game view)")
-            return {"CANCELLED"}
-        coll = bpy.data.collections.get(COLLECTION)
-        targets = []
-        for obj in coll.objects:
-            key = obj.get("tarven_key") or ""
-            if obj.type != "MESH" or obj.hide_viewport or not key.startswith("Female_Body"):
-                continue
-            if not FACE_MATERIALS.match(key.split("|")[1] if "|" in key else ""):
-                continue
-            co = np.empty(len(obj.data.vertices) * 3, dtype=np.float32)
-            obj.data.vertices.foreach_get("co", co)
-            # Every point of her face: the moved ones where you put them, the rest where they are, so the fit moves
-            # what you moved and holds what you didn't.
-            moved = set(edits.get(key, ((), None, None))[0])
-            # The moved points are what you asked for; the rest only hold still, lightly.
-            targets += [{"key": key, "index": i, "co": co[i * 3:i * 3 + 3].tolist(), "weight": 1.0 if i in moved else ANCHOR}
-                        for i in range(len(co) // 3)]
-        job = _job(context.scene)
-        job.pop("known", None)
-        job["targets"] = targets
-        context.window_manager.tarven_gv_status = "Fitting her face…"
-        try:
-            done = _request("/fit", job, timeout=600)
-        except Exception as error:  # noqa: BLE001
-            self.report({"ERROR"}, str(error))
-            return {"CANCELLED"}
-        if "error" in done:
-            self.report({"ERROR"}, done["error"].splitlines()[0])
-            return {"CANCELLED"}
-        gv = context.scene.tarven_gv
-        _suspend = True
-        try:
-            for item in gv.face:
-                item.value = float(done["face"].get(item.id, item.value))
-        finally:
-            _suspend = False
-        gv.editable = False
-        note = (f"Face fit: {done['before']['meanMm']} -> {done['after']['meanMm']} mm off on average "
-                f"(worst {done['after']['maxMm']} mm), {done['points']} points, {done['ms'] / 1000:.1f} s")
-        context.window_manager.tarven_gv_status = note
-        self.report({"INFO"}, note)
-        schedule()
         return {"FINISHED"}
 
 
@@ -972,16 +841,16 @@ class TARVEN_PT_face(bpy.types.Panel):
         gv = context.scene.tarven_gv
         row = layout.row(align=True)
         row.prop(gv, "expression", text="")
-        row.operator("tarven.load_expression")
-        row.operator("tarven.save_expression", icon="FILE_TICK")
-        layout.operator("tarven.fit_face", icon="SHAPEKEY_DATA")
+        row.operator("tarven.load_expression", icon="LOOP_BACK")
+        layout.label(text="Her brows, eyes, mouth: shape keys in", icon="SHAPEKEY_DATA")
+        layout.label(text="art/female_face_keys.blend (Send face keys)")
         column = layout.column(align=True)
         for item in gv.face:
             column.prop(item, "value", text=item.label, slider=True)
 
 
 _classes = (TarvenValue, TarvenGameView, TARVEN_OT_server, TARVEN_OT_connect, TARVEN_OT_start_look, TARVEN_OT_built,
-            TARVEN_OT_load_expression, TARVEN_OT_save_expression, TARVEN_OT_apply_edits, TARVEN_OT_fit_face, TARVEN_OT_game_look, TARVEN_OT_game_shot, TARVEN_OT_clear_view,
+            TARVEN_OT_load_expression, TARVEN_OT_apply_edits, TARVEN_OT_game_look, TARVEN_OT_game_shot, TARVEN_OT_clear_view,
             TARVEN_PT_gameview, TARVEN_PT_sliders, TARVEN_PT_face)
 
 

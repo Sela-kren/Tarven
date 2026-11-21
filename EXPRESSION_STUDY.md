@@ -10,10 +10,12 @@ for her face (`src/game/face.ts`). Their art is reference only and is never copi
 | The interactive study sheet (every preset, every random look, part library, heatmaps, notes per face) | `D:\hh\Karryns.Prison.v1.2.7.2.Incl.ALL.DLC.Uncensored\...\Decrypted\expression-study\index.html` (its data is `data.js`, its pictures `img\`) |
 | KP's face code | `RemtairyKarrynEmote.js → emoteStandbyPose` under KP's `www\js\plugins` |
 | Her layers (every pose's face pieces) | `...\Decrypted\karryn\<pose>\` |
-| Tarven's expressions | `src/game/face.ts` (`EXPRESSIONS`, `faceFor`, the rig in `faceMove`) |
+| Tarven's expressions | `src/game/face.ts` (`EXPRESSIONS` as brow/eye/mouth shape keys, `VARIANTS`, `faceFor`); played as morph targets by `facekeys.ts` |
+| Her face's shape keys (sculpted, the source of truth since 21 Nov) | `art/female_face_keys.blend` → `public/models/female_face.json` (BLENDER_BRIDGE.md) |
+| The old face rig (only to bake keys from now) | `src/game/facerig.ts` |
 | Tarven's fight faces (already part-pooled the KP way) | `src/game/fightface.ts` |
-| Her expressions as Blender shape keys, for editing by hand | `art/face_expressions.blend` |
-| Tools: every expression to OBJ / shape data, and fitting face.ts to a Blender edit | `tools/facepreview/` |
+| Her old expressions as Blender shape keys (superseded) | `art/face_expressions.blend` |
+| Tools: every expression to OBJ | `tools/facepreview/` |
 
 The study sheet's notes box saves to that browser only. Copy any notes you want to keep into this doc.
 
@@ -168,6 +170,17 @@ In rough order of payoff for the work:
   `FACE_EXTRAS` (appearance.ts EXTRA_MATERIALS).
 - `art/face_expressions.blend` rebuilt from the game (`tools/facepreview/build_face_blend.py`) with all of this: the
   old one (dot eyes, the user's hand-drawn `angry`) is kept as `art/face_expressions_v1.blend`.
+
+- 21 Nov, **shape keys instead of code** (the user asked for the KP way: eye keys and mouth keys, combined in the game).
+  A face is now one expression's brows, eyes and mouth, each a shape key (`Brow_angry`, `Eye_tired`, `Mouth_panting`...),
+  sculpted in `art/female_face_keys.blend` and played as morph targets (face.ts `FaceShape` = a weight per expression per
+  part, plus blink, look, pupil and the drawn extras). `VARIANTS` are KP-style pool picks now: a part, or half of one,
+  from a close expression (angry's: half `set`'s or half `gritted`'s mouth). Brawl faces (fightface.ts) were already
+  built from parts, so they take keys directly. Blinks and heavy lids are the `Blink` key over her eyes' own.
+  - The first keys came from the old rig: brows and mouths are exactly what the game showed before. `Eye_*` and
+    `Blink` are empty, because the old rig couldn't close her real_heroin lids (her face skin), and they need sculpting.
+    `Look_*` turn the eyeballs, and `Pupil_*` are the master eyes' own keys.
+  - The old rig's open mouths look boxy on her new face (`panting`, `delighted`, `surprised`): the first thing to sculpt.
 
 ## Appendix: every KP standby face
 
