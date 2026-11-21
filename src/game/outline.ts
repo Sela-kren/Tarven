@@ -1,4 +1,4 @@
-import { BackSide, BufferGeometry, Color, Mesh, MeshBasicMaterial, Object3D, SkinnedMesh } from "three";
+import { BackSide, BufferGeometry, Color, Material, Mesh, MeshBasicMaterial, Object3D, SkinnedMesh } from "three";
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 
 /** A solid colour drawn on the back faces of a copy pushed out along the normals: an inverted-hull outline. */
@@ -38,7 +38,9 @@ export class Outline {
   constructor(root: Object3D, material: MeshBasicMaterial, smooth = false) {
     const sources: Mesh[] = [];
     root.traverse((object) => {
-      if (object instanceof Mesh) sources.push(object);
+      // Cut-out cards (her strand hair) are left out: their hull would outline every card's whole rectangle.
+      const cutOut = (m: Material | Material[]) => (Array.isArray(m) ? m : [m]).some((x) => x.alphaTest > 0);
+      if (object instanceof Mesh && !cutOut(object.material)) sources.push(object);
     });
     for (const source of sources) {
       let hull: Mesh;

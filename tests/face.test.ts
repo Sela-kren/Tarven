@@ -337,6 +337,39 @@ describe("her face", () => {
     expect(surface(0.5, 0.5)).toBeNull();
   });
 
+  it("finds the front of her face as fast as it's asked, with the same answers as testing every triangle", () => {
+    // A bumpy grid of triangles with a second layer behind it, against the plain test of each one.
+    let seed = 7;
+    const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const triangles: number[][] = [];
+    const n = 40;
+    const at = (i: number, j: number, back: number) => [i / n * 0.1 - 0.05, 1.45 + j / n * 0.08, -0.08 + 0.01 * Math.sin(i + j) + back];
+    for (const back of [0, 0.03])
+      for (let i = 0; i < n; i++)
+        for (let j = 0; j < n; j++) {
+          triangles.push([...at(i, j, back), ...at(i + 1, j, back), ...at(i, j + 1, back)]);
+          triangles.push([...at(i + 1, j, back), ...at(i + 1, j + 1, back), ...at(i, j + 1, back)]);
+        }
+    const brute = (x: number, y: number) => {
+      let front: number | null = null;
+      for (const [ax, ay, az, bx, by, bz, cx, cy, cz] of triangles) {
+        const d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+        const u = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / d;
+        const v = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / d;
+        if (u < -1e-6 || v < -1e-6 || 1 - u - v < -1e-6) continue;
+        const z = u * az + v * bz + (1 - u - v) * cz;
+        if (front === null || z < front) front = z;
+      }
+      return front;
+    };
+    const surface = faceSurface(triangles);
+    for (let k = 0; k < 2000; k++) {
+      const x = -0.06 + rand() * 0.12;
+      const y = 1.44 + rand() * 0.1;
+      expect(surface(x, y)).toBe(brute(x, y));
+    }
+  });
+
   it("opens her mouth: her lower lip and chin drop, her upper lip and teeth stay", () => {
     const open = { ...REST_FACE, open: 1 };
     expect(rig.line).toBeCloseTo(1.427);

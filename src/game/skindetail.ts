@@ -239,8 +239,11 @@ const glint = (final: string) => /* glsl */ `{
 #include <dithering_fragment>`;
 
 /** Puts one kind's detail into a shader about to compile: a three.js lit material's (Lambert or physical). */
-function addTo(shader: WebGLProgramParametersWithUniforms, kind: DetailKind): void {
+function addTo(shader: WebGLProgramParametersWithUniforms, kind: DetailKind, opaque = false): void {
   const part = PARTS[kind];
+  // On a hand-sculpted vulva (opaque) the outer lips and the slit are her skin itself, with none under them: their
+  // edges don't melt away, or she'd be see-through there. Only the areola, a disc over her skin, still fades.
+  const color = opaque && kind !== "areola" ? part.color.replace(/^diffuseColor\.a \*=.*$/gm, "") : part.color;
   shader.vertexShader = `varying vec2 vDetailUv;\nvarying vec2 vDetailDir;\n${shader.vertexShader}`.replace(
     "#include <uv_vertex>",
     `#include <uv_vertex>
@@ -249,7 +252,7 @@ vDetailDir = vec2(cos(uv.y * 6.2831853), sin(uv.y * 6.2831853));`,
   );
   const extra = kind === "labia" || kind === "vulva" ? VULVA_ACROSS : "";
   shader.fragmentShader = `${COMMON}${extra}${shader.fragmentShader}`
-    .replace("#include <color_fragment>", `#include <color_fragment>\n${part.color}`)
+    .replace("#include <color_fragment>", `#include <color_fragment>\n${color}`)
     .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>\n${part.normal}`)
     .replace("#include <dithering_fragment>", glint(part.final));
 }
@@ -266,10 +269,22 @@ export function addSkinDetail(material: Material): void {
   const before = material.onBeforeCompile;
   material.onBeforeCompile = (shader: WebGLProgramParametersWithUniforms, renderer: WebGLRenderer) => {
     before.call(material, shader, renderer);
-    addTo(shader, kind);
+    addTo(shader, kind, material.userData.skinDetailOpaque === true);
   };
   const key = material.customProgramCacheKey;
-  material.customProgramCacheKey = () => `${key.call(material)}|skin-detail-${kind}`;
-  if (PARTS[kind].fades) material.transparent = true;
+  material.customProgramCacheKey = () =>
+    `${key.call(material)}|skin-detail-${kind}${material.userData.skinDetailOpaque === true ? "-opaque" : ""}`;
+  if (PARTS[kind].fades && material.userData.skinDetailOpaque !== true) material.transparent = true;
+  material.needsUpdate = true;
+}
+
+/**
+ * Marks a material as a hand-sculpted vulva's (or anus's): its detail no longer fades out at its edges and it's drawn
+ * solid, as there's no skin under it to melt into (her sculpt, Female_Body's "vulva_sculpted").
+ */
+export function keepSkinDetailOpaque(material: Material): void {
+  if (material.userData.skinDetailOpaque === true) return;
+  material.userData.skinDetailOpaque = true;
+  if (detailKind(material.name) !== "areola") material.transparent = false;
   material.needsUpdate = true;
 }

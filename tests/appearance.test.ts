@@ -595,7 +595,7 @@ describe("keeping looks", () => {
     expect(readLook({ sliders: {}, colors: {}, hidden: [] }, "Male")).toEqual(newLook());
   });
 
-  it("starts her J cup with bigger nipples, in a new game and in an old save she never shaped", () => {
+  it("starts her bust as built with bigger nipples, in a new game and in an old save she never shaped", () => {
     const start = startSliders();
     expect(startLook("Female").sliders).toMatchObject(start);
     expect(readLooks({ Female: { sliders: {}, colors: {}, hidden: [] } })!.Female.sliders).toMatchObject(start);
@@ -628,7 +628,7 @@ describe("keeping looks", () => {
 });
 
 describe("hairstyles", () => {
-  /** The rig with two hairstyles on the hips bone: its own, and a long one. */
+  /** The rig with two hairstyles on the hips bone: its own, and the long ponytail. */
   function hairRig() {
     const parts = rig();
     const make = (name: string) => {
@@ -642,7 +642,7 @@ describe("hairstyles", () => {
       hair.bind(parts.mesh.skeleton);
       return hair;
     };
-    return { ...parts, own: make("Female_Hair"), long: make("Female_HairLong") };
+    return { ...parts, own: make("Female_Hair"), long: make("Female_HairPonytail") };
   }
 
   it("shows only the chosen style, starting with the character's own", () => {
@@ -650,7 +650,7 @@ describe("hairstyles", () => {
     const dresser = new Dresser(model, "Female");
     dresser.apply(newLook());
     expect([own.visible, long.visible]).toEqual([true, false]);
-    dresser.apply({ ...newLook(), hairstyle: "long" });
+    dresser.apply({ ...newLook(), hairstyle: "ponytail" });
     expect([own.visible, long.visible]).toEqual([false, true]);
   });
 
@@ -663,8 +663,12 @@ describe("hairstyles", () => {
   it("has no hair mesh for bald, and keeps only known styles", () => {
     expect(hairMeshFor("Male", { hairstyle: "bald" })).toBeNull();
     expect(hairMeshFor("Male", {})).toBe("");
-    expect(readLook({ hairstyle: "long" }, "Female")!.hairstyle).toBe("long");
-    expect(readLook({ hairstyle: "bob" }, "Female")!.hairstyle).toBeUndefined();
+    expect(readLook({ hairstyle: "ponytail" }, "Female")!.hairstyle).toBe("ponytail");
+    // The built styles the downloaded ones replaced (2026-11-20) fall back to her own.
+    expect(readLook({ hairstyle: "braid" }, "Female")!.hairstyle).toBeUndefined();
+    // Her own is the wolf cut (2026-11-21): naming it is the same as naming none; the swept bob is a style now.
+    expect(readLook({ hairstyle: "wolf" }, "Female")!.hairstyle).toBeUndefined();
+    expect(readLook({ hairstyle: "bob" }, "Female")!.hairstyle).toBe("bob");
     expect(readLook({ hairstyle: "mohawk" }, "Female")!.hairstyle).toBeUndefined();
   });
 });

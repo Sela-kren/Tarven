@@ -48,6 +48,8 @@ OBJECT = "Female_Body"
 ARMATURE = "Female_Armature"
 # Her eyes and mouth are in the bake (the contact shade of her lids on her eyes); nothing else is.
 BAKE_WITH = ("Female_BodyEye_L", "Female_BodyEye_R", "Female_BodyMouth")
+# Patches over her skin, never baked as part of it (Baker moves them out of the way).
+OVERLAY_MATERIALS = ("T_lingerie", "T_pubic", "T_areola")
 SIZE = paint.SIZE
 ATTRIBUTE = "_SKIN_DETAIL"
 # Paint UVs off the picture (no paint in the game, whichever layer the body is sent as).
@@ -118,7 +120,8 @@ class Mesh:
         lt = np.empty(self.nF, np.int32)
         me.polygons.foreach_get("loop_total", lt)
         self.lf = np.repeat(np.arange(self.nF), lt)
-        self.mats = [s.material.name if s.material else "" for s in obj.material_slots]
+        # The mesh's own materials, not the slots' (an edit file may show other materials linked to the object).
+        self.mats = [mat.name if mat else "" for mat in me.materials]
         self.game_uv = self.uv(me.uv_layers[0].name)
         ev = np.empty(len(me.edges) * 2, np.int32)
         me.edges.foreach_get("vertices", ev)
@@ -345,6 +348,14 @@ class Baker:
         for o in scene.objects:
             o.hide_render = o.name not in BAKE_WITH and o is not self.copy
         me = self.copy.data
+        # The overlays joined into her skin (her underwear layer, pubic patch, nipple discs) lie just over it and
+        # would shade it in the bake (a dark, jagged copy of the underwear layer all over her torso): in the copy
+        # they are moved far away, which keeps every point's index.
+        names = [mat.name if mat else "" for mat in src.data.materials]
+        overlays = {i for i, n in enumerate(names) if n in OVERLAY_MATERIALS}
+        far = {v for p in me.polygons if p.material_index in overlays for v in p.vertices}
+        for v in far:
+            me.vertices[v].co = (0.0, 0.0, -100.0)
         me.materials.clear()
         self.material = bpy.data.materials.new("_skin_bake")
         self.material.use_nodes = True
@@ -430,6 +441,17 @@ class Baker:
         me = self.copy.data
         attr = me.color_attributes.new(name, "FLOAT_COLOR", "POINT")
         rgba = np.ones((len(me.vertices), 4), np.float32)
+        rgba[:, :3] = values
+        attr.data.foreach_set("color", rgba.ravel())
+        node = self.material.node_tree.nodes.new("ShaderNodeVertexColor")
+        node.layer_name = name
+        return node.outputs["Color"]
+
+    def corner_socket(self, name, values):
+        """A colour attribute per face corner on the copy holding `values` (nL, 3): crisp from face to face."""
+        me = self.copy.data
+        attr = me.color_attributes.new(name, "FLOAT_COLOR", "CORNER")
+        rgba = np.ones((len(me.loops), 4), np.float32)
         rgba[:, :3] = values
         attr.data.foreach_set("color", rgba.ravel())
         node = self.material.node_tree.nodes.new("ShaderNodeVertexColor")
@@ -679,6 +701,161 @@ def point_fields(m):
             "tips": tips, "bust": np.clip(bust, 0, 1), "fade": fade}
 
 
+# ---------------------------------------------------------------- her lips: the refs' soft, sprayed lip paint
+# (2026-11-21, the user: the refs' lips are blurred, sprayed colour; hers were hard flat swatches.) Self-contained:
+# lip_point_fields() at her points, lip_multiplier() on her points and her face's picture, applied after detail().
+# Measured on Luna's and Invisible Woman's painted mouths: deepest and richest along the line between the lips,
+# lighter toward the lips' border, no hard edge (the colour sprays out into the skin, most at the corners and under
+# the lower lip, tightest along the upper lip's top), a faint light line on the cupid's bow, no flat highlight block.
+LIP_MATS = ("T_lip", "T_lip_lit")
+LIP_LOOK = {
+    "deep": (0.66, 0.44, 0.50),        # x her lip colour, along the line between her lips (richer, darker)
+    "mid": (0.95, 0.88, 0.90),            # her lip colour itself, halfway across
+    "edge": (1.05, 1.30, 1.11),        # x her lip colour, at the lips' border: halfway to her skin (no hard edge)
+    "halo_tint": (0.97, 0.89, 0.93),   # x her skin colour, just outside the border: halfway to her lips
+    "halo": 1.0,                       # how much of halo_tint at the border (it fades out from there)
+    "halo_tight": 0.0010,              # metres: how far it reaches along the upper lip's top
+    "halo_wide": 0.0026,               # at the corners and under the lower lip
+    "bow": 1.10,                       # the light line on the cupid's bow (x her skin)
+    "upper": (0.90, 0.84, 0.86),       # the upper lip deeper than the lower (the refs')
+    "lower": (1.06, 1.10, 1.07),       # the lower lip lighter
+    "sheen": (1.10, 1.15, 1.12),       # a broad soft glow across the lower lip's middle (no hard highlight)
+    "brush": 0.15,                     # soft brush streaks along her lips (+- of her colour)
+    "brush_size": (0.011, 0.004, 0.0016),  # metres (across her mouth, depth, up): long, thin, along the lips
+}
+
+
+def _material_rgb(name):
+    """A material's average colour (its picture's, or its base colour), linear."""
+    mat = bpy.data.materials.get(name)
+    if mat is None:
+        return None
+    if mat.use_nodes:
+        for node in mat.node_tree.nodes:
+            if node.type == "TEX_IMAGE" and node.image is not None and node.image.size[0]:
+                px = np.empty(node.image.size[0] * node.image.size[1] * 4, np.float32)
+                node.image.pixels.foreach_get(px)
+                return px.reshape(-1, 4)[:, :3].mean(0).astype(np.float64)
+        for node in mat.node_tree.nodes:
+            if node.type == "BSDF_PRINCIPLED":
+                return np.array(node.inputs["Base Color"].default_value[:3], np.float64)
+    return np.array(mat.diffuse_color[:3], np.float64)
+
+
+def lip_point_fields(m):
+    """Per point: (where it sits across her lips: 0 on the line between them .. 1 at their border; the halo's
+    strength outside; the cupid's-bow line) and (on the lit block, on her lips, 0)."""
+    lip_f = m.faces_with(lambda n: n in LIP_MATS)
+    lit_f = m.faces_with(lambda n: n == "T_lip_lit")
+    lips = m.vertices_of(lip_f)
+    others = m.vertices_of(~lip_f)
+    border = lips & others
+    # the line between her lips: edges of lip faces used by one face only
+    from collections import Counter
+    count = Counter()
+    starts = np.r_[0, np.cumsum(np.bincount(m.lf, minlength=m.nF))[:-1]]
+    totals = np.bincount(m.lf, minlength=m.nF)
+    for f in np.nonzero(lip_f)[0]:
+        vs = m.lv[starts[f]:starts[f] + totals[f]]
+        for a, b in zip(vs, np.roll(vs, -1)):
+            count[(min(a, b), max(a, b))] += 1
+    inner = np.zeros(m.nV, bool)
+    for (a, b), c in count.items():
+        if c == 1 and not (border[a] and border[b]):
+            inner[a] = inner[b] = True
+    d_border = m.distance_from(border, 0.012)
+    d_inner = m.distance_from(inner, 0.012)
+    # across her lips as seen from the front (x, z): the line between her lips seen from the front is where they meet;
+    # measured along the skin it would sit deep in her mouth and leave the whole visible lip "at the border"
+    xz = m.co[:, [0, 2]]
+    li = np.nonzero(lips)[0]
+    d_in2 = np.sqrt(((xz[li, None, :] - xz[None, inner, :]) ** 2).sum(-1)).min(1)
+    d_bo2 = np.sqrt(((xz[li, None, :] - xz[None, border, :]) ** 2).sum(-1)).min(1)
+    across = np.zeros(m.nV)
+    across[li] = np.clip(d_in2 / np.maximum(d_in2 + d_bo2, 1e-6), 0, 1)
+    mouth = m.co[inner].mean(0) if inner.any() else m.co[lips].mean(0)
+    half_w = max(np.abs(m.co[lips, 0] - mouth[0]).max(), 1e-6)
+    above = m.co[:, 2] > mouth[2]
+    side = np.clip(np.abs(m.co[:, 0] - mouth[0]) / half_w, 0, 1.3)
+    sigma = np.where(above, LIP_LOOK["halo_tight"] + (LIP_LOOK["halo_wide"] - LIP_LOOK["halo_tight"])
+                     * np.clip((side - 0.6) / 0.4, 0, 1), LIP_LOOK["halo_wide"])
+    halo = np.where(lips, 0.0, LIP_LOOK["halo"] * np.exp(-(d_border / sigma) ** 2))
+    bow = (~lips) & above & (side < 0.35) & (d_border > 0.0002) & (d_border < 0.0009)
+    lit = m.vertices_of(lit_f) & ~m.vertices_of(lip_f & ~lit_f)
+    log(f"lips: {int(lips.sum())} points, border {int(border.sum())}, line {int(inner.sum())}, halo "
+        f"{int((halo > 0.02).sum())}, bow {int(bow.sum())}")
+    on_lip_corner = lip_f[m.lf].astype(np.float64)
+    # upper or lower lip: above or below where they meet (the line between them, seen from the front)
+    order = np.argsort(m.co[inner, 0])
+    line_z = np.interp(m.co[:, 0], m.co[inner, 0][order], m.co[inner, 2][order])
+    upper = (m.co[:, 2] > line_z).astype(np.float64)
+    return (np.stack([across, halo, bow.astype(np.float64)], 1),
+            np.stack([np.clip(side, 0, 1), lips.astype(np.float64), upper], 1),
+            np.stack([on_lip_corner, np.zeros(m.nL), np.zeros(m.nL)], 1))
+
+
+def lip_face_mask(m, size=None):
+    """Her lip faces drawn into the picture from her Paint UV map (1 on them, 0 off; edge pixels by coverage, 3x3)."""
+    size = size or SIZE
+    uv = m.uv("Paint").astype(np.float64)
+    lip_f = m.faces_with(lambda n: n in LIP_MATS)
+    starts = np.r_[0, np.cumsum(np.bincount(m.lf, minlength=m.nF))[:-1]]
+    totals = np.bincount(m.lf, minlength=m.nF)
+    acc = np.zeros((size, size))
+    offs = [(-1 / 3, -1 / 3), (0, -1 / 3), (1 / 3, -1 / 3), (-1 / 3, 0), (0, 0), (1 / 3, 0), (-1 / 3, 1 / 3), (0, 1 / 3), (1 / 3, 1 / 3)]
+    for f in np.nonzero(lip_f)[0]:
+        q = uv[starts[f]:starts[f] + totals[f]] * size - 0.5          # pixel centres at integers; row = v
+        for k in range(1, len(q) - 1):
+            a, b, c = q[0], q[k], q[k + 1]
+            x0, x1 = int(np.floor(min(a[0], b[0], c[0]))), int(np.ceil(max(a[0], b[0], c[0])))
+            y0, y1 = int(np.floor(min(a[1], b[1], c[1]))), int(np.ceil(max(a[1], b[1], c[1])))
+            x0, y0 = max(x0, 0), max(y0, 0); x1, y1 = min(x1, size - 1), min(y1, size - 1)
+            if x1 < x0 or y1 < y0: continue
+            gx, gy = np.meshgrid(np.arange(x0, x1 + 1), np.arange(y0, y1 + 1))
+            den = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
+            if abs(den) < 1e-12: continue
+            cover = np.zeros(gx.shape)
+            for ox, oy in offs:
+                px, py = gx + ox, gy + oy
+                l1 = ((b[1] - c[1]) * (px - c[0]) + (c[0] - b[0]) * (py - c[1])) / den
+                l2 = ((c[1] - a[1]) * (px - c[0]) + (a[0] - c[0]) * (py - c[1])) / den
+                cover += (l1 >= 0) & (l2 >= 0) & (1 - l1 - l2 >= 0)
+            sub = acc[y0:y1 + 1, x0:x1 + 1]
+            np.maximum(sub, cover / len(offs), out=sub)
+    return acc
+
+
+def lip_multiplier(c, d, p):
+    """The lip paint's multiplier (N x 3) from lip_point_fields' two triples and the positions p (N x 3), at points or
+    picture pixels."""
+    across, halo, bow = c[:, 0], c[:, 1], c[:, 2]
+    side, inside, upper = np.clip(d[:, 0], 0, 1), np.clip(d[:, 1], 0, 1), np.clip(d[:, 2], 0, 1)
+    raw_across = across.copy()
+    # richest in the middle of her mouth, easing toward the soft edge colour at the corners (the refs')
+    across = np.maximum(across, smoothstep(0.55, 1.0, side) * 0.85)
+    deep, mid, edge = (np.array(LIP_LOOK[k]) for k in ("deep", "mid", "edge"))
+    lip_rgb, skin_rgb = _material_rgb("T_lip"), _material_rgb("T_face_skin")
+    if lip_rgb is not None and skin_rgb is not None:
+        # at the border her lip shows exactly what the skin just outside shows (skin x halo_tint): no line at all
+        edge = skin_rgb * np.array(LIP_LOOK["halo_tint"]) / np.maximum(lip_rgb, 1e-4)
+    a1 = np.clip(across * 2, 0, 1)[:, None]; a2 = np.clip(across * 2 - 1, 0, 1)[:, None]
+    in_mult = np.where(across[:, None] < 0.5, deep[None] * (1 - a1) + mid[None] * a1, mid[None] * (1 - a2) + edge[None] * a2)
+    # (the lit block: its material is given her lip's colour in the master instead; shared edge points can't fade it)
+    # the upper lip deeper, the lower lighter, with a broad soft glow across the lower lip's middle
+    up_c, lo_c = np.array(LIP_LOOK["upper"]), np.array(LIP_LOOK["lower"])
+    in_mult *= lo_c[None] * (1 - upper[:, None]) + up_c[None] * upper[:, None]
+    sheen = (1 - upper) * np.exp(-((raw_across - 0.45) / 0.28) ** 2) * np.exp(-(side / 0.45) ** 2)
+    in_mult *= 1 + (np.array(LIP_LOOK["sheen"])[None] - 1) * sheen[:, None]
+    # soft brush streaks along her lips (and a little in the spray just outside)
+    q = p / np.array(LIP_LOOK["brush_size"])[None]
+    brush = 0.65 * value_noise(q, 1.0, 71) + 0.35 * value_noise(q * 2.3, 1.0, 72)
+    in_mult *= (1 + LIP_LOOK["brush"] * brush)[:, None]
+    out_mult = 1 + (np.array(LIP_LOOK["halo_tint"])[None] - 1) * np.clip(halo, 0, 1)[:, None]
+    out_mult *= 1 + (LIP_LOOK["bow"] - 1) * np.clip(bow, 0, 1)[:, None]
+    out_mult *= (1 + 0.5 * LIP_LOOK["brush"] * brush * np.clip(halo, 0, 1))[:, None]
+    return out_mult * (1 - inside[:, None]) + in_mult * inside[:, None]
+
+
 def _point_areas(m):
     """Each point's share of her surface (a third of each triangle round it)."""
     me = m.me
@@ -706,6 +883,7 @@ def run(obj, debug_dir=None):
     lm = Landmarks(m)
     build_paint_uv(m, lm)
     pts = point_fields(m)
+    lip_c, lip_d, lip_e = lip_point_fields(m)
     bake = Baker(m)
     try:
         # Her points: occlusion (soft, far) and creases (tight, near).
@@ -723,6 +901,9 @@ def run(obj, debug_dir=None):
             "_a", np.stack([pts["convex"], pts["concave"], pts["lip"]], 1)))[..., :3]
         b = bake.image("EMIT", source=bake.attribute_socket(
             "_b", np.stack([pts["fingers"], pts["bust"], pts["fade"]], 1)))[..., :3]
+        lip_c_img = bake.image("EMIT", source=bake.attribute_socket("_lip_c", lip_c))[..., :3]
+        lip_d_img = bake.image("EMIT", source=bake.attribute_socket("_lip_d", lip_d))[..., :3]
+        lip_d_img[..., 1] = lip_face_mask(m)                # on her lips or not: per face, crisp at their border
         log(f"baked her face's picture ({time.time() - started:.0f} s)")
     finally:
         bake.close()
@@ -742,6 +923,10 @@ def run(obj, debug_dir=None):
         "fingers": flat(b, 0), "bust": flat(b, 1), "fade": flat(b, 2), "tips": np.zeros(int(sel.sum())),
     }
     mult_img, _, pieces_img = detail(img_fields, lm, fine=True)
+    # Her lips' soft paint, on top of the detail (lip_point_fields / lip_multiplier).
+    mult_pts = mult_pts * lip_multiplier(lip_c, lip_d, m.co)
+    mult_img = mult_img * lip_multiplier(lip_c_img.reshape(-1, 3)[sel].astype(np.float64),
+                                         lip_d_img.reshape(-1, 3)[sel].astype(np.float64), img_fields["p"])
     # Keep her tone: the detail averages 1 over her body's skin (by area), each channel; her face's by the same.
     skin = m.vertices_of(m.faces_with(lambda n: n in ("T_skin_f", "T_bra", "T_smalls")))
     w = _point_areas(m) * skin

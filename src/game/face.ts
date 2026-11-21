@@ -477,9 +477,32 @@ export type FacePart =
  * they move: how far forward it is (its z, forwards being -z) at (x, y), or null off it.
  */
 export function faceSurface(triangles: readonly number[][]): (x: number, y: number) => number | null {
+  // Each triangle is filed in the cells of a grid over x, y that its box covers, so a point is tested only against
+  // the few under it: her brows are looked up on every change of expression (each blink and glance), and against
+  // all of her face's triangles that took ~200 ms a time.
+  const PAD = 1e-4;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const t of triangles) {
+    minX = Math.min(minX, t[0], t[3], t[6]);
+    maxX = Math.max(maxX, t[0], t[3], t[6]);
+    minY = Math.min(minY, t[1], t[4], t[7]);
+    maxY = Math.max(maxY, t[1], t[4], t[7]);
+  }
+  const N = Math.max(1, Math.min(64, Math.ceil(Math.sqrt(triangles.length / 2))));
+  const sizeX = Math.max((maxX - minX) / N, 1e-6);
+  const sizeY = Math.max((maxY - minY) / N, 1e-6);
+  const cellX = (x: number) => Math.min(N - 1, Math.max(0, Math.floor((x - minX) / sizeX)));
+  const cellY = (y: number) => Math.min(N - 1, Math.max(0, Math.floor((y - minY) / sizeY)));
+  const cells: number[][][] = Array.from({ length: N * N }, () => []);
+  for (const t of triangles) {
+    const x0 = cellX(Math.min(t[0], t[3], t[6]) - PAD), x1 = cellX(Math.max(t[0], t[3], t[6]) + PAD);
+    const y0 = cellY(Math.min(t[1], t[4], t[7]) - PAD), y1 = cellY(Math.max(t[1], t[4], t[7]) + PAD);
+    for (let i = x0; i <= x1; i++) for (let j = y0; j <= y1; j++) cells[j * N + i].push(t);
+  }
   return (x, y) => {
+    if (!triangles.length || x < minX - PAD || x > maxX + PAD || y < minY - PAD || y > maxY + PAD) return null;
     let front: number | null = null;
-    for (const [ax, ay, az, bx, by, bz, cx, cy, cz] of triangles) {
+    for (const [ax, ay, az, bx, by, bz, cx, cy, cz] of cells[cellY(y) * N + cellX(x)]) {
       const d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
       if (Math.abs(d) < 1e-12) continue;
       const u = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / d;

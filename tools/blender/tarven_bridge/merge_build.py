@@ -271,6 +271,13 @@ def main():
             if slot.material and slot.material.name.rsplit(".", 1)[-1].isdigit():
                 raise SystemExit(f"{obj.name} still has {slot.material.name}: the game needs plain material names")
     bpy.ops.outliner.orphans_purge(do_recursive=True)
+    # Her soft bust bones (bust_soft.py) shared out again over everything, her kept skin and the build's new pieces
+    # alike, on the build's armature.
+    rig = next((o for o in master.all_objects if o.type == "ARMATURE"), None)
+    if rig is not None and "Female_Bust" in rig.data.bones:
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+        import bust_soft
+        print("bust_soft:", bust_soft.apply(rig, list(master.all_objects)))
 
     out = opts["master_out"] or core.master_path()
     if not opts["master_out"]:

@@ -40,6 +40,7 @@ import { touchLands, type TouchAnswer, type TouchRegion } from "./touch";
 import { SMACK_TOUCHES } from "./touchtalk";
 import type { GuestKind } from "./tavern";
 import { addPaintTo } from "./paint";
+import { bustFamilyIndices } from "./bustbones";
 
 /**
  * The comic panel for a guest reaching for you, in the same dithered look as the drink panel: your own character,
@@ -687,15 +688,16 @@ function breastFronts(
     // Not her areolae: a bigger nipple standing out would move where his hands take hold (over her nipples).
     const worn = Array.isArray(object.material) ? object.material[0] : object.material;
     if (worn.name === DISC_MATERIAL) return;
-    const index = object.skeleton.bones.indexOf(bust as never);
+    // The Bust bone with the breasts' soft bones, which share its weight (bustbones.ts).
+    const family = bustFamilyIndices(object.skeleton.bones, name);
     const indices = object.geometry.getAttribute("skinIndex");
     const weights = object.geometry.getAttribute("skinWeight");
     const position = object.geometry.getAttribute("position");
-    if (index < 0 || !indices || !weights) return;
+    if (family.size === 0 || !indices || !weights) return;
     object.skeleton.update();
     for (let i = 0; i < position.count; i++) {
       let w = 0;
-      for (let k = 0; k < 4; k++) if (indices.getComponent(i, k) === index) w += weights.getComponent(i, k);
+      for (let k = 0; k < 4; k++) if (family.has(indices.getComponent(i, k))) w += weights.getComponent(i, k);
       if (w < 0.5) continue;
       object.applyBoneTransform(i, v.fromBufferAttribute(position, i));
       v.applyMatrix4(object.matrixWorld).applyMatrix4(toModel);
@@ -800,11 +802,12 @@ function softSkin(model: Object3D, bust: Object3D, bodyOf: string | null = null)
     // Her top pulled down off her breasts is rolled up under them: it stays where it's rolled, not squeezed with them.
     if (bodyOf && !object.name.startsWith(`${bodyOf}_Body`)) return;
     const { skeleton, geometry } = object;
-    const bustIndex = skeleton.bones.indexOf(bust as never);
+    // The Bust bone with the breasts' soft bones, which share its weight (bustbones.ts).
+    const family = bustFamilyIndices(skeleton.bones, bust.name.replace(/_Bust$/, ""));
     const indices = geometry.getAttribute("skinIndex");
     const weights = geometry.getAttribute("skinWeight");
     const position = geometry.getAttribute("position");
-    if (bustIndex < 0 || !indices || !weights || !skeleton.boneMatrices) return;
+    if (family.size === 0 || !indices || !weights || !skeleton.boneMatrices) return;
     skeleton.update();
     const picked: number[] = [];
     const points: number[] = [];
@@ -812,7 +815,7 @@ function softSkin(model: Object3D, bust: Object3D, bodyOf: string | null = null)
     const local = new Int32Array(position.count).fill(-1);
     for (let i = 0; i < position.count; i++) {
       let w = 0;
-      for (let k = 0; k < 4; k++) if (indices.getComponent(i, k) === bustIndex) w += weights.getComponent(i, k);
+      for (let k = 0; k < 4; k++) if (family.has(indices.getComponent(i, k))) w += weights.getComponent(i, k);
       if (w < 0.15) continue;
       object.applyBoneTransform(i, v.fromBufferAttribute(position, i));
       v.applyMatrix4(object.matrixWorld);
@@ -1448,6 +1451,8 @@ gl_FragColor.rgb += vec3(${SKIN_GLOSS.rimColor.map((v) => v.toFixed(2)).join(", 
         );
       };
       // Her areolae and vulva painted in detail on top, as in the room (skindetail.ts): it builds on the shader above.
+      // Hand-sculpted, they're her skin itself and don't fade out at their edges (the room's material says so).
+      if (material.userData.skinDetailOpaque === true) painted.userData.skinDetailOpaque = true;
       addSkinDetail(painted);
       return painted;
     };

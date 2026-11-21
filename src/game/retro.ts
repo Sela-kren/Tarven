@@ -93,6 +93,8 @@ function toRetroMaterial(source: MeshStandardMaterial): MeshLambertMaterial {
     transparent: source.transparent,
     opacity: source.opacity,
     depthWrite: source.depthWrite,
+    // Cut-out cards (glTF alpha MASK: her strand hair) keep their cut and both sides.
+    ...(source.alphaTest > 0 ? { alphaTest: source.alphaTest, side: source.side } : {}),
   }));
 }
 

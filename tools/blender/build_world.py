@@ -11631,6 +11631,13 @@ def main():
         coll = bpy.data.collections.new(spec["name"] + "Rig")
         scene.collection.children.link(coll)
         root = build_character(coll, mats, spec)
+        if spec is FEMALE and spec.get("jiggle"):
+            # Her soft bust bones, four on each breast under the Bust bone, sharing its weight (bust_soft.py).
+            import sys
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import bust_soft
+            rig = next(o for o in coll.all_objects if o.type == "ARMATURE")
+            print("bust_soft:", bust_soft.apply(rig, list(coll.all_objects), spec["name"]))
         export_collection(coll, os.path.join(OUT_DIR, spec["name"].lower() + ".glb"))
         # Exported at the origin; moved afterwards so they don't overlap in Blender.
         root.location.x = blender_x

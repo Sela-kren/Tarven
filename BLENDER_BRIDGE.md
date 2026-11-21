@@ -35,6 +35,8 @@ the game's own `Dresser` and `face.ts`, and shows Blender what the game would sh
   - `merge_build.py`: merging a new build into the master.
   - `glb_diff.py`: compares two GLBs.
   - `export_master.py`: headless Send.
+  - `bust_bones.py`: gives the master her soft bust bones (`tools/blender/bust_soft.py`: four on each breast under
+    `Female_Bust`, sharing its weight on every mesh; build_world and merge_build run it too). Safe to run again.
 - `tools/blender/build_world.py`: `TARVEN_SAVE_MASTER=<path.blend>` saves her rig as a master. `TARVEN_OUT` sends
   the GLBs to a scratch folder. `main()` now only runs as a script, so the bridge can import its export.
 - `src/game/paint.ts` and `retro.ts`: the paint layers are one texture array shared by every retro material. A

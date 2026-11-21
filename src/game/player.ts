@@ -5,6 +5,7 @@ import { moveVector, resolveCircle, type Rect } from "./collision";
 import type { Input } from "./input";
 import { BUILT_HEFT, heftedSpring, type SoftHeft } from "./heft";
 import { Jiggle, type SpringSettings } from "./jiggle";
+import { BUST_SOFT_PARTS, type BustSoftPart } from "./bustbones";
 import type { Posture } from "./appearance";
 import { BUILT_LEGS, Skirt, type LegSize } from "./skirt";
 
@@ -36,6 +37,34 @@ const SOFT_PARTS: Record<string, SpringSettings> = {
     range: [[-0.015, 0.015], [-0.02, 0.02], [0, 0.045]],
   },
 };
+
+/**
+ * Her breasts' own soft bones (bustbones.ts), after 2AM's "4 bones" setup: each breast on its own springs, so they no
+ * longer bounce as one block, and in more than one way at once. BustOuter carries the whole breast, about as the Bust
+ * bone's spring did; the tip, the top and the side hang from it, each looser and less damped than the one before
+ * (the video's stiffness/damping: outer .4/.4, tip .35/.25, top .3/.2, side .22/.14), so they swing on after it, and
+ * the side mostly sideways. `kick` is how much of a slap or squeeze each takes (the ones hanging from the outer
+ * bone are thrown by it already). Used instead of the Bust bone's spring when the model has them.
+ */
+const SOFT_BUST: Record<BustSoftPart, SpringSettings & { kick: number }> = {
+  Outer: { frequency: 2.3, damping: 0.22, gain: 0.0034, axes: [0.35, 1, 0.3], limit: 0.03, kick: 1 },
+  Tip: { frequency: 2.1, damping: 0.15, gain: 0.0026, axes: [0.35, 1, 0.45], limit: 0.016, kick: 0.4 },
+  Top: { frequency: 1.9, damping: 0.13, gain: 0.0022, axes: [0.3, 1, 0.5], limit: 0.01, kick: 0.3 },
+  Side: { frequency: 1.7, damping: 0.1, gain: 0.0022, axes: [1, 0.6, 0.35], limit: 0.01, kick: 0.3 },
+};
+/**
+ * Her right breast's springs a touch quicker than her left's, so the two drift out of step instead of bouncing as
+ * mirror images: the video's "a little more random".
+ */
+const BUST_SIDE_TUNE: Record<"L" | "R", number> = { L: 1, R: 1.03 };
+
+/** The springs for a soft part by its label, the breasts' own bones included. */
+function softSettings(part: string): SpringSettings | undefined {
+  const soft = /^Bust(Outer|Tip|Top|Side)_([LR])$/.exec(part);
+  if (!soft) return SOFT_PARTS[part];
+  const { kick: _kick, ...spring } = SOFT_BUST[soft[1] as BustSoftPart];
+  return { ...spring, frequency: spring.frequency * BUST_SIDE_TUNE[soft[2] as "L" | "R"] };
+}
 
 /**
  * How a body answers being touched: a jolt of surprise, a slow melt into it, or a twist away. Each plays over
@@ -513,9 +542,17 @@ export class Body {
     this.bun = model.getObjectByName(`${name}_Bun`);
     this.strandL = model.getObjectByName(`${name}_Strand_L`);
     this.strandR = model.getObjectByName(`${name}_Strand_R`);
-    for (const [part, settings] of Object.entries(SOFT_PARTS)) {
+    // With the breasts' own bones, they spring instead of the Bust bone (which then holds still, as the video's spine
+    // bone does). Each breast's outer bone first: the three hanging from it swing on where it has just moved to.
+    const softBust = model.getObjectByName(`${name}_BustOuter_L`) !== undefined;
+    const parts = [
+      ...Object.keys(SOFT_PARTS).filter((part) => !(softBust && part === "Bust")),
+      ...(softBust ? (["L", "R"] as const).flatMap((side) => BUST_SOFT_PARTS.map((part) => `Bust${part}_${side}`)) : []),
+    ];
+    for (const part of parts) {
       const bone = model.getObjectByName(`${name}_${part}`);
-      if (bone) this.jiggles.push(new Jiggle(bone, settings, name === "Female" ? FEMALE_JIGGLE : 1));
+      const settings = softSettings(part);
+      if (bone && settings) this.jiggles.push(new Jiggle(bone, settings, name === "Female" ? FEMALE_JIGGLE : 1));
     }
     this.skirt = this.findSkirt();
   }
@@ -547,8 +584,8 @@ export class Body {
     for (const jiggle of this.jiggles) {
       // A fuller bust or rear is heavier: it swings further and a little slower.
       const part = jiggle.bone.name.slice(this.name.length + 1);
-      const base = SOFT_PARTS[part];
-      const weight = part === "Bust" ? heft.bust : part.startsWith("Glute") ? heft.rear : 1;
+      const base = softSettings(part);
+      const weight = part.startsWith("Bust") ? heft.bust : part.startsWith("Glute") ? heft.rear : 1;
       if (base) jiggle.retune(heftedSpring(base, weight));
       jiggle.rebase();
     }
@@ -641,7 +678,11 @@ export class Body {
     this.reaction = { kind, done: 0 };
     if (!soft) return;
     const push = new Vector3(0, strength, strength * 0.4);
-    for (const jiggle of this.jiggles) if (jiggle.bone.name.startsWith(`${this.name}_${soft}`)) jiggle.kick(push);
+    for (const jiggle of this.jiggles) {
+      if (!jiggle.bone.name.startsWith(`${this.name}_${soft}`)) continue;
+      const part = /_Bust(Outer|Tip|Top|Side)_[LR]$/.exec(jiggle.bone.name)?.[1] as BustSoftPart | undefined;
+      jiggle.kick(part ? push.clone().multiplyScalar(SOFT_BUST[part].kick) : push);
+    }
   }
 
   /** Curls both hands from open (0) to a fist (1), the way the fight picture does (battlepose.ts `applyPose`). */

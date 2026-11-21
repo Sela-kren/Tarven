@@ -19,6 +19,8 @@ import {
 } from "./penis";
 import { FACE_EXTRAS, FACE_LINES, faceMove, faceMoved, faceRig, faceSurface, REST_FACE, type FacePart, type FaceRig, type FaceShape } from "./face";
 import { coatRetroMaterial, coverCoat, solidRetroMaterial, stainRetroMaterial } from "./retro";
+import { keepSkinDetailOpaque } from "./skindetail";
+import { isBustFamily, isBustSoft } from "./bustbones";
 import type { LegSize } from "./skirt";
 
 /**
@@ -83,11 +85,12 @@ export function startLook(body: BodyName): Look {
 }
 
 /**
- * Her body as she starts (the user, 2026-11-19): a J cup, with nipples and areolae bigger than as built. A save
- * from before this picks it up too, except where she set them herself (readLooks).
+ * Her body as she starts: her bust as built (the master's, real_heroin's default size; the user, 2026-11-20, in
+ * place of the J cup she started in from 2026-11-19), with nipples and areolae bigger than as built. A save from
+ * before this picks it up too, except where she set them herself (readLooks).
  */
 export function startSliders(): Record<string, number> {
-  return { bust: stopValue(CUPS, CUPS.labels.indexOf("J")), nippleSize: 0.5, areolaSize: 0.5 };
+  return { bust: 0, nippleSize: 0.5, areolaSize: 0.5 };
 }
 
 /** Both siblings' looks as they start (startLook). */
@@ -958,7 +961,7 @@ const FEMALE_COLORS: ColorDef[] = [
   { id: "anus", label: "Anus", tab: "skin", mode: "dye", palette: ANUS_COLORS, follows: "skin", parts: [["Body", ANUS_MATERIAL]] },
   // Her irises (build_world.py add_anime_eyes): the iris the swatch, its darker top and her pupil keeping their depth.
   { id: "eyes", label: "Eyes", tab: "face", mode: "dye", palette: HER_EYE_COLORS, parts: [["Body", "T_eye_iris"], ["Body", "T_eye_iris_dark"], ["Body", "T_eye_pupil"]] },
-  { id: "hair", label: "Hair and brows", tab: "hair", mode: "dye", palette: HAIR_COLORS, parts: [["Hair", "T_hair_f"], ["Body", "T_hair_f"]] },
+  { id: "hair", label: "Hair and brows", tab: "hair", mode: "dye", palette: HAIR_COLORS, parts: [["Hair", "T_hair_f"], ["Hair", "T_hair_f_swept"], ["Hair", "T_hair_f_ponytail"], ["Hair", "T_hair_f_artemis"], ["Hair", "T_hair_f_wolf"], ["Body", "T_hair_f"]] },
   { id: "pubes", label: "Pubic hair", tab: "hair", mode: "dye", palette: PUBIC_COLORS, follows: "hair", parts: [["Body", PUBIC_MATERIAL]] },
   { id: "blouse", label: "Blouse", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_linen"]] },
   { id: "bodice", label: "Bodice", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_bodice"]] },
@@ -1287,14 +1290,14 @@ export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
     colors: FEMALE_COLORS,
     pieces: [{ id: "apron", label: "Apron", parts: [["Cloth", "T_apron"]] }],
     hairstyles: [
-      { id: "bob", label: "Bob", mesh: "" },
-      // The bob with a long side-swept fringe, a braid along the parting and the ends flicked out (build_world.py).
-      { id: "braid", label: "Braided bob", mesh: "Braid" },
-      { id: "pixie", label: "Pixie", mesh: "Pixie" },
-      { id: "long", label: "Long", mesh: "Long" },
-      { id: "ponytail", label: "Ponytail", mesh: "Ponytail" },
-      { id: "bun", label: "Bun", mesh: "Bun" },
-      { id: "tail", label: "High tail", mesh: "Tail" },
+      // Downloaded strand-card hair fitted to her head in the master (tools/blender/real_heroin/fit_dl_hair.py,
+      // 2026-11-20): it replaced the built styles (braided bob, pixie, long, bun, high tail). The wolf cut is her
+      // own (Female_Hair) since 2026-11-21.
+      { id: "wolf", label: "Wolf cut", mesh: "" },
+      { id: "bob", label: "Swept bob", mesh: "Swept" },
+      { id: "ponytail", label: "Long ponytail", mesh: "Ponytail" },
+      // "Artemis" by continuumreed (CC-BY, remixed from "Arika the 1st Path" by antoinepavia, CC-BY).
+      { id: "artemis", label: "Side-bang ponytail", mesh: "Artemis" },
     ],
     outfits: FEMALE_OUTFITS,
     defaultOutfit: "tee",
@@ -1533,7 +1536,7 @@ const paints = new Map<string, MeshLambertMaterial>();
  * wrinkles), not a flat colour. Recoloured,
  * they keep their texture, tinted so its average lands on the new colour; the rest turn one flat colour.
  */
-const PAINTED_MAPS = /^(T_skin_f|T_penis|T_glans|T_scrotum|T_eye_iris)$/;
+const PAINTED_MAPS = /^(T_skin_f|T_penis|T_glans|T_scrotum|T_eye_iris|T_hair_f_[a-z]+)$/;
 
 /** A material that shows `color` on average (linear): flat, or `original`'s painted texture tinted to it. */
 function paint(original: Material, color: Color): MeshLambertMaterial {
@@ -1552,6 +1555,11 @@ function paint(original: Material, color: Color): MeshLambertMaterial {
       material.color.setRGB(share(color.r, texture.r), share(color.g, texture.g), share(color.b, texture.b));
     } else {
       material.color.setRGB(color.r, color.g, color.b);
+    }
+    // Cut-out cards (her strand hair) stay cut out and drawn from both sides.
+    if (kept && original.alphaTest > 0) {
+      material.alphaTest = original.alphaTest;
+      material.side = original.side;
     }
     paints.set(key, material);
   }
@@ -2064,13 +2072,23 @@ export function dressColors(
   const skin = skinSlot && materialFor(body, skinSlot.part, skinSlot.original, colors, originals);
   const bandSlot = slots.find((s) => s.part === "Body" && s.original.name === BAND_MATERIAL);
   const band = bandSlot && materialFor(body, bandSlot.part, bandSlot.original, colors, originals);
+  const smallsSlot = slots.find((s) => s.part === "Body" && s.original.name === "T_smalls");
+  const smalls = smallsSlot && materialFor(body, smallsSlot.part, smallsSlot.original, colors, originals);
+  let sculptedPrivates = false;
+  model.traverse((object) => {
+    if (object.userData?.vulva_sculpted) sculptedPrivates = true;
+  });
   for (const slot of slots) {
     slot.mesh.material = materialFor(body, slot.part, slot.original, colors, originals);
     // Guests keep their smallclothes on: a nipple disc wears the breast band, as it lies over it.
     if (slot.part === "Body" && slot.original.name === DISC_MATERIAL && band) slot.mesh.material = band;
     // ...and their pubic hair stays under them.
     if (slot.part === "Body" && slot.original.name === PUBIC_MATERIAL) slot.mesh.visible = false;
-    if (slot.part === "Body" && PRIVATE_MATERIALS.includes(slot.original.name)) slot.mesh.visible = false;
+    if (slot.part === "Body" && PRIVATE_MATERIALS.includes(slot.original.name)) {
+      // A hand-sculpted vulva and anus are part of the skin (no skin under them): they stay, in the braies' colour.
+      slot.mesh.visible = sculptedPrivates && smalls !== undefined;
+      if (slot.mesh.visible) slot.mesh.material = smalls!;
+    }
     // They wear the band and braies painted on their bodies; the patch for other styles stays empty.
     if (slot.part === "Body" && slot.original.name === LINGERIE_MATERIAL) slot.mesh.visible = false;
     if (slot.part === "Hair") slot.mesh.visible = hair !== null && hairMeshOf(slot.mesh, body) === hair;
@@ -2353,6 +2371,12 @@ interface BoneRest {
   joint: Vector3;
   /** Where it stood before the build reshaped her (its "slider_shift" on), for the meshes with a `rest`. */
   restJoint: Vector3;
+  /**
+   * The bone the sliders shape its points as, when not its own: the breasts' soft bones (bustbones.ts) are shaped as
+   * the Bust bone, about its joint, and ride with it, so the bust sliders shape her as they did before they took
+   * their share of its weight.
+   */
+  shapeAs?: BoneRest;
 }
 
 /** How many body points each clothing point follows, and how softly the nearer ones count over the further. */
@@ -3410,7 +3434,9 @@ const FACE_MATERIAL = /^T_(face_|lip|hair_f$|mouth$|teeth|tongue$|eye_|drop_)/;
 const EYE_MATERIAL = "T_eye_sclera";
 const PUPIL_MATERIAL = "T_eye_pupil";
 const EYE_PART: Readonly<Record<string, FacePart>> = {
-  T_eye_sclera: "eyeWhite", T_eye_lid: "lid", T_eye_lid_low: "lidLow", T_eye_lash: "lash", T_eye_lash_low: "lashLow",
+  // Her lash lines stay on her lids (2026-11-21): her lids are her face's own skin, which doesn't close, so a lash line
+  // moving with a blink slid off them over her eye.
+  T_eye_sclera: "eyeWhite", T_eye_lid: "lid", T_eye_lid_low: "lidLow", T_eye_lash: "skin", T_eye_lash_low: "skin",
   T_eye_iris: "iris", T_eye_iris_dark: "iris", T_eye_shine: "iris", T_eye_pupil: "pupil",
   T_eye_wet: "iris", T_eye_heart: "pupil",
   // The upper lid's shadow on the white goes with the lid, as its lash line does.
@@ -3535,7 +3561,7 @@ export class Dresser {
   /** The clothes near each piercing, which hide it while any of them is on. */
   private readonly jewelCovers = new Map<MeshSlot, MeshSlot[]>();
   /** Her anus's disc, for a body built with it: its two meshes (the rim and canal, the skin around them). */
-  private readonly anus: { slots: MeshSlot[]; patch: AnusPatch } | null = null;
+  private readonly anus: { slots: MeshSlot[]; patch: AnusPatch; sculpted: boolean } | null = null;
   /** His penis's tube and sack, for a body built with them: the shaft, the glans, then the sack. */
   private readonly penis: { slots: MeshSlot[]; patch: PenisPatch; groin: MeshSlot[] } | null = null;
   /** Whether his penis was last shaped held in what covers his groin, rather than free. */
@@ -3652,6 +3678,8 @@ export class Dresser {
       });
     }
     for (const rest of this.bones) rest.parent = rest.bone.parent ? (this.boneIndex.get(rest.bone.parent) ?? null) : null;
+    const bustRest = this.bones.find((rest) => rest.label === "Bust");
+    if (bustRest) for (const rest of this.bones) if (isBustSoft(rest.label)) rest.shapeAs = bustRest;
     this.bodyCount = bodyCount;
     this.reshapedRest = this.slots.some((slot) => slot.rest !== undefined);
     // Her fitted tops, smoothed after each reshaping (see SMOOTH_TOPS), and lit smooth all over: the build left hard
@@ -3830,7 +3858,11 @@ export class Dresser {
     }
     const anusUvs = anusSlots.map((slot) => slot.mesh.geometry.getAttribute("uv"));
     const anus = anusSlots.length === 2 && anusUvs.every(Boolean) ? readAnus(anusUvs) : null;
-    if (anus) this.anus = { slots: anusSlots, patch: anus };
+    if (anus) {
+      let sculpted = false;
+      for (let o: Object3D | null = anusSlots[0].mesh; o; o = o.parent) if (o.userData?.vulva_sculpted) sculpted = true;
+      this.anus = { slots: anusSlots, patch: anus, sculpted };
+    }
     const penisUvs = penisSlots.map((slot) => slot.mesh.geometry.getAttribute("uv"));
     const penis = penisSlots.length === 3 && penisUvs.every(Boolean) ? readPenis(penisUvs.slice(0, 2), penisUvs.slice(2)) : null;
     if (penis) {
@@ -3995,6 +4027,12 @@ export class Dresser {
     const shiftOf = (rest: BoneRest): Vector3 => {
       const known = shift.get(rest);
       if (known) return known;
+      // The breasts' soft bones ride with the Bust bone, wherever the sliders take its joint.
+      if (rest.shapeAs) {
+        const same = shiftOf(rest.shapeAs).clone();
+        shift.set(rest, same);
+        return same;
+      }
       let delta = new Vector3();
       if (rest.parent) {
         delta = shiftOf(rest.parent).clone();
@@ -4034,15 +4072,32 @@ export class Dresser {
       // she is (moves are offsets): where the model keeps that shape, the points and joints are taken from there.
       const asBuilt = slot.rest !== undefined;
       const from = asBuilt ? (slot.restShapeFrom ?? slot.rest!) : (slot.shapeFrom ?? bind);
+      const heldBones: (BoneRest | undefined)[] = [undefined, undefined, undefined, undefined];
+      const heldWeights = [0, 0, 0, 0];
       for (let v = 0; v < count; v++) {
         point.fromArray(from, v * 3);
         sum.set(0, 0, 0);
         joints.set(0, 0, 0);
+        // Each bone's weight on the point, the breasts' soft bones counted as the Bust bone they're shaped as: shaped
+        // once with their weight together, as the Bust bone alone was (a term's reach goes by the whole weight).
+        let held = 0;
         for (let k = 0; k < 4; k++) {
           const weight = skinWeight.getComponent(v, k);
           if (weight <= 0) continue;
-          const rest = bones[skinIndex.getComponent(v, k)];
-          if (!rest) continue;
+          const own = bones[skinIndex.getComponent(v, k)];
+          if (!own) continue;
+          const rest = own.shapeAs ?? own;
+          let i = 0;
+          while (i < held && heldBones[i] !== rest) i++;
+          if (i === held) {
+            heldBones[held] = rest;
+            heldWeights[held++] = 0;
+          }
+          heldWeights[i] += weight;
+        }
+        for (let i = 0; i < held; i++) {
+          const rest = heldBones[i]!;
+          const weight = heldWeights[i];
           joints.addScaledVector(shift.get(rest)!, weight);
           const boneTerms = reaching.get(rest.label);
           if (!boneTerms) continue;
@@ -4310,8 +4365,9 @@ export class Dresser {
     const { shaped } = this;
     const slots = this.faceSlots();
     if (!shaped || !slots.length) return;
+    const totals = new Map(slots.map((slot) => [slot, shaped.totals[this.slots.indexOf(slot)]]));
     const shapedAt = (slot: MeshSlot, v: number) => {
-      const total = shaped.totals[this.slots.indexOf(slot)];
+      const total = totals.get(slot) ?? shaped.totals[this.slots.indexOf(slot)];
       const { bind } = slot;
       return [bind[v * 3] + total[v * 3], bind[v * 3 + 1] + total[v * 3 + 1], bind[v * 3 + 2] + total[v * 3 + 2]];
     };
@@ -4571,14 +4627,18 @@ export class Dresser {
     this.slots.forEach((slot, s) => {
       if (slot.part !== "Body" || PULL_SKIP_SKIN.includes(slot.original.name)) return;
       const { bind, mesh } = slot;
-      const bust = mesh.skeleton.bones.findIndex((bone) => this.boneIndex.get(bone)?.label === "Bust");
+      // The Bust bone and the breasts' soft bones, which share its weight (bustbones.ts).
+      const bust = new Set<number>();
+      mesh.skeleton.bones.forEach((bone, i) => {
+        if (isBustFamily(this.boneIndex.get(bone)?.label ?? "")) bust.add(i);
+      });
       const skinIndex = mesh.geometry.getAttribute("skinIndex");
       const skinWeight = mesh.geometry.getAttribute("skinWeight");
-      if (bust < 0 || !skinIndex || !skinWeight) return;
+      if (bust.size === 0 || !skinIndex || !skinWeight) return;
       for (let v = 0; v < bind.length / 3; v++) {
         if (bind[v * 3 + 2] > 0) continue;
         let w = 0;
-        for (let k = 0; k < 4; k++) if (skinIndex.getComponent(v, k) === bust) w += skinWeight.getComponent(v, k);
+        for (let k = 0; k < 4; k++) if (bust.has(skinIndex.getComponent(v, k))) w += skinWeight.getComponent(v, k);
         if (w < PULL_UNDER_WEIGHT) continue;
         lowest = Math.min(lowest, bind[v * 3 + 1] + totals[s][v * 3 + 1]);
       }
@@ -4593,14 +4653,18 @@ export class Dresser {
     this.slots.forEach((slot, s) => {
       if (slot.part !== "Body" || PULL_SKIP_SKIN.includes(slot.original.name)) return;
       const { bind, mesh } = slot;
-      const bust = mesh.skeleton.bones.findIndex((bone) => this.boneIndex.get(bone)?.label === "Bust");
+      // The Bust bone and the breasts' soft bones, which share its weight (bustbones.ts).
+      const bust = new Set<number>();
+      mesh.skeleton.bones.forEach((bone, i) => {
+        if (isBustFamily(this.boneIndex.get(bone)?.label ?? "")) bust.add(i);
+      });
       const skinIndex = mesh.geometry.getAttribute("skinIndex");
       const skinWeight = mesh.geometry.getAttribute("skinWeight");
-      if (bust < 0 || !skinIndex || !skinWeight) return;
+      if (bust.size === 0 || !skinIndex || !skinWeight) return;
       for (let v = 0; v < bind.length / 3; v++) {
         if (bind[v * 3 + 2] > 0) continue;
         let w = 0;
-        for (let k = 0; k < 4; k++) if (skinIndex.getComponent(v, k) === bust) w += skinWeight.getComponent(v, k);
+        for (let k = 0; k < 4; k++) if (bust.has(skinIndex.getComponent(v, k))) w += skinWeight.getComponent(v, k);
         if (w < PULL_UNDER_WEIGHT) continue;
         highest = Math.max(highest, bind[v * 3 + 1] + totals[s][v * 3 + 1]);
       }
@@ -4719,9 +4783,17 @@ export class Dresser {
     const shape = anusShape(type, clampSlider(this.look.sliders.anusSize), this.vulvaShown ? this.anusOpen : 0);
     const out = anus.slots.map((slot) => new Float32Array(slot.bind.length));
     shapeAnus(anus.patch, skin, shape, out);
+    // Hand-sculpted (as her vulva, the same mark): her shape as it is, plus the game's change from its own rest
+    // shape (the first type, size 0, closed).
+    let rest: Float32Array[] | null = null;
+    if (anus.sculpted) {
+      rest = anus.slots.map((slot) => new Float32Array(slot.bind.length));
+      shapeAnus(anus.patch, skin, anusShape(types[0], 0, 0), rest);
+    }
     anus.slots.forEach((slot, m) => {
       const total = totals[this.slots.indexOf(slot)];
-      for (let i = 0; i < slot.bind.length; i++) total[i] = out[m][i] - slot.bind[i];
+      if (rest) for (let i = 0; i < slot.bind.length; i++) total[i] = skin[m][i] - slot.bind[i] + out[m][i] - rest[m][i];
+      else for (let i = 0; i < slot.bind.length; i++) total[i] = out[m][i] - slot.bind[i];
     });
   }
 
@@ -5197,11 +5269,15 @@ export class Dresser {
         continue;
       }
       if (this.vulva?.slots.includes(slot) || this.anus?.slots.includes(slot)) {
-        slot.mesh.visible = vulvaShown;
+        // A hand-sculpted one is part of her skin (her sculpt has no skin under it, T_hole): it always shows, lying
+        // as sculpted under what covers it.
+        const sculpted = this.vulva?.slots.includes(slot) ? this.vulva.sculpted : this.anus?.sculpted === true;
+        slot.mesh.visible = vulvaShown || sculpted;
         // The slit and canal flush darker as she's aroused, like her areolae; the rest keeps its own colour.
         const flush = Math.round(this.vulvaArousal * 5) / 5;
         const inner = (slot.original.name === VULVA_MATERIAL || slot.original.name === CANAL_MATERIAL) && flush > 0;
         slot.mesh.material = inner ? paint(slot.original, averageColor(slot.worn).clone().lerp(FLUSHED, 0.25 * flush)) : slot.worn;
+        if (sculpted) keepSkinDetailOpaque(slot.mesh.material as Material);
         continue;
       }
       // The skin under her openings gives way to them while they show; otherwise it's painted like the skin around.

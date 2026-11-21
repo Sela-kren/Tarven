@@ -1,0 +1,10 @@
+{
+ "size": 2048,
+ "layers": [
+  {
+   "object": "Female_Body",
+   "file": "female_Female_Body.png",
+   "mode": "overlay"
+  }
+ ]
+}
