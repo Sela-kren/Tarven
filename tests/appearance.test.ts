@@ -251,7 +251,7 @@ describe("smoothing a fitted top", () => {
     expect(smoothTopGap(cup("J"))).toBeGreaterThan(0.002);
     expect(smoothTopGap(cup("J"))).toBeLessThan(0.008);
     expect(smoothTopGap(cup("M"))).toBeCloseTo(0.008);
-    expect(smoothTopGap(cup("Z"))).toBeCloseTo(0.008);
+    expect(smoothTopGap(cup("O"))).toBeCloseTo(0.008);
   });
 
   it("hangs her T-shirt straight down from a big bust, not back in under it", () => {
@@ -348,9 +348,9 @@ describe("reshaping", () => {
   it("only gives bones terms for sliders that are set", () => {
     // Her back's curve is the one shape she has at 0 (see "the small of her back"); -1 takes it away.
     expect(activeTerms("Female", { arch: -1 }).size).toBe(0);
-    const terms = activeTerms("Female", { bust: 1, nonsense: 1, arch: -1 });
+    const terms = activeTerms("Female", { bust: 0.5, nonsense: 1, arch: -1 });
     expect([...terms.keys()]).toEqual(["Bust"]);
-    expect(terms.get("Bust")![0].grow).toEqual([4.0, 2.07, 2.6]);
+    expect(terms.get("Bust")![0].grow).toEqual([2.0, 1.035, 1.3]);
     // Shrinking has its own, smaller amounts.
     expect(activeTerms("Female", { bust: -1 }).get("Bust")![0].grow).toEqual([-0.2, -0.25, -0.7]);
   });
@@ -867,7 +867,7 @@ describe("cup sizes", () => {
   it("runs from A to Z, with C as built", () => {
     expect(bust.stops).toBe(CUPS);
     expect(CUPS.labels[0]).toBe("A");
-    expect(CUPS.labels[CUPS.labels.length - 1]).toBe("Z");
+    expect(CUPS.labels[CUPS.labels.length - 1]).toBe("O");
     expect(CUPS.labels[nearestStop(CUPS, 0)]).toBe("C");
   });
 
@@ -877,17 +877,16 @@ describe("cup sizes", () => {
     expect(stopValue(CUPS, 3)).toBeCloseTo(1 / 14);
     expect(stopValue(CUPS, 16)).toBe(1);
     expect(stopValue(CUPS, 25)).toBeCloseTo(23 / 14);
-    expect(CUP_TOP).toBeCloseTo(23 / 14);
+    expect(CUP_TOP).toBeCloseTo(12 / 14);
     for (let i = 0; i < CUPS.labels.length; i++) expect(nearestStop(CUPS, stopValue(CUPS, i))).toBe(i);
-    expect(CUPS.labels[nearestStop(CUPS, 9)]).toBe("Z");
+    expect(CUPS.labels[nearestStop(CUPS, 9)]).toBe("O");
   });
 
-  it("grows past Q to Z, and a saved Z stays a Z", () => {
+  it("stops at O, and a saved O stays an O", () => {
     const grow = (cup: number) => activeTerms("Female", { bust: cup }).get("Bust")![0].grow[2];
-    expect(grow(CUP_TOP)).toBeCloseTo(grow(1) * CUP_TOP);
+    expect(grow(CUP_TOP)).toBeCloseTo(grow(0.5) * CUP_TOP / 0.5);
     expect(grow(5)).toBeCloseTo(grow(CUP_TOP));
     expect(readLook({ sliders: { bust: CUP_TOP } }, "Female")!.sliders.bust).toBeCloseTo(CUP_TOP);
-    expect(readLook({ sliders: { bust: 1 } }, "Female")!.sliders.bust).toBe(1);
   });
 
   it("rolls random busts on a cup, and only up to about a J", () => {

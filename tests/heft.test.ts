@@ -13,14 +13,14 @@ describe("how heavy her soft parts are", () => {
   it("grows with the cup and the rear, and shrinks with them", () => {
     const full = softHeft({ bust: 1, rear: 1 });
     const small = softHeft({ bust: -1, rear: -1 });
-    expect(full.bust).toBeGreaterThan(2);
+    expect(full.bust).toBeGreaterThan(1.9);
     expect(full.rear).toBeGreaterThan(1.5);
     expect(small.bust).toBeLessThan(0.5);
     expect(small.rear).toBeLessThan(0.6);
-    // The cup goes on past Q to Z, heavier still, and no further.
-    const z = softHeft({ bust: CUP_TOP }).bust;
-    expect(z).toBeGreaterThan(full.bust);
-    expect(softHeft({ bust: 5 }).bust).toBeCloseTo(z);
+    // The cup stops at O (bust 1 is past it): no heavier beyond.
+    const top = softHeft({ bust: CUP_TOP }).bust;
+    expect(top).toBeCloseTo(full.bust);
+    expect(softHeft({ bust: 5 }).bust).toBeCloseTo(top);
     expect(softHeft({ rear: 5 }).rear).toBeCloseTo(full.rear);
   });
 

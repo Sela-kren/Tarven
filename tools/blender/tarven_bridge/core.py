@@ -178,3 +178,33 @@ def fit_clothes(body, cloth, stains=()):
         bw.keep_clothes_clear(body, list(cloth), deep)
     if stains:
         bw.keep_clothes_clear(body, list(stains), dict(deep, gap=bw.CLEAR["gap"] + bw.STAIN_LIFT))
+
+
+def save_blend(path=None):
+    """Saves the open file (or a copy at path) and makes sure it lands. On this machine Blender's last step, renaming
+    the "<file>@" it wrote over the real file, sometimes fails ("Cannot change old file", 2026-11-21: twice on the
+    master, which then went missing): the finished "@" file is moved into place here, retrying while whatever holds
+    it lets go."""
+    import bpy
+    target = os.path.abspath(path or bpy.data.filepath)
+    same = os.path.normcase(target) == os.path.normcase(os.path.abspath(bpy.data.filepath))
+    try:
+        if same:
+            bpy.ops.wm.save_mainfile()
+        else:
+            bpy.ops.wm.save_as_mainfile(filepath=target, copy=True)
+    except RuntimeError as error:
+        written = target + "@"
+        if "Cannot change old file" not in str(error) or not os.path.exists(written):
+            raise
+        for _ in range(60):
+            try:
+                os.replace(written, target)
+                break
+            except OSError:
+                time.sleep(0.5)
+        else:
+            raise RuntimeError(f"saved to {written} but couldn't move it over {target}") from error
+    if not os.path.exists(target):
+        raise RuntimeError(f"{target} is missing after saving")
+    return target

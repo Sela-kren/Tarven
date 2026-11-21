@@ -36,5 +36,5 @@ if out is None:
     shutil.copy2(master, backup)
     print("backed up to", backup)
     out = master
-bpy.ops.wm.save_as_mainfile(filepath=out, copy=out != bpy.data.filepath)
+core.save_blend(out)
 print("saved", out)

@@ -241,12 +241,12 @@ export function nearestStop(stops: SliderStops, value: number): number {
 }
 
 /**
- * Cup sizes, one letter for each inch the bust measures over the band: A at -1, C as built, Q at 1, on up to Z
- * past it. Q stays at 1, where the cup's growth was measured, so a saved Q is still a Q; R to Z carry on by the
- * same inch a step (about 1.64 at Z).
+ * Cup sizes, one letter for each inch the bust measures over the band: A at -1, C as built, up to O (the user,
+ * 2026-11-21: O is the largest for now, each cup a sculpted key). The scale is kept as it was, Q at 1 (where the cup's
+ * growth was measured), so every letter keeps its size and a saved cup is still the same cup; O is 12/14.
  */
-export const CUPS: SliderStops = { labels: "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split(""), zero: 2, full: 16 };
-/** The cup slider's value at its largest cup, Z. */
+export const CUPS: SliderStops = { labels: "ABCDEFGHIJKLMNO".split(""), zero: 2, full: 16 };
+/** The cup slider's value at its largest cup, O. */
 export const CUP_TOP = stopValue(CUPS, CUPS.labels.length - 1);
 
 /** The furthest a slider goes: past 1 for one whose named steps run on past 1, as cup sizes do. */
@@ -2231,7 +2231,7 @@ export function reshape(active: readonly ActiveTerm[], d: Vector3, out: Vector3,
  * a bust shape's id if there is one, and from how firmly what she has on holds her bust (`held`, 0 to 1).
  */
 export function activeTerms(
-  body: BodyName, given: Record<string, number>, bustShape?: string, held = 0,
+  body: BodyName, given: Record<string, number>, bustShape?: string, held = 0, cupFromKeys = false,
 ): Map<string, ActiveTerm[]> {
   // What holds her bust moves its sliders on, as if she had set them so herself, within their ends; her support
   // slider makes it hold more or less firmly.
@@ -2269,6 +2269,8 @@ export function activeTerms(
     const raw = clampSlider(sliders[def.id], sliderTop(def));
     const value = def.rest === undefined ? raw : raw >= 0 ? def.rest + (1 - def.rest) * raw : def.rest * (1 + raw);
     if (value === 0) continue;
+    // Her sculpted cup keys make the cup size instead (cupKeyMove).
+    if (cupFromKeys && def.id === "bust") continue;
     for (const term of def.terms) add(term, value);
   }
   const shape = LOOK_OPTIONS[body].bustShapes.find((s) => s.id === bustShape);
@@ -2337,6 +2339,8 @@ interface MeshSlot {
   restShapeFrom?: Float32Array;
   /** The user's sculpted fixes to the breasts at single cup sizes (the model's "_BUST_FIX_<cup>"), in bind space. */
   cupFixes?: { cup: number; delta: Float32Array }[];
+  /** The user's sculpted cup keys (the model's "_BUST_KEY_<cup>", cupKeyMove), in bind space. */
+  cupKeys?: { cup: number; delta: Float32Array }[];
   /**
    * A garment's cloth drape baked in Blender at single cup sizes (the model's "_CLOTH_DRAPE_<cup>", the Blender
    * bridge's Cloth panel), in bind space: the simulated cloth less the game's own fit at that cup. Laid on last.
@@ -2348,7 +2352,9 @@ interface MeshSlot {
  * The cup sizes the bust review lays out to sculpt on (tools/posepreview/bustexport.preview.ts): a fix sculpted at one
  * of them is whole there and fades out to nothing at the reviewed sizes either side.
  */
-export const REVIEWED_CUPS = ["A", "C", "F", "J", "M", "Q", "U", "Z"].map((letter) => stopValue(CUPS, CUPS.labels.indexOf(letter)));
+export const REVIEWED_CUPS = ["A", "C", "F", "J", "M", "Q", "U", "Z"]
+  .filter((letter) => CUPS.labels.includes(letter))
+  .map((letter) => stopValue(CUPS, CUPS.labels.indexOf(letter)));
 
 /** How much of a fix sculpted at cup slider value `at` the bust wears at slider value `cup`, 0 to 1. */
 export function cupFixAmount(at: number, cup: number): number {
@@ -2359,6 +2365,26 @@ export function cupFixAmount(at: number, cup: number): number {
   if (cup === at) return 1;
   if (cup < at) return below === undefined ? 1 : Math.max(0, (cup - below) / (at - below));
   return above === undefined ? 1 : Math.max(0, (above - cup) / (above - at));
+}
+
+/**
+ * The user's sculpted cup keys (art/female_bust_keys.blend, sent as the model's "_BUST_KEY_<cup>": each key's shape
+ * less her as built, the C cup), blended for slider value `cup` as blend shapes are: between the two keys either side
+ * of it, C being no move at all, and held at the end keys past them. Adds the move to `total`.
+ */
+export function cupKeyMove(keys: readonly { cup: number; delta: Float32Array }[], cup: number, total: Float32Array): void {
+  // C is her as built (no move) unless it has a sculpted key of its own.
+  const own = keys.some((key) => key.cup === 0);
+  const stops = [...(own ? [] : [{ cup: 0, delta: null as Float32Array | null }]), ...keys].sort((a, b) => a.cup - b.cup);
+  const at = Math.min(stops[stops.length - 1].cup, Math.max(stops[0].cup, cup));
+  let i = 0;
+  while (i < stops.length - 2 && stops[i + 1].cup < at) i++;
+  const low = stops[i], high = stops[i + 1] ?? stops[i];
+  const t = high.cup === low.cup ? 0 : (at - low.cup) / (high.cup - low.cup);
+  for (const [stop, amount] of [[low, 1 - t], [high, t]] as const) {
+    if (!stop.delta || amount <= 0) continue;
+    for (let k = 0; k < total.length; k++) total[k] += stop.delta[k] * amount;
+  }
 }
 
 interface BoneRest {
@@ -3639,13 +3665,15 @@ export class Dresser {
       const cupFixes: { cup: number; delta: Float32Array }[] = [];
       const toBind = new Matrix3().setFromMatrix4(mesh.bindMatrix);
       const drapes: { cup: number; delta: Float32Array }[] = [];
+      const cupKeys: { cup: number; delta: Float32Array }[] = [];
       for (const [attrName, attr] of Object.entries(mesh.geometry.attributes)) {
-        const [, kind, lower] = /^_(bust_fix|cloth_drape)_([a-z])$/.exec(attrName) ?? [];
+        const [, kind, lower] = /^_(bust_fix|cloth_drape|bust_key)_([a-z])$/.exec(attrName) ?? [];
         const letter = lower?.toUpperCase();
-        if (!letter || attr.count !== position.count) continue;
+        // A cup past the slider's largest (an old drape baked at Z) is never reached.
+        if (!letter || !CUPS.labels.includes(letter) || attr.count !== position.count) continue;
         const delta = new Float32Array(attr.count * 3);
         for (let v = 0; v < attr.count; v++) point.fromBufferAttribute(attr, v).applyMatrix3(toBind).toArray(delta, v * 3);
-        (kind === "bust_fix" ? cupFixes : drapes).push({ cup: stopValue(CUPS, CUPS.labels.indexOf(letter)), delta });
+        (kind === "bust_fix" ? cupFixes : kind === "bust_key" ? cupKeys : drapes).push({ cup: stopValue(CUPS, CUPS.labels.indexOf(letter)), delta });
       }
       if (part === "Cum") {
         mesh.material = stainMeshOf(mesh, body) ? stainRetroMaterial() : coatRetroMaterial();
@@ -3656,6 +3684,7 @@ export class Dresser {
       this.slots.push({
         mesh, part, original: material, worn: material, bind, follow: null, bodyStart: bodyCount, rest,
         cupFixes: cupFixes.length ? cupFixes : undefined,
+        cupKeys: cupKeys.length ? cupKeys : undefined,
         drapes: drapes.length ? drapes : undefined,
       });
       if (part === "Body") bodyCount += position.count;
@@ -4020,7 +4049,10 @@ export class Dresser {
   apply(look: Look): void {
     this.look = look;
     this.held = this.holds();
-    const active = activeTerms(this.body, look.sliders, look.bustShape, this.held);
+    const keyed = this.slots.some((slot) => slot.cupKeys);
+    const active = activeTerms(this.body, look.sliders, look.bustShape, this.held, keyed);
+    // Something reshapes her: a slider's terms, or her cup keys away from the C cup.
+    const shaping = active.size > 0 || (keyed && (look.sliders.bust ?? 0) !== 0);
 
     // Where each joint goes: its parent's new place, plus its offset from the parent reshaped by the parent.
     const shift = new Map<BoneRest, Vector3>();
@@ -4056,7 +4088,7 @@ export class Dresser {
       const count = bind.length / 3;
       const total = new Float32Array(count * 3);
       const settled = new Float32Array(count * 3);
-      if (active.size === 0) return { total, settled };
+      if (!shaping) return { total, settled };
       const skinIndex = mesh.geometry.getAttribute("skinIndex");
       const skinWeight = mesh.geometry.getAttribute("skinWeight");
       const bones = mesh.skeleton.bones.map((bone) => this.boneIndex.get(bone)!);
@@ -4107,6 +4139,8 @@ export class Dresser {
         sum.add(joints).toArray(total, v * 3);
         joints.toArray(settled, v * 3);
       }
+      // Her sculpted cup keys make her cup size, blended for the slider.
+      if (slot.cupKeys) cupKeyMove(slot.cupKeys, look.sliders.bust ?? 0, total);
       // The user's sculpted fixes for the cup she's at, or the reviewed sizes either side of it.
       for (const fix of slot.cupFixes ?? []) {
         const amount = cupFixAmount(fix.cup, look.sliders.bust ?? 0);
@@ -4121,9 +4155,9 @@ export class Dresser {
       if (slot.part === "Body") bodyMoves.set(moves[i].total, slot.bodyStart * 3);
     });
     this.slots.forEach((slot, i) => {
-      if (slot.follow && active.size > 0) this.follow(slot.follow, moves[i].total.slice(), moves[i].total, bodyMoves);
+      if (slot.follow && shaping) this.follow(slot.follow, moves[i].total.slice(), moves[i].total, bodyMoves);
     });
-    if (this.cleavage && active.size > 0) {
+    if (this.cleavage && shaping) {
       for (const [slot, span] of this.cleavage.spans) {
         // Not her fitted tops (SMOOTH_TOPS): they bridge her cleavage as built and are kept out on her shell; over a
         // big bust the span's line from breast to breast cut across their lower insides and folded them into flaps.
@@ -4131,7 +4165,7 @@ export class Dresser {
         spanCleavage(this.cleavage.hold, span, slot.bind, moves[this.slots.indexOf(slot)].total, bodyMoves);
       }
     }
-    if (this.clear && active.size > 0) {
+    if (this.clear && shaping) {
       const shaped = this.slots.map((slot) => slot.bind);
       for (const { slot } of this.clear.skin) {
         const { bind } = this.slots[slot];

@@ -47,10 +47,12 @@ const SOFT_PARTS: Record<string, SpringSettings> = {
  * bone are thrown by it already). Used instead of the Bust bone's spring when the model has them.
  */
 const SOFT_BUST: Record<BustSoftPart, SpringSettings & { kick: number }> = {
-  Outer: { frequency: 2.3, damping: 0.22, gain: 0.0034, axes: [0.35, 1, 0.3], limit: 0.03, kick: 1 },
-  Tip: { frequency: 2.1, damping: 0.15, gain: 0.0026, axes: [0.35, 1, 0.45], limit: 0.016, kick: 0.4 },
-  Top: { frequency: 1.9, damping: 0.13, gain: 0.0022, axes: [0.3, 1, 0.5], limit: 0.01, kick: 0.3 },
-  Side: { frequency: 1.7, damping: 0.1, gain: 0.0022, axes: [1, 0.6, 0.35], limit: 0.01, kick: 0.3 },
+  // Firmer since 2026-11-21 (the user found them too soft and wobbly): about half the swing, settling in under a
+  // second at C (a strong walking bob: outer 17 mm / 0.5 s, side 8 mm / 0.6 s; at O 36 mm / 0.6 s, 13 mm / 1 s).
+  Outer: { frequency: 2.9, damping: 0.34, gain: 0.0026, axes: [0.35, 1, 0.3], limit: 0.024, kick: 1 },
+  Tip: { frequency: 2.7, damping: 0.26, gain: 0.0019, axes: [0.35, 1, 0.45], limit: 0.012, kick: 0.4 },
+  Top: { frequency: 2.5, damping: 0.24, gain: 0.0016, axes: [0.3, 1, 0.5], limit: 0.008, kick: 0.3 },
+  Side: { frequency: 2.3, damping: 0.2, gain: 0.0016, axes: [1, 0.6, 0.35], limit: 0.008, kick: 0.3 },
 };
 /**
  * Her right breast's springs a touch quicker than her left's, so the two drift out of step instead of bouncing as
