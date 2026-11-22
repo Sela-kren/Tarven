@@ -1,3 +1,4 @@
+import { NO_HOLD, NO_HOLDS, type CrotchHold, type CrotchHolds } from "./crotchkeys";
 import {
   copyLook, jewelleryOf, legwearOf, LOOK_OPTIONS, nearestStop, outfitOf, playerOutfits, startSliders, stopValue, underOf,
   wearOutfit,
@@ -32,6 +33,8 @@ export interface CustomizerHooks {
    * part of the look.
    */
   open(vulva: number, anus: number): void;
+  /** Holds her vulva and anus on the preview (a clench, a hand at either side or both), to see their shape keys. */
+  hold?(holds: CrotchHolds): void;
   /** How hard the preview shows his penis, 0 soft to 1 hard, to see it; never part of the look. */
   erect(level: number): void;
 }
@@ -41,6 +44,14 @@ const ERECTIONS: readonly [number, string][] = [[0, "Soft"], [0.5, "Half"], [1, 
 
 /** How far the preview opens her vulva or anus: closed, relaxed, fully open, and stretched as wide as she goes. */
 const OPENINGS: readonly [number, string][] = [[0, "Closed"], [0.35, "Relaxed"], [1, "Open"], [2, "Stretched"]];
+/** What the preview can hold her vulva or anus with: nothing, a clench, a hand at her left or right, or both hands. */
+const HOLDS: readonly [CrotchHold, string][] = [
+  [NO_HOLD, "None"],
+  [{ close: 1, left: 0, right: 0 }, "Clench"],
+  [{ close: 0, left: 1, right: 0 }, "Left hand"],
+  [{ close: 0, left: 0, right: 1 }, "Right hand"],
+  [{ close: 0, left: 1, right: 1 }, "Both hands"],
+];
 
 /** How the preview is dressed while shaping: her clothes on, down to her smallclothes, or bare. */
 export type Dressing = "dressed" | "underwear" | "nude";
@@ -64,6 +75,7 @@ export class Customizer {
   private readonly clothesEl = make("div", "clothes");
   /** How open the preview has her vulva and anus. */
   private opening = { vulva: 0, anus: 0 };
+  private holds: CrotchHolds = NO_HOLDS;
   /** How hard the preview has his penis. */
   private erection = 0;
   /** Opened from her closet in the tavern: only her clothes can change, never her body, face, hair or skin. */
@@ -131,6 +143,8 @@ export class Customizer {
     this.markDressing("dressed");
     this.opening = { vulva: 0, anus: 0 };
     this.hooks.open(0, 0);
+    this.holds = NO_HOLDS;
+    this.hooks.hold?.(NO_HOLDS);
     this.erection = 0;
     this.hooks.erect(0);
     this.el.classList.add("open");
@@ -261,10 +275,12 @@ export class Customizer {
         if (def.group === "Vulva" && options.vulva.length) {
           rows.push(this.choiceRow("Type", options.vulva, () => this.look.vulva, (id) => (this.look.vulva = id)));
           rows.push(this.openingRow("vulva"));
+          rows.push(this.holdRow("vulva"));
         }
         if (def.group === "Anus" && options.anus.length) {
           rows.push(this.choiceRow("Type", options.anus, () => this.look.anus, (id) => (this.look.anus = id)));
           rows.push(this.openingRow("anus"));
+          rows.push(this.holdRow("anus"));
         }
         if (def.group === "Penis" && options.penis.length) {
           rows.push(this.choiceRow("Type", options.penis, () => this.look.penis, (id) => (this.look.penis = id)));
@@ -344,6 +360,39 @@ export class Customizer {
     const mark = () => {
       buttons.forEach((button, index) => {
         const on = OPENINGS[index][0] === this.opening[which];
+        button.classList.toggle("on", on);
+        button.setAttribute("aria-pressed", String(on));
+      });
+    };
+    mark();
+    grid.append(...buttons);
+    row.append(grid);
+    return row;
+  }
+
+  /**
+   * What the preview holds her vulva or anus with (their sculpted shape keys, crotchkeys.ts): to see it work, never
+   * saved. It undresses her to see it, as they only show bare.
+   */
+  private holdRow(which: "vulva" | "anus"): HTMLElement {
+    const row = make("div", "row styles");
+    row.append(make("span", "name", "Hold"));
+    const grid = make("div", "style-grid");
+    const same = (a: CrotchHold, b: CrotchHold) => a.close === b.close && a.left === b.left && a.right === b.right;
+    const buttons = HOLDS.map(([hold, label]) => {
+      const button = make("button", "", label);
+      button.type = "button";
+      button.addEventListener("click", () => {
+        this.holds = { ...this.holds, [which]: hold };
+        if (!same(hold, NO_HOLD)) this.dress("nude");
+        this.hooks.hold?.(this.holds);
+        mark();
+      });
+      return button;
+    });
+    const mark = () => {
+      buttons.forEach((button, index) => {
+        const on = same(HOLDS[index][0], this.holds[which]);
         button.classList.toggle("on", on);
         button.setAttribute("aria-pressed", String(on));
       });

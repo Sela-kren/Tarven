@@ -132,6 +132,21 @@ for f in bm.faces:
     if loc is not None:
         cut.add(f)
 skin_ids = {i for i, n in enumerate(names) if n in ("T_smalls", "T_skin_f")}
+# STRIP: the skin between it and the bottom of her vulva goes too (its folds made the join fold), so the new disc
+# runs on to her vulva's edge
+if os.environ.get("ANUS_STRIP", "0") == "1":   # tried: her strip is too folded for a clean outline
+    lab_y = [v.co.y for f in bm.faces if f.material_index == mat_id.get("T_labia") for v in f.verts if abs(v.co.x) < 0.01]
+    y_front = min(lab_y) if lab_y else centre.y + 0.02
+    W_STRIP = float(os.environ.get("ANUS_STRIP_HALF", 0.012))
+    added = 0
+    for f in bm.faces:
+        if f in cut or f.material_index not in skin_ids:
+            continue
+        c = f.calc_center_median()
+        if abs(c.x) < W_STRIP and centre.y < c.y < y_front + 0.001 and 0.885 < c.z < 0.945:
+            cut.add(f)
+            added += 1
+    print(f"anus_rebuild: and {added} faces of the strip up to her vulva (its edge at y {y_front:.4f})")
 
 
 def real_faces(e):
@@ -467,6 +482,9 @@ if want - cells:
     fail(f"grid cells missing: {sorted(want - cells)[:8]}")
 bm.verts.index_update()
 idx_new = np.array([v.index for v in used])
+outline_index = [v.index for v in outline]
+inner_idx = np.array([v.index for r in V_canal for v in r] + [v.index for r in V_grid[:len(V_grid) - 6] for v in r])
+outer_idx = np.array([v.index for r in V_grid[len(V_grid) - 6:] for v in r])
 bm.to_mesh(me)
 bm.free()
 me.update()
@@ -482,6 +500,53 @@ for attr in me.attributes:
     vals[idx_new] = 0 if attr.name.startswith("_BUST_KEY_") else vals[idx_new]
     attr.data.foreach_set("vector", vals.ravel())
 me.update()
+# The join: the disc's outer rows, the strip joining it to her skin and her skin within JOIN_BAND of it are relaxed
+# together (each point towards its neighbours' middle, fading out), so the join irons out the folds of the skin it
+# meets. The opening, the canal and her vulva never move.
+JOIN_BAND = float(os.environ.get("ANUS_JOIN_BAND", 0.006))
+JOIN_PASSES = int(os.environ.get("ANUS_JOIN_PASSES", 40))
+if JOIN_BAND > 0 and JOIN_PASSES > 0:
+    co_ = np.empty(n_pts * 3)
+    me.vertices.foreach_get("co", co_)
+    co_ = co_.reshape(-1, 3)
+    outline_idx = np.array([v for v in outline_index])
+    kd_o = KDTree(len(outline_idx))
+    for k, v in enumerate(outline_idx):
+        kd_o.insert(co_[v], k)
+    kd_o.balance()
+    fixed = np.zeros(n_pts, bool)
+    for poly in me.polygons:
+        if poly.material_index in leave_ids | skip_ids:
+            fixed[list(poly.vertices)] = True
+    fixed[inner_idx] = True                      # the opening, the canal and the disc's inner rows
+    amt = np.zeros(n_pts)
+    near_ = np.nonzero(np.linalg.norm(co_ - np.array(tuple(centre)), axis=1) < 0.07)[0]
+    for v in near_:
+        d = kd_o.find(co_[v])[2]
+        if d < JOIN_BAND:
+            t_ = d / JOIN_BAND
+            amt[v] = 1 - t_ * t_ * (3 - 2 * t_)
+    amt[outer_idx] = np.maximum(amt[outer_idx], float(os.environ.get('ANUS_JOIN_OUTER', 0.35)))
+    amt[fixed] = 0
+    ed = np.empty(len(me.edges) * 2, np.int32)
+    me.edges.foreach_get("vertices", ed)
+    ed = ed.reshape(-1, 2)
+    ed = ed[(amt[ed[:, 0]] > 0) | (amt[ed[:, 1]] > 0)]
+    dg = np.zeros(n_pts)
+    np.add.at(dg, ed[:, 0], 1)
+    np.add.at(dg, ed[:, 1], 1)
+    p_ = co_.copy()
+    for k_ in range(2 * JOIN_PASSES):
+        # Taubin: a smoothing step, then a slightly larger step back, so the surface irons out without shrinking
+        lam = 0.5 if k_ % 2 == 0 else -0.53
+        acc = np.zeros_like(p_)
+        np.add.at(acc, ed[:, 0], p_[ed[:, 1]])
+        np.add.at(acc, ed[:, 1], p_[ed[:, 0]])
+        mid = acc / np.maximum(dg, 1)[:, None]
+        p_ += (mid - p_) * (lam * amt * (dg > 0))[:, None]
+    me.vertices.foreach_set("co", p_.ravel())
+    me.update()
+    print(f"anus_rebuild: the join relaxed over {int((amt > 0).sum())} points, most moved {np.linalg.norm(p_ - co_, axis=1).max() * 1000:.1f} mm")
 print(f"anus_rebuild: done in {time.time() - t0:.0f} s")
 if OUT is None:
     backups = os.path.join(core.repo_root(), "ref", "_sculpt_backups")

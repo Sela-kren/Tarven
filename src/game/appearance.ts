@@ -19,6 +19,11 @@ import {
 } from "./penis";
 import { FACE_EXTRAS, FACE_LINES, faceKeyWeights, faceMoved, mouthPress, REST_FACE, type FaceShape } from "./face";
 import { attachFaceKeys, blenderObjectOf, faceKeysOf, restCount, setFaceKeyWeights } from "./facekeys";
+import {
+  addCrotchMoves, clampHold, crotchKeysOf, crotchMovesFor, crotchWeights, NO_HOLDS,
+  type CrotchHolds, type KeyMoves,
+} from "./crotchkeys";
+import { unpackGeometry } from "./unpack";
 import { faceMove, faceRig, faceSurface, type FaceControls, type FacePart, type FaceRig } from "./facerig";
 import { coatRetroMaterial, coverCoat, solidRetroMaterial, stainRetroMaterial } from "./retro";
 import { keepSkinDetailOpaque } from "./skindetail";
@@ -3539,12 +3544,12 @@ export class Dresser {
   private readonly bones: BoneRest[] = [];
   private readonly boneIndex = new Map<Object3D, BoneRest>();
   /** The lowest point of the model as built, which the feet are kept on. */
-  private readonly floor: number;
+  private floor = 0;
   private readonly bodyRoot: Object3D;
   /** How many body points there are, across the body's meshes. */
-  private readonly bodyCount: number;
+  private bodyCount = 0;
   /** Whether the model keeps her shape from before the build reshaped her (see MeshSlot.rest): the joints move as worked out there. */
-  private readonly reshapedRest: boolean;
+  private reshapedRest = false;
   /** True while the clothes are taken off to see the body; a preview, never part of the look. */
   private undressed = false;
   /** Leaves the baked cloth drapes off: the Blender bridge bakes against the game's fit without them. */
@@ -3565,11 +3570,22 @@ export class Dresser {
    * Her nipple discs, for a body built with them, and for each clothing mesh the points close over a nipple: which
    * disc and how far from its tip. They tent out as it stands, and are all that change when only her arousal does.
    */
-  private readonly nipples: { slot: MeshSlot; discs: Disc[]; riders: Map<MeshSlot, Riders> } | null = null;
+  private nipples: { slot: MeshSlot; discs: Disc[]; riders: Map<MeshSlot, Riders> } | null = null;
   /** The body points holding the clothes out over her cleavage, and each clothing mesh's points stretched across. */
-  private readonly cleavage: { hold: CleavageHold; spans: Map<MeshSlot, ClothSpan> } | null = null;
+  private cleavage: { hold: CleavageHold; spans: Map<MeshSlot, ClothSpan> } | null = null;
   /** Her skin round her chest and the points of her tops kept out of it (see clearOfSkin). */
-  private readonly clear: { skin: ClearSkin[]; cloths: Map<MeshSlot, Int32Array>; centre: number } | null = null;
+  private clear: { skin: ClearSkin[]; cloths: Map<MeshSlot, Int32Array>; centre: number } | null = null;
+  /**
+   * What clothes are fitted to, kept for clothes added later (addMeshes): her body's points as built (her discs,
+   * patches and crotch out of reach), what holds clothes out over her cleavage, her skin round her chest, her vulva's
+   * grid, her pubic hair's patch, and where his penis starts.
+   */
+  private bodyPoints = new Float32Array(0);
+  private hold: CleavageHold | null = null;
+  private clearBase: { skin: ClearSkin[]; centre: number } | null = null;
+  private vulvaGrid: ReturnType<typeof gridOf> | null = null;
+  private pubicSlot: MeshSlot | undefined;
+  private penisRoot: ReturnType<typeof penisFrame>["root"] | null = null;
   /** Her fitted tops, smoothed after the reshaping (see SMOOTH_TOPS). */
   private readonly smoothTops = new Map<MeshSlot, SmoothTable>();
   /** Her T-shirt, hanging from a big bust (see HANG), with its turned-under strips' folds (see turnedPartners). */
@@ -3584,12 +3600,19 @@ export class Dresser {
   /** How open her vulva and her anus are, from 0 to 1; a state of the moment, never part of the look. */
   private vulvaOpen = 0;
   private anusOpen = 0;
+  /** What holds her vulva and anus (a clench, a hand at each side); a state of the moment, as their opening. */
+  private crotchHolds: CrotchHolds = NO_HOLDS;
+  /**
+   * Her vulva's and anus's sculpted shape keys (crotchkeys.ts), each mesh's moves per key; empty without a keys file.
+   * With them, their Open keys open her instead of the game's own opening.
+   */
+  private readonly crotchKeyed = { vulva: new Map<MeshSlot, KeyMoves>(), anus: new Map<MeshSlot, KeyMoves>() };
   /**
    * Her vulva's grid, for a body built with it: its meshes (the slit, the outer lips, and her canal if it has one),
    * and the points of other meshes lying over it (her coat, clothes and pubic hair), which rise over its shape,
    * `over` more on top of it.
    */
-  private readonly vulva: {
+  private vulva: {
     slots: MeshSlot[];
     patch: VulvaPatch;
     riders: Map<MeshSlot, { riders: VulvaRiders; over: number; rigid: boolean }>;
@@ -3599,9 +3622,9 @@ export class Dresser {
   /** The clothes near each piercing, which hide it while any of them is on. */
   private readonly jewelCovers = new Map<MeshSlot, MeshSlot[]>();
   /** Her anus's disc, for a body built with it: its two meshes (the rim and canal, the skin around them). */
-  private readonly anus: { slots: MeshSlot[]; patch: AnusPatch; sculpted: boolean } | null = null;
+  private anus: { slots: MeshSlot[]; patch: AnusPatch; sculpted: boolean } | null = null;
   /** His penis's tube and sack, for a body built with them: the shaft, the glans, then the sack. */
-  private readonly penis: { slots: MeshSlot[]; patch: PenisPatch; groin: MeshSlot[] } | null = null;
+  private penis: { slots: MeshSlot[]; patch: PenisPatch; groin: MeshSlot[] } | null = null;
   /** Whether his penis was last shaped held in what covers his groin, rather than free. */
   private penisPacked = false;
   /** How hard he is, from 0 (soft) to 1; a state of the moment, never part of the look. */
@@ -3660,95 +3683,13 @@ export class Dresser {
     model.traverse((object) => {
       if (object instanceof SkinnedMesh && !Array.isArray(object.material) && partOf(object, body)) meshes.push(object);
     });
-    const inverse = new Matrix4();
-    let bodyCount = 0;
-    for (const mesh of meshes) {
-      mesh.geometry = mesh.geometry.clone();
-      const position = mesh.geometry.getAttribute("position");
-      const bind = new Float32Array(position.count * 3);
-      for (let v = 0; v < position.count; v++) {
-        point.fromBufferAttribute(position, v).applyMatrix4(mesh.bindMatrix).toArray(bind, v * 3);
-      }
-      // Where the build kept each point as she was before it reshaped her (see keep_slider_rest in build_world.py).
-      const kept = mesh.geometry.getAttribute("_slider_rest");
-      let rest: Float32Array | undefined;
-      if (kept && kept.count === position.count) {
-        rest = new Float32Array(position.count * 3);
-        for (let v = 0; v < kept.count; v++) {
-          point.fromBufferAttribute(kept, v).applyMatrix4(mesh.bindMatrix).toArray(rest, v * 3);
-        }
-      }
-      const part = partOf(mesh, body)!;
-      // The user's sculpted breast fixes, one per cup they sculpted at (see apply_sculpt_fixes in build_world.py).
-      const cupFixes: { cup: number; delta: Float32Array }[] = [];
-      const toBind = new Matrix3().setFromMatrix4(mesh.bindMatrix);
-      const drapes: { cup: number; delta: Float32Array }[] = [];
-      const cupKeys: { cup: number; delta: Float32Array }[] = [];
-      for (const [attrName, attr] of Object.entries(mesh.geometry.attributes)) {
-        const [, kind, lower] = /^_(bust_fix|cloth_drape|bust_key)_([a-z])$/.exec(attrName) ?? [];
-        const letter = lower?.toUpperCase();
-        // A cup past the slider's largest (an old drape baked at Z) is never reached.
-        if (!letter || !CUPS.labels.includes(letter) || attr.count !== position.count) continue;
-        const delta = new Float32Array(attr.count * 3);
-        for (let v = 0; v < attr.count; v++) point.fromBufferAttribute(attr, v).applyMatrix3(toBind).toArray(delta, v * 3);
-        (kind === "bust_fix" ? cupFixes : kind === "bust_key" ? cupKeys : drapes).push({ cup: stopValue(CUPS, CUPS.labels.indexOf(letter)), delta });
-      }
-      if (part === "Cum") {
-        mesh.material = stainMeshOf(mesh, body) ? stainRetroMaterial() : coatRetroMaterial();
-        // Too close to the skin to shadow it cleanly.
-        mesh.castShadow = false;
-      }
-      const material = mesh.material as Material;
-      this.slots.push({
-        mesh, part, original: material, worn: material, bind, follow: null, bodyStart: bodyCount, rest,
-        cupFixes: cupFixes.length ? cupFixes : undefined,
-        // Only a piece its keys move: her leggings share the T-shirt's mesh, and carry its keys as zeros.
-        cupKeys: cupKeys.some((key) => key.delta.some((d) => d !== 0)) ? cupKeys : undefined,
-        drapes: drapes.length ? drapes : undefined,
-      });
-      if (part === "Body") bodyCount += position.count;
-      mesh.skeleton.bones.forEach((bone, i) => {
-        if (this.boneIndex.has(bone)) return;
-        const joint = new Vector3().setFromMatrixPosition(inverse.copy(mesh.skeleton.boneInverses[i]).invert());
-        const shiftBy = bone.userData?.slider_shift as number[] | undefined;
-        const restJoint = Array.isArray(shiftBy) && shiftBy.length === 3 ? joint.clone().add(new Vector3(...shiftBy)) : joint.clone();
-        const rest: BoneRest = {
-          bone,
-          label: bone.name.startsWith(`${body}_`) ? bone.name.slice(body.length + 1) : bone.name,
-          parent: null,
-          position: bone.position.clone(),
-          quaternion: bone.quaternion.clone(),
-          joint,
-          restJoint,
-        };
-        this.boneIndex.set(bone, rest);
-        this.bones.push(rest);
-      });
-    }
-    for (const rest of this.bones) rest.parent = rest.bone.parent ? (this.boneIndex.get(rest.bone.parent) ?? null) : null;
-    const bustRest = this.bones.find((rest) => rest.label === "Bust");
-    if (bustRest) for (const rest of this.bones) if (isBustSoft(rest.label)) rest.shapeAs = bustRest;
-    this.bodyCount = bodyCount;
-    this.reshapedRest = this.slots.some((slot) => slot.rest !== undefined);
+    for (const mesh of meshes) this.takeMesh(mesh);
+    this.linkBones();
     // Her face's shape keys, as morph targets on the meshes they move (before anything reshapes her points: they're
     // found by where they sit as built).
     if (body === "Female") this.takeFaceKeys();
-    // Her fitted tops, smoothed after each reshaping (see SMOOTH_TOPS), and lit smooth all over: the build left hard
-    // edges inside the tee (its points at one spot with different normals), and one across the front at the top of its
-    // hem band showed as a line across her. Each spot takes the average of its points' normals, before the lighting
-    // keeps them as built (see refreshNormals).
-    for (const slot of this.slots) {
-      const { geometry } = slot.mesh;
-      if (slot.part !== "Cloth" || !geometry.index || !SMOOTH_TOPS.includes(slot.original.name) || ownKeys(slot)) continue;
-      const table = smoothTable(slot.bind, geometry.index.array as ArrayLike<number>);
-      this.smoothTops.set(slot, table);
-      if (HANG_TOPS.includes(slot.original.name)) {
-        this.hangTops.set(slot, turnedPartners(slot.bind, table, geometry.index.array as ArrayLike<number>));
-      }
-      const normal = geometry.getAttribute("normal");
-      if (normal) weldNormals(table, normal as BufferAttribute);
-    }
-
+    // What everything else is fitted to: her body as built.
+    const bodyCount = this.bodyCount;
     const bodyPoints = new Float32Array(bodyCount * 3);
     for (const slot of this.slots) if (slot.part === "Body") bodyPoints.set(slot.bind, slot.bodyStart * 3);
     // The clothes ride on the skin, never on her nipple discs, which lie over it and lift off it as a breast grows:
@@ -3779,31 +3720,9 @@ export class Dresser {
       bodyPoints.fill(1e6, slot.bodyStart * 3, (slot.bodyStart + slot.bind.length / 3) * 3);
       slot.mesh.castShadow = false;
     }
-    for (const slot of this.slots) {
-      if (!FOLLOWING_PARTS.includes(slot.part) || bodyCount < FOLLOW_POINTS) continue;
-      // Fitted tops, and the stains made on them, follow her skin more widely (see TOP_FOLLOW).
-      const top = (slot.part === "Cloth" && SMOOTH_TOPS.includes(slot.original.name))
-        || (slot.part === "Cum" && SMOOTH_TOPS.some((name) => slot.mesh.name.includes(`_${name}_`)));
-      slot.follow = nearestBody(slot.bind, bodyPoints, top && bodyCount >= TOP_FOLLOW.k ? TOP_FOLLOW : undefined);
-      if (slot.part === "Cloth") {
-        const near = slot.follow.k === FOLLOW_POINTS ? slot.follow : nearestBody(slot.bind, bodyPoints);
-        this.skinWeightsOnto(slot, near);
-      }
-    }
-    // Her clothes, and what landed on them, stretch across her cleavage instead of following the skin into it.
-    const hold = cleavageHold(bodyPoints);
-    if (hold.at.length) {
-      const spans = new Map<MeshSlot, ClothSpan>();
-      for (const slot of this.slots) {
-        if (!slot.follow || ownKeys(slot) || !(slot.part === "Cloth" || (slot.part === "Cum" && stainMeshOf(slot.mesh, body)))) continue;
-        // Only pieces that reach her chest, as in clearing (CLEAR_GARMENT_TOP): a breast hanging to her waist took
-        // the span down with it, and pulled her leggings' waistband out to it in a wedge under her bust.
-        if (reach(slot.bind) < CLEAR_GARMENT_TOP) continue;
-        const span = clothSpan(hold, slot.bind);
-        if (span) spans.set(slot, span);
-      }
-      if (spans.size) this.cleavage = { hold, spans };
-    }
+    this.bodyPoints = bodyPoints;
+    this.pubicSlot = pubicSlot;
+    this.hold = cleavageHold(bodyPoints);
     // Her tops are kept out of her skin, where a bust grown past them would swallow them.
     const clearSkin: ClearSkin[] = [];
     this.slots.forEach((slot, s) => {
@@ -3848,9 +3767,214 @@ export class Dresser {
         });
       }
       const centre = Number.isFinite(front + back) ? (front + back) / 2 : 0;
-      const cloths = new Map<MeshSlot, Int32Array>();
-      for (const slot of this.slots) {
-        if (!slot.follow || !(slot.part === "Cloth" || (slot.part === "Cum" && stainMeshOf(slot.mesh, body)))) continue;
+      this.clearBase = { skin: clearSkin, centre };
+    }
+
+    const discs = discSlot ? readDiscs(discSlot.mesh.geometry, discSlot.bind) : [];
+    if (discSlot && discs.length) {
+      const riders = new Map<MeshSlot, Riders>();
+      discSlot.shapeFrom = skinUnder(discs, discSlot.bind);
+      if (discSlot.rest) discSlot.restShapeFrom = skinUnder(discs, discSlot.rest);
+      this.nipples = { slot: discSlot, discs, riders };
+    }
+
+    const uvs = vulvaSlots.map((slot) => slot.mesh.geometry.getAttribute("uv"));
+    const canalUv = canalSlot?.mesh.geometry.getAttribute("uv");
+    const patch = vulvaSlots.length === 2 && uvs.every(Boolean) ? readVulva(uvs, canalUv) : null;
+    // The canal shapes along with the grid, as the last of its meshes.
+    if (patch?.canal && canalSlot) vulvaSlots.push(canalSlot);
+    if (patch) {
+      const grid = gridOf(patch, vulvaSlots.map((slot) => slot.bind));
+      const riders = new Map<MeshSlot, { riders: VulvaRiders; over: number; rigid: boolean }>();
+      this.vulvaGrid = grid;
+      // A vulva the user sculpted by hand (the model's Female_Body marked "vulva_sculpted"): the game keeps her shape
+      // as it is and lays only its changes from its own rest shape over it (shapeVulva).
+      let sculpted = false;
+      for (let o: Object3D | null = vulvaSlots[0].mesh; o; o = o.parent) if (o.userData?.vulva_sculpted) sculpted = true;
+      this.vulva = { slots: vulvaSlots, patch, riders, sculpted };
+    }
+    const anusUvs = anusSlots.map((slot) => slot.mesh.geometry.getAttribute("uv"));
+    const anus = anusSlots.length === 2 && anusUvs.every(Boolean) ? readAnus(anusUvs) : null;
+    if (anus) {
+      let sculpted = false;
+      for (let o: Object3D | null = anusSlots[0].mesh; o; o = o.parent) if (o.userData?.vulva_sculpted) sculpted = true;
+      this.anus = { slots: anusSlots, patch: anus, sculpted };
+    }
+    if (body === "Female") this.takeCrotchKeys();
+    const penisUvs = penisSlots.map((slot) => slot.mesh.geometry.getAttribute("uv"));
+    const penis = penisSlots.length === 3 && penisUvs.every(Boolean) ? readPenis(penisUvs.slice(0, 2), penisUvs.slice(2)) : null;
+    if (penis) {
+      // The clothes over his groin, nearest first: any of them on, his penis lies packed in it rather than showing.
+      const root = penisFrame(penis, penisSlots.map((slot) => slot.bind)).root;
+      this.penisRoot = root;
+      this.penis = { slots: penisSlots, patch: penis, groin: [] };
+    }
+
+    // Everything else fitted to her: her clothes, hair, shoes, jewellery and what lands on her.
+    this.prepareSlots(this.slots);
+  }
+
+  /**
+   * Adds meshes the model didn't have when this was made (an outfit loaded later, outfitfiles.ts): each fitted to her
+   * as the ones made with her were, and her look put on again. They're bound to her skeleton already; never her body.
+   */
+  addMeshes(meshes: readonly SkinnedMesh[]): void {
+    const added: MeshSlot[] = [];
+    for (const mesh of meshes) {
+      if (Array.isArray(mesh.material) || this.slots.some((slot) => slot.mesh === mesh)) continue;
+      const part = partOf(mesh, this.body);
+      if (!part) continue;
+      if (part === "Body") throw new Error(`${mesh.name}: her body can't be added later`);
+      added.push(this.takeMesh(mesh));
+    }
+    if (!added.length) return;
+    this.linkBones();
+    this.prepareSlots(added);
+    // Her normals are welded per object (refreshNormals): an object's points welded again, with the new ones among them.
+    this.normalWelds.clear();
+    // Her look again, now with them (the shape she had was worked out for fewer meshes).
+    if (this.shaped) {
+      this.shaped = null;
+      this.apply(this.look);
+    }
+  }
+
+  /** Whether the model has the meshes of this outfit (Female_Cloth<mesh>): an outfit file not loaded yet has none. */
+  hasOutfit(mesh: string): boolean {
+    return this.slots.some((slot) => slot.part === "Cloth" && outfitMeshOf(slot.mesh, this.body) === mesh);
+  }
+
+  /** One mesh as a slot: its points as built, its per-cup keys, and its bones. */
+  private takeMesh(mesh: SkinnedMesh): MeshSlot {
+    const body = this.body;
+    const inverse = new Matrix4();
+    mesh.geometry = mesh.geometry.clone();
+    // A packed model's 8 and 16 bit normals, weights and UVs as plain floats, as the shaping reads and rewrites them.
+    unpackGeometry(mesh.geometry);
+    const position = mesh.geometry.getAttribute("position");
+    const bind = new Float32Array(position.count * 3);
+    for (let v = 0; v < position.count; v++) {
+      point.fromBufferAttribute(position, v).applyMatrix4(mesh.bindMatrix).toArray(bind, v * 3);
+    }
+    // Where the build kept each point as she was before it reshaped her (see keep_slider_rest in build_world.py).
+    const kept = mesh.geometry.getAttribute("_slider_rest");
+    let rest: Float32Array | undefined;
+    if (kept && kept.count === position.count) {
+      rest = new Float32Array(position.count * 3);
+      for (let v = 0; v < kept.count; v++) {
+        point.fromBufferAttribute(kept, v).applyMatrix4(mesh.bindMatrix).toArray(rest, v * 3);
+      }
+    }
+    const part = partOf(mesh, body)!;
+    // The user's sculpted breast fixes, one per cup they sculpted at (see apply_sculpt_fixes in build_world.py).
+    const cupFixes: { cup: number; delta: Float32Array }[] = [];
+    const toBind = new Matrix3().setFromMatrix4(mesh.bindMatrix);
+    const drapes: { cup: number; delta: Float32Array }[] = [];
+    const cupKeys: { cup: number; delta: Float32Array }[] = [];
+    for (const [attrName, attr] of Object.entries(mesh.geometry.attributes)) {
+      const [, kind, lower] = /^_(bust_fix|cloth_drape|bust_key)_([a-z])$/.exec(attrName) ?? [];
+      const letter = lower?.toUpperCase();
+      // A cup past the slider's largest (an old drape baked at Z) is never reached.
+      if (!letter || !CUPS.labels.includes(letter) || attr.count !== position.count) continue;
+      const delta = new Float32Array(attr.count * 3);
+      for (let v = 0; v < attr.count; v++) point.fromBufferAttribute(attr, v).applyMatrix3(toBind).toArray(delta, v * 3);
+      (kind === "bust_fix" ? cupFixes : kind === "bust_key" ? cupKeys : drapes).push({ cup: stopValue(CUPS, CUPS.labels.indexOf(letter)), delta });
+    }
+    if (part === "Cum") {
+      mesh.material = stainMeshOf(mesh, body) ? stainRetroMaterial() : coatRetroMaterial();
+      // Too close to the skin to shadow it cleanly.
+      mesh.castShadow = false;
+    }
+    const material = mesh.material as Material;
+    this.slots.push({
+      mesh, part, original: material, worn: material, bind, follow: null, bodyStart: this.bodyCount, rest,
+      cupFixes: cupFixes.length ? cupFixes : undefined,
+      // Only a piece its keys move: her leggings share the T-shirt's mesh, and carry its keys as zeros.
+      cupKeys: cupKeys.some((key) => key.delta.some((d) => d !== 0)) ? cupKeys : undefined,
+      drapes: drapes.length ? drapes : undefined,
+    });
+    if (part === "Body") this.bodyCount += position.count;
+    mesh.skeleton.bones.forEach((bone, i) => {
+      if (this.boneIndex.has(bone)) return;
+      const joint = new Vector3().setFromMatrixPosition(inverse.copy(mesh.skeleton.boneInverses[i]).invert());
+      const shiftBy = bone.userData?.slider_shift as number[] | undefined;
+      const restJoint = Array.isArray(shiftBy) && shiftBy.length === 3 ? joint.clone().add(new Vector3(...shiftBy)) : joint.clone();
+      const rest: BoneRest = {
+        bone,
+        label: bone.name.startsWith(`${body}_`) ? bone.name.slice(body.length + 1) : bone.name,
+        parent: null,
+        position: bone.position.clone(),
+        quaternion: bone.quaternion.clone(),
+        joint,
+        restJoint,
+      };
+      this.boneIndex.set(bone, rest);
+      this.bones.push(rest);
+    });
+    return this.slots[this.slots.length - 1];
+  }
+
+  /** Each bone's parent among her bones, her breasts' soft bones shaped as the Bust bone. */
+  private linkBones(): void {
+    for (const rest of this.bones) rest.parent = rest.bone.parent ? (this.boneIndex.get(rest.bone.parent) ?? null) : null;
+    const bustRest = this.bones.find((rest) => rest.label === "Bust");
+    if (bustRest) for (const rest of this.bones) if (isBustSoft(rest.label)) rest.shapeAs = bustRest;
+    this.reshapedRest = this.slots.some((slot) => slot.rest !== undefined);
+  }
+
+  /**
+   * Fits these meshes (none of them her body) to her body as built: tops smoothed, what each follows of her skin,
+   * spans over her cleavage, tops kept out of her skin, riders over her nipples and vulva; then what depends on all
+   * her clothes (what covers his groin and her piercings, and where her feet stand).
+   */
+  private prepareSlots(slots: readonly MeshSlot[]): void {
+    const bodyPoints = this.bodyPoints;
+    const bodyCount = this.bodyCount;
+    // Her fitted tops, smoothed after each reshaping (see SMOOTH_TOPS), and lit smooth all over: the build left hard
+    // edges inside the tee (its points at one spot with different normals), and one across the front at the top of its
+    // hem band showed as a line across her. Each spot takes the average of its points' normals, before the lighting
+    // keeps them as built (see refreshNormals).
+    for (const slot of slots) {
+      const { geometry } = slot.mesh;
+      if (slot.part !== "Cloth" || !geometry.index || !SMOOTH_TOPS.includes(slot.original.name) || ownKeys(slot)) continue;
+      const table = smoothTable(slot.bind, geometry.index.array as ArrayLike<number>);
+      this.smoothTops.set(slot, table);
+      if (HANG_TOPS.includes(slot.original.name)) {
+        this.hangTops.set(slot, turnedPartners(slot.bind, table, geometry.index.array as ArrayLike<number>));
+      }
+      const normal = geometry.getAttribute("normal");
+      if (normal) weldNormals(table, normal as BufferAttribute);
+    }
+    for (const slot of slots) {
+      if (!FOLLOWING_PARTS.includes(slot.part) || bodyCount < FOLLOW_POINTS) continue;
+      // Fitted tops, and the stains made on them, follow her skin more widely (see TOP_FOLLOW).
+      const top = (slot.part === "Cloth" && SMOOTH_TOPS.includes(slot.original.name))
+        || (slot.part === "Cum" && SMOOTH_TOPS.some((name) => slot.mesh.name.includes(`_${name}_`)));
+      slot.follow = nearestBody(slot.bind, bodyPoints, top && bodyCount >= TOP_FOLLOW.k ? TOP_FOLLOW : undefined);
+      if (slot.part === "Cloth") {
+        const near = slot.follow.k === FOLLOW_POINTS ? slot.follow : nearestBody(slot.bind, bodyPoints);
+        this.skinWeightsOnto(slot, near);
+      }
+    }
+    // Her clothes, and what landed on them, stretch across her cleavage instead of following the skin into it.
+    const hold = this.hold;
+    if (hold && hold.at.length) {
+      const spans = this.cleavage?.spans ?? new Map<MeshSlot, ClothSpan>();
+      for (const slot of slots) {
+        if (!slot.follow || ownKeys(slot) || !(slot.part === "Cloth" || (slot.part === "Cum" && stainMeshOf(slot.mesh, this.body)))) continue;
+        // Only pieces that reach her chest, as in clearing (CLEAR_GARMENT_TOP): a breast hanging to her waist took
+        // the span down with it, and pulled her leggings' waistband out to it in a wedge under her bust.
+        if (reach(slot.bind) < CLEAR_GARMENT_TOP) continue;
+        const span = clothSpan(hold, slot.bind);
+        if (span) spans.set(slot, span);
+      }
+      if (spans.size && !this.cleavage) this.cleavage = { hold, spans };
+    }
+    const base = this.clearBase;
+    if (base) {
+      const cloths = this.clear?.cloths ?? new Map<MeshSlot, Int32Array>();
+      for (const slot of slots) {
+        if (!slot.follow || !(slot.part === "Cloth" || (slot.part === "Cum" && stainMeshOf(slot.mesh, this.body)))) continue;
         // Each piece (material) by its own reach: an outfit's leggings are pieces of the same mesh as its top, and
         // pushed out over a breast hanging to her waist, their waistband stood out from her belly.
         if (reach(slot.bind) < CLEAR_GARMENT_TOP) continue;
@@ -3858,14 +3982,13 @@ export class Dresser {
         for (let v = 0; v < slot.bind.length / 3; v++) if (inClearRegion(slot.bind, v)) verts.push(v);
         if (verts.length) cloths.set(slot, Int32Array.from(verts));
       }
-      if (cloths.size) this.clear = { skin: clearSkin, cloths, centre };
+      if (cloths.size && !this.clear) this.clear = { skin: base.skin, cloths, centre: base.centre };
     }
 
-    const discs = discSlot ? readDiscs(discSlot.mesh.geometry, discSlot.bind) : [];
-    if (discSlot && discs.length) {
-      const riders = new Map<MeshSlot, Riders>();
+    if (this.nipples) {
+      const { slot: discSlot, discs, riders } = this.nipples;
       const tips = discs.map((disc) => discSlot.bind.subarray(disc.tip * 3, disc.tip * 3 + 3));
-      for (const slot of this.slots) {
+      for (const slot of slots) {
         if (!slot.follow || ownKeys(slot)) continue;
         const verts: number[] = [], which: number[] = [], from: number[] = [];
         for (let v = 0; v < slot.bind.length / 3; v++) {
@@ -3884,45 +4007,23 @@ export class Dresser {
           });
         }
       }
-      discSlot.shapeFrom = skinUnder(discs, discSlot.bind);
-      if (discSlot.rest) discSlot.restShapeFrom = skinUnder(discs, discSlot.rest);
-      this.nipples = { slot: discSlot, discs, riders };
     }
 
-    const uvs = vulvaSlots.map((slot) => slot.mesh.geometry.getAttribute("uv"));
-    const canalUv = canalSlot?.mesh.geometry.getAttribute("uv");
-    const patch = vulvaSlots.length === 2 && uvs.every(Boolean) ? readVulva(uvs, canalUv) : null;
-    // The canal shapes along with the grid, as the last of its meshes.
-    if (patch?.canal && canalSlot) vulvaSlots.push(canalSlot);
-    if (patch) {
-      const grid = gridOf(patch, vulvaSlots.map((slot) => slot.bind));
-      const riders = new Map<MeshSlot, { riders: VulvaRiders; over: number; rigid: boolean }>();
-      for (const slot of this.slots) {
-        const pubic = slot === pubicSlot;
+    if (this.vulva && this.vulvaGrid) {
+      const { riders } = this.vulva;
+      const grid = this.vulvaGrid;
+      for (const slot of slots) {
+        const pubic = slot === this.pubicSlot;
         if (!slot.follow && !pubic) continue;
         const rigid = slot.part === "Jewel";
         const found = vulvaRiders(slot.bind, grid, rigid ? JEWEL_RIDE : undefined);
         // Her pubic hair lies under the grid as built; it rises clear over it, so a full bush still covers her.
         if (found) riders.set(slot, { riders: found, over: pubic ? PUBIC_OVER_VULVA : 0, rigid });
       }
-      // A vulva the user sculpted by hand (the model's Female_Body marked "vulva_sculpted"): the game keeps her shape
-      // as it is and lays only its changes from its own rest shape over it (shapeVulva).
-      let sculpted = false;
-      for (let o: Object3D | null = vulvaSlots[0].mesh; o; o = o.parent) if (o.userData?.vulva_sculpted) sculpted = true;
-      this.vulva = { slots: vulvaSlots, patch, riders, sculpted };
     }
-    const anusUvs = anusSlots.map((slot) => slot.mesh.geometry.getAttribute("uv"));
-    const anus = anusSlots.length === 2 && anusUvs.every(Boolean) ? readAnus(anusUvs) : null;
-    if (anus) {
-      let sculpted = false;
-      for (let o: Object3D | null = anusSlots[0].mesh; o; o = o.parent) if (o.userData?.vulva_sculpted) sculpted = true;
-      this.anus = { slots: anusSlots, patch: anus, sculpted };
-    }
-    const penisUvs = penisSlots.map((slot) => slot.mesh.geometry.getAttribute("uv"));
-    const penis = penisSlots.length === 3 && penisUvs.every(Boolean) ? readPenis(penisUvs.slice(0, 2), penisUvs.slice(2)) : null;
-    if (penis) {
-      // The clothes over his groin, nearest first: any of them on, his penis lies packed in it rather than showing.
-      const root = penisFrame(penis, penisSlots.map((slot) => slot.bind)).root;
+
+    if (this.penis && this.penisRoot) {
+      const root = this.penisRoot;
       const near = (slot: MeshSlot) => {
         let best = Infinity;
         for (let v = 0; v < slot.bind.length; v += 3) {
@@ -3936,13 +4037,20 @@ export class Dresser {
         .filter(({ d }) => d < GROIN_REACH)
         .sort((a, b) => a.d - b.d)
         .map(({ slot }) => slot);
-      this.penis = { slots: penisSlots, patch: penis, groin };
+      this.penis.groin = groin;
     }
 
+    this.coverJewels();
+    this.findFloor();
+  }
+
+  /** The clothes over each piercing (see the jewellery in showPieces). */
+  private coverJewels(): void {
     // The clothes over each piercing: any of them on, it stays hidden. Measured round each side of her apart, so
     // what covers one nipple doesn't hide the ring through the other.
+    this.jewelCovers.clear();
     for (const slot of this.slots) {
-      if (slot.part !== "Jewel" || !jewelOf(slot.mesh, body)?.bare) continue;
+      if (slot.part !== "Jewel" || !jewelOf(slot.mesh, this.body)?.bare) continue;
       const boxes = [-1, 0, 1].flatMap((side) => {
         const low = [Infinity, Infinity, Infinity], high = [-Infinity, -Infinity, -Infinity];
         for (let v = 0; v < slot.bind.length; v += 3) {
@@ -3966,7 +4074,10 @@ export class Dresser {
       };
       this.jewelCovers.set(slot, this.slots.filter((other) => other.part === "Cloth" && inside(other.bind)));
     }
+  }
 
+  /** Where her feet stand. */
+  private findFloor(): void {
     // Measured on the own shoes: the other styles' heels reach below it, which is what lifts her onto them.
     let floor = Infinity;
     for (const slot of this.slots) {
@@ -4854,14 +4965,14 @@ export class Dresser {
     return type ? vulvaShape(type, 0, 0, 0, 0, 0, 0) : null;
   }
 
-  private vulvaShapeNow(): VulvaShape | null {
+  private vulvaShapeNow(open = this.vulvaOpen): VulvaShape | null {
     const types = LOOK_OPTIONS[this.body].vulva;
     const type = types.find((t) => t.id === this.look.vulva) ?? types[0];
     if (!type) return null;
     const { sliders } = this.look;
     return vulvaShape(
       type, clampSlider(sliders.vulvaSize), clampSlider(sliders.vulvaFull), clampSlider(sliders.vulvaLips), this.vulvaArousal,
-      this.vulvaOpen, clampSlider(sliders.vulvaThick),
+      open, clampSlider(sliders.vulvaThick),
     );
   }
 
@@ -4886,6 +4997,49 @@ export class Dresser {
   }
 
   /**
+   * What holds her vulva and anus open or shut, each from 0 to 1: `close` clenches it, `left` and `right` are a hand
+   * pulling her own left or right side open (both, two hands). Played by their sculpted shape keys (crotchkeys.ts);
+   * without them nothing changes. Only their meshes change, so it can follow her moment to moment.
+   */
+  setHold(holds: { vulva?: Partial<CrotchHolds["vulva"]>; anus?: Partial<CrotchHolds["anus"]> }): void {
+    const next: CrotchHolds = { vulva: clampHold(holds.vulva), anus: clampHold(holds.anus) };
+    const moved = (a: CrotchHolds["vulva"], b: CrotchHolds["vulva"]) =>
+      Math.max(Math.abs(a.close - b.close), Math.abs(a.left - b.left), Math.abs(a.right - b.right)) >= 0.02 ||
+      ([a.close, a.left, a.right].some((v, i) => (v === 0 || v === 1) && v !== [b.close, b.left, b.right][i]));
+    const vulva = moved(next.vulva, this.crotchHolds.vulva);
+    const anus = moved(next.anus, this.crotchHolds.anus);
+    if (!vulva && !anus) return;
+    this.crotchHolds = { vulva: vulva ? next.vulva : this.crotchHolds.vulva, anus: anus ? next.anus : this.crotchHolds.anus };
+    if (vulva && this.crotchKeyed.vulva.size) this.refreshVulva();
+    if (anus && this.crotchKeyed.anus.size) this.refreshAnus();
+  }
+
+  /** Her vulva's and anus's meshes' moves per sculpted shape key, from her crotch keys (crotchkeys.ts). */
+  private takeCrotchKeys(): void {
+    const file = crotchKeysOf(this.body);
+    if (!file) return;
+    const seen = new Map<string, Uint8Array>();
+    const take = (slots: MeshSlot[], into: Map<MeshSlot, KeyMoves>) => {
+      for (const slot of slots) {
+        const object = blenderObjectOf(slot.mesh);
+        const entry = file.objects[object];
+        if (!entry) continue;
+        let marks = seen.get(object);
+        if (!marks) seen.set(object, (marks = new Uint8Array(restCount(entry))));
+        const moves = crotchMovesFor(slot.bind, slot.mesh.bindMatrix, entry, marks);
+        if (moves.size) into.set(slot, moves);
+      }
+    };
+    if (this.vulva) take(this.vulva.slots, this.crotchKeyed.vulva);
+    if (this.anus) take(this.anus.slots, this.crotchKeyed.anus);
+    for (const [object, marks] of seen) {
+      const missing = marks.length - marks.reduce((n, m) => n + m, 0);
+      // The model changed under the keys since they were made (rebuild art/female_crotch_keys.blend from it).
+      if (missing > 0) console.warn(`crotch keys: ${missing} of ${marks.length} points of ${object} not found on the model`);
+    }
+  }
+
+  /**
    * Shapes her anus's disc from where its meshes lie on the skin (`skin`) into `totals`, every mesh's moves. Hidden,
    * it lies closed.
    */
@@ -4894,7 +5048,9 @@ export class Dresser {
     const types = LOOK_OPTIONS[this.body].anus;
     const type = types.find((t) => t.id === this.look.anus) ?? types[0];
     if (!anus || !type) return;
-    const shape = anusShape(type, clampSlider(this.look.sliders.anusSize), this.vulvaShown ? this.anusOpen : 0);
+    // With its sculpted keys, its Open key opens it (below), not the game's own opening.
+    const keyed = this.crotchKeyed.anus.size > 0;
+    const shape = anusShape(type, clampSlider(this.look.sliders.anusSize), this.vulvaShown && !keyed ? this.anusOpen : 0);
     const out = anus.slots.map((slot) => new Float32Array(slot.bind.length));
     shapeAnus(anus.patch, skin, shape, out);
     // Hand-sculpted (as her vulva, the same mark): her shape as it is, plus the game's change from its own rest
@@ -4909,6 +5065,10 @@ export class Dresser {
       if (rest) for (let i = 0; i < slot.bind.length; i++) total[i] = skin[m][i] - slot.bind[i] + out[m][i] - rest[m][i];
       else for (let i = 0; i < slot.bind.length; i++) total[i] = out[m][i] - slot.bind[i];
     });
+    if (keyed && this.vulvaShown) {
+      const weights = crotchWeights("Anus", this.anusOpen, this.crotchHolds.anus);
+      for (const slot of anus.slots) addCrotchMoves(totals[this.slots.indexOf(slot)], this.crotchKeyed.anus.get(slot), weights);
+    }
   }
 
   /**
@@ -4999,7 +5159,9 @@ export class Dresser {
   private shapeVulva(skin: Float32Array[], totals: Float32Array[], flat: Map<MeshSlot, Float32Array>): void {
     const { vulva } = this;
     if (!vulva) return;
-    const shape = this.vulvaShown ? this.vulvaShapeNow() : null;
+    // With its sculpted keys, its Open key opens it (below), not the game's own opening.
+    const keyed = this.crotchKeyed.vulva.size > 0;
+    const shape = this.vulvaShown ? this.vulvaShapeNow(keyed ? 0 : this.vulvaOpen) : null;
     const out = vulva.slots.map((slot) => new Float32Array(slot.bind.length));
     const frame = shapeVulva(vulva.patch, skin, shape, out);
     // Hand-sculpted: her shape as sculpted, plus the game's change from its own rest shape (the first type, every
@@ -5017,6 +5179,10 @@ export class Dresser {
         for (let i = 0; i < slot.bind.length; i++) total[i] = out[m][i] - slot.bind[i];
       }
     });
+    if (keyed && shape) {
+      const weights = crotchWeights("Vulva", this.vulvaOpen, this.crotchHolds.vulva);
+      for (const slot of vulva.slots) addCrotchMoves(totals[this.slots.indexOf(slot)], this.crotchKeyed.vulva.get(slot), weights);
+    }
     for (const [slot, { riders, over, rigid }] of vulva.riders) {
       const own = totals[this.slots.indexOf(slot)];
       const before = flat.get(slot)!;

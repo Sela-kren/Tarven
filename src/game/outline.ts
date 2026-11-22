@@ -34,13 +34,28 @@ export class Outline {
   private readonly sources: Mesh[] = [];
   private readonly ownGeometry: BufferGeometry[] = [];
 
+  /** The material it shows in now, or null while hidden. */
+  private shown: MeshBasicMaterial | null = null;
+
   /** `smooth` rebuilds the normals of rigid, hard-edged meshes such as furniture; skinned meshes keep theirs. */
-  constructor(root: Object3D, material: MeshBasicMaterial, smooth = false) {
+  constructor(private readonly root: Object3D, private readonly material: MeshBasicMaterial, private readonly smooth = false) {
+    this.outlineNew();
+  }
+
+  /** Outlines meshes added under its root since (an outfit loaded later, outfitfiles.ts), shown as the rest are. */
+  refresh(): void {
+    this.outlineNew();
+    this.show(this.shown);
+  }
+
+  private outlineNew(): void {
+    const { material, smooth } = this;
     const sources: Mesh[] = [];
-    root.traverse((object) => {
+    const done = new Set<Object3D>([...this.sources, ...this.hulls]);
+    this.root.traverse((object) => {
       // Cut-out cards (her strand hair) are left out: their hull would outline every card's whole rectangle.
       const cutOut = (m: Material | Material[]) => (Array.isArray(m) ? m : [m]).some((x) => x.alphaTest > 0);
-      if (object instanceof Mesh && !cutOut(object.material)) sources.push(object);
+      if (object instanceof Mesh && !done.has(object) && !cutOut(object.material)) sources.push(object);
     });
     for (const source of sources) {
       let hull: Mesh;
@@ -77,6 +92,7 @@ export class Outline {
 
   /** Shows the outline in this material, or hides it with null. */
   show(material: MeshBasicMaterial | null): void {
+    this.shown = material;
     this.hulls.forEach((hull, i) => {
       hull.visible = material !== null && this.sources[i].visible;
       if (material) hull.material = material;

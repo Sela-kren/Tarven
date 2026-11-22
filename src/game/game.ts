@@ -1,3 +1,4 @@
+import { NO_HOLDS, type CrotchHolds } from "./crotchkeys";
 import { guestMan, withRandomMan } from "./physique";
 import {
   Box3,
@@ -16,6 +17,7 @@ import {
   WebGLRenderer,
 } from "three";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
+import { attachOutfit, type OutfitFiles } from "./outfitfiles";
 import {
   averageColor,
   BODY_NAMES,
@@ -23,6 +25,7 @@ import {
   dressColors,
   Dresser,
   LOOK_OPTIONS,
+  outfitOf,
   loadLooks,
   newLook,
   startLooks,
@@ -769,6 +772,11 @@ interface Assets {
   streetKit?: Object3D | null;
   /** Where the furniture stood in the room as it was loaded. */
   furniture: Placed[];
+  /**
+   * Her outfits that come in files of their own (outfitfiles.ts), each fetched as she first wears one; null when her
+   * model has them all.
+   */
+  femaleOutfits?: OutfitFiles | null;
 }
 
 export interface Button {
@@ -1243,6 +1251,9 @@ export class Game {
 
     // Each sibling gets meshes of its own to reshape, before the outlines are made from them.
     this.dressers = this.siblings.map((sibling, index) => new Dresser(sibling.root, BODY_NAMES[index]));
+    // Her outfits as their files come in (her start outfit already has): onto her and onto the guests' model.
+    this.femaleOutfits = assets.femaleOutfits ?? null;
+    this.femaleOutfits?.onLoad((mesh, outfit) => this.outfitArrived(mesh, outfit));
     this.siblings.forEach((_, index) => this.applyLook(index));
     this.customizer = new Customizer(element("customize"), {
       change: (look) => this.changeLook(look),
@@ -1252,6 +1263,7 @@ export class Game {
       random: (body) => (body === "Male" ? withRandomMan(randomLook(body)) : randomLook(body)),
       dress: (dressing) => this.chosen !== null && this.dressers[this.chosen].setDressing(dressing),
       open: (vulva, anus) => (this.openingPreview = { vulva, anus }),
+      hold: (holds) => (this.holdPreview = holds),
       erect: (level) => (this.erectionPreview = level),
     });
 
@@ -1500,14 +1512,18 @@ export class Game {
     });
     // Most come in modern clothes now (WORLD.md, section 2b); some keep their type's kit or their plain clothes.
     const stats = kind === "visitor" ? null : statsOf(kind, role);
-    const own = stats ? guestModernOutfit(look, stats.modern.share, stats.modern.styles) ?? stats.outfit : null;
+    const wanted = stats ? guestModernOutfit(look, stats.modern.share, stats.modern.styles) ?? stats.outfit : null;
+    // An outfit whose file isn't in yet (outfitfiles.ts): their plain clothes for now; the file's asked for, so the
+    // guests after them have it.
+    const ready = (id: string | null | undefined) => !id || !female || this.outfitReady(body, id);
+    const own = ready(wanted) ? wanted : null;
     // Their own skin, hair and eyes, when they rolled a look; their kind's hair when they didn't. A man's go with his
     // heritage, and he has his own body and face for his type (physique.ts).
     const man = !female && look > 0 ? guestMan(look, role) : null;
     const person = man ? man.colors : look > 0 ? guestPersonColors(look) : { [slots.hair]: hex(outfit.hair) };
     // Their own hairstyle too, from the same look.
     const hairstyle = guestHairstyle(body, look);
-    if (dressed) {
+    if (dressed && ready(dressed.id)) {
       // A Warm House recruit (recruits.ts): the outfit their stage puts them in, in its colours.
       const preset = LOOK_OPTIONS[body].outfits.find((o) => o.id === dressed.id)?.preset ?? {};
       dressColors(model, body, { ...preset, ...dressed.colors, ...person }, dressed.id, undefined, hairstyle);
@@ -1522,12 +1538,61 @@ export class Game {
     return new Body(model, body);
   }
 
+  /** Her outfits in files of their own (outfitfiles.ts), or null when her model has them all. */
+  private femaleOutfits: OutfitFiles | null = null;
+  /** The look each sibling shows: their own, but for an outfit whose file isn't in yet (the one they had on stays). */
+  private readonly shownLooks: (Look | null)[] = [null, null];
+
+  /**
+   * An outfit file come in: put on her (fitted by her Dresser, outlined) and on the model guests are copied from, and
+   * worn if it's what she's waiting to put on.
+   */
+  private outfitArrived(_mesh: string, outfit: Object3D): void {
+    const index = BODY_NAMES.indexOf("Female");
+    this.dressers[index].addMeshes(attachOutfit(outfit, this.siblings[index].root));
+    attachOutfit(outfit, this.guestModels.female);
+    this.outlines?.[index]?.refresh();
+    // Before her first look's on (her start outfit, come with the model) there's nothing to put on again.
+    const shown = this.shownLooks[index];
+    if (shown && shown !== this.looks[BODY_NAMES[index]]) this.applyLook(index);
+  }
+
+  /**
+   * The look a sibling shows: their own, or while its outfit's file is still coming (outfitfiles.ts), their own with
+   * the outfit (and its colours) they had on until then, or for the first look the plain outfit; the file is asked
+   * for, and when it's in their own goes on (outfitArrived).
+   */
+  private lookToShow(index: number): Look {
+    const body = BODY_NAMES[index];
+    const wanted = this.looks[body];
+    const files = body === "Female" ? this.femaleOutfits : null;
+    const mesh = outfitOf(body, wanted).mesh;
+    if (!files || files.has(mesh)) return wanted;
+    void files.request(mesh);
+    const before = this.shownLooks[index];
+    if (before && files.has(outfitOf(body, before).mesh)) {
+      return { ...wanted, outfit: before.outfit, legwear: before.legwear, colors: before.colors };
+    }
+    return { ...wanted, outfit: LOOK_OPTIONS[body].outfits[0].id, legwear: undefined };
+  }
+
+  /** Whether a character's model has an outfit's meshes in (outfitfiles.ts); if not, its file is asked for. */
+  private outfitReady(body: BodyName, id: string): boolean {
+    const files = body === "Female" ? this.femaleOutfits : null;
+    const mesh = outfitOf(body, { outfit: id }).mesh;
+    if (!files || files.has(mesh)) return true;
+    void files.request(mesh);
+    return false;
+  }
+
   /** Puts a sibling's look on them, and lets their walk and springs settle to the new shape. */
   private applyLook(index: number): void {
-    this.dressers[index].apply(this.looks[BODY_NAMES[index]]);
+    const shown = this.lookToShow(index);
+    this.shownLooks[index] = shown;
+    this.dressers[index].apply(shown);
     const dresser = this.dressers[index];
     this.siblings[index].refreshBody(
-      dresser.legSize(), dresser.armSpread(), dresser.posture(), softHeft(this.looks[BODY_NAMES[index]].sliders),
+      dresser.legSize(), dresser.armSpread(), dresser.posture(), softHeft(shown.sliders),
     );
     this.playerPortrait = null;
   }
@@ -3688,6 +3753,8 @@ export class Game {
    */
   private openingShown = { vulva: 0, anus: 0 };
   private openingPreview = { vulva: 0, anus: 0 };
+  /** What the customizer's preview holds her vulva and anus with (their shape keys); in play nothing does yet. */
+  private holdPreview: CrotchHolds = NO_HOLDS;
   /** How hard his penis shows, easing like her arousal; and how hard the customizer's preview has it. */
   private erectionShown = 0;
   private erectionPreview = 0;
@@ -3723,7 +3790,10 @@ export class Game {
     // Her desire relaxes her open a little: her vulva parts as Pussy desire rises, her anus eases a touch with Butt
     // desire; filled, she stretches round what's in her. In the customizer, the preview's opening shows instead.
     if (this.screen === "customize") {
-      if (this.chosen !== null) this.dressers[this.chosen].setOpening(this.openingPreview.vulva, this.openingPreview.anus);
+      if (this.chosen !== null) {
+        this.dressers[this.chosen].setOpening(this.openingPreview.vulva, this.openingPreview.anus);
+        this.dressers[this.chosen].setHold(this.holdPreview);
+      }
       return;
     }
     const butt = arousalOf(tavern.meters.butt / METER_MAX, null);
@@ -3733,9 +3803,11 @@ export class Game {
       vulva: easeOpening(this.openingShown.vulva, meant(filled.vulva, 0.3 * this.vulvaArousalShown), dt),
       anus: easeOpening(this.openingShown.anus, meant(filled.anus, 0.12 * butt), dt),
     };
-    this.dressers.forEach((dresser, index) =>
-      index === this.active ? dresser.setOpening(this.openingShown.vulva, this.openingShown.anus) : dresser.setOpening(0, 0),
-    );
+    this.dressers.forEach((dresser, index) => {
+      if (index === this.active) dresser.setOpening(this.openingShown.vulva, this.openingShown.anus);
+      else dresser.setOpening(0, 0);
+      dresser.setHold(NO_HOLDS);
+    });
   }
 
   /** What men have left on her tonight, stage by stage, as last shown; "" until it is first shown. */

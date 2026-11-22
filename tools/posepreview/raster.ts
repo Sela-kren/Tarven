@@ -1,5 +1,7 @@
 /** The preview's software rasteriser: a model's skin posed on the CPU and its triangles filled into a depth buffer. */
 import { Camera, Matrix4, Object3D, SkinnedMesh, Mesh, Vector3 } from "three";
+import { join } from "node:path";
+import { mergeOutfits } from "./glbmerge";
 
 /** How a mesh is coloured, or null to leave it out (colourOf by default). */
 export type Colouring = (mesh: Object3D, name: string) => [number, number, number] | null;
@@ -7,8 +9,13 @@ export type Colouring = (mesh: Object3D, name: string) => [number, number, numbe
 export const W = Number(process.env.PREVIEW_W ?? 336);
 export const H = Number(process.env.PREVIEW_H ?? 560);
 
-/** The GLB with its pictures taken out, so it loads without a browser to decode them. */
-export function stripImages(file: Buffer): ArrayBuffer {
+/**
+ * The GLB as the tools want it: a split character (tools/blender/glb_split.py) with its outfit files put back in
+ * (glbmerge.ts, read from `folder`: where the base lives, public/models unless MODELS says; not with `merge` false),
+ * and its pictures taken out, so it loads without a browser to decode them.
+ */
+export function stripImages(source: Buffer, folder = process.env.MODELS ?? join("public", "models"), merge = true): ArrayBuffer {
+  const file = merge ? mergeOutfits(source, folder) : source;
   const jsonLength = file.readUInt32LE(12);
   const json = JSON.parse(file.subarray(20, 20 + jsonLength).toString("utf8"));
   delete json.images;

@@ -50,7 +50,7 @@ export async function loadFaceKeys(base: string, body: string, file = body.toLow
   }
 }
 
-function bytes(text: string): Uint8Array {
+export function bytes(text: string): Uint8Array {
   if (typeof atob === "function") {
     const raw = atob(text);
     const out = new Uint8Array(raw.length);
@@ -61,8 +61,8 @@ function bytes(text: string): Uint8Array {
   const g = globalThis as unknown as { Buffer: { from(s: string, e: string): Uint8Array } };
   return Uint8Array.from(g.Buffer.from(text, "base64"));
 }
-const floats = (text: string) => new Float32Array(bytes(text).buffer);
-const ints = (text: string) => new Uint32Array(bytes(text).buffer);
+export const floats = (text: string) => new Float32Array(bytes(text).buffer);
+export const ints = (text: string) => new Uint32Array(bytes(text).buffer);
 
 /**
  * How near (metres) a GLB point must sit to a key file's point to be it: the exporter's sums move points by about
@@ -72,7 +72,7 @@ const NEAR = 2e-6;
 const CELL = 1e-5;
 
 /** The key file's points filed by grid cell, to find the one at a spot (within NEAR), or -1. */
-function pointFinder(rest: Float32Array): (x: number, y: number, z: number) => number {
+export function pointFinder(rest: Float32Array): (x: number, y: number, z: number) => number {
   const cells = new Map<string, number[]>();
   const cell = (x: number, y: number, z: number) => `${Math.floor(x / CELL)},${Math.floor(y / CELL)},${Math.floor(z / CELL)}`;
   for (let i = 0; i < rest.length / 3; i++) {
@@ -155,16 +155,45 @@ export function attachFaceKeys(mesh: Mesh, entry: FaceKeyObject, only?: Readonly
     targets.push(target);
   }
   if (!targets.length) return 0;
-  geometry.morphAttributes.position = targets;
+  // The mesh's own morph targets from the GLB (her eyes' Pupil and Iris keys, at the weights the model has them) stay
+  // as they are, first; the face keys come after, with no normals of their own where the mesh's have them.
+  const own = geometry.morphAttributes.position ?? [];
+  const ownNormals = geometry.morphAttributes.normal;
+  const ownNames = Object.entries(mesh.morphTargetDictionary ?? {}).sort((a, b) => a[1] - b[1]).map(([name]) => name);
+  const ownWeights = Array.from(mesh.morphTargetInfluences ?? []);
+  geometry.morphAttributes.position = [...own, ...targets];
+  if (ownNormals) {
+    geometry.morphAttributes.normal = [...ownNormals, ...targets.map(() => new BufferAttribute(new Float32Array(position.count * 3), 3))];
+  }
   geometry.morphTargetsRelative = true;
   mesh.updateMorphTargets();
+  // updateMorphTargets names them by their attributes and zeroes them: the mesh's own get their names and weights back,
+  // and the face keys are known by theirs (faceTargetsOf), as one can share a name with one of the mesh's own.
+  const dictionary: Record<string, number> = {};
+  own.forEach((_, i) => (dictionary[ownNames[i] ?? `own${i}`] = i));
+  ownWeights.forEach((w, i) => (mesh.morphTargetInfluences![i] = w));
+  const faceTargets = new Map<string, number>();
+  targets.forEach((target, k) => {
+    faceTargets.set(target.name, own.length + k);
+    if (!(target.name in dictionary)) dictionary[target.name] = own.length + k;
+  });
+  mesh.morphTargetDictionary = dictionary;
+  mesh.userData.faceTargets = faceTargets;
   return targets.length;
 }
 
-/** Sets a mesh's face key weights in place (the outline shares the array): the named ones, every other at 0. */
+/** A mesh's face key morph targets (attachFaceKeys), by key name. */
+function faceTargetsOf(mesh: Mesh): Map<string, number> | undefined {
+  return mesh.userData.faceTargets as Map<string, number> | undefined;
+}
+
+/**
+ * Sets a mesh's face key weights in place (the outline shares the array): the named ones, every other face key at 0.
+ * The mesh's own morph targets from the GLB keep their weights.
+ */
 export function setFaceKeyWeights(mesh: Mesh, weights: ReadonlyMap<string, number>): void {
-  const names = mesh.morphTargetDictionary;
+  const targets = faceTargetsOf(mesh);
   const influences = mesh.morphTargetInfluences;
-  if (!names || !influences) return;
-  for (const [name, i] of Object.entries(names)) influences[i] = weights.get(name) ?? 0;
+  if (!targets || !influences) return;
+  for (const [name, i] of targets) influences[i] = weights.get(name) ?? 0;
 }

@@ -18,6 +18,10 @@ import { DownloadTally, LoadScreen, nextPaint } from "./game/loadscreen";
 import { applyRetroLook, RetroPipeline } from "./game/retro";
 import { loadPaint } from "./game/paint";
 import { loadFaceKeys } from "./game/facekeys";
+import { loadCrotchKeys } from "./game/crotchkeys";
+import { unpackModel } from "./game/unpack";
+import { OutfitFiles, outfitListOf } from "./game/outfitfiles";
+import { outfitOf, startLook } from "./game/appearance";
 import { PALETTES, townLook } from "./game/palettes";
 import { WorldClock } from "./game/time";
 import { installDevResume } from "./game/devresume";
@@ -38,6 +42,8 @@ const STREET_FOCUS_HEIGHT = 3;
 const CAMERA_FOLLOW_RATE = 8;
 const MAX_FRAME_TIME = 1 / 20;
 const SHADOW_UPDATE_INTERVAL = 0.1;
+/** Milliseconds after the game starts before the rest of her outfit files are fetched, so they don't slow its first frames. */
+const OUTFIT_PREFETCH_AFTER = 3000;
 
 async function start(): Promise<void> {
   // The code is here: the page's stall check (index.html) stands down, and the loading bar takes over.
@@ -101,9 +107,27 @@ async function start(): Promise<void> {
   const painted = loadPaint(base, "female");
   // Her face's shape keys (facekeys.ts), played as morph targets: without them her face stays at rest.
   const faceKeys = loadFaceKeys(base, "Female");
+  // Her vulva's and anus's shape keys (crotchkeys.ts): without them the game opens her its own way.
+  const crotchKeys = loadCrotchKeys(base, "Female");
   const [worldFile, maleFile, femaleFile, propsFile] = await Promise.all(files.map(fetchModel));
+  // The characters' packed normals, weights and UVs as plain floats (tools/blender/glb_pack.py, unpack.ts).
+  unpackModel(femaleFile.scene);
+  unpackModel(maleFile.scene);
+  // Her outfits in files of their own (outfitfiles.ts): her start outfit now, with the model; the rest as she wears
+  // them, and all of them in the background once the game is running.
+  const outfitList = outfitListOf(femaleFile.asset);
+  const femaleOutfits = outfitList
+    ? new OutfitFiles(outfitList, (path) =>
+      loader.loadAsync(`${base}models/${path}`).then((file) => {
+        applyRetroLook(file.scene);
+        unpackModel(file.scene);
+        return file.scene;
+      }))
+    : null;
+  await femaleOutfits?.request(outfitOf("Female", startLook("Female")).mesh);
   await painted;
   await faceKeys;
+  await crotchKeys;
   // The town kit for the high street. The game still runs without it, with a plainer street.
   const streetKit = await loader
     .loadAsync(`${base}models/streetkit.glb`)
@@ -140,6 +164,7 @@ async function start(): Promise<void> {
   const game = new Game(scene, input, world, {
     male: maleFile.scene,
     female: femaleFile.scene,
+    femaleOutfits,
     props: propsFile.scene,
     streetKit,
     furniture: claimed.defaults,
@@ -148,6 +173,8 @@ async function start(): Promise<void> {
   if (import.meta.env.DEV) (window as unknown as { __game?: Game }).__game = game;
   // In development, a reload (every saved file) comes back to where it was, a brawl mid-turn and all (devresume.ts).
   installDevResume(game);
+  // The rest of her outfits, one at a time, once the game is up and drawing.
+  if (femaleOutfits) setTimeout(() => void femaleOutfits.prefetch(), OUTFIT_PREFETCH_AFTER);
 
   const focus = new Vector3();
   const updateCameraTarget = () => {

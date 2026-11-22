@@ -19,22 +19,25 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "vitest";
 import { Color, Material, Mesh, MeshStandardMaterial, Object3D, SkinnedMesh, Vector3 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { CLEAR_GAP, CUPS, Dresser, LOOK_OPTIONS, sliderTop, smoothTopGap, startLook, stopValue, wearOutfit, type Look } from "../../src/game/appearance";
 import { EXPRESSIONS, EXPRESSIONS_LIST, FACE_NUMBERS, REST_FACE, type Expression, type FaceNumber, type FaceShape } from "../../src/game/face";
 import { setFaceKeys, type FaceKeysFile } from "../../src/game/facekeys";
+import { setCrotchKeys } from "../../src/game/crotchkeys";
 import { Body } from "../../src/game/player";
 import { softHeft } from "../../src/game/heft";
 import { stripImages } from "../posepreview/raster";
+import { mergeOutfits } from "../posepreview/glbmerge";
 import { averageLinear } from "./png";
 
 const NAME = "Female";
 const PORT = Number(process.env.BRIDGE_PORT ?? 8765);
 const MODEL = process.env.BRIDGE_MODEL ?? join("public", "models", "female.glb");
 const FACE_KEYS = process.env.BRIDGE_FACE_KEYS ?? join("public", "models", "female_face.json");
+const CROTCH_KEYS = process.env.BRIDGE_CROTCH_KEYS ?? join("public", "models", "female_crotch.json");
 
 interface ShapeJob {
   look?: Look | null;
@@ -82,7 +85,9 @@ function textureAverages(file: Buffer): Map<string, [number, number, number]> {
 async function load(): Promise<Loaded> {
   // Her face's shape keys, as the game loads them (main.ts), before her Dresser takes them.
   setFaceKeys(NAME, existsSync(FACE_KEYS) ? (JSON.parse(readFileSync(FACE_KEYS, "utf8")) as FaceKeysFile) : null);
-  const file = readFileSync(MODEL);
+  setCrotchKeys(NAME, existsSync(CROTCH_KEYS) ? (JSON.parse(readFileSync(CROTCH_KEYS, "utf8")) as FaceKeysFile) : null);
+  // A split model with its outfit files put back in (glb_split.py), pictures and all.
+  const file = mergeOutfits(readFileSync(MODEL), dirname(MODEL));
   const gltf = await new GLTFLoader().parseAsync(stripImages(file), "");
   const model = gltf.scene;
   const root = model.getObjectByName(NAME) ?? model;

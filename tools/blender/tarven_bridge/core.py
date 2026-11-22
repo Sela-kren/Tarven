@@ -106,7 +106,12 @@ def export_master(out_path=None):
         paint.save_all()
         with paint.shifted_for_export():
             build_world().export_collection(coll, tmp)
-        _put_in_place(tmp, out_path)
+        # Smaller, the same to the game: her cup keys sparse, normals and UVs packed (glb_pack.py).
+        glb_pack().pack(tmp)
+        # Her outfits in files of their own, fetched as she wears them (glb_split.py): split next to the scratch copy,
+        # the outfit files put in place first, her base last (the game reloads on it, with every outfit there).
+        split = _split_outfits(tmp, out_path)
+        _put_in_place(split, out_path)
         painted = paint.send_pictures(out_path)
     finally:
         for o, was_hidden, was_off, was_locked in hidden:
@@ -123,6 +128,39 @@ def export_master(out_path=None):
                 pass
     return {"path": out_path, "seconds": round(time.time() - started, 1),
             "kb": round(os.path.getsize(out_path) / 1024), "painted": painted}
+
+
+def glb_pack():
+    """tools/blender/glb_pack.py as a module."""
+    tools = os.path.join(repo_root(), "tools", "blender")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    import glb_pack as gp
+    return gp
+
+
+def _split_outfits(full, out_path):
+    """Splits the sent model (glb_split.py) and puts its outfit files beside out_path (<name>/<Outfit>.glb), old ones
+    gone; returns the base, still in the scratch folder."""
+    import shutil
+    glb_pack()  # puts tools/blender on the path
+    import glb_split
+    name = os.path.splitext(os.path.basename(out_path))[0]
+    work = os.path.join(scratch_dir(), "sending_split")
+    shutil.rmtree(work, ignore_errors=True)
+    os.makedirs(work)
+    base = os.path.join(work, f"{name}.glb")
+    glb_split.split(full, base)
+    os.remove(full)
+    made = os.path.join(work, name)
+    target = os.path.join(os.path.dirname(os.path.abspath(out_path)), name)
+    os.makedirs(target, exist_ok=True)
+    for old in os.listdir(target):
+        if old.endswith(".glb") and not os.path.exists(os.path.join(made, old)):
+            os.remove(os.path.join(target, old))
+    for new in os.listdir(made):
+        _put_in_place(os.path.join(made, new), os.path.join(target, new))
+    return base
 
 
 def _put_in_place(tmp, out_path):

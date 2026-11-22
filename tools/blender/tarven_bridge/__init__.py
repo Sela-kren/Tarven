@@ -25,7 +25,7 @@ import bpy
 
 from . import core
 
-_modules = ["gameview", "paint", "cloth", "face_keys"]
+_modules = ["gameview", "paint", "cloth", "face_keys", "crotch_keys"]
 
 
 def _sub(name):

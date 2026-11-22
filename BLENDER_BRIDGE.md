@@ -14,7 +14,7 @@ the game's own `Dresser` and `face.ts`, and shows Blender what the game would sh
 ## The panel
 | Part | What it does |
 |---|---|
-| **Send to game** | Exports the `FemaleRig` collection with build_world's own `export_collection` to `public/models/female.glb`, together with the paint layers. Every piece goes out, hidden ones included. Takes about 20 s. Headless: `npm run send`. |
+| **Send to game** | Exports the `FemaleRig` collection with build_world's own `export_collection`, packs it smaller (`glb_pack.py`) and splits her outfits into files of their own (`glb_split.py`): `public/models/female.glb` (her body, hair, shoes, jewellery, stains, the tavern dress, skeleton) plus `public/models/female/<Outfit>.glb`. The paint layers go along too. Every piece goes out, hidden ones included. Takes about 20 s. Headless: `npm run send`. |
 | **Game view** | **Start server** runs `npm run bridge` (or run it yourself). Every game slider, the outfit, hair, bust shape, posed/undressed, **Start look** (what the player sees first) and **As built**. The GameView meshes sit beside the master and are never exported or saved. **Master shows the same** hides the master's other outfits, hair and shoes, as the game does. |
 | **Face** | Expression picks one of the game's expressions and the game view shows it: its brows, eyes and mouth are her face's **shape keys** (below), with the face's numbers over them (blink, lookX, lookY, pupil, blush, crease, wet, tears, heart, sweat), which the sliders change. **Reset** puts the expression's own numbers back. (Before 2026-11-21 this panel edited 30 face numbers in `face.ts`, with Save and Fit; those are gone with the face rig they drove.) |
 | **Edit game view** | Sculpt or move points on the game view at any slider setting (e.g. J cup in the tee). **Apply edits to master** carries the moves onto the master, sends, re-shapes and refines (up to 3 passes, aiming for under 0.5 mm; the test came to 0.57 mm). |
@@ -42,6 +42,28 @@ the game's own `Dresser` and `face.ts`, and shows Blender what the game would sh
   the GLBs to a scratch folder. `main()` now only runs as a script, so the bridge can import its export.
 - `src/game/paint.ts` and `retro.ts`: the paint layers are one texture array shared by every retro material. A
   mesh's `uv1` u value says which layer it uses (1 + layer); a mesh without `uv1` isn't painted.
+
+## Her model's files (2026-11-22)
+Send writes her model smaller and in pieces. The game shows exactly the same thing: every outfit at four cups, standing
+and posed, matches to 0.0000 mm (`tools/bridge/dressersnap.preview.ts`, `glbpackcheck.preview.ts`).
+
+- **Packed** (`tools/blender/glb_pack.py`): her per-cup keys (`_BUST_KEY_*`, `_BUST_FIX_*`, `_CLOTH_DRAPE_*`) are stored
+  sparse, only the points that move. Normals are 8-bit and 0–1 UVs 16-bit (KHR_mesh_quantization); the game turns them
+  back into floats as it loads (`src/game/unpack.ts`). Positions and skin weights are left exact: the face keys find
+  points by position, and 16-bit weights moved some cloth up to 1.6 mm (the "four heaviest bones" pick in
+  `skinWeightsOnto`). The model went from 72.6 MB to 52.5 MB.
+- **Split** (`tools/blender/glb_split.py`): the base `female.glb` is 23 MB, and each of the 21 outfits is 0.6–2.7 MB in
+  `public/models/female/`. The base lists them in `asset.extras.tarvenOutfits`.
+  - The game (`src/game/outfitfiles.ts`) loads the base and her start outfit, and fetches the rest one by one 3 s after
+    the game starts.
+  - Putting on an outfit that isn't in yet keeps what she had on until it arrives (`game.ts` lookToShow). Guests wear
+    their plain clothes until theirs is in.
+  - An arriving outfit is bound onto her bones by name (`attachOutfit`), fitted by her Dresser (`Dresser.addMeshes`,
+    which does the same setup the constructor does), and outlined.
+- **The tools** see the whole model as before: `stripImages` (`tools/posepreview/raster.ts`) merges the outfit files
+  back in (`glbmerge.ts`), and `python tools/blender/glb_split.py merge <base> <out>` does the same in Python.
+- A code build that writes a single full `female.glb` still works: without the outfit list, the game just has every
+  outfit already.
 
 ## Her face's shape keys (2026-11-21)
 Her expressions are shape keys, the way Karryn's Prison layers a face: one expression's brows, another's eyes, a third's
