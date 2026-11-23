@@ -17,6 +17,7 @@ import {
   GLANS_MATERIAL, PENIS_MATERIAL, PENIS_TYPES, SCROTUM_MATERIAL, penisFrame, penisShape, readPenis, shapePenis, type PenisPatch,
   type PenisType,
 } from "./penis";
+import { genitalFrame, readGenitals, shapeGenitals, type GenitalRig } from "./genitals";
 import { FACE_EXTRAS, FACE_LINES, faceKeyWeights, faceMoved, mouthPress, REST_FACE, type FaceShape } from "./face";
 import { attachFaceKeys, blenderObjectOf, faceKeysOf, restCount, setFaceKeyWeights } from "./facekeys";
 import {
@@ -968,7 +969,7 @@ const FEMALE_COLORS: ColorDef[] = [
   { id: "anus", label: "Anus", tab: "skin", mode: "dye", palette: ANUS_COLORS, follows: "skin", parts: [["Body", ANUS_MATERIAL]] },
   // Her irises (build_world.py add_anime_eyes): the iris the swatch, its darker top and her pupil keeping their depth.
   { id: "eyes", label: "Eyes", tab: "face", mode: "dye", palette: HER_EYE_COLORS, parts: [["Body", "T_eye_iris"], ["Body", "T_eye_iris_dark"], ["Body", "T_eye_pupil"]] },
-  { id: "hair", label: "Hair and brows", tab: "hair", mode: "dye", palette: HAIR_COLORS, parts: [["Hair", "T_hair_f"], ["Hair", "T_hair_f_swept"], ["Hair", "T_hair_f_ponytail"], ["Hair", "T_hair_f_artemis"], ["Hair", "T_hair_f_wolf"], ["Body", "T_hair_f"]] },
+  { id: "hair", label: "Hair and brows", tab: "hair", mode: "dye", palette: HAIR_COLORS, parts: [["Hair", "T_hair_f"], ["Hair", "T_hair_f_swept"], ["Hair", "T_hair_f_ponytail"], ["Hair", "T_hair_f_artemis"], ["Hair", "T_hair_f_wolf"], ["Hair", "T_hair_f_wavy"], ["Hair", "T_hair_f_sidetail"], ["Hair", "T_hair_f_bun"], ["Hair", "T_hair_f_braid"], ["Body", "T_hair_f"]] },
   { id: "pubes", label: "Pubic hair", tab: "hair", mode: "dye", palette: PUBIC_COLORS, follows: "hair", parts: [["Body", PUBIC_MATERIAL]] },
   { id: "blouse", label: "Blouse", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_linen"]] },
   { id: "bodice", label: "Bodice", tab: "clothes", mode: "dye", palette: CLOTH_COLORS, parts: [["Cloth", "T_bodice"]] },
@@ -1305,6 +1306,11 @@ export const LOOK_OPTIONS: Record<BodyName, LookOptions> = {
       { id: "ponytail", label: "Long ponytail", mesh: "Ponytail" },
       // "Artemis" by continuumreed (CC-BY, remixed from "Arika the 1st Path" by antoinepavia, CC-BY).
       { id: "artemis", label: "Side-bang ponytail", mesh: "Artemis" },
+      // Sketchfab downloads, 2026-11-23 (Zepeto hair, materials by the uploader; see CREDITS.md).
+      { id: "wavy", label: "Long wavy", mesh: "Wavy" },
+      { id: "sidetail", label: "Low side ponytail", mesh: "Sidetail" },
+      { id: "bun", label: "Messy high bun", mesh: "Bun" },
+      { id: "braid", label: "Braided low bun", mesh: "Braid" },
     ],
     outfits: FEMALE_OUTFITS,
     defaultOutfit: "tee",
@@ -1751,6 +1757,60 @@ export function shoeMeshOf(object: Object3D, body: BodyName): string | null {
 /** The shoe mesh a look shows: "" for the character's own, or a style's mesh name. */
 export function shoeMeshFor(body: BodyName, look: Pick<Look, "shoes">): string {
   return LOOK_OPTIONS[body].shoes.find((style) => style.id === look.shoes)?.mesh ?? "";
+}
+
+/**
+ * How far a shoe tips her foot on its ankle (radians; tools/blender/foot_shoes.py writes it on each shoe object as
+ * `foot_tip`): its heel's height, less any platform, up from the ball of her foot. 0 for a flat shoe or none.
+ */
+export function footTipOf(object: Object3D): number {
+  for (let node: Object3D | null = object; node; node = node.parent) {
+    const tip = node.userData?.foot_tip;
+    if (typeof tip === "number") return tip;
+  }
+  return 0;
+}
+
+const UP = new Vector3(0, 1, 0);
+const tipAxis = new Vector3();
+const tipTurn = new Quaternion();
+const parentTurn = new Quaternion();
+const footAt = new Vector3();
+const toeAt = new Vector3();
+
+/**
+ * Tips both her feet `angle` radians on their ankles (tools/blender/foot_bones.py: <Body>_Foot_<side> and
+ * <Body>_Toe_<side>), heel up, and her toes back the same way so they lie flat: the way a heel stands her. 0 sets
+ * them as built. The bones keep the turn until it's set again; nothing else moves them. Bodies without foot bones are
+ * left alone.
+ */
+export function tipFeet(root: Object3D, body: BodyName, angle: number): void {
+  for (const side of ["L", "R"]) {
+    const foot = root.getObjectByName(`${body}_Foot_${side}`);
+    const toe = root.getObjectByName(`${body}_Toe_${side}`);
+    if (!foot || !toe || !foot.parent) continue;
+    // Their turns as built, kept the first time (as plain numbers, so a cloned model keeps them too).
+    for (const bone of [foot, toe]) {
+      const rest = bone.userData.tipRest as number[] | undefined;
+      if (rest) bone.quaternion.fromArray(rest);
+      else bone.userData.tipRest = bone.quaternion.toArray();
+    }
+    if (angle === 0) continue;
+    // Across her foot, level: a turn about it lifts the heel and lowers the toes.
+    foot.updateWorldMatrix(true, true);
+    foot.getWorldPosition(footAt);
+    toe.getWorldPosition(toeAt);
+    tipAxis.subVectors(toeAt, footAt);
+    tipAxis.y = 0;
+    tipAxis.crossVectors(UP, tipAxis.normalize()).normalize();
+    for (const [bone, turn] of [[foot, angle], [toe, -angle]] as const) {
+      bone.parent!.updateWorldMatrix(true, false);
+      bone.parent!.getWorldQuaternion(parentTurn);
+      tipTurn.setFromAxisAngle(tipAxis.clone().applyQuaternion(parentTurn.invert()), turn);
+      bone.quaternion.premultiply(tipTurn);
+      bone.updateWorldMatrix(false, true);
+    }
+  }
 }
 
 /** The legwear a look has on: its own style, or its outfit's. Null for an outfit with none, such as the pirate's. */
@@ -3623,8 +3683,11 @@ export class Dresser {
   private readonly jewelCovers = new Map<MeshSlot, MeshSlot[]>();
   /** Her anus's disc, for a body built with it: its two meshes (the rim and canal, the skin around them). */
   private anus: { slots: MeshSlot[]; patch: AnusPatch; sculpted: boolean } | null = null;
-  /** His penis's tube and sack, for a body built with them: the shaft, the glans, then the sack. */
-  private penis: { slots: MeshSlot[]; patch: PenisPatch; groin: MeshSlot[] } | null = null;
+  /**
+   * His penis and sack, for a body built with them: the shaft, the glans, then the sack. Either the reference's mesh
+   * (`mesh`, genitals.ts) or the old tube and sack (`patch`, penis.ts).
+   */
+  private penis: { slots: MeshSlot[]; patch: PenisPatch | null; mesh: GenitalRig | null; groin: MeshSlot[] } | null = null;
   /** Whether his penis was last shaped held in what covers his groin, rather than free. */
   private penisPacked = false;
   /** How hard he is, from 0 (soft) to 1; a state of the moment, never part of the look. */
@@ -3801,13 +3864,16 @@ export class Dresser {
       this.anus = { slots: anusSlots, patch: anus, sculpted };
     }
     if (body === "Female") this.takeCrotchKeys();
+    // The reference's mesh, with its rig in its second UVs (genitals.ts); else the old tube and sack (penis.ts).
+    const penisBinds = penisSlots.map((slot) => slot.bind);
+    const rigUvs = penisSlots.map((slot) => slot.mesh.geometry.getAttribute("uv1"));
+    const genitals = penisSlots.length === 3 && rigUvs.every(Boolean) ? readGenitals(rigUvs, [false, false, true], penisBinds) : null;
     const penisUvs = penisSlots.map((slot) => slot.mesh.geometry.getAttribute("uv"));
-    const penis = penisSlots.length === 3 && penisUvs.every(Boolean) ? readPenis(penisUvs.slice(0, 2), penisUvs.slice(2)) : null;
-    if (penis) {
+    const penis = !genitals && penisSlots.length === 3 && penisUvs.every(Boolean) ? readPenis(penisUvs.slice(0, 2), penisUvs.slice(2)) : null;
+    if (genitals || penis) {
       // The clothes over his groin, nearest first: any of them on, his penis lies packed in it rather than showing.
-      const root = penisFrame(penis, penisSlots.map((slot) => slot.bind)).root;
-      this.penisRoot = root;
-      this.penis = { slots: penisSlots, patch: penis, groin: [] };
+      this.penisRoot = genitals ? genitalFrame(genitals, penisBinds).root : penisFrame(penis!, penisBinds).root;
+      this.penis = { slots: penisSlots, patch: penis, mesh: genitals, groin: [] };
     }
 
     // Everything else fitted to her: her clothes, hair, shoes, jewellery and what lands on her.
@@ -4475,6 +4541,9 @@ export class Dresser {
       rest.bone.position.copy(rest.position).add(delta).sub(parentDelta);
       rest.bone.quaternion.copy(rest.quaternion);
     }
+    // Her feet tipped as her shoes are built (heel up, toes flat); flat when barefoot.
+    const worn = this.slots.find((slot) => slot.part === "Shoes" && shoeMeshOf(slot.mesh, this.body) === shoes);
+    tipFeet(this.bodyRoot, this.body, worn ? footTipOf(worn.mesh) : 0);
     // Culling and picking use the skinned bounds, which follow the new shape and joints.
     this.bodyRoot.updateMatrixWorld(true);
     for (const slot of this.slots) {
@@ -5120,7 +5189,8 @@ export class Dresser {
       this.penisPacked ? 1 : 0,
     );
     const out = penis.slots.map((slot) => new Float32Array(slot.bind.length));
-    shapePenis(penis.patch, skin, shape, out);
+    if (penis.mesh) shapeGenitals(penis.mesh, skin, shape, out);
+    else if (penis.patch) shapePenis(penis.patch, skin, shape, out);
     penis.slots.forEach((slot, m) => {
       const total = totals[this.slots.indexOf(slot)];
       for (let i = 0; i < slot.bind.length; i++) total[i] = out[m][i] - slot.bind[i];

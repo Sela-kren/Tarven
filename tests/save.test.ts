@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { latestSave, readSave, writeSave } from "../src/game/save";
+import { latestSave, MANUAL_SLOTS, readSave, readThumb, SLOTS, writeSave, writeThumb } from "../src/game/save";
 import { Tavern } from "../src/game/tavern";
 import { METERS } from "../src/game/passives";
 
@@ -201,5 +201,37 @@ describe("saving the moment", () => {
     const loaded = new Tavern(SEATS);
     expect(() => loaded.resumeMoment({ tavern: { ...t.captureMoment().tavern, gold: "lots" } })).toThrow();
     expect(() => loaded.resumeMoment({ tavern: { ...t.captureMoment().tavern, guests: 3 } })).toThrow();
+  });
+});
+
+describe("save slots and their pictures", () => {
+  it("has twenty slots to save to, numbered 1 to 20, with the autosave first in the load list", () => {
+    expect(MANUAL_SLOTS).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
+    expect(SLOTS).toEqual(["auto", ...MANUAL_SLOTS]);
+  });
+
+  it("still loads a save from one of the three old slots, and saves to the new ones", () => {
+    const t = new Tavern(SEATS);
+    t.gold = 83;
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    expect(writeSave(3, 1, t.snapshot())).toBe(true);
+    expect(localStorage.getItem("tarven.save.3")).not.toBeNull();
+    expect(readSave(3)!.tavern.gold).toBe(83);
+    t.gold = 500;
+    now.mockReturnValue(2_000);
+    expect(writeSave(20, 1, t.snapshot())).toBe(true);
+    now.mockRestore();
+    expect(readSave(20)!.tavern.gold).toBe(500);
+    expect(latestSave()!.slot).toBe(20);
+  });
+
+  it("keeps a picture beside a save, and only takes image data", () => {
+    expect(readThumb(5)).toBeNull();
+    expect(writeThumb(5, "data:image/jpeg;base64,AAAA")).toBe(true);
+    expect(readThumb(5)).toBe("data:image/jpeg;base64,AAAA");
+    localStorage.setItem("tarven.thumb.6", "javascript:alert(1)");
+    expect(readThumb(6)).toBeNull();
+    // The picture lives under its own key; the save is untouched by it.
+    expect(readSave(5)).toBeNull();
   });
 });

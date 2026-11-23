@@ -8,10 +8,13 @@ import { BOTTLE_KINDS, UPGRADES, type Mess, type MessKind, type TavernSave, type
 export const SAVE_VERSION = 1;
 const KEY_PREFIX = "tarven.save.";
 
-/** The autosave, taken whenever a night opens, and three slots the player saves to. */
-export type SlotId = "auto" | 1 | 2 | 3;
-export const SLOTS: SlotId[] = ["auto", 1, 2, 3];
-export const MANUAL_SLOTS: SlotId[] = [1, 2, 3];
+/** How many slots the player saves to; the first three are the ones there always were, so their saves still load. */
+export const MANUAL_SLOT_COUNT = 20;
+/** The autosave, taken whenever a night opens, and the numbered slots the player saves to. */
+export type SlotId = "auto" | number;
+export const MANUAL_SLOTS: SlotId[] = Array.from({ length: MANUAL_SLOT_COUNT }, (_, i) => i + 1);
+export const SLOTS: SlotId[] = ["auto", ...MANUAL_SLOTS];
+const THUMB_PREFIX = "tarven.thumb.";
 
 /**
  * The very moment a save was made, mid-day or mid-night: the time on the world clock, where she stood, and the
@@ -143,6 +146,29 @@ export function latestSave(): { slot: SlotId; data: SaveData } | null {
     if (data && (!latest || data.savedAt > latest.data.savedAt)) latest = { slot, data };
   }
   return latest;
+}
+
+/**
+ * A save's picture: a small JPEG of the game as it was saved (main.ts takes it), kept beside the save under its own
+ * key, so the save itself is untouched. False when the browser refuses; the save still stands without it.
+ */
+export function writeThumb(slot: SlotId, dataUrl: string): boolean {
+  try {
+    localStorage.setItem(THUMB_PREFIX + slot, dataUrl);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A save's picture as a data URL, or null for one saved before saves had pictures. */
+export function readThumb(slot: SlotId): string | null {
+  try {
+    const url = localStorage.getItem(THUMB_PREFIX + slot);
+    return url && url.startsWith("data:image/") ? url : null;
+  } catch {
+    return null;
+  }
 }
 
 export function slotName(slot: SlotId): string {

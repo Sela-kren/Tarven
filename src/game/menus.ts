@@ -5,7 +5,7 @@ import { CUT_INS, type CutKind } from "./cutin";
 import { SCENE_POSE_LIST } from "./sexpose";
 import type { GuestKind } from "./tavern";
 import { pixelSvg } from "./icons";
-import { MANUAL_SLOTS, readSave, slotName, SLOTS } from "./save";
+import { MANUAL_SLOTS, readSave, readThumb, slotName, SLOTS } from "./save";
 import { desirePenalties, horny, WET_PLEASURE, type DesirePenalties } from "./desire";
 import { KINK_NAMES } from "./kinktalk";
 import { METER_NAMES, METERS, PASSIVE_BY_ID, PASSIVE_GROUPS } from "./passives";
@@ -439,20 +439,26 @@ export function showSaveMenu(game: Game, back: () => void, notice?: string): voi
     notice ? [notice] : [],
     MANUAL_SLOTS.map((slot) => {
       const existing = readSave(slot);
-      const label = existing ? slotName(slot) : `${slotName(slot)}: empty`;
+      const label = slotName(slot);
       const save = () => {
-        const saved = game.saveNow(slot);
-        showSaveMenu(game, back, saved ? `Saved to ${slotName(slot)}.` : "Could not save: game browser is blocking storage.");
+        const notice = `Saved to ${slotName(slot)}.`;
+        // Shown again once its picture is taken, a frame later, if the board is still up.
+        const saved = game.saveNow(slot, () => {
+          if (game.menuShowing("Save game")) showSaveMenu(game, back, notice);
+        });
+        showSaveMenu(game, back, saved ? notice : "Could not save: game browser is blocking storage.");
       };
       return {
         label,
         save: existing ?? undefined,
+        thumb: existing ? readThumb(slot) : null,
         onPick: existing
           ? () => confirmMenu(game, `Overwrite ${slotName(slot)}?`, null, save, () => showSaveMenu(game, back))
           : save,
       };
     }),
     back,
+    "grid",
   );
 }
 
@@ -466,8 +472,9 @@ export function showLoadMenu(game: Game, back: () => void): void {
       const data = readSave(slot);
       const load = () => data && game.loadGame(data);
       return {
-        label: data ? slotName(slot) : `${slotName(slot)}: empty`,
+        label: slotName(slot),
         save: data ?? undefined,
+        thumb: data ? readThumb(slot) : null,
         disabled: !data,
         onPick:
           midNight && data
@@ -476,6 +483,7 @@ export function showLoadMenu(game: Game, back: () => void): void {
       };
     }),
     back,
+    "grid",
   );
 }
 

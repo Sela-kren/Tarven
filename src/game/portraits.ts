@@ -1,5 +1,6 @@
 import {
   AmbientLight,
+  type Bone,
   Box3,
   Color,
   DirectionalLight,
@@ -8,6 +9,7 @@ import {
   Object3D,
   PerspectiveCamera,
   Scene,
+  type SkinnedMesh,
   Sphere,
   Vector3,
   WebGLRenderer,
@@ -26,11 +28,8 @@ function linearToSrgb(c: number): number {
   return c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
 }
 
-/**
- * Renders a character from the knees up as a visual novel standing sprite: lit from the front,
- * transparent behind. `turn` angles the body towards the middle of the screen.
- */
-export function renderPortrait(renderer: WebGLRenderer, character: Object3D, turn: number): HTMLCanvasElement {
+/** The portrait's stage: lit warm from the front with a cool rim behind (the drink comic uses the same lights). */
+function portraitStage(): Scene {
   const scene = new Scene();
   scene.add(new AmbientLight(0x6a6480, 0.9));
   scene.add(new HemisphereLight(0xb8c4e0, 0x3a2414, 0.7));
@@ -39,6 +38,63 @@ export function renderPortrait(renderer: WebGLRenderer, character: Object3D, tur
   const rim = new DirectionalLight(0x8fa4d0, 2.2);
   rim.position.set(2, 2, -2.5);
   scene.add(key, rim);
+  return scene;
+}
+
+function portraitCamera(): PerspectiveCamera {
+  const camera = new PerspectiveCamera(24, WIDTH / HEIGHT, 0.1, 20);
+  camera.position.set(0, 1.3, 3.1);
+  camera.lookAt(0, 1.28, 0);
+  return camera;
+}
+
+/** Stands in for a portrait's render target while shaders compile: any off-screen target compiles them the same. */
+let warmTarget: WebGLRenderTarget | null = null;
+
+/**
+ * Compiles, in the background, the shaders `objects` need under the portrait's lights, so the first portrait (or
+ * drink comic) of them doesn't stall the game while the GPU builds them: a new guest's cost up to half a second, and
+ * a party's first lines together a second or two. Only what's showing is compiled.
+ */
+export function warmShaders(renderer: WebGLRenderer, scene: Scene, camera: PerspectiveCamera): Promise<unknown> {
+  warmTarget ??= new WebGLRenderTarget(1, 1);
+  const previous = renderer.getRenderTarget();
+  // Off screen, shaders are built without tone mapping and in linear colour: compile them for a target, as they're drawn.
+  renderer.setRenderTarget(warmTarget);
+  try {
+    return renderer.compileAsync(scene, camera).catch(() => undefined);
+  } finally {
+    renderer.setRenderTarget(previous);
+  }
+}
+
+/** Compiles a character's portrait shaders in the background (warmShaders), ahead of their first line. */
+export function warmPortrait(renderer: WebGLRenderer, character: Object3D): Promise<unknown> {
+  const scene = portraitStage();
+  const model = cloneSkinned(character);
+  model.visible = true;
+  // Hidden pieces (outfits not worn, hairstyles not chosen) are never drawn: leave them out rather than compile them.
+  // (A hidden piece with bones under it stays, so nothing else loses its skeleton.)
+  const hidden: Object3D[] = [];
+  model.traverse((object) => {
+    if (object === model || object.visible) return;
+    let bones = false;
+    object.traverse((child) => {
+      bones ||= (child as Bone).isBone === true;
+    });
+    if (!bones) hidden.push(object);
+  });
+  for (const object of hidden) object.removeFromParent();
+  scene.add(model);
+  return warmShaders(renderer, scene, portraitCamera());
+}
+
+/**
+ * Renders a character from the knees up as a visual novel standing sprite: lit from the front,
+ * transparent behind. `turn` angles the body towards the middle of the screen.
+ */
+export function renderPortrait(renderer: WebGLRenderer, character: Object3D, turn: number): HTMLCanvasElement {
+  const scene = portraitStage();
 
   const model = cloneSkinned(character);
   model.position.set(0, 0, 0);
@@ -47,9 +103,7 @@ export function renderPortrait(renderer: WebGLRenderer, character: Object3D, tur
   model.visible = true;
   scene.add(model);
 
-  const camera = new PerspectiveCamera(24, WIDTH / HEIGHT, 0.1, 20);
-  camera.position.set(0, 1.3, 3.1);
-  camera.lookAt(0, 1.28, 0);
+  const camera = portraitCamera();
 
   const target = new WebGLRenderTarget(WIDTH, HEIGHT);
   const previousColor = renderer.getClearColor(new Color());
@@ -63,7 +117,18 @@ export function renderPortrait(renderer: WebGLRenderer, character: Object3D, tur
   renderer.setRenderTarget(null);
   renderer.setClearColor(previousColor, previousAlpha);
   target.dispose();
+  freeSkeletons(model);
   return ditheredCanvas(pixels, WIDTH, HEIGHT);
+}
+
+/**
+ * Frees the bone textures a clone's skeletons made when drawn. The clone has skeletons of its own (SkeletonUtils), so
+ * the character keeps theirs; left alone, every portrait would leave a dozen textures behind on the GPU.
+ */
+export function freeSkeletons(model: Object3D): void {
+  model.traverse((object) => {
+    if ((object as SkinnedMesh).isSkinnedMesh) (object as SkinnedMesh).skeleton.dispose();
+  });
 }
 
 /**

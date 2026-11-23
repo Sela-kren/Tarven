@@ -99,7 +99,16 @@ const SHOW_EASE = 3;
 const WALK_SPEED = 3.2;
 const RUN_SPEED = 5.2;
 const PLAYER_RADIUS = 0.3;
-const TURN_RATE = 14;
+/**
+ * How she turns to face the way she's going: speeding up into the turn at TURN_ACCEL (radians a second, a second)
+ * up to TURN_TOP_SPEED, and braking to stop on the new heading. A half turn takes about 0.15 s and a quarter turn
+ * 0.1 s, but neither starts with a jerk: the first frame turns only a few degrees.
+ */
+const TURN_ACCEL = 600;
+const TURN_TOP_SPEED = 40;
+/** In third person, where she turns right in front of the camera, more gently: a quarter turn in about 0.2 s. */
+const GENTLE_TURN_ACCEL = 160;
+const GENTLE_TURN_TOP_SPEED = 11;
 /** Pace of the short steps taken on the character select screen. */
 const STAGE_STEP_SPEED = 1.4;
 
@@ -108,8 +117,15 @@ const STAGE_STEP_SPEED = 1.4;
 const DRUNK_VEER = 0.6;
 /** How much slower you go. */
 const DRUNK_SLOW = 0.25;
-/** How fast the walk catches up with the controls, sober and fully drunk: drunk, it slides and overshoots. */
-const SOBER_GRIP = 30;
+/**
+ * How fast the walk catches up with the controls, sober and fully drunk, per second: sober she gets going and pulls up
+ * over a fraction of a second, as her legs take up the stride (rather than all at once, sliding along on still
+ * legs); drunk, it slides and overshoots. Stopping is a little quicker than starting.
+ */
+const SOBER_GRIP = 10;
+const SOBER_STOP_GRIP = 16;
+/** Already walking, how fast a change of direction takes, per second. */
+const STEER_GRIP = 22;
 const DRUNK_GRIP = 3;
 /** You can't quite stand still: the speed of the shuffle while you're not moving. */
 const DRUNK_SHUFFLE = 0.35;
@@ -196,6 +212,11 @@ interface Stride {
   hipLead: number;
   /** How much the arms hang straight down while the body sways, instead of tilting with it. */
   armDangle: number;
+  /** The elbows held out from the sides, in radians (the upper arms lifted sideways). */
+  armOut: number;
+  /** The upper arms rolled inwards about their length, in radians, so bent forearms bring the hands in towards the
+   * middle, in front of the hips. */
+  armRoll: number;
   /** Moving speed as a share of the normal walking or running speed. */
   pace: number;
 }
@@ -251,21 +272,24 @@ interface Gait {
 const PLAIN_WALK: Stride = {
   rate: 2.6, thighSwing: 0.62, thighBias: 0, kneeBend: 0.95, heelKick: 0, frontKnee: 0, stanceKnee: 0, flight: 0,
   armSwing: 0.5, armBias: 0, elbow: 0.35, elbowFlick: 0, bounce: 0.03, lean: 0, hipRoll: 0, hipShift: 0, hipTwist: 0,
-  shoulderTwist: 0, shoulderRoll: 0, crossover: 0, plant: 0, hipLead: 0, armDangle: 0, pace: 1,
+  shoulderTwist: 0, shoulderRoll: 0, crossover: 0, plant: 0, hipLead: 0, armDangle: 0, armOut: 0, armRoll: 0, pace: 1,
 };
 /** The heel kick's shape at its highest, so `heelKick` is the peak bend. */
 const KICK_PEAK = 0.517;
 /** How far each arm swings in across the body as it comes up in front, running, in radians. */
 const RUN_ARM_ACROSS = 0.18;
+/** Which way round rotation.y rolls the left upper arm inwards on this rig (the right is the mirror). */
+const ARM_ROLL_SIGN = -1;
 /** The original walk at both speeds. */
 const PLAIN: Gait = { walk: PLAIN_WALK, run: PLAIN_WALK };
 
 /**
  * How much sway the female walk and run have at the start, from 1 to 5:
- * 1 plain, 2 a light feminine sway, 3 confident, 4 a runway walk, 5 an exaggerated strut.
+ * 1 plain, 2 a light feminine sway (the reference run's style, RUN_2; the default since 2026-11-23), 3 confident,
+ * 4 a runway walk, 5 an exaggerated strut.
  * The player can change it while playing (O).
  */
-export const FEMALE_WALK_STYLE = 4;
+export const FEMALE_WALK_STYLE = 2;
 export const WALK_STYLE_NAMES = ["plain", "light sway", "confident", "runway", "strut"] as const;
 
 /**
@@ -284,17 +308,26 @@ export const WALK_STYLE_NAMES = ["plain", "light sway", "confident", "runway", "
  * highest in the air, the whole body leans forwards (about 11 degrees), the chest turns hard against the hips,
  * and the arms pump with the elbows bent, most as each hand comes up in front.
  */
+/**
+ * The everyday run (level 2, the default), after the user's two reference clips (2026-11-23): Ding Tong's "Proper
+ * Female Running Animation" and GhostRdrTat's "Subtle feminine Sprint Animation" (Skyrim). Read off them frame by
+ * frame: the body upright with only a slight lean, quick short steps, the heel kicking high behind (the shin near
+ * level), the feet landing on one narrow line, the elbows bent about square with the hands carried low by the hips in
+ * a small pump, and little twist in the hips or shoulders, so the head stays level. Seen from the front or behind,
+ * the elbows stand a little out from her sides and the forearms angle in, so the hands come in front of the hips
+ * (armOut, armRoll).
+ */
 const RUN_2: Stride = {
-  rate: 2.25, thighSwing: 0.72, thighBias: 0.28, kneeBend: 1.65, heelKick: 0.65, frontKnee: 0.8, stanceKnee: 0.45,
-  flight: 1, armSwing: 0.7, armBias: 0, elbow: 1.05, elbowFlick: 0.65, bounce: 0.02, lean: 0.22, hipRoll: 0.09,
-  hipShift: 0.03, hipTwist: 0.14, shoulderTwist: 0.24, shoulderRoll: 0.04, crossover: 0.03, plant: 0, hipLead: 0.1,
-  armDangle: 0.3, pace: 1,
+  rate: 2.9, thighSwing: 0.6, thighBias: 0.22, kneeBend: 1.6, heelKick: 1.0, frontKnee: 0.7, stanceKnee: 0.4,
+  flight: 1, armSwing: 0.4, armBias: -0.12, elbow: 1.3, elbowFlick: 0.12, bounce: 0.02, lean: 0.12, hipRoll: 0.07,
+  hipShift: 0.025, hipTwist: 0.1, shoulderTwist: 0.12, shoulderRoll: 0.03, crossover: 0.07, plant: 0, hipLead: 0.1,
+  armDangle: 0.2, armOut: 0.22, armRoll: 0.28, pace: 1,
 };
 const RUN_5: Stride = {
   rate: 2.2, thighSwing: 0.7, thighBias: 0.26, kneeBend: 1.55, heelKick: 0.6, frontKnee: 0.75, stanceKnee: 0.42,
   flight: 1, armSwing: 0.65, armBias: -0.02, elbow: 1.0, elbowFlick: 0.7, bounce: 0.02, lean: 0.19, hipRoll: 0.12,
   hipShift: 0.04, hipTwist: 0.18, shoulderTwist: 0.26, shoulderRoll: 0.05, crossover: 0.055, plant: 0,
-  hipLead: 0.2, armDangle: 0.4, pace: 1,
+  hipLead: 0.2, armDangle: 0.4, armOut: 0, armRoll: 0, pace: 1,
 };
 
 function blendStride(a: Stride, b: Stride, t: number): Stride {
@@ -306,11 +339,13 @@ function blendStride(a: Stride, b: Stride, t: number): Stride {
 const STYLE_ANCHORS: Record<1 | 2 | 3 | 5, { walk: Stride; run: Stride }> = {
   1: { walk: PLAIN_WALK, run: PLAIN_WALK },
   2: {
+    // The walk to go with the reference run (RUN_2): the same subtle feminine look, the feet on a near line, a light
+    // sway of the hips that the shoulders barely answer, and relaxed, slightly bent arms.
     walk: {
-      rate: 2.95, thighSwing: 0.48, thighBias: 0.03, kneeBend: 0.9, heelKick: 0.12, frontKnee: 0.06, stanceKnee: 0.06,
-      flight: 0, armSwing: 0.34, armBias: -0.07, elbow: 0.28, elbowFlick: 0.22, bounce: 0.018, lean: 0, hipRoll: 0.1,
-      hipShift: 0.035, hipTwist: 0.16, shoulderTwist: 0.12, shoulderRoll: 0.045, crossover: 0.065, plant: 1,
-      hipLead: 0.15, armDangle: 0.5, pace: 0.9,
+      rate: 2.95, thighSwing: 0.48, thighBias: 0.03, kneeBend: 0.9, heelKick: 0.15, frontKnee: 0.06, stanceKnee: 0.06,
+      flight: 0, armSwing: 0.3, armBias: -0.06, elbow: 0.35, elbowFlick: 0.2, bounce: 0.015, lean: 0, hipRoll: 0.09,
+      hipShift: 0.03, hipTwist: 0.13, shoulderTwist: 0.1, shoulderRoll: 0.04, crossover: 0.075, plant: 1,
+      hipLead: 0.12, armDangle: 0.45, armOut: 0, armRoll: 0, pace: 0.92,
     },
     run: RUN_2,
   },
@@ -322,7 +357,7 @@ const STYLE_ANCHORS: Record<1 | 2 | 3 | 5, { walk: Stride; run: Stride }> = {
       rate: 3.05, thighSwing: 0.47, thighBias: 0.03, kneeBend: 0.8, heelKick: 0.1, frontKnee: 0.05, stanceKnee: 0.05,
       flight: 0, armSwing: 0.4, armBias: -0.04, elbow: 0.12, elbowFlick: 0.22, bounce: 0.012, lean: -0.05,
       hipRoll: 0.13, hipShift: 0.045, hipTwist: 0.2, shoulderTwist: 0.15, shoulderRoll: 0.05, crossover: 0.05,
-      plant: 1, hipLead: 0.25, armDangle: 0.7, pace: 0.88,
+      plant: 1, hipLead: 0.25, armDangle: 0.7, armOut: 0, armRoll: 0, pace: 0.88,
     },
     run: blendStride(RUN_2, RUN_5, 1 / 3),
   },
@@ -331,7 +366,7 @@ const STYLE_ANCHORS: Record<1 | 2 | 3 | 5, { walk: Stride; run: Stride }> = {
       rate: 4.05, thighSwing: 0.4, thighBias: 0.03, kneeBend: 0.6, heelKick: 0.06, frontKnee: 0.05, stanceKnee: 0.05,
       flight: 0, armSwing: 0.22, armBias: -0.04, elbow: 0.22, elbowFlick: 0.3, bounce: 0, lean: 0.02, hipRoll: 0.2,
       hipShift: 0.075, hipTwist: 0.28, shoulderTwist: 0.18, shoulderRoll: 0.09, crossover: 0.1, plant: 1,
-      hipLead: 0.4, armDangle: 0.85, pace: 0.7,
+      hipLead: 0.4, armDangle: 0.85, armOut: 0, armRoll: 0, pace: 0.7,
     },
     run: RUN_5,
   },
@@ -410,6 +445,37 @@ const NO_STANCE: Stance = {
 /** How far the shoe reaches in front of and behind the shin, for keeping a planted foot out of the floor. */
 const TOE_REACH = 0.18;
 const HEEL_REACH = 0.08;
+/** The most the toe of the back foot pulls the body down, in metres, however far the foot tips. */
+const TOE_DIP_MAX = 0.03;
+/** How gradually the weight passes between the feet, in metres of difference in their heights (softMin). */
+const FOOT_HANDOVER = 0.05;
+/** How gently a bend that starts partway through the stride eases in, as a share of its whole range (ramp). */
+const RAMP_EASE = 0.25;
+
+/** How far (in sine of the shin's tip) the heel or toe dip eases in from the shin standing upright. */
+const TIP_EASE = 0.12;
+
+/** Math.max(0, x), eased in over the first `e` so it starts without a corner. */
+function easeIn(x: number, e: number): number {
+  if (x <= 0) return 0;
+  return x < e ? (x * x) / (2 * e) : x - e / 2;
+}
+
+/**
+ * Like Math.max(0, x) for x up to 1, but easing in over the first RAMP_EASE instead of starting at full speed, so a
+ * knee or elbow doesn't snap into its bend; scaled so it still reaches 1 at 1.
+ */
+function ramp(x: number): number {
+  if (x <= 0) return 0;
+  const eased = x < RAMP_EASE ? (x * x) / (2 * RAMP_EASE) : x - RAMP_EASE / 2;
+  return eased / (1 - RAMP_EASE / 2);
+}
+
+/** The smaller of a and b, blended over a difference of `k` so it never turns a corner (a polynomial smooth min). */
+function softMin(a: number, b: number, k: number): number {
+  const h = Math.max(k - Math.abs(a - b), 0) / k;
+  return Math.min(a, b) - (h * h * k) / 4;
+}
 
 /**
  * How far the chest leans back for each radian of arch, against the pelvis tipping forwards by one: a little
@@ -482,7 +548,8 @@ export class Body {
   private reaction: { kind: Reaction; done: number } | null = null;
   /** Time the skirt has not yet caught up with. */
   private skirtTime = 0;
-  private readonly head: Object3D;
+  /** Her head bone; the first-person camera (viewmode.ts) looks out from it. */
+  readonly head: Object3D;
   private readonly thighL: Object3D;
   private readonly thighR: Object3D;
   private readonly shinL: Object3D;
@@ -667,7 +734,12 @@ export class Body {
     const pitch = swing + shin.rotation.x;
     const reach = (upper * Math.cos(swing) + lower * Math.cos(pitch)) * tilt;
     // There is no ankle, so the foot tips with the shin: the heel dips when it swings forward, the toe when back.
-    const dip = pitch >= 0 ? HEEL_REACH * Math.sin(pitch) : TOE_REACH * Math.sin(-pitch);
+    // The toe's dip is capped (TOE_DIP_MAX): a real foot rolls onto its toes as the heel lifts behind, rather than the
+    // toe pulling the whole body down after it as the knee bends.
+    // Both ease in as the shin passes upright, so the change from heel to toe doesn't kink the body's bob.
+    const heel = HEEL_REACH * easeIn(Math.sin(pitch), TIP_EASE);
+    const toe = TOE_DIP_MAX * Math.tanh((TOE_REACH * easeIn(Math.sin(-pitch), TIP_EASE)) / TOE_DIP_MAX);
+    const dip = heel + toe;
     return this.hipsBaseY + hip - reach - dip;
   }
 
@@ -929,7 +1001,7 @@ export class Body {
     // take it back, so the legs keep their swing) and half the chest. It leans most as the body comes down onto
     // the standing leg (the feet passing) and straightens a little in the air.
     const flight = g("flight") * moving;
-    const lean = g("lean") * moving * (1 + 0.3 * flight * (Math.abs(lift) - 0.5));
+    const lean = g("lean") * moving * (1 + 0.3 * flight * (Math.hypot(lift, RAMP_EASE / 2) - 0.5));
     const pelvisLean = lean * 0.5 * flight;
     this.hips.rotation.x = -arch - pelvisLean;
     // Tipping the pelvis carries the waist forwards; the hips move back by as much, so her upper body stays over
@@ -966,12 +1038,12 @@ export class Body {
     // A knee bends while its leg travels forwards; the heel kicks up just after the foot leaves the floor behind;
     // the knee stays bent as the leg comes out in front, and gives under the weight at mid-stance.
     const knee = (forwards: number, ahead: number) => {
-      const kick = (Math.max(0, -ahead) * ((1 + forwards) / 2) ** 2) / KICK_PEAK;
+      const kick = (ramp(-ahead) * ((1 + forwards) / 2) ** 2) / KICK_PEAK;
       return -(
-        Math.max(0, forwards) * g("kneeBend") +
+        ramp(forwards) * g("kneeBend") +
         kick * g("heelKick") +
-        Math.max(0, ahead) * g("frontKnee") +
-        Math.max(0, -forwards) * g("stanceKnee")
+        ramp(ahead) * g("frontKnee") +
+        ramp(-forwards) * g("stanceKnee")
       ) * swing;
     };
     this.shinL.rotation.x = lerp(knee(lift, phase) - s.freeKnee * settled, -this.sitKnee, sit);
@@ -980,12 +1052,19 @@ export class Body {
     // Floating: the hips simply bob. Planted: they sit as low as the longer leg reaches, so that foot stays
     // on the floor and the body sinks as the legs spread.
     const floating = this.hipsBaseY + Math.abs(lift) * g("bounce") * moving;
-    const lowestFoot = Math.min(this.footHeight(this.thighL, this.shinL, hipRoll), this.footHeight(this.thighR, this.shinR, hipRoll));
+    // The weight passes from foot to foot smoothly rather than at one instant (softMin), so the body doesn't jolt.
+    const lowestFoot = softMin(this.footHeight(this.thighL, this.shinL, hipRoll), this.footHeight(this.thighR, this.shinR, hipRoll), FOOT_HANDOVER);
     const planted = this.hipsBaseY - lowestFoot;
     // Standing still always plants the feet, whatever the pose.
     const walking = lerp(floating, planted, Math.max(g("plant") * moving, still));
-    // A run: down on the standing foot as the feet pass, up in the air as the legs spread.
-    const airborne = lerp(planted, this.hipsBaseY + g("bounce"), phase * phase);
+    // A run: down on the standing foot as the feet pass, up in the air as the legs spread. Only the standing leg (the
+    // left while lift is negative) sets how low she sinks, not whichever foot is lowest, which flipped between the
+    // landing leg and the kicking one and made each step bob twice; and its hold fades out smoothly towards the air.
+    const standing = lift < 0
+      ? this.footHeight(this.thighL, this.shinL, hipRoll)
+      : this.footHeight(this.thighR, this.shinR, hipRoll);
+    const onFoot = (1 - phase * phase) ** 2;
+    const airborne = lerp(this.hipsBaseY + g("bounce"), this.hipsBaseY - standing, onFoot);
     this.hips.position.y = lerp(walking, airborne, flight);
 
     const raised = (angle: number) => lerp(lerp(angle, CARRY_UPPER_ARM, carrying), SIT_UPPER_ARM, sit);
@@ -1006,12 +1085,16 @@ export class Body {
     // Her arms hang behind her bust, standing still, so only her build's share of the spread holds there (Posture's
     // standSpread); swinging forwards walking, they clear the whole of it.
     const spread = lerp(this.armSpread, this.posture.standSpread ?? this.armSpread, hanging);
-    this.upperArmL.rotation.z = dangle - spread - hangOut + Math.max(0, -phase) * across;
-    this.upperArmR.rotation.z = dangle + spread + hangOut - Math.max(0, phase) * across;
+    // The elbows held out from the sides (armOut), and the upper arms rolled in (armRoll) so the hands come in.
+    const armOut = g("armOut") * swing * (1 - carrying) * (1 - sit);
+    const armRoll = g("armRoll") * swing * (1 - carrying) * (1 - sit);
+    this.upperArmL.rotation.z = dangle - spread - hangOut + ramp(-phase) * across - armOut;
+    this.upperArmR.rotation.z = dangle + spread + hangOut - ramp(phase) * across + armOut;
+    this.upperArmL.rotation.y = ARM_ROLL_SIGN * armRoll;
     const hangElbow = hang ? hang.elbow * hanging : 0;
     const elbow = (ahead: number, resting: number) => {
       const swinging =
-        ELBOW_REST + hangElbow + (g("elbow") + Math.max(0, ahead) * g("elbowFlick")) * swing + resting * settled;
+        ELBOW_REST + hangElbow + (g("elbow") + ramp(ahead) * g("elbowFlick")) * swing + resting * settled;
       return lerp(lerp(swinging, CARRY_ELBOW, carrying), SIT_ELBOW, sit);
     };
     this.foreArmL.rotation.x = elbow(-phase, s.elbow);
@@ -1023,7 +1106,7 @@ export class Body {
       this.upperArmR.rotation.z = lerp(this.upperArmR.rotation.z, HAND_ON_HIP.upper.z, hand);
       this.foreArmR.rotation.x = lerp(this.foreArmR.rotation.x, HAND_ON_HIP.elbow, hand);
     }
-    this.upperArmR.rotation.y = HAND_ON_HIP.upper.y * hand;
+    this.upperArmR.rotation.y = HAND_ON_HIP.upper.y * hand - ARM_ROLL_SIGN * armRoll;
     // Her fingers curl a little, as a hand at rest does, instead of standing out straight and fanned.
     this.curlHands(MathUtils.lerp(LOOSE_HAND, CARRY_GRIP, carrying));
 
@@ -1037,10 +1120,23 @@ export class Body {
 }
 
 /** A brother or sister: one body on the floor that keeps its place when you swap away. */
+/**
+ * Which way the camera looks when she walks (viewmode.ts): its yaw, whether she always faces that way (first person),
+ * and whether she turns at the gentler pace (third person, where she turns right in front of the camera).
+ */
+export interface MoveView {
+  yaw: number;
+  faceView: boolean;
+  gentleTurn: boolean;
+}
+const TOP_DOWN_VIEW: MoveView = { yaw: 0, faceView: false, gentleTurn: false };
+
 export class Sibling {
   readonly root = new Group();
   private readonly body: Body;
   private heading = 0;
+  /** How fast she's turning, radians a second (the turn's spring, in move). */
+  private turnSpeed = 0;
   private stride = 0;
   private swing = 0;
   private carry = 0;
@@ -1126,6 +1222,11 @@ export class Sibling {
     return this.stride;
   }
 
+  /** How much she's running, 0 (walking or still) to 1, eased as her stride changes: the run camera follows it. */
+  get runAmount(): number {
+    return this.running;
+  }
+
   /** Puts a model in the sibling's hands, or empties them with null. */
   hold(model: Object3D | null): void {
     if (this.held) this.root.remove(this.held);
@@ -1160,9 +1261,21 @@ export class Sibling {
     return this.heading;
   }
 
+  /** Where her eyes are, in the world, for the first-person camera (viewmode.ts). */
+  eyePoint(out: Vector3): Vector3 {
+    this.body.head.updateWorldMatrix(true, false);
+    return this.body.head.getWorldPosition(out);
+  }
+
+  /** Shrinks her head away (or back), so the first-person camera sees out from inside it, not her hair and face. */
+  hideHead(hidden: boolean): void {
+    this.body.head.scale.setScalar(hidden ? 0.001 : 1);
+  }
+
   /** Turns to a fixed heading at once. */
   face(heading: number): void {
     this.heading = heading;
+    this.turnSpeed = 0;
     this.root.rotation.y = heading;
   }
 
@@ -1185,10 +1298,15 @@ export class Sibling {
    * Walks by the controls. `drunk`, from 0 to 1, makes the walk veer, slide, shuffle and sometimes stumble.
    * Returns true on the frame a stumble starts.
    */
-  move(dt: number, input: Input, colliders: readonly Rect[], drunk = 0): boolean {
+  move(dt: number, input: Input, colliders: readonly Rect[], drunk = 0, view: MoveView = TOP_DOWN_VIEW): boolean {
     this.drunk = drunk;
     const t = this.drunkClock;
-    const direction = moveVector(input.left, input.right, input.up, input.down);
+    // The controls go by the camera (viewmode.ts): up is the way it looks. In first person she also faces the way it
+    // looks, and left and right step sideways.
+    const keys = moveVector(input.left, input.right, input.up, input.down);
+    const cosYaw = Math.cos(view.yaw);
+    const sinYaw = Math.sin(view.yaw);
+    const direction = { x: keys.x * cosYaw + keys.z * sinYaw, z: -keys.x * sinYaw + keys.z * cosYaw };
     const pushing = direction.x !== 0 || direction.z !== 0;
     const speed = (input.run ? RUN_SPEED : WALK_SPEED) * this.body.pace(this.running) * (1 - DRUNK_SLOW * drunk);
 
@@ -1225,10 +1343,21 @@ export class Sibling {
       this.velocity.x = this.stumbleDir.x * STUMBLE_SPEED;
       this.velocity.z = this.stumbleDir.z * STUMBLE_SPEED;
     } else {
-      // Sober, the walk follows the controls at once; drunk, it slides after them.
-      const follow = drunk > 0 ? Math.min(1, MathUtils.lerp(SOBER_GRIP, DRUNK_GRIP, drunk) * dt) : 1;
-      this.velocity.x += (wantX - this.velocity.x) * follow;
-      this.velocity.z += (wantZ - this.velocity.z) * follow;
+      // Sober, she eases up to speed from standing and down to a stop, and swings onto a new direction quickly but
+      // not in one frame. Drunk, it all slides after the controls.
+      const grip = pushing ? SOBER_GRIP : SOBER_STOP_GRIP;
+      const follow = Math.min(1, MathUtils.lerp(grip, DRUNK_GRIP, drunk) * dt);
+      if (drunk > 0 || !pushing) {
+        this.velocity.x += (wantX - this.velocity.x) * follow;
+        this.velocity.z += (wantZ - this.velocity.z) * follow;
+      } else {
+        // Already going, a new direction takes quickly (STEER_GRIP) but not in one frame; from standing, she gets up
+        // to speed at the gentler SOBER_GRIP.
+        const now = Math.hypot(this.velocity.x, this.velocity.z);
+        const steer = Math.min(1, MathUtils.lerp(SOBER_GRIP, STEER_GRIP, Math.min(1, now / speed)) * dt);
+        this.velocity.x += (wantX - this.velocity.x) * steer;
+        this.velocity.z += (wantZ - this.velocity.z) * steer;
+      }
     }
 
     const { x: vx, z: vz } = this.velocity;
@@ -1244,16 +1373,33 @@ export class Sibling {
       this.root.position.z = target.z;
 
       // Face the way you're going; shuffling on the spot doesn't turn you round. The model faces -Z at rest.
-      if (travelling) {
-        const desired = Math.atan2(-vx, -vz);
+      if (travelling && !view.faceView) {
+        // Sober she turns towards where she's being sent (her feet catch up as she turns); drunk, wherever she's
+        // actually lurching.
+        const desired = drunk > 0 || !pushing ? Math.atan2(-vx, -vz) : Math.atan2(-direction.x, -direction.z);
         const delta = Math.atan2(Math.sin(desired - this.heading), Math.cos(desired - this.heading));
-        this.heading += delta * Math.min(1, TURN_RATE * dt);
+        // The turn speeds up at no more than TURN_ACCEL and brakes in time to stop right on the new heading, so it
+        // eases in and out instead of starting at full speed, and is still round quickly.
+        const accel = view.gentleTurn ? GENTLE_TURN_ACCEL : TURN_ACCEL;
+        const top = view.gentleTurn ? GENTLE_TURN_TOP_SPEED : TURN_TOP_SPEED;
+        const braking = Math.sign(delta) * Math.min(top, Math.sqrt(2 * accel * Math.abs(delta)));
+        const change = accel * dt;
+        this.turnSpeed += MathUtils.clamp(braking - this.turnSpeed, -change, change);
+        const step = this.turnSpeed * dt;
+        // Arriving: settle on the heading rather than hunt about it.
+        if (Math.abs(step) >= Math.abs(delta) && Math.sign(step) === Math.sign(delta)) {
+          this.heading += delta;
+          this.turnSpeed = 0;
+        } else {
+          this.heading += step;
+        }
         this.root.rotation.y = this.heading;
       }
       const limp = 1 + DRUNK_LIMP * drunk * Math.sin(t * 3.1);
       this.stride += pace * this.body.strideRate(this.running) * limp * dt;
     }
 
+    if (view.faceView) this.face(view.yaw);
     this.animate(dt, travelling || pace > 0.15, input.run);
     return stumbled;
   }

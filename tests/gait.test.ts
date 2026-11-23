@@ -77,11 +77,18 @@ describe("walking drunk", () => {
     return brother;
   }
 
-  it("walks dead straight when sober", () => {
+  it("walks dead straight when sober, getting up to speed over a moment rather than all at once", () => {
     const sober = walkDown(0, 2);
     expect(sober.position.x).toBe(0);
-    expect(sober.position.z).toBeCloseTo(6.4, 5);
+    // 2 s at 3.2 m/s is 6.4 m; the first fraction of a second she's still getting going.
+    expect(sober.position.z).toBeGreaterThan(6.0);
+    expect(sober.position.z).toBeLessThan(6.4);
     expect(sober.root.rotation.z).toBe(0);
+    // Once going, she holds full speed: another second adds the whole 3.2 m.
+    const longer = walkDown(0, 3);
+    expect(longer.position.z - sober.position.z).toBeCloseTo(3.2, 3);
+    // The first frame she's only just set off.
+    expect(walkDown(0, 1 / 60).position.z).toBeLessThan(3.2 / 60);
   });
 
   it("veers off the line, goes slower, and sways when drunk", () => {

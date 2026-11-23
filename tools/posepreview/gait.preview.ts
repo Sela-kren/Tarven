@@ -1,6 +1,6 @@
 /**
  * The female walk and run as the game poses them, one cycle each in FRAMES pictures (default 8), seen from her
- * side (or VIEW=front / quarter), for checking the gait by eye. Writes raw RGBA to POSE_OUT (default
+ * side (or VIEW=front / back / quarter), for checking the gait by eye. Writes raw RGBA to POSE_OUT (default
  * tools/posepreview/out/gait) with an index JSON (the floor line's row included); a script lays them out.
  * STYLE picks the walk style level (default the game's), TAG prefixes the file names.
  * Run: ONLY=tools/posepreview/gait.preview.ts npx vitest run --config tools/posepreview/vitest.config.ts
@@ -40,7 +40,7 @@ test("render the female walk and run", async () => {
   const camera = new PerspectiveCamera(28, W / H, 0.05, 30);
   const distance = top / 2 / Math.tan((camera.fov * Math.PI) / 360);
   // She faces -Z: the side view looks at her right side, from +X.
-  const dir = view === "front" ? new Vector3(0, 0, -1) : view === "quarter" ? new Vector3(0.7, 0, -0.7) : new Vector3(1, 0, 0);
+  const dir = view === "front" ? new Vector3(0, 0, -1) : view === "back" ? new Vector3(0, 0, 1) : view === "quarter" ? new Vector3(0.7, 0, -0.7) : new Vector3(1, 0, 0);
   camera.position.copy(dir.multiplyScalar(distance)).setY(top / 2);
   camera.lookAt(0, top / 2, 0);
   camera.updateProjectionMatrix();

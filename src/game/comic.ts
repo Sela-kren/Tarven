@@ -18,6 +18,7 @@ import {
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import type { Effect } from "./audio";
 import { chestOverHips } from "./player";
+import { freeSkeletons, warmShaders } from "./portraits";
 
 /**
  * A panel that bursts open over the tavern when you take a drink with a guest, cut on the slant like a comic panel:
@@ -270,6 +271,17 @@ export class DrinkComic {
   }
 
   /**
+   * Compiles the mugs' shaders under the panel's lights in the background, so the first drink of the night doesn't
+   * stall while they're built. The character's own are compiled with her portrait, which is lit the same.
+   */
+  warm(): void {
+    if (this.active) return;
+    this.scene.add(this.mug, this.theirMug);
+    void warmShaders(this.renderer, this.scene, this.camera);
+    this.scene.remove(this.mug, this.theirMug);
+  }
+
+  /**
    * Shows the strip for this character: `body` is a sibling's own model, posed however it stands now, and
    * `name` its body name. `drunk`, from 0 to 1, makes them sway once it's down.
    */
@@ -344,6 +356,7 @@ export class DrinkComic {
     if (this.model) {
       this.model.remove(this.mug, this.theirMug);
       this.scene.remove(this.model);
+      freeSkeletons(this.model);
     }
     this.model = null;
     this.bones = null;

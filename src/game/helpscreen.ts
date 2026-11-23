@@ -16,6 +16,7 @@ export const HELP: readonly HelpSection[] = [
     title: "Keys",
     lines: [
       "WASD or arrows: move. Shift: run. E: use, serve, talk (the prompt says what).",
+      "< and >: camera view, top-down, third person or first person. In third and first person the mouse looks around (click the game to give it the mouse, Esc to free it).",
       "I: your own sheet. O: walk style. M: sound on or off. N: the AI narrator, if KoboldCpp is running. Esc: pause.",
       "On the character select: C to customize, Enter to start.",
     ],

@@ -849,3 +849,22 @@ body:has(#build.open) #status-card {
   color: var(--text);
   font-size: 13px;
 }
+
+/* The dot in the middle of the screen in third and first person (viewmode.ts): E uses what it's on. */
+#aim-dot {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  z-index: 5;
+  display: none;
+}
+#aim-dot.on {
+  display: block;
+}

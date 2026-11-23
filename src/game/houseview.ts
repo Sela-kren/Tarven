@@ -7,7 +7,8 @@
 import { BufferGeometry, Group, Material, Matrix4, Mesh, Object3D, Quaternion, Vector3 } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { box, roomMaterials } from "./furnishings";
-import type { FurnitureKind, HousePlan, Placed, WallPiece } from "./house";
+import { addCloseViewPart, removeCloseViewPart, upperWall } from "./closeview";
+import { WALL_HEIGHT, type FurnitureKind, type HousePlan, type Placed, type WallPiece } from "./house";
 import { tessellateForRetro, type World } from "./world";
 
 /** The objects in world.glb that make up one of each piece of furniture. The first is its middle. */
@@ -90,6 +91,8 @@ export class HouseView {
   private readonly stone: Material;
   private readonly floor: Material;
   private meshes: Mesh[] = [];
+  /** The sill walls built up to full height, shown only in the close-up cameras (closeview.ts). */
+  private upperWalls: Mesh | null = null;
 
   constructor(world: World) {
     const { root, pieces } = world;
@@ -153,12 +156,29 @@ export class HouseView {
       const tile = box([col, -FLOOR_THICKNESS, row], [col + 1, 0, row + 1], { tile: STONE_TILE });
       add(this.floor, false, tessellateForRetro(tile));
     }
+    const upper: BufferGeometry[] = [];
     const addWall = ({ rect, height }: WallPiece) => {
       const wall = box([rect.minX, 0, rect.minZ], [rect.maxX, height, rect.maxZ], { tile: STONE_TILE });
       add(this.stone, true, tessellateForRetro(wall));
+      // The sill walls' upper part, for the close-up cameras (closeview.ts).
+      if (height < WALL_HEIGHT) upper.push(upperWall(rect, height, this.stone, STONE_TILE).geometry);
     };
     plan.outerWalls().forEach(addWall);
     plan.drawnWalls().forEach(addWall);
+    if (this.upperWalls) {
+      removeCloseViewPart(this.upperWalls);
+      this.upperWalls.removeFromParent();
+      this.upperWalls.geometry.dispose();
+      this.upperWalls = null;
+    }
+    const upperMerged = upper.length > 0 ? mergeGeometries(upper) : null;
+    upper.forEach((geometry) => geometry.dispose());
+    if (upperMerged) {
+      this.upperWalls = new Mesh(upperMerged, this.stone);
+      this.upperWalls.receiveShadow = true;
+      this.group.add(this.upperWalls);
+      addCloseViewPart(this.upperWalls);
+    }
 
     const placement = new Matrix4();
     const turn = new Quaternion();

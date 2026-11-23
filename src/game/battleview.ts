@@ -18,6 +18,7 @@ import {
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { applyPose, BATTLE_POSES, blendPose, NO_EXTRA, poseBones, type BattlePose, type BattlePoseName, type PoseBones, type PoseExtra } from "./battlepose";
 import { chestOverHips } from "./player";
+import { tipFeet } from "./appearance";
 import { Heart, PleasureBar } from "./statuscard";
 import { TAG_ICONS, type TagIcon } from "./fighticons";
 import { cardFraming, facingTurn } from "./battleframe";
@@ -353,7 +354,8 @@ export class BattleView {
 
   /**
    * Her picture's copy barefoot, as KP draws her in its sex scenes (the dev scene pose tester's): whatever shoes she
-   * has on hidden, and the bare-foot mesh shown in her skin. Only the copy; she's as she was in the room.
+   * has on hidden, and her own feet set flat (an old model's bare-foot mesh shown in her skin). Only the copy; she's
+   * as she was in the room.
    */
   bareFeet(): void {
     const model = this.model;
@@ -368,6 +370,8 @@ export class BattleView {
       o.visible = bare;
       if (bare && skin) o.material = skin;
     });
+    // Her own feet, flat, as she stands barefoot.
+    tipFeet(model, "Female", 0);
     this.render();
   }
 

@@ -30,6 +30,10 @@ from real_heroin_swap import project_onto, mesh_tree  # noqa: E402
 
 SOURCE = os.path.join(HERE, "..", "..", "..", "art", "male_mpfb.blend")
 SKIN_OBJECT = "MaleMPFB"
+# His penis and scrotum, cut from the male reference by ref_genitals.py (a dev placeholder: NOT cleared for release,
+# see CREDITS.md). Without the file, build_world's tube and sack are laid on as before.
+GENITALS = os.path.join(HERE, "..", "..", "..", "art", "male_genitals.blend")
+GENITALS_OBJECT = "RefGenitals"
 
 SWAP = {
     "reach": 0.1,            # how far along its normal an old skin corner looks for the MPFB surface
@@ -54,8 +58,26 @@ SWAP = {
     # a corner pushed at most "most" a pass.
     "clear_faces": {"near": 0.03, "inside": 0.002, "gap": 0.003, "most": 0.01, "share": 0.3, "passes": 5,
                     "facing": 0.6, "key_passes": 4},
-    # The packed penis and sack (clear_faces): an ellipsoid this far from his penis's root, with these half sizes.
+    # The packed penis and sack (clear_faces): an ellipsoid this far from where his penis leaves his skin (the old
+    # tube's: from PenisRoot), with these half sizes (genitals.ts packs the reference's into it).
     "bulge": {"offset": (0.0, 0.012, -0.045), "radii": (0.038, 0.03, 0.06)},
+    "bulge_skin": {"offset": (0.0, 0.004, -0.05), "radii": (0.042, 0.045, 0.072)},
+    # After subdividing, each cloth corner at least this far out of his skin (not over his head, hands or feet),
+    # the push smoothed over its neighbours this many times.
+    "cloth_out": {"gap": 0.004, "smooth": 3},
+    # Spikes the face clearing leaves on the subdivided cloth (despike_cloth), eased back.
+    "despike": {"share": 0.45, "least": 0.004, "ease": 0.7, "passes": 6},
+    # His shoes made roomier below the ankle (puff_shoes), so his feet don't show through the subdivided uppers.
+    "shoe_puff": {"puff": 0.009, "below": 0.0, "ease": 0.04, "toe": 0.014},
+    # Holes in his clothes round his crotch closed (close_crotch): loops under "most" metres round, their middle
+    # within "x" of his middle and "z" of his penis's root's height.
+    "crotch_holes": {"most": 0.35, "x": 0.05, "z": 0.12},
+    # The reference's penis and sack (lay_genitals): its root this far inside the skin in front of PenisRoot; its open
+    # edge and the "band" rings of corners in from it drawn onto his skin, "seam_in" under it, so it grows out of him.
+    "genitals": {"embed": 0.003, "band": 5, "seam_in": 0.0015, "texture": 1024},
+    # His clothes and shoes subdivided this many times (Catmull-Clark) before they're kept off his skin, so the
+    # low-poly panels made for the ring-built body read as cloth on the smooth MPFB one.
+    "cloth_subdiv": 1,
     "hug": ("Male_HairBuzz", "Male_HairLong", "Male_HairPonytail"),
     "hug_shape": {"reach": 0.035, "least": 0.003, "edge": 0.0015, "tuck": 0.012, "passes": 12},
 }
@@ -347,7 +369,325 @@ def load_skin():
     return skin, joints
 
 
-def swap_in(rig, body, meshes, name, add_penis, clear=None, swap=None):
+def lay_genitals(body, mats, J, swap):
+    """
+    The reference's penis and sack (art/male_genitals.blend) added to `body`'s mesh: its root on his skin in front of
+    PenisRoot, its open edge drawn in under his skin, every corner weighted like the skin it leaves (the open edge's
+    band like the skin under it, the rest like the root). Its faces wear `mats` (T_penis, T_glans, T_scrotum), which
+    take its texture; its "Rig" UV map comes along for the game (penis.ts). Returns False without the file.
+    """
+    g = swap["genitals"]
+    path = os.path.abspath(GENITALS)
+    if not os.path.exists(path):
+        return False
+    with bpy.data.libraries.load(path) as (src, dst):
+        dst.objects = [GENITALS_OBJECT]
+    ref = dst.objects[0]
+    rme = ref.data
+    image = None
+    for mat in rme.materials:
+        for node in mat.node_tree.nodes:
+            if node.type == "TEX_IMAGE" and node.image is not None:
+                image = node.image
+    if image is None:
+        raise RuntimeError("lay_genitals: the reference's genitals have no texture")
+    image.name = "T_genitals_ref"
+    if image.size[0] > g["texture"]:
+        image.scale(g["texture"], g["texture"])
+    image.pack()
+    for mat in mats:
+        tex = next(n for n in mat.node_tree.nodes if n.type == "TEX_IMAGE")
+        tex.image = image
+        tex.interpolation = "Linear"
+    ref_mats = list(rme.materials)
+
+    # Where it goes: the root on his skin straight in front of PenisRoot, a little in.
+    S = world(body)
+    btris = sf.triangles(body, np.ones(len(S), bool))
+    stree = BVHTree.FromPolygons([Vector(p) for p in S], [tuple(int(k) for k in t) for t in btris])
+    pr = Vector(J["PenisRoot"])
+    fwd = Vector((0.0, 1.0, 0.0))
+    # (from behind him, the last skin met going forward is his front)
+    hit, at = None, Vector((0.0, pr.y - 0.15, pr.z))
+    while True:
+        loc, _n, _i, _d = stree.ray_cast(at, fwd, 0.4)
+        if loc is None:
+            break
+        hit, at = loc, loc + fwd * 1e-4
+    if hit is None:
+        raise RuntimeError("lay_genitals: no skin in front of PenisRoot")
+    root = np.array([0.0, hit.y - g["embed"], hit.z])
+    R = np.array([v.co[:] for v in rme.vertices]) + root
+
+    # The open edge and the band in from it, by rings.
+    nv = len(R)
+    ring = np.full(nv, 1 << 20)
+    seam_g = ref.vertex_groups["Seam"].index
+    for v in rme.vertices:
+        if any(e.group == seam_g for e in v.groups):
+            ring[v.index] = 0
+    E = np.array([e.vertices[:] for e in rme.edges])
+    for r in range(1, g["band"] + 1):
+        near = np.zeros(nv, bool)
+        near[E[:, 0][ring[E[:, 1]] == r - 1]] = True
+        near[E[:, 1][ring[E[:, 0]] == r - 1]] = True
+        ring[near & (ring > r)] = r
+    w_band = np.where(ring <= g["band"], 1.0 - ring / (g["band"] + 1.0), 0.0)
+    w_band = w_band * w_band * (3 - 2 * w_band)
+    tri_of = np.zeros(nv, int)
+    drawn = 0
+    for i in range(nv):
+        loc, n, ti, _d = stree.find_nearest(Vector(R[i]))
+        tri_of[i] = ti
+        if w_band[i] <= 0:
+            continue
+        loc, n = np.array(loc), np.array(n)
+        if np.dot(R[i] - loc, n) > -g["seam_in"]:
+            R[i] = R[i] + (loc - n * g["seam_in"] - R[i]) * w_band[i]
+            drawn += 1
+    # each corner's nearest skin corner, for its weights
+    nearest = np.array([btris[tri_of[i]][np.argmin(np.linalg.norm(S[btris[tri_of[i]]] - R[i], axis=1))]
+                        for i in range(nv)])
+    t = btris[stree.find_nearest(Vector(root))[2]]
+    root_v = int(t[np.argmin(np.linalg.norm(S[t] - root, axis=1))])
+
+    # Into his mesh.
+    me = body.data
+    names = [m.name if m else "" for m in me.materials]
+    slot = []
+    for mat in mats:
+        if mat.name not in names:
+            me.materials.append(mat)
+            names.append(mat.name)
+        slot.append(names.index(mat.name))
+    vw = [{e.group: e.weight for e in v.groups} for v in me.vertices]
+    inv = np.linalg.inv(np.array(body.matrix_world))
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    deform = bm.verts.layers.deform.verify()
+    uv0 = bm.loops.layers.uv[0]
+    rig_uv = bm.loops.layers.uv.get("Rig") or bm.loops.layers.uv.new("Rig")
+    new_v = []
+    for i in range(nv):
+        v = bm.verts.new(Vector(R[i] @ inv[:3, :3].T + inv[:3, 3]))
+        a, b = vw[root_v], vw[int(nearest[i])]
+        mix = {k: a.get(k, 0.0) * (1 - w_band[i]) + b.get(k, 0.0) * w_band[i] for k in set(a) | set(b)}
+        total = sum(mix.values()) or 1.0
+        for k, wt in mix.items():
+            if wt > 1e-4:
+                v[deform][k] = wt / total
+        new_v.append(v)
+    ruv0 = rme.uv_layers["UVMap"].data
+    rrig = rme.uv_layers["Rig"].data
+    for poly in rme.polygons:
+        f = bm.faces.new([new_v[k] for k in poly.vertices])
+        f.material_index = slot[poly.material_index]
+        f.smooth = True
+        for loop, li in zip(f.loops, poly.loop_indices):
+            loop[uv0].uv = ruv0[li].uv
+            loop[rig_uv].uv = rrig[li].uv
+    bm.to_mesh(me)
+    bm.free()
+    me.update()
+    bpy.data.objects.remove(ref)
+    bpy.data.meshes.remove(rme)
+    for mat in ref_mats:
+        if mat.users == 0:
+            bpy.data.materials.remove(mat)
+    log(f"genitals laid on: {nv} corners, root {np.round(root, 3)} (PenisRoot {np.round(np.array(J['PenisRoot']), 3)}), "
+        f"{drawn} of the open edge's band drawn in; uv maps {[u.name for u in me.uv_layers]}")
+    return root
+
+
+def close_crotch(obj, crotch_z, cfg):
+    """
+    Fills the small holes in `obj` round his crotch (open boundary loops under cfg["most"] metres round, their middle
+    within cfg["x"] of his middle and cfg["z"] of `crotch_z`): where a front flap and two trouser legs made for the
+    ring-built body don't meet, and his skin would show between them. The new faces take their neighbours' material
+    and UVs.
+    """
+    me = obj.data
+    mw = obj.matrix_world
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    uvl = bm.loops.layers.uv.active
+    bnd = {e for e in bm.edges if e.is_boundary}
+    loops = []
+    while bnd:
+        e = bnd.pop()
+        loop = [e]
+        ends = list(e.verts)
+        grown = True
+        while grown:
+            grown = False
+            for f in list(bnd):
+                if f.verts[0] in ends or f.verts[1] in ends:
+                    bnd.discard(f)
+                    loop.append(f)
+                    for v in f.verts:
+                        if v in ends:
+                            ends.remove(v)
+                        else:
+                            ends.append(v)
+                    grown = True
+        loops.append(loop)
+    filled = 0
+    for loop in loops:
+        vs = {v for e in loop for v in e.verts}
+        pts = [mw @ v.co for v in vs]
+        c = sum(pts, Vector()) / len(pts)
+        perim = sum((mw @ e.verts[0].co - mw @ e.verts[1].co).length for e in loop)
+        if perim > cfg["most"] or abs(c.x) > cfg["x"] or abs(c.z - crotch_z) > cfg["z"]:
+            continue
+        res = bmesh.ops.holes_fill(bm, edges=loop, sides=0)
+        for f in res["faces"]:
+            nb = [g for e in f.edges for g in e.link_faces if g is not f]
+            if nb:
+                f.material_index = nb[0].material_index
+                f.smooth = True
+            for lp in f.loops:
+                other = [l2 for l2 in lp.vert.link_loops if l2.face is not f]
+                if other and uvl is not None:
+                    lp[uvl].uv = other[0][uvl].uv
+        bmesh.ops.recalc_face_normals(bm, faces=res["faces"])
+        filled += 1
+    bm.to_mesh(me)
+    bm.free()
+    me.update()
+    if filled:
+        log(f"{obj.name}: {filled} holes at the crotch closed")
+
+
+def subdivide_cloth(objs, levels):
+    """Each of `objs` subdivided `levels` times (Catmull-Clark), its UVs and weights carried; not one with keys."""
+    done = 0
+    for obj in objs:
+        if obj.data.shape_keys is not None:
+            log(f"{obj.name} has shape keys: not subdivided")
+            continue
+        mod = obj.modifiers.new("cloth_subdiv", "SUBSURF")
+        mod.levels = levels
+        mod.render_levels = levels
+        mod.uv_smooth = "PRESERVE_BOUNDARIES"
+        mod.boundary_smooth = "PRESERVE_CORNERS"
+        with bpy.context.temp_override(object=obj, active_object=obj):
+            # (before every other modifier, the armature included)
+            bpy.ops.object.modifier_move_to_index(modifier=mod.name, index=0)
+            bpy.ops.object.modifier_apply(modifier=mod.name)
+        for poly in obj.data.polygons:
+            poly.use_smooth = True
+        done += 1
+    log(f"{done} cloth meshes subdivided x{levels}")
+
+
+def push_cloth_out(objs, body, before, under, cfg):
+    """
+    Every corner of `objs` at least cfg["gap"] out of `body`'s skin (its first `before` corners, those `under(obj)`
+    allows under it): pushed out along the nearest skin's normal, the push smoothed over its neighbours so the
+    cloth moves as a piece rather than corner by corner.
+    """
+    S = world(body)[:before]
+    tris = sf.triangles(body, np.r_[np.ones(before, bool), np.zeros(len(body.data.vertices) - before, bool)])
+    for obj in objs:
+        allowed = under(obj)
+        ok_tri = allowed[tris].all(1)
+        t = tris[ok_tri]
+        if not len(t):
+            continue
+        tree = BVHTree.FromPolygons([Vector(p) for p in S], [tuple(int(k) for k in f) for f in t])
+        X = world(obj)
+        push = np.zeros_like(X)
+        for i, p in enumerate(X):
+            loc, n, _ti, dist = tree.find_nearest(Vector(p), 0.06)
+            if loc is None:
+                continue
+            h = float(np.dot(p - np.array(loc), np.array(n)))
+            if h < cfg["gap"]:
+                push[i] = np.array(n) * (cfg["gap"] - h)
+        moved = np.linalg.norm(push, axis=1) > 0
+        edges = np.array([e.vertices[:] for e in obj.data.edges])
+        if len(edges):
+            for _ in range(cfg["smooth"]):
+                push = np.where(moved[:, None], push, 0.5 * sf.neighbour_mean(push, edges, np.ones(len(X), bool)))
+        set_world(obj, X + push)
+        log(f"{obj.name}: {int(moved.sum())} of {len(X)} corners pushed out of the skin, "
+            f"up to {np.linalg.norm(push, axis=1).max() * 1000:.1f} mm")
+
+
+def despike_cloth(objs, cfg, only=None):
+    """
+    Corners standing out of the cloth around them like spikes (further than cfg["share"] of their edges' length from
+    their neighbours' middle, and at least cfg["least"] metres), eased back towards it, cfg["passes"] times. The open
+    edges (hems, cuffs, collars) along their own edges, so they keep their line rather than curling in. `only(obj, X)`,
+    if given, says which corners may be eased.
+    """
+    for obj in objs:
+        me = obj.data
+        if not len(me.edges):
+            continue
+        X = world(obj)
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        rim = np.array([v.is_boundary for v in bm.verts]) if len(bm.verts) == len(X) else np.zeros(len(X), bool)
+        rim_e = np.array([e.is_boundary for e in bm.edges]) if len(bm.edges) == len(me.edges) else np.zeros(len(me.edges), bool)
+        bm.free()
+        E = np.array([e.vertices[:] for e in me.edges])
+        everyone = np.ones(len(X), bool)
+        fixed = 0
+        for _ in range(cfg["passes"]):
+            inner = sf.neighbour_mean(X, E, everyone)
+            along = sf.neighbour_mean(X, E[rim_e], everyone) if rim_e.any() else inner
+            M = np.where(rim[:, None], along, inner)
+            length = np.zeros(len(X))
+            count = np.zeros(len(X))
+            el = np.linalg.norm(X[E[:, 0]] - X[E[:, 1]], axis=1)
+            np.add.at(length, E[:, 0], el)
+            np.add.at(length, E[:, 1], el)
+            np.add.at(count, E[:, 0], 1)
+            np.add.at(count, E[:, 1], 1)
+            length /= np.maximum(count, 1)
+            d = np.linalg.norm(X - M, axis=1)
+            spike = (d > cfg["share"] * length) & (d > cfg["least"])
+            if only is not None:
+                spike &= only(obj, X)
+            if not spike.any():
+                break
+            fixed += int(spike.sum())
+            X[spike] += (M[spike] - X[spike]) * cfg["ease"]
+        set_world(obj, X)
+        if fixed:
+            log(f"{obj.name}: {fixed} spikes eased")
+
+
+def puff_shoes(objs, ankle_z, cfg):
+    """
+    Shoes made a little roomier below the ankle: each corner more than cfg["below"] under it moved out along the
+    shoe's own normal by cfg["puff"] metres (easing in over cfg["ease"] above that), so the foot's edges, which the
+    subdivided upper rounds in over, stay inside.
+    """
+    for obj in objs:
+        me = obj.data
+        me.update()
+        X = world(obj)
+        mw3 = np.array(obj.matrix_world.to_3x3())
+        N = np.array([mw3 @ v.normal for v in me.vertices])
+        N /= np.maximum(np.linalg.norm(N, axis=1, keepdims=True), 1e-9)
+        w = np.clip((ankle_z - cfg["below"] - X[:, 2]) / cfg["ease"], 0.0, 1.0)
+        w = w * w * (3 - 2 * w)
+        X = X + N * (cfg["puff"] * w)[:, None]
+        # and a little longer at the toe, each shoe (each side of his middle) from its middle forward
+        for side in (X[:, 0] < 0, X[:, 0] >= 0):
+            if not side.any():
+                continue
+            y0, y1 = X[side, 1].mean(), X[side, 1].max()
+            f = np.clip((X[:, 1] - y0) / max(1e-6, y1 - y0), 0.0, 1.0) * side
+            X[:, 1] += cfg["toe"] * f * f
+        set_world(obj, X)
+        log(f"{obj.name}: {int((w > 0).sum())} corners puffed out up to {cfg['puff'] * 1000:.0f} mm, "
+            f"toes {cfg['toe'] * 1000:.0f} mm longer")
+
+
+def swap_in(rig, body, meshes, name, add_penis, clear=None, swap=None, genital_mats=None):
     """`add_penis(body)` lays his penis and sack on the new skin; `clear()` keeps the clothes off it (before the
     physique keys are carried onto them, which keep each corner's height over the skin as it then is)."""
     swap = dict(SWAP, **(swap or {}))
@@ -533,7 +873,9 @@ def swap_in(rig, body, meshes, name, add_penis, clear=None, swap=None):
 
     # --- his penis and sack, laid on the new skin; they take no physique keys (the game shapes them itself)
     before = len(body.data.vertices)
-    add_penis(body)
+    skin_root = lay_genitals(body, genital_mats, J, swap) if genital_mats is not None else False
+    if skin_root is False:
+        add_penis(body)
     base_co = np.zeros(len(body.data.vertices) * 3)
     body.data.vertices.foreach_get("co", base_co)
     base_co = base_co.reshape(-1, 3)
@@ -545,8 +887,6 @@ def swap_in(rig, body, meshes, name, add_penis, clear=None, swap=None):
         kb.data.foreach_set("co", co.ravel())
     log(f"penis and sack laid on: {len(body.data.vertices) - before} corners")
 
-    if clear is not None:
-        clear()
     cloth = [o for o in worn if o.name.split(".")[0].startswith(("Male_Cloth", "Male_Shoes"))]
     mw3 = np.array(body.matrix_world.to_3x3())
     Sb_nrm = np.array([mw3 @ v.normal for v in body.data.vertices])[:before]
@@ -567,12 +907,29 @@ def swap_in(rig, body, meshes, name, add_penis, clear=None, swap=None):
         if obj.name.split(".")[0].startswith("Male_Shoes"):
             return Sb_pts[:, 2] < ankle_z + 0.12
         return ~(head | hand | foot)
+    for obj in cloth:
+        if obj.data.shape_keys is None:
+            close_crotch(obj, float(J["PenisRoot"][2]), swap["crotch_holes"])
+    if swap["cloth_subdiv"]:
+        subdivide_cloth(cloth, swap["cloth_subdiv"])
+        push_cloth_out(cloth, body, before, under, swap["cloth_out"])
+    if clear is not None:
+        clear()
     # His penis and sack as the game packs them inside his clothes (penis.ts PACKED_PRESS): a bulge in front of his
     # groin the cloth over it has to clear as well as the skin.
-    bc = np.array(J["PenisRoot"]) + np.array(swap["bulge"]["offset"])
-    radii = np.array(swap["bulge"]["radii"])
+    if skin_root is False:
+        bc = np.array(J["PenisRoot"]) + np.array(swap["bulge"]["offset"])
+        radii = np.array(swap["bulge"]["radii"])
+    else:
+        bc = np.array(skin_root) + np.array(swap["bulge_skin"]["offset"])
+        radii = np.array(swap["bulge_skin"]["radii"])
     u, v = np.meshgrid(np.linspace(0, np.pi, 14), np.linspace(-np.pi / 2, np.pi / 2, 14))
     dirs = np.stack([np.cos(u) * np.cos(v), np.sin(u) * np.cos(v), np.sin(v)], -1).reshape(-1, 3)  # front half (+y)
+    if skin_root is not False:
+        # the reference's sack hangs under and behind the root too: the lower back quarter as well, so the cloth's
+        # crotch passes under it
+        u2, v2 = np.meshgrid(np.linspace(np.pi, 2 * np.pi, 10), np.linspace(-np.pi / 2, 0, 8))
+        dirs = np.vstack([dirs, np.stack([np.cos(u2) * np.cos(v2), np.sin(u2) * np.cos(v2), np.sin(v2)], -1).reshape(-1, 3)])
     bulge_pts = bc + dirs * radii
     bulge_nrm = dirs / radii
     bulge_nrm /= np.linalg.norm(bulge_nrm, axis=1, keepdims=True)
@@ -581,6 +938,10 @@ def swap_in(rig, body, meshes, name, add_penis, clear=None, swap=None):
     Sb_nrm = np.vstack([Sb_nrm, bulge_nrm])
     head, hand, foot = (np.r_[m, groin] for m in (head, hand, foot))
     cloth_maps = clear_faces(Sb_pts, Sb_nrm, mesh_tree(Sb_pts, sf.triangles(body, np.r_[np.ones(before, bool), np.zeros(len(body.data.vertices) - before, bool)])), cloth, swap, under)
+    if swap["cloth_subdiv"]:
+        despike_cloth(cloth, swap["despike"])
+        push_cloth_out(cloth, body, before, under, swap["cloth_out"])
+        puff_shoes([o for o in cloth if o.name.split(".")[0].startswith("Male_Shoes")], ankle_z, swap["shoe_puff"])
 
     # --- his physique keys carried onto everything worn
     kb = body.data.shape_keys.key_blocks

@@ -91,6 +91,26 @@ export class KeyNav {
     };
     // Held, these keep going, like a held arrow key in a text box.
     const held = (...codes: string[]) => codes.some((code) => input.pressedOrHeld(code));
+    // In a grid of cards (the save slots), W/S go up and down a row and A/D along it; off the bottom row, on to
+    // whatever follows the grid (Back), and off the top, to whatever comes before it.
+    const grid = el.closest(".save-grid");
+    if (grid) {
+      const cells = targets.filter((t) => grid.contains(t));
+      const at = cells.indexOf(el);
+      const cols = Math.max(1, cells.filter((c) => c.offsetTop === cells[0].offsetTop).length);
+      const before = targets[targets.indexOf(cells[0]) - 1] ?? null;
+      const after = targets[targets.indexOf(cells[cells.length - 1]) + 1] ?? null;
+      let next: HTMLElement | null | undefined;
+      if (held("KeyW", "ArrowUp")) next = at - cols >= 0 ? cells[at - cols] : before ?? el;
+      else if (held("KeyS", "ArrowDown")) next = at + cols < cells.length ? cells[at + cols] : after ?? el;
+      else if (held("KeyA", "ArrowLeft")) next = cells[Math.max(0, at - 1)];
+      else if (held("KeyD", "ArrowRight")) next = cells[Math.min(cells.length - 1, at + 1)];
+      if (next !== undefined) {
+        this.moveTo(next);
+        input.consume(...MOVE_KEYS);
+        return;
+      }
+    }
     if (held("KeyW", "ArrowUp")) step(-1);
     else if (held("KeyS", "ArrowDown")) step(1);
     else if (held("KeyA", "ArrowLeft")) this.nudge(el, -1);

@@ -278,6 +278,13 @@ def main():
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
         import bust_soft
         print("bust_soft:", bust_soft.apply(rig, list(master.all_objects)))
+    # Her foot bones (foot_bones.py) and her shoes built round her own feet (foot_shoes.py), likewise.
+    if rig is not None and "Female_Shin_L" in rig.data.bones:
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+        import foot_bones
+        import foot_shoes
+        print("foot_bones:", foot_bones.apply(rig, list(master.all_objects)))
+        print("foot_shoes:", foot_shoes.build(rig, master))
 
     out = opts["master_out"] or core.master_path()
     if not opts["master_out"]:

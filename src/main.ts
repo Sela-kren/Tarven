@@ -26,6 +26,10 @@ import { PALETTES, townLook } from "./game/palettes";
 import { WorldClock } from "./game/time";
 import { installDevResume } from "./game/devresume";
 import { DevView } from "./game/devview";
+import { ViewMode } from "./game/viewmode";
+import { buildCloseShell } from "./game/closeview";
+import { writeThumb } from "./game/save";
+import { snapshotCanvas } from "./game/thumbs";
 import { addStoryProps, STORY_PIECES } from "./game/storyprops";
 import { addStairHall, addUpstairs } from "./game/upstairs";
 import { setupWorld } from "./game/world";
@@ -150,9 +154,13 @@ async function start(): Promise<void> {
   addFrontDoorway(worldFile.scene);
   // What the story has put in the tavern: Wren's red lantern, and her book stand with the red book's pieces.
   addStoryProps(worldFile.scene);
+  // The ceiling and full-height front walls for the third- and first-person cameras, built while the walls still have
+  // their names (closeview.ts); setupWorld merges them next.
+  const closeShell = buildCloseShell(worldFile.scene);
   const claimed = claimFurniture(worldFile.scene);
   const world = setupWorld(worldFile.scene, [...WHOLE_PIECES, ...STORY_PIECES, ...claimed.whole]);
   scene.add(worldFile.scene);
+  scene.add(closeShell);
   lighting.addSkyGlow(worldFile.scene, ["T_window"]);
 
   loading.show("game", 0);
@@ -200,13 +208,16 @@ async function start(): Promise<void> {
   camera.position.copy(look).add(CAMERA_OFFSET);
   camera.lookAt(look);
 
+  // Top-down, third person or first person, stepped through with < and > (viewmode.ts).
+  const viewMode = new ViewMode(camera, game, renderer.domElement, input);
+
   // Development only: the Blender bridge's camera and screenshots (devview.ts).
   const devView = import.meta.env.DEV ? new DevView(camera, game, renderer.domElement) : null;
   if (import.meta.env.DEV) {
     // town: its palette and lines can be swapped live (palettes.ts PALETTES) to compare looks.
     Object.assign(window, {
       __tarven: {
-        game, world, renderer, clock, audio, town, palettes: PALETTES,
+        game, world, renderer, clock, audio, town, palettes: PALETTES, viewMode,
         viewHer: devView!.viewHer.bind(devView), shot: devView!.shot.bind(devView),
       },
     });
@@ -234,6 +245,8 @@ async function start(): Promise<void> {
     last = now;
     elapsed += dt;
 
+    viewMode.handleKeys(input);
+    viewMode.steer();
     game.update(dt);
     world.update(elapsed);
     lighting.setSky(game.outdoors);
@@ -248,6 +261,8 @@ async function start(): Promise<void> {
       look.copy(focus);
       camera.position.copy(shot.eye);
       camera.lookAt(shot.target);
+    } else if (viewMode.place(dt)) {
+      // Third or first person (viewmode.ts) holds the camera; the top view picks up from where it left off.
     } else {
       const follow = 1 - Math.exp(-CAMERA_FOLLOW_RATE * dt);
       look.lerp(focus, follow);
@@ -267,7 +282,18 @@ async function start(): Promise<void> {
     // The town is drawn as pixel art in its own palette (palettes.ts TOWN_LOOK); the tavern keeps the usual look.
     pipeline.setPalette(game.outdoors ? town.palette : null);
     pipeline.setLines(game.outdoors ? town.lines : null);
+    viewMode.beforeRender();
     pipeline.render(scene, camera);
+    viewMode.afterRender();
+    // A save just made gets its picture from this frame, read before the browser shows it (thumbs.ts).
+    const pictures = game.takeThumbRequests();
+    if (pictures.length > 0) {
+      const url = snapshotCanvas(renderer.domElement);
+      for (const { slot, then } of pictures) {
+        if (url) writeThumb(slot, url);
+        then?.();
+      }
+    }
     devView?.afterRender();
   });
 

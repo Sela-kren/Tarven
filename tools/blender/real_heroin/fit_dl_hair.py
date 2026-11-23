@@ -57,6 +57,7 @@ CAP_W = 0.39         # "width": the crown is this much of the hair's width deep
 SKULL_Z = 0.075      # her skull cap: this far down from the top of her head
 PUSH = 0.003         # no hair point nearer her skin than this
 SEARCH_INSIDE = 0.03 # "search" fit: grown until less than this share of its points is inside her head
+SEARCH_HEAD = 0.20   # "search" fit counts only points this near her head top: long hair lies on her shoulders anyway
 TEX = 1024           # baked strand texture size
 MAT = "T_hair_f_{}"  # material per style: T_hair_f_swept, T_hair_f_ponytail, ...
 
@@ -223,15 +224,18 @@ def place(me, style):
         ty = SK_CROWN_Y
         sample = V[:: max(1, len(V) // 2000)]
         base = sx
-        for f in ([style["s"] / base] if style.get("s") else np.linspace(0.8, 2.6, 37)):
+        for f in ([style["s"] / base] if style.get("s") else np.linspace(0.3, 2.6, 47)):
             s = base * f
-            inside = 0
+            inside = near = 0
             for p in sample:
                 q = Vector(((p.x - hcx) * s, ty + (p.y - hcy) * s, TOP + OFF + (p.z - hz1) * s))
+                if q.z < TOP - SEARCH_HEAD:
+                    continue
+                near += 1
                 loc, n, i, d = BT.find_nearest(q)
                 if loc is not None and (q - loc).dot(n) < 0 and d < 0.05:
                     inside += 1
-            if inside / len(sample) < SEARCH_INSIDE:
+            if near and inside / near < SEARCH_INSIDE:
                 break
         sx = sy = sz = s
     k = tw.get("scale", (1, 1, 1))

@@ -1404,3 +1404,97 @@
     animation-duration: 0.01s;
   }
 }
+
+/* ---------- Save and load: the slots as a grid of cards, each with its picture (thumbs.ts) ---------- */
+
+#panel .box.wide {
+  width: min(1240px, 100%);
+}
+
+#panel .save-grid {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+  padding: 4px 6px 6px 4px;
+  /* Room for the heading, a notice and Back; the rest of the slots scroll. */
+  max-height: calc(100vh - 300px);
+  overflow-y: auto;
+}
+
+#panel .save-grid + .menu {
+  margin-top: 14px;
+}
+
+#panel .save-grid button.slot-card {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 8px 8px 10px;
+}
+
+/* The slot's number sits on the picture's corner. */
+#panel .slot-card .key {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 1;
+}
+
+#panel .slot-card .thumb {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #120b06;
+  box-shadow: inset 0 0 0 3px #0d0805;
+}
+
+#panel .slot-card .thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#panel .slot-card .thumb.none {
+  font: 400 14px/1 var(--font);
+  color: var(--text-muted);
+  text-shadow: none;
+}
+
+#panel .slot-card .label {
+  font-size: 16px;
+}
+
+#panel .slot-card .save-badges {
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-left: 0;
+  font-size: 14px;
+}
+
+#panel .slot-card .badge svg {
+  width: 18px;
+  height: 18px;
+}
+
+#panel .slot-card .when {
+  flex-basis: 100%;
+  font-size: 12px;
+}
+
+/* The blinking pointer is for planks; a card lights up instead. */
+#panel .save-grid button.slot-card::after {
+  display: none;
+}
+
+#panel .save-grid button.slot-card:hover:not(:disabled) .thumb,
+#panel .save-grid button.slot-card.kb-cursor:not(:disabled) .thumb {
+  box-shadow: inset 0 0 0 3px var(--gold);
+}
+
+@media (max-width: 520px) {
+  #panel .save-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

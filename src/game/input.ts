@@ -2,6 +2,8 @@ const GAME_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD",
   "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
   "ShiftLeft", "ShiftRight",
+  // < and > (the comma and full-stop keys): step the camera through top-down, third person and first person.
+  "Comma", "Period",
   "BracketRight", "BracketLeft", "Backslash", "KeyB", "KeyC", "KeyE", "KeyI", "KeyK", "KeyL", "KeyN", "KeyO", "KeyM", "KeyP", "KeyR", "KeyX", "Delete", "Enter", "Space", "Escape", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9",
 ]);
 
@@ -51,6 +53,12 @@ export class Input {
   /** True on the frame a key goes down, and again each time it repeats while held: for stepping through menus. */
   pressedOrHeld(code: string): boolean {
     return this.typed.has(code);
+  }
+
+  /** Presses a key for one frame, as if it had been tapped: a click standing in for E (viewmode.ts). */
+  tap(code: string): void {
+    this.justPressed.add(code);
+    this.typed.add(code);
   }
 
   /** Uses up this frame's press of these keys, so nothing later in the frame acts on it too. */

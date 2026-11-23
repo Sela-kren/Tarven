@@ -111,7 +111,7 @@ import { DEFY_HEAT, ordinal, RUIN_HEAT } from "./ledger";
 import { biggestFanGroup, chapterEndingCard, firstInTarvenCard } from "./chapter1";
 import { findCobwebSpots, findDustSpots, MessLayer } from "./mess";
 import { Outline, outlineMaterial } from "./outline";
-import { renderPortrait, renderThumbnail } from "./portraits";
+import { renderPortrait, renderThumbnail, warmPortrait } from "./portraits";
 import {
   describeSave,
   latestSave,
@@ -201,7 +201,7 @@ import { scenePose } from "./brawlscenes";
 import type { LewdPart } from "./brawlai";
 import { SCENE_JOINS, type ScenePoseName } from "./sexpose";
 import { FATIGUE_LABELS } from "./herstate";
-import { Body, Sibling, SHOW_POSES, WALK_STYLE_NAMES, type Reaction, type ShowPose, type SoftPart } from "./player";
+import { Body, Sibling, SHOW_POSES, WALK_STYLE_NAMES, type MoveView, type Reaction, type ShowPose, type SoftPart } from "./player";
 import { cutInPieces, stripLadder, topPull } from "./wardrobe";
 import { COAT_SECTIONS, COAT_STAGES, type CoatSection } from "./cum";
 import { applyRetroLook, solidRetroMaterial } from "./retro";
@@ -266,6 +266,48 @@ const STATION_RANGE = 1.35;
  * How much turning away from a thing counts against it when choosing what to use, in metres per unit of turn:
  * something straight to her side counts as this much further away, and something straight behind her twice that.
  */
+/** Where the camera aims (viewmode.ts): a ray from the eye in first person; in third, her spot and the camera's heading. */
+export interface Aim {
+  origin: Vector3;
+  dir: Vector3;
+  flat: boolean;
+}
+
+/** With the camera at her level: how far off the aim (radians) something can be and still be used, how much being
+ * off the aim counts against it, and how much nearness counts (aimOff). */
+const AIM_CONE = 0.3;
+/** Third person aims by the camera's heading alone, from where she stands, so this cone is wider. */
+const AIM_CONE_FLAT = 0.6;
+const AIM_WEIGHT = 8;
+const AIM_DISTANCE_WEIGHT = 0.15;
+
+/**
+ * How far off the camera's aim a thing is, in radians: the angle to the nearest point of an upright line through it
+ * from the floor to just under its arrow, at the height the aim passes it.
+ */
+function aimOff(aim: Aim, at: Vector3, arrowHeight: number): number {
+  const { origin, dir } = aim;
+  if (aim.flat) {
+    // Third person: the angle round from the camera's heading, seen from her.
+    const toX = at.x - origin.x;
+    const toZ = at.z - origin.z;
+    const span = Math.hypot(toX, toZ) * Math.hypot(dir.x, dir.z);
+    if (span < 1e-6) return 0;
+    return Math.acos(MathUtils.clamp((toX * dir.x + toZ * dir.z) / span, -1, 1)) * (AIM_CONE / AIM_CONE_FLAT);
+  }
+  const flat = Math.hypot(dir.x, dir.z);
+  const across = Math.hypot(at.x - origin.x, at.z - origin.z);
+  const reached = flat > 1e-6 ? origin.y + (dir.y * across) / flat : origin.y;
+  const y = MathUtils.clamp(reached, Math.min(at.y + 0.1, arrowHeight), Math.max(at.y + 0.1, arrowHeight - 0.35));
+  const tx = at.x - origin.x;
+  const ty = y - origin.y;
+  const tz = at.z - origin.z;
+  const length = Math.hypot(tx, ty, tz);
+  if (length < 1e-6) return 0;
+  const cos = (tx * dir.x + ty * dir.y + tz * dir.z) / length;
+  return Math.acos(MathUtils.clamp(cos, -1, 1));
+}
+
 const FACING_WEIGHT = 0.6;
 const GUEST_RANGE = 1.7;
 /** How close you need to be to dirty dishes on a table, or to a mess on the floor. */
@@ -791,6 +833,11 @@ export interface Button {
   start?: boolean;
   /** A small pixel icon before the label, as SVG markup of our own (fighticons.ts). */
   icon?: string;
+  /**
+   * A save slot's picture (a data URL), or null for a slot without one: the button is then a card in a grid
+   * (openMenu's "grid" layout) with the picture over its words.
+   */
+  thumb?: string | null;
   /** What picking it does to heat, shown after the label as a flame and +1 or −1. */
   heat?: number;
 }
@@ -1179,6 +1226,7 @@ export class Game {
       this.itemTemplates[bottle] = cup;
     }
     this.drinkComic = new DrinkComic(renderer, element("comic"), () => this.makeItem("ale"), (effect) => this.audio.play(effect));
+    this.drinkComic.warm();
     this.battleView = new BattleView(this.renderer);
     this.battleView.onBlow = () => this.shakeScreen("hit");
     this.battleView.onPose = (pose) => this.pickFightFace(pose);
@@ -1337,6 +1385,40 @@ export class Game {
     else this.showAgeGate();
   }
 
+  /** Which way the camera looks, for walking by it (viewmode.ts sets it each frame; top-down is yaw 0). */
+  readonly moveView: MoveView = { yaw: 0, faceView: false, gentleTurn: false };
+
+  /** The sibling being played. */
+  get player(): Sibling {
+    return this.siblings[this.active];
+  }
+
+  /** True on the quest map, which keeps the top-down camera. */
+  get onQuestMap(): boolean {
+    return this.questMap !== null;
+  }
+
+  /** What stands in her way where she is now: the room's (or the street's) walls and furniture. */
+  get colliders(): readonly Rect[] {
+    return this.world.colliders;
+  }
+
+  /**
+   * Where the camera aims in third and first person (viewmode.ts sets it each frame), or null in the top-down view:
+   * then E uses what she faces, otherwise what the dot in the middle of the screen is on.
+   */
+  aim: Aim | null = null;
+
+  /** The place she's in, whose shapes the third-person camera keeps out of (camcollide.ts): the tavern or the street. */
+  get room(): Object3D {
+    return this.outdoors ? this.street.root : this.world.root;
+  }
+
+  /** A line in the message log. */
+  notice(text: string): void {
+    this.log.add(text);
+  }
+
   /** The point the camera should keep in view. */
   get focus(): Vector3 {
     return this.siblings[this.active].position;
@@ -1463,6 +1545,7 @@ export class Game {
     }
     this.checkpoint = this.tavern.snapshot();
     writeSave("auto", this.active, this.checkpoint, this.looks, this.captureMoment());
+    this.thumbRequests.push({ slot: "auto" });
   }
 
   /** This very moment, for a save: the time on the clock, where she stands, and the tavern as it is. */
@@ -1479,9 +1562,29 @@ export class Game {
     };
   }
 
-  /** Saves this very moment, day or night, to a slot. False when the browser won't store it. */
-  saveNow(slot: SlotId): boolean {
-    return writeSave(slot, this.active, this.tavern.snapshot(), this.looks, this.captureMoment());
+  /**
+   * Saves this very moment, day or night, to a slot. False when the browser won't store it. Its picture is taken
+   * from the next frame drawn (main.ts takeThumbRequests), and then `pictured` is called, to show it.
+   */
+  saveNow(slot: SlotId, pictured?: () => void): boolean {
+    const saved = writeSave(slot, this.active, this.tavern.snapshot(), this.looks, this.captureMoment());
+    if (saved) this.thumbRequests.push({ slot, then: pictured });
+    return saved;
+  }
+
+  /** Saves waiting for their picture, handed to main.ts once a frame is drawn. */
+  private thumbRequests: { slot: SlotId; then?: () => void }[] = [];
+
+  /** The saves waiting for a picture of the frame just drawn; taking them clears the list. */
+  takeThumbRequests(): { slot: SlotId; then?: () => void }[] {
+    const requests = this.thumbRequests;
+    this.thumbRequests = [];
+    return requests;
+  }
+
+  /** True while the open menu board has this title. */
+  menuShowing(title: string): boolean {
+    return this.panelEl.classList.contains("open") && this.panelEl.querySelector("h1")?.textContent === title;
   }
 
   private makeItem(item: Item): Object3D {
@@ -1656,6 +1759,7 @@ export class Game {
     this.screen = "play";
     this.checkpoint = this.tavern.snapshot();
     writeSave("auto", this.active, this.checkpoint, this.looks, this.captureMoment());
+    this.thumbRequests.push({ slot: "auto" });
   }
 
   private closeCustomizer(): void {
@@ -1741,8 +1845,12 @@ export class Game {
         // Guests who turn up together (a party, or a backlog once a seat frees) file in one behind another.
         const wait = this.doorQueue;
         this.doorQueue += ENTRY_GAP_SECONDS;
+        const body = this.makeGuestBody(guest.kind, guest.female, this.guestLook(guest), guest.role, tavern.recruitOutfitOf(guest));
+        // Their talk portrait is drawn from a body built the same way: compile its shaders now, in the background,
+        // or their first line stalls the game while the GPU builds them (portraits.ts).
+        void warmPortrait(this.renderer, body.root);
         actor = new GuestActor(
-          this.makeGuestBody(guest.kind, guest.female, this.guestLook(guest), guest.role, tavern.recruitOutfitOf(guest)),
+          body,
           guest,
           this.world.seats[guest.seat],
           this.nav,
@@ -1882,10 +1990,14 @@ export class Game {
     const [forwardX, forwardZ] = [-Math.sin(heading), -Math.cos(heading)];
     let best: { target: Target; at: Vector3; height: number; prompt: Prompt; score: number } | null = null;
 
+    const { aim } = this;
     const consider = (target: Target, at: Vector3, height: number, range: number) => {
       const [dx, dz] = [at.x - position.x, at.z - position.z];
       const distance = Math.hypot(dx, dz);
       if (distance > range) return;
+      // In third and first person (viewmode.ts) it's what the dot in the middle of the screen is on.
+      const off = aim ? aimOff(aim, at, height) : 0;
+      if (off > AIM_CONE) return;
       const prompt = this.tavern.prompt(this.active, target);
       if (!prompt) return;
       // Anything you can actually do beats a status message, and serving a guest
@@ -1893,8 +2005,8 @@ export class Game {
       const serving = target.kind === "guest" && this.tavern.carrying[this.active] !== null;
       // What she is facing beats what is a little nearer behind her or off to the side.
       const ahead = distance > 0.01 ? (dx * forwardX + dz * forwardZ) / distance : 1;
-      const turned = (1 - ahead) * FACING_WEIGHT;
-      const score = distance + turned + (prompt.actionable ? 0 : 100) - (serving ? 50 : 0);
+      const turned = aim ? off * AIM_WEIGHT : (1 - ahead) * FACING_WEIGHT;
+      const score = distance * (aim ? AIM_DISTANCE_WEIGHT : 1) + turned + (prompt.actionable ? 0 : 100) - (serving ? 50 : 0);
       if (!best || score < best.score) best = { target, at, height, prompt, score };
     };
 
@@ -2223,9 +2335,9 @@ export class Game {
    * Opens a menu over the game. The title screen hangs its name on a tavern sign; every other menu is a
    * framed wooden board.
    */
-  openPanel(title: string, paragraphs: string[], buttons: Button[], style: "board" | "title" = "board"): void {
+  openPanel(title: string, paragraphs: string[], buttons: Button[], style: "board" | "title" = "board", layout: "list" | "grid" = "list"): void {
     const box = document.createElement("div");
-    box.className = "box";
+    box.className = layout === "grid" ? "box wide" : "box";
     this.panelEl.classList.toggle("title-screen", style === "title");
     this.panelEl.classList.remove("journal-open", "adult-open", "fight-open", "duel-open", "duel-test-open", "dawn-open");
     const heading = document.createElement("h1");
@@ -2262,6 +2374,9 @@ export class Game {
     }
     const menu = document.createElement("div");
     menu.className = "menu";
+    // In the grid layout the save slots are cards in a grid of their own, and the rest (Back) a plank below it.
+    const grid = layout === "grid" ? document.createElement("div") : null;
+    if (grid) grid.className = "menu save-grid";
     buttons.forEach((button, index) => {
       const el = document.createElement("button");
       el.type = "button";
@@ -2273,6 +2388,21 @@ export class Game {
       label.className = "label";
       label.textContent = button.label;
       el.append(key);
+      if (button.thumb !== undefined) {
+        el.classList.add("slot-card");
+        const picture = document.createElement("span");
+        picture.className = "thumb";
+        if (button.thumb) {
+          const img = document.createElement("img");
+          img.src = button.thumb;
+          img.alt = "";
+          picture.append(img);
+        } else {
+          picture.classList.add("none");
+          picture.textContent = button.save ? "No picture" : "Empty";
+        }
+        el.append(picture);
+      }
       if (button.icon) {
         const icon = document.createElement("span");
         icon.className = "icon";
@@ -2290,8 +2420,9 @@ export class Game {
       el.addEventListener("click", () => this.pressButton(button));
       if (button.onCursor) el.addEventListener(CURSOR_EVENT, button.onCursor);
       if (button.start) el.dataset[CURSOR_START] = "";
-      menu.append(el);
+      (grid && button.thumb !== undefined ? grid : menu).append(el);
     });
+    if (grid) box.append(grid);
     box.append(menu);
     this.panelEl.replaceChildren(box);
     this.panelEl.classList.add("open");
@@ -2329,8 +2460,8 @@ export class Game {
   }
 
   /** A menu that Esc (or its Back button) leaves by calling `back`. */
-  openMenu(title: string, paragraphs: string[], buttons: Button[], back: () => void): void {
-    this.openPanel(title, paragraphs, [...buttons, { label: "Back", onPick: back }]);
+  openMenu(title: string, paragraphs: string[], buttons: Button[], back: () => void, layout: "list" | "grid" = "list"): void {
+    this.openPanel(title, paragraphs, [...buttons, { label: "Back", onPick: back }], "board", layout);
     this.panelBack = back;
   }
 
@@ -2354,6 +2485,7 @@ export class Game {
     this.clock.run(DAY_HOURS_PER_SECOND, AFTERNOON_HOLD_HOUR);
     this.checkpoint = this.tavern.snapshot();
     writeSave("auto", this.active, this.checkpoint, this.looks);
+    this.thumbRequests.push({ slot: "auto" });
     // The morning after measures the night against this.
     this.dayStart = this.standing();
   }
@@ -3338,8 +3470,8 @@ export class Game {
         { label: "Resume (Esc)", onPick: () => this.resume() },
         { label: "Save game", onPick: () => showSaveMenu(this, back) },
         { label: "Load game", disabled: !latestSave(), onPick: () => showLoadMenu(this, back) },
-        { label: "Settings (also staff, feed, knight, guild, the debt)", onPick: () => showSettingsMenu(this, back) },
-        { label: "Where things are (keys and help)", onPick: () => showHelp(this, back) },
+        { label: "Settings", onPick: () => showSettingsMenu(this, back) },
+        { label: "Where things are", onPick: () => showHelp(this, back) },
         {
           label: "Quit to the title",
           onPick: () => confirmMenu(this, "Quit to the title?", "Anything you have not saved will be lost.", reloadToTitle, back),
@@ -4262,7 +4394,7 @@ export class Game {
     }
     const strideBefore = player.strideAngle;
     if (player.acted) player.rest(dt);
-    else if (player.move(dt, input, this.world.colliders, tavern.drunk)) tavern.stumble(this.active);
+    else if (player.move(dt, input, this.world.colliders, tavern.drunk, this.moveView)) tavern.stumble(this.active);
     if (footfalls(strideBefore, player.strideAngle) > 0) this.audio.play("step", input.run ? RUNNING_STEP_LOUDNESS : 1);
     if (this.followStairs(player, dt)) return;
 

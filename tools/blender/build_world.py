@@ -9322,7 +9322,8 @@ def skin_character(c, m, spec, root):
             import mpfb_swap
             mpfb_swap.swap_in(rig, body_obj, [o for o in c.objects if o.type == "MESH"], name,
                               lambda body: add_penis(m, name, body),
-                              clear=lambda: keep_clothes_clear(body_obj, (cloth_obj, *outfits, shoes)))
+                              clear=lambda: keep_clothes_clear(body_obj, (cloth_obj, *outfits, shoes)),
+                              genital_mats=(m["penis"], m["glans"], m["scrotum"]))
         # Without the reshaping, still the smooth shading it gives (see heroic_reshape): flat faces split every point
         # per face in the export, three times the file, and the look is the painted, smooth one either way.
         for obj in (o for o in c.objects if o.type == "MESH"):
